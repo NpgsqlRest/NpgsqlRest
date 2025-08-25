@@ -4,6 +4,13 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [client-2.27.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/client-2.27.1) (2025-08-25)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/2.32.0...client-2.27.1)
+
+- Fix default port issue in client app.
+- Fix issue with multiple connections configuration.
+
 ## Version [2.32.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/2.32.0) (2025-08-23)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/2.31.0...2.32.0)
