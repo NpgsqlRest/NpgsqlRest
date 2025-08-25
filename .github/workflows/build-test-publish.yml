@@ -57,7 +57,6 @@ jobs:
       with:
         tag_name: ${{ env.LIBRARY_VERSION }}-client-${{ env.CLIENT_VERSION }}
         release_name: "AOT Client ${{ env.CLIENT_VERSION }} NpgsqlRest ${{ env.LIBRARY_VERSION }}"
-        body_path: ./VERSION_INFO.md
         draft: false
         prerelease: false
 
@@ -181,7 +180,7 @@ jobs:
           vbilopav/npgsqlrest:latest
 
   npm-publish:
-    needs: build-docker
+    needs: create-release
     runs-on: ubuntu-22.04
     permissions:
       contents: read

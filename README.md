@@ -29,7 +29,7 @@ Plugin system with code genrators, that can generate frontend code, including Ty
 
 ### **Feature Rich, Enterprise Ready, Open Source and More**
 
-Event streaming, event notifications, advanced security, cookie and token based authentication, role-based authorization, built-in scalability features, connection and command retries, automatic HTTP files structured logging, docker-ready containerization, Excel/CSV processing features, full open-source and free under MIT license, and more.
+Event streaming and event notifications, advanced security and authentaction features, role-based authorization, built-in scalability features, connection and command retries, automatic HTTP files, structured logging, docker-ready containerization, upload endpoints, Excel/CSV processing features, fully free and open-source and under MIT license, and more.
 
 ## Full Features List
 
@@ -200,11 +200,11 @@ Or, run the appropriate Docker command (expose the 8080 default port and bind th
 
 ```bash
 ~/dev
-❯ docker run --name my_postgres_api -it -p 8080 --volume ./appsettings.json:/app/appsettings.json vbilopav/npgsqlrest:latest
+❯ docker run --name my_postgres_api -it -p 8080:8080 --volume ./appsettings.json:/app/appsettings.json vbilopav/npgsqlrest:latest
 [11:33:35.440 INF] Started in 00:00:00.0940095, listening on ["http://localhost:8080"], version 2.27.0.0 [NpgsqlRest]
 ```
 
-Congratulations, your High Speed Web Server is running with `/hello` endpoint exposed.  
+Congratulations, your High Speed Web Server is running with `/hello` endpoint exposed.
 
 ### Next Steps
 

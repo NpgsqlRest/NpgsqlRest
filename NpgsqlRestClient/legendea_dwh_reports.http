@@ -1,0 +1,20 @@
+@host=http://localhost:8080
+
+// function reports.report_execution_log(
+//     _timezone text DEFAULT NULL::text,
+//     _limit integer DEFAULT NULL::integer
+// )
+// returns table(
+//     at timestamp without time zone,
+//     duration interval,
+//     username text,
+//     routine text,
+//     parameters text
+// )
+//
+// comment on function reports.report_execution_log is 'HTTP GET report/execution-log
+// basic_auth username password';
+GET {{host}}/report/execution-log?timezone=ABC&limit=2
+
+###
+
