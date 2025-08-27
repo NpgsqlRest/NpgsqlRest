@@ -7,27 +7,106 @@ using NpgsqlRest.Defaults;
 using NpgsqlRestClient;
 
 using Npgsql;
+using NpgsqlRest.CrudSource;
+using NpgsqlRest.HttpFiles;
+using NpgsqlRest.TsClient;
 
 Stopwatch sw = new();
 sw.Start();
 
-var arguments = new Arguments();
-if (arguments.Parse(args) is false)
+if (args.Length >= 1 && (string.Equals(args[0], "-h", StringComparison.CurrentCultureIgnoreCase) ||
+    string.Equals(args[0], "--help", StringComparison.CurrentCultureIgnoreCase) ||
+    string.Equals(args[0], "/?", StringComparison.CurrentCultureIgnoreCase)))
 {
+    var _ = new Out();
+    _.Line("Usage:");
+    _.Line([
+        ("npgsqlrest", "Run with the optional default configuration files: appsettings.json and appsettings.Development.json. If these file are not found, default configuration setting is used (see https://github.com/NpgsqlRest/NpgsqlRest/blob/master/NpgsqlRestClient/appsettings.json)."),
+        ("npgsqlrest [files...]", "Run with the custom configuration files. All configuration files are required. Any configuration values will override default values in order of appearance."),
+        ("npgsqlrest [file1 -o file2...]", "Use the -o switch to mark the next configuration file as optional. The first file after the -o switch is optional."),
+        ("npgsqlrest [file1 --optional file2...]", "Use --optional switch to mark the next configuration file as optional. The first file after the --optional switch is optional."),
+        ("Note:", "Values in the later file will override the values in the previous one."),
+        (" ", " "),
+        ("npgsqlrest [--key=value]", "Override the configuration with this key with a new value (case insensitive, use : to separate sections). "),
+        (" ", " "),
+        ("npgsqlrest -v, --version", "Show version information."),
+        ("npgsqlrest -h, --help", "Show command line help."),
+        ("npgsqlrest --config", "Dump current configuration to console and exit."),
+        ("npgsqlrest --hash [value]", "Hash value with default hasher and print to console."),
+        ("npgsqlrest --basic_auth [username] [password]", "Print out basic basic auth header value in format 'Authorization: Basic base64(username:password)'."),
+        ("npgsqlrest --encrypt [value]", "Encrypt string using default data protection and print to console."),
+        ("npgsqlrest --encrypted_basic_auth [username] [password]", "Print out basic basic auth header value in format 'Authorization: Basic base64(username:password)' where password is encrypted with default data protection."),
+        (" ", " "),
+        (" ", " "),
+        ("Examples:", " "),
+        ("Example: use two config files", "npgsqlrest appsettings.json appsettings.Development.json"),
+        ("Example: second config file optional", "npgsqlrest appsettings.json -o appsettings.Development.json"),
+        ("Example: override ApplicationName config", "npgsqlrest --applicationname=Test"),
+        ("Example: override Auth:CookieName config", "npgsqlrest --auth:cookiename=Test"),
+        (" ", " "),
+        ]);
     return;
 }
+
+if (args.Length >= 1 && (string.Equals(args[0], "-v", StringComparison.CurrentCultureIgnoreCase) ||
+    string.Equals(args[0], "--version", StringComparison.CurrentCultureIgnoreCase) ||
+    string.Equals(args[0], "/v", StringComparison.CurrentCultureIgnoreCase)))
+{
+    var _ = new Out();
+    var versions = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription.Split(' ');
+    _.Line("Versions:");
+    _.Line([
+        (versions[0], versions[1]),
+        (" ", " "),
+        ("NpgsqlRest", System.Reflection.Assembly.GetAssembly(typeof(NpgsqlRestOptions))?.GetName()?.Version?.ToString() ?? "-"),
+        ("NpgsqlRestClient", System.Reflection.Assembly.GetAssembly(typeof(Program))?.GetName()?.Version?.ToString() ?? "-"),
+        ("NpgsqlRest.HttpFiles", System.Reflection.Assembly.GetAssembly(typeof(HttpFileOptions))?.GetName()?.Version?.ToString() ?? "-"),
+        ("NpgsqlRest.TsClient", System.Reflection.Assembly.GetAssembly(typeof(TsClientOptions))?.GetName()?.Version?.ToString() ?? "-"),
+        ("NpgsqlRest.CrudSource", System.Reflection.Assembly.GetAssembly(typeof(CrudSource))?.GetName()?.Version?.ToString() ?? "-"),
+        (" ", " "),
+        ("Npgsql", System.Reflection.Assembly.GetAssembly(typeof(NpgsqlConnection))?.GetName()?.Version?.ToString() ?? "-"),
+        ("ExcelDataReader", System.Reflection.Assembly.GetAssembly(typeof(ExcelDataReader.IExcelDataReader))?.GetName()?.Version?.ToString() ?? "-"),
+        ("Serilog.AspNetCore", System.Reflection.Assembly.GetAssembly(typeof(Serilog.AspNetCore.RequestLoggingOptions))?.GetName()?.Version?.ToString() ?? "-"),
+        ("System.Text.Json", System.Reflection.Assembly.GetAssembly(typeof(System.Text.Json.JsonCommentHandling))?.GetName()?.Version?.ToString() ?? "-"),
+        (" ", " "),
+        ("CurrentDirectory", Directory.GetCurrentDirectory())
+    ]);
+    _.NL();
+    return;
+}
+
+if (args.Length >= 2 && string.Equals(args[0], "--hash", StringComparison.CurrentCultureIgnoreCase))
+{
+    Console.ForegroundColor = ConsoleColor.Red;
+    var hasher = new NpgsqlRest.Auth.PasswordHasher();
+    Console.WriteLine(hasher.HashPassword(args[1]));
+    Console.ResetColor();
+    return;
+}
+        
+if (args.Length >= 3 && string.Equals(args[0], "--basic_auth", StringComparison.CurrentCultureIgnoreCase))
+{
+    Console.ForegroundColor = ConsoleColor.Red;
+    Console.WriteLine(string.Concat("Authorization: Basic ", Convert.ToBase64String(Encoding.UTF8.GetBytes($"{args[1]}:{args[2]}"))));
+    Console.ResetColor();
+    return;
+}
+
+var arguments = new Out();
 
 var config = new Config();
 var builder = new Builder(config);
 var appInstance = new App(config, builder);
 
-config.Build(args,["config", "encrypt", "encrypted_basic_auth"]);
-if (args.Length >= 1 && string.Equals(args[0], "config", StringComparison.CurrentCultureIgnoreCase))
+config.Build(args,["--config", "--encrypt", "--encrypted_basic_auth"]);
+
+if (args.Length >= 1 && string.Equals(args[0], "--config", StringComparison.CurrentCultureIgnoreCase))
 {
     Console.ForegroundColor = ConsoleColor.Yellow;
     Console.WriteLine(config.Serialize());
     return;
 }
+
 builder.BuildInstance();
 builder.BuildLogger();
 
@@ -50,7 +129,7 @@ var antiForgeryUsed = builder.ConfigureAntiForgery();
 WebApplication app = builder.Build();
 
 // dump encrypted text and exit
-if (args.Length >= 1 && string.Equals(args[0], "encrypt", StringComparison.CurrentCultureIgnoreCase))
+if (args.Length >= 1 && string.Equals(args[0], "--encrypt", StringComparison.CurrentCultureIgnoreCase))
 {
     Console.ForegroundColor = ConsoleColor.Red;
     if (dataProtectionName is null)
@@ -65,7 +144,7 @@ if (args.Length >= 1 && string.Equals(args[0], "encrypt", StringComparison.Curre
     return;
 }
 
-if (args.Length >= 1 && string.Equals(args[0], "encrypted_basic_auth", StringComparison.CurrentCultureIgnoreCase))
+if (args.Length >= 1 && string.Equals(args[0], "--encrypted_basic_auth", StringComparison.CurrentCultureIgnoreCase))
 {
     Console.ForegroundColor = ConsoleColor.Red;
     if (dataProtectionName is null)

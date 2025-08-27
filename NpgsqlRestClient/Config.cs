@@ -24,8 +24,8 @@ public class Config
         var tempBuilder = new ConfigurationBuilder();
         IConfigurationRoot tempCfg;
 
-        var arguments = new Arguments();
-        var (configFiles, commandLineArgs) = arguments.BuildFromArgs(args);
+        var arguments = new Out();
+        var (configFiles, commandLineArgs) = BuildFromArgs(args);
 
         if (configFiles.Count > 0)
         {
@@ -327,5 +327,39 @@ public class Config
         }
 
         return obj;
+    }
+    
+    public (List<(string fileName, bool optional)> configFiles, string[] commanLineArgs) BuildFromArgs(string[] args)
+    {
+        var configFiles = new List<(string fileName, bool optional)>();
+        var commandLineArgs = new List<string>();
+
+        bool nextIsOptional = false;
+        foreach (var arg in args)
+        {
+           
+            if (arg.StartsWith('-'))
+            {
+                var lower = arg.ToLowerInvariant();
+                if (lower is "-o" or "--optional")
+                {
+                    nextIsOptional = true;
+                }
+                else if (arg.StartsWith("--") && arg.Contains('='))
+                {
+                    commandLineArgs.Add(arg);
+                }
+                else
+                {
+                    throw new ArgumentException($"Unknown parameter {arg}");
+                }
+            }
+            else
+            {
+                configFiles.Add((arg, nextIsOptional));
+                nextIsOptional = false;
+            }
+        }
+        return (configFiles, commandLineArgs.ToArray());
     }
 }
