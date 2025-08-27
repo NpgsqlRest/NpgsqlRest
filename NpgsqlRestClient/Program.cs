@@ -21,7 +21,13 @@ var config = new Config();
 var builder = new Builder(config);
 var appInstance = new App(config, builder);
 
-config.Build(args);
+config.Build(args,["config", "encrypt", "encrypted_basic_auth"]);
+if (args.Length >= 1 && string.Equals(args[0], "config", StringComparison.CurrentCultureIgnoreCase))
+{
+    Console.ForegroundColor = ConsoleColor.Yellow;
+    Console.WriteLine(config.Serialize());
+    return;
+}
 builder.BuildInstance();
 builder.BuildLogger();
 
@@ -44,7 +50,7 @@ var antiForgeryUsed = builder.ConfigureAntiForgery();
 WebApplication app = builder.Build();
 
 // dump encrypted text and exit
-if (args.Length == 2 && string.Equals(args[0], "encrypt", StringComparison.CurrentCultureIgnoreCase))
+if (args.Length >= 1 && string.Equals(args[0], "encrypt", StringComparison.CurrentCultureIgnoreCase))
 {
     Console.ForegroundColor = ConsoleColor.Red;
     if (dataProtectionName is null)
@@ -59,7 +65,7 @@ if (args.Length == 2 && string.Equals(args[0], "encrypt", StringComparison.Curre
     return;
 }
 
-if (args.Length == 3 && string.Equals(args[0], "encrypted_basic_auth", StringComparison.CurrentCultureIgnoreCase))
+if (args.Length >= 1 && string.Equals(args[0], "encrypted_basic_auth", StringComparison.CurrentCultureIgnoreCase))
 {
     Console.ForegroundColor = ConsoleColor.Red;
     if (dataProtectionName is null)

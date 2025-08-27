@@ -14,15 +14,13 @@ public class Config
     public string CurrentDir => Directory.GetCurrentDirectory();
     public Dictionary<string, string>? EnvDict { get; private set; } = null;
     
-    public void Build(string[] args)
+    public void Build(string[] args, string[] skip)
     {
-        // dump encrypted text and exit
-        if ( (args.Length == 2 && string.Equals(args[0], "encrypt", StringComparison.CurrentCultureIgnoreCase)) ||
-             (args.Length == 3 && string.Equals(args[0], "encrypted_basic_auth", StringComparison.CurrentCultureIgnoreCase)) )
+        if (args.Length >= 1 && skip.Contains(args[0], StringComparer.CurrentCultureIgnoreCase))
         {
             args = [];
         }
-
+        
         var tempBuilder = new ConfigurationBuilder();
         IConfigurationRoot tempCfg;
 
