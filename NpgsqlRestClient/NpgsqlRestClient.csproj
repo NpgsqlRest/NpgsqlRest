@@ -24,12 +24,4 @@
     <ProjectReference Include="..\plugins\NpgsqlRest.HttpFiles\NpgsqlRest.HttpFiles.csproj" />
     <ProjectReference Include="..\plugins\NpgsqlRest.TsClient\NpgsqlRest.TsClient.csproj" />
   </ItemGroup>
-  
-  <ItemGroup>
-    <Folder Include="build\" />
-    <Folder Include="dist\" />
-    <Folder Include="logs\" />
-    <Folder Include="src\" />
-  </ItemGroup>
-  
 </Project>

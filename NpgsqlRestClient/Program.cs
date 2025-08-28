@@ -92,8 +92,6 @@ if (args.Length >= 3 && string.Equals(args[0], "--basic_auth", StringComparison.
     return;
 }
 
-var arguments = new Out();
-
 var config = new Config();
 var builder = new Builder(config);
 var appInstance = new App(config, builder);
