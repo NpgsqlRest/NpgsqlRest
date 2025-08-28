@@ -131,15 +131,33 @@ public class App
         BasicAuthOptions basicAuth = new()
         {
             Enabled = _config.GetConfigBool("Enabled", basicAuthCfg, false),
-            Realm = _config.GetConfigStr("Realm", basicAuthCfg),
-            Username = _config.GetConfigStr("Username", basicAuthCfg),
-            Password = _config.GetConfigStr("PlainTextPassword", basicAuthCfg),
+            Realm = _config.GetConfigStr("Realm", basicAuthCfg) ?? BasicAuthOptions.DefaultRealm,
+            Users = _config.GetConfigDict(basicAuthCfg.GetSection("Users")) ?? new Dictionary<string, string>(),
             ChallengeCommand = _config.GetConfigStr("ChallengeCommand", basicAuthCfg),
             UseDefaultPasswordHasher = _config.GetConfigBool("UseDefaultPasswordHasher", basicAuthCfg, false),
-            PasswordHashLocation = _config.GetConfigEnum<Location?>("PasswordHashLocation", basicAuthCfg) ?? Location.Server,
-            UseDefaultPasswordEncryptionOnClient = _config.GetConfigBool("UseDefaultPasswordEncryptionOnClient", basicAuthCfg, false),
-            UseDefaultPasswordEncryptionOnServer = _config.GetConfigBool("UseDefaultPasswordEncryptionOnServer", basicAuthCfg, false),
+            SslRequirement = _config.GetConfigEnum<SslRequirement?>("SslRequirement", basicAuthCfg) ?? SslRequirement.Required
         };
+
+        if (basicAuth.Enabled is true && _builder.SslEnabled is false)
+        {
+            if (basicAuth.SslRequirement == SslRequirement.Required)
+            {
+                throw new InvalidOperationException("Basic authentication with SslRequirement 'Required' cannot be used when SSL is disabled.");
+            }
+            if (basicAuth.SslRequirement == SslRequirement.Warning)
+            {
+                _builder.Logger?.LogWarning("Using Basic Authentication when SSL is disabled.");
+            }
+            else if (basicAuth.SslRequirement == SslRequirement.Ignore)
+            {
+                _builder.Logger?.LogDebug("WARNING: Using Basic Authentication when SSL is disabled.");
+            }
+        }
+
+        if (basicAuth.Enabled is true)
+        {
+            _builder.Logger?.LogDebug("Basic Authentication enabled with realm {Realm}", basicAuth.Realm);
+        }
         
         var provider = app.Services.GetService<IDataProtectionProvider>();
         IDataProtector? protector = dataProtectionName is null ? null : provider?.CreateProtector(dataProtectionName);

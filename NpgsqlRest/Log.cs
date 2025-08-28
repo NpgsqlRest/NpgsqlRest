@@ -203,6 +203,12 @@ public static partial class Log
     [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has ser BASIC AUTH REALM to {realm} by the comment annotation.")]
     public static partial void BasicAuthRealmSet(this ILogger logger, string description, string realm);
     
-    [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has ser BASIC AUTH CHALLENGE COMMAND set to {command} by the comment annotation.")]
+    [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has set BASIC AUTH CHALLENGE COMMAND set to {command} by the comment annotation.")]
     public static partial void BasicAuthChallengeCommandSet(this ILogger logger, string description, string command);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has set BASIC AUTH USER set to {user} by the comment annotation.")]
+    public static partial void BasicAuthUserAdded(this ILogger logger, string description, string user);
+    
+    [LoggerMessage(Level = LogLevel.Warning, Message = "{description} has failed to set BASIC AUTH USER by the comment annotation.")]
+    public static partial void BasicAuthUserFailed(this ILogger logger, string description);
 }

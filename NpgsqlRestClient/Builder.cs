@@ -37,6 +37,7 @@ public class Builder
     public string? ConnectionString { get; private set; } = null;
     public string? ConnectionName { get; private set; } = null;
     public ExternalAuthConfig? ExternalAuthConfig { get; private set; } = null;
+    public bool SslEnabled { get; private set; } = false;
 
     public void BuildInstance()
     {
@@ -89,6 +90,7 @@ public class Builder
         {
             if (_config.GetConfigBool("Enabled", ssqlCfg) is true)
             {
+                SslEnabled = true;
                 Instance.WebHost.UseKestrelHttpsConfiguration();
                 UseHttpsRedirection = _config.GetConfigBool("UseHttpsRedirection", ssqlCfg, true);
                 UseHsts = _config.GetConfigBool("UseHsts", ssqlCfg, true);
