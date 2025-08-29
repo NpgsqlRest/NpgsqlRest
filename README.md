@@ -371,15 +371,6 @@ npgsqlrest -h, --help                    Show command line help.
 npgsqlrest hash [value]                               Hash value with default hasher and print to console.
 npgsqlrest basic_auth [username] [password]           Print out basic basic auth header value in format 'Authorization: Basic base64(username:password)'.
 npgsqlrest encrypt [value]                            Encrypt string using default data protection and print to console.
-npgsqlrest encrypted_basic_auth [username] [password] Print out basic basic auth header value in format 'Authorization: Basic base64(username:password)' where password is encrypted with default data protection.
-
-
-Examples:                                 
-Example: use two config files            npgsqlrest appsettings.json appsettings.Development.json
-Example: second config file optional     npgsqlrest appsettings.json -o appsettings.Development.json
-Example: override ApplicationName config npgsqlrest --applicationname=Test
-Example: override Auth:CookieName config npgsqlrest --auth:cookiename=Test
-...
 ```
 
 ## System Requirements

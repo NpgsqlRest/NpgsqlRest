@@ -124,6 +124,8 @@ public static partial class Database
         select _user_name;
         $$;
 
+        -- user1/pass1 = um4K594nL6pBQx2el0lcbKKLADof1k9atRYKy+G14f6BQPtSCkwO6qz1wJ1d9Tx/
+        -- user2/pass2 = TIDVxenk9gSqApyI82XDuqUaigQ5OdBIecfRtq7wFWtHT3Ffx2s+noIjvFCAw90z
         comment on function get_basic_auth_multiple_users(text) is '
         basic_auth user1 um4K594nL6pBQx2el0lcbKKLADof1k9atRYKy+G14f6BQPtSCkwO6qz1wJ1d9Tx/
         basic_auth user2 TIDVxenk9gSqApyI82XDuqUaigQ5OdBIecfRtq7wFWtHT3Ffx2s+noIjvFCAw90z
@@ -260,7 +262,7 @@ public class BasicAuthTests(TestFixture test)
     public async Task Test_get_basic_auth_multiple_users_test1()
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/get-basic-auth-multiple-users");
-        request.Headers.Add("Authorization", "Basic dXNlcjE6cGFzczE=");
+        request.Headers.Add("Authorization", "Basic dXNlcjE6cGFzczE="); // user1:pass1
         using var result = await test.Client.SendAsync(request);
         var response = await result.Content.ReadAsStringAsync();
         result.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -271,7 +273,7 @@ public class BasicAuthTests(TestFixture test)
     public async Task Test_get_basic_auth_multiple_users_test2()
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/get-basic-auth-multiple-users");
-        request.Headers.Add("Authorization", "Basic dXNlcjI6cGFzczI=");
+        request.Headers.Add("Authorization", "Basic dXNlcjI6cGFzczI="); // user2:pass2
         using var result = await test.Client.SendAsync(request);
         var response = await result.Content.ReadAsStringAsync();
         result.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -282,7 +284,7 @@ public class BasicAuthTests(TestFixture test)
     public async Task Test_get_basic_auth_multiple_users_test3()
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/get-basic-auth-multiple-users");
-        request.Headers.Add("Authorization", "Basic dXNlcjM6cGFzczM=");
+        request.Headers.Add("Authorization", "Basic dXNlcjM6cGFzczM="); // user3:pass3
         using var result = await test.Client.SendAsync(request);
         result.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
@@ -291,7 +293,7 @@ public class BasicAuthTests(TestFixture test)
     public async Task Test_get_basic_auth_multiple_users_test4()
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/get-basic-auth-multiple-users");
-        request.Headers.Add("Authorization", "Basic dXNlcjI6cGFzczM=");
+        request.Headers.Add("Authorization", "Basic dXNlcjI6cGFzczM="); // user2:pass3
         using var result = await test.Client.SendAsync(request);
         result.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
@@ -300,7 +302,7 @@ public class BasicAuthTests(TestFixture test)
     public async Task Test_get_basic_auth_multiple_users_test5()
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/get-basic-auth-multiple-users");
-        request.Headers.Add("Authorization", "Basic dXNlcjM6cGFzczI=");
+        request.Headers.Add("Authorization", "Basic dXNlcjM6cGFzczI="); // user3:pass2
         using var result = await test.Client.SendAsync(request);
         result.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }

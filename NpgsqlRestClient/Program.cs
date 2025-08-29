@@ -35,7 +35,6 @@ if (args.Length >= 1 && (string.Equals(args[0], "-h", StringComparison.CurrentCu
         ("npgsqlrest --hash [value]", "Hash value with default hasher and print to console."),
         ("npgsqlrest --basic_auth [username] [password]", "Print out basic basic auth header value in format 'Authorization: Basic base64(username:password)'."),
         ("npgsqlrest --encrypt [value]", "Encrypt string using default data protection and print to console."),
-        ("npgsqlrest --encrypted_basic_auth [username] [password]", "Print out basic basic auth header value in format 'Authorization: Basic base64(username:password)' where password is encrypted with default data protection."),
         (" ", " "),
         (" ", " "),
         ("Examples:", " "),
@@ -96,7 +95,7 @@ var config = new Config();
 var builder = new Builder(config);
 var appInstance = new App(config, builder);
 
-config.Build(args,["--config", "--encrypt", "--encrypted_basic_auth"]);
+config.Build(args,["--config", "--encrypt"]);
 
 if (args.Length >= 1 && string.Equals(args[0], "--config", StringComparison.CurrentCultureIgnoreCase))
 {
@@ -139,23 +138,6 @@ if (args.Length >= 1 && string.Equals(args[0], "--encrypt", StringComparison.Cur
     var provider = app.Services.GetRequiredService<IDataProtectionProvider>();
     var protector = provider.CreateProtector(dataProtectionName);
     Console.WriteLine(protector.Protect(args[1]));
-    return;
-}
-
-if (args.Length >= 1 && string.Equals(args[0], "--encrypted_basic_auth", StringComparison.CurrentCultureIgnoreCase))
-{
-    Console.ForegroundColor = ConsoleColor.Red;
-    if (dataProtectionName is null)
-    {
-        Console.WriteLine("Data protection is not configured, cannot encrypt.");
-        Console.ResetColor();
-        return;
-    }
-    var provider = app.Services.GetRequiredService<IDataProtectionProvider>();
-    var protector = provider.CreateProtector(dataProtectionName);
-    Console.WriteLine(string.Concat("Authorization: Basic ", 
-        Convert.ToBase64String(Encoding.UTF8.GetBytes($"{args[1]}:{protector.Protect(args[2])}"))));
-    Console.ResetColor();
     return;
 }
 

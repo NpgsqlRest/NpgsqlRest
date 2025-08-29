@@ -4,6 +4,50 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [2.33.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/2.33.0) (2025-08-29)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/client-2.27.1...2.33.0)
+
+- Client and core library versions unified into a single versioning scheme for less confusion.
+
+### Configuration System Improvements
+
+- Added environment variable parsing for ALL configuration values (instead of just connection strings):
+
+It is possible to add configuration value like this: `"Value"="{ENV_VAR_NAME}"` and it will be replaced with the value of the environment variable `ENV_VAR_NAME` on startup. Works for all configuration value types: string, int, bool, enum, arrays, dictionaries, etc.
+
+If you need to set numerical value, use quotes: `"Value"="{ENV_VAR_NAME}"` and value will be parsed to numerical value. Boolean values are parsed case-insensitively from `true`, `false`, `1`, `0`, `yes`, `no`, `on`, `off`. Type conversion will raise error and exit on type mismatch.
+
+This behavior is controlled by a new option `"Config.ParseEnvironmentVariables"` (default is true).
+
+Classic environment variables binding is still supported: Environment variable key must match configuration key with `:` or `__` (double underscore) as separator For example, `NpgsqlRest:ConnectionStrings:Default` or `NpgsqlRest__ConnectionStrings__Default`.
+
+This behavior is controlled by option `"Config.AddEnvironmentVariables"` (default is true).
+
+This change allowed removing following options from the `ConnectionSettings` that became obsolete: `ParseConnectionStringWithEnvVars`, `UseEnvVars`, `MatchNpgsqlConnectionParameterNamesWithEnvVarNames`, `EnvVarsOverride`, `HostEnvVar`, `PortEnvVar`, `DatabaseEnvVar`, `UserEnvVar`, and `PasswordEnvVar`
+
+### Command Line Switches
+
+- Added command line switch `--config` to dump current configuration to console. 
+- All switches now start with double dash `--` prefix.
+- Full list of command line switches:
+
+```
+npgsqlrest [--key=value]                                Override the configuration with this key with a new value (case insensitive, use : to separate sections). 
+                                                         
+npgsqlrest -v, --version                                Show version information.
+npgsqlrest -h, --help                                   Show command line help.
+npgsqlrest --config                                     Dump current configuration to console and exit.
+npgsqlrest --hash [value]                               Hash value with default hasher and print to console.
+npgsqlrest --basic_auth [username] [password]           Print out basic basic auth header value in format 'Authorization: Basic base64(username:password)'.
+npgsqlrest --encrypt [value]                            Encrypt string using default data protection and print to console.
+npgsqlrest --encrypted_basic_auth [username] [password] Print out basic basic auth header value in format 'Authorization: Basic base64(username:password)' where password is encrypted with default data protection.
+```
+
+### Basic Auth Improvements
+
+Naive implementation of Basic Auth was improved to support multiple users with different roles. See `NpgsqlRest:AuthenticationOptions:BasicAuth:Users` configuration section for more details.
+
 ## Version [client-2.27.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/client-2.27.1) (2025-08-25)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/2.32.0...client-2.27.1)
