@@ -25,11 +25,11 @@ NpgsqlRest allows you to configure each Web Endpoint individually and declare th
 
 ### **Code Generation and End-to-End Static Type Checking**
 
-Plugin system with code genrators, that can generate frontend code, including TypeScript interfaces and corresponding TypeScript fetch modules. When endpoint definition changes - so will your automatically generated frontend Typescript code and your runtime errors will be reduced thanks to static type checking system.
+Plugin system with code generators, that can generate frontend code, including TypeScript interfaces and corresponding TypeScript fetch modules. When endpoint definition changes - so will your automatically generated frontend Typescript code and your runtime errors will be reduced thanks to static type checking system.
 
 ### **Feature Rich, Enterprise Ready, Open Source and More**
 
-Event streaming and event notifications, advanced security and authentaction features, role-based authorization, built-in scalability features, connection and command retries, automatic HTTP files, structured logging, docker-ready containerization, upload endpoints, Excel/CSV processing features, fully free and open-source and under MIT license, and more.
+Event streaming and event notifications, advanced security and authentication features, role-based authorization, built-in scalability features, connection and command retries, automatic HTTP files, structured logging, docker-ready containerization, upload endpoints, Excel/CSV processing features, fully free and open-source and under MIT license, and more.
 
 ## Full Features List
 
@@ -49,9 +49,8 @@ Event streaming and event notifications, advanced security and authentaction fea
 - **HTTP Files**. Auto-generated REST client files, for all generated endpoints, for testing, development and auto-discovery.
 
 ### Authentication & Security
-- **Multiple Auth Methods**. Cookie authentication, Bearer tokens, and external OAuth providers.
+- **Multiple Auth Methods**. Cookie authentication, Bearer tokens authentication, Basic authentication and external OAuth providers.
 - **Encrypted Tokens**. Encrypted security tokens with advanced encryption key management and storage options (file, database, etc.).
-- **Basic authentication**. Basic authentication support for simple use cases with encrypted password support.
 - **CORS Support**. Cross-origin resource sharing configuration for Bearer token access.
 - **Built-in Password Validation**. Built-in extendable and secure password hashing and validation. PBKDF2-SHA256 with 600,000 iterations aligned with OWASP's 2023+ recommendations.
 - **OAuth Integration**. Google, LinkedIn, GitHub, Microsoft and Facebook support built-in.
@@ -161,7 +160,7 @@ added 1 package in 31s
 
 Note: NPM package will do the same thing on install automatically: Download the appropriate executable for your target OS from [Releases](https://github.com/NpgsqlRest/NpgsqlRest/releases) page.
 
-For Docker you can simply use docker run command below with the configuration file in volume.
+For Docker, you can simply use docker run command below with the configuration file in volume.
 
 ### 3) Add Minimal Configuration
 
@@ -357,20 +356,28 @@ And finally, to see all command line options, use `-h` or `--help`:
 ~/dev
 ❯ ./npgsqlrest --help
 Usage:
-npgsqlrest                               Run with the optional default configuration files: appsettings.json and appsettings.Development.json. If these file are not found, default configuration setting is used (see
-                                         https://github.com/NpgsqlRest/NpgsqlRest/blob/master/NpgsqlRestClient/appsettings.json).
-npgsqlrest [files...]                    Run with the custom configuration files. All configuration files are required. Any configuration values will override default values in order of appearance.
-npgsqlrest [file1 -o file2...]           Use the -o switch to mark the next configuration file as optional. The first file after the -o switch is optional.
-npgsqlrest [file1 --optional file2...]   Use --optional switch to mark the next configuration file as optional. The first file after the --optional switch is optional.
-Note:                                    Values in the later file will override the values in the previous one.
-                                          
-npgsqlrest [--key=value]                 Override the configuration with this key with a new value (case insensitive, use : to separate sections). 
-                                          
-npgsqlrest -v, --version                 Show version information.
-npgsqlrest -h, --help                    Show command line help.
-npgsqlrest hash [value]                               Hash value with default hasher and print to console.
-npgsqlrest basic_auth [username] [password]           Print out basic basic auth header value in format 'Authorization: Basic base64(username:password)'.
-npgsqlrest encrypt [value]                            Encrypt string using default data protection and print to console.
+npgsqlrest                                    Run with the optional default configuration files: appsettings.json and appsettings.Development.json. If these file are not found, default configuration setting is used (see
+                                              https://github.com/NpgsqlRest/NpgsqlRest/blob/master/NpgsqlRestClient/appsettings.json).
+npgsqlrest [files...]                         Run with the custom configuration files. All configuration files are required. Any configuration values will override default values in order of appearance.
+npgsqlrest [file1 -o file2...]                Use the -o switch to mark the next configuration file as optional. The first file after the -o switch is optional.
+npgsqlrest [file1 --optional file2...]        Use --optional switch to mark the next configuration file as optional. The first file after the --optional switch is optional.
+Note:                                         Values in the later file will override the values in the previous one.
+                                               
+npgsqlrest [--key=value]                      Override the configuration with this key with a new value (case insensitive, use : to separate sections). 
+                                               
+npgsqlrest -v, --version                      Show version information.
+npgsqlrest -h, --help                         Show command line help.
+npgsqlrest --config                           Dump current configuration to console and exit.
+npgsqlrest --hash [value]                     Hash value with default hasher and print to console.
+npgsqlrest --basic_auth [username] [password] Print out basic basic auth header value in format 'Authorization: Basic base64(username:password)'.
+npgsqlrest --encrypt [value]                  Encrypt string using default data protection and print to console.
+                                               
+                                               
+Examples:                                      
+Example: use two config files                 npgsqlrest appsettings.json appsettings.Development.json
+Example: second config file optional          npgsqlrest appsettings.json -o appsettings.Development.json
+Example: override ApplicationName config      npgsqlrest --applicationname=Test
+Example: override Auth:CookieName config      npgsqlrest --auth:cookiename=Test
 ```
 
 ## System Requirements

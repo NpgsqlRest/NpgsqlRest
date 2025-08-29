@@ -22,7 +22,7 @@ This behavior is controlled by a new option `"Config.ParseEnvironmentVariables"`
 
 Classic environment variables binding is still supported: Environment variable key must match configuration key with `:` or `__` (double underscore) as separator For example, `NpgsqlRest:ConnectionStrings:Default` or `NpgsqlRest__ConnectionStrings__Default`.
 
-This behavior is controlled by option `"Config.AddEnvironmentVariables"` (default is true).
+This behavior is controlled by option `"Config.AddEnvironmentVariables"` (default is false).
 
 This change allowed removing following options from the `ConnectionSettings` that became obsolete: `ParseConnectionStringWithEnvVars`, `UseEnvVars`, `MatchNpgsqlConnectionParameterNamesWithEnvVarNames`, `EnvVarsOverride`, `HostEnvVar`, `PortEnvVar`, `DatabaseEnvVar`, `UserEnvVar`, and `PasswordEnvVar`
 
@@ -53,7 +53,7 @@ Naive implementation of Basic Auth was improved to support multiple users with d
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/2.32.0...client-2.27.1)
 
 - Fix default port issue in client app.
-- Fix issue with multiple connections configuration.
+- Fix issue with multiple connection configuration.
 
 ## Version [2.32.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/2.32.0) (2025-08-23)
 
