@@ -3,16 +3,14 @@
 public class EndpointBasicAuthOptions
 {
     public bool Enabled { get; set; } = false;
-    public string? Realm { get; set; } = null;
-    public string? Username { get; set; } = null;
-    public string? Password { get; set; } = null;
+    public string Realm { get; set; } = BasicAuthOptions.DefaultRealm;
+    public Dictionary<string, string> Users { get; set; } = new();
     public string? ChallengeCommand { get; set; } = null;
 }
 
 public class BasicAuthOptions : EndpointBasicAuthOptions
 {
+    public const string DefaultRealm = "NpgsqlRest";
     public bool UseDefaultPasswordHasher { get; set; } = true;
-    public Location PasswordHashLocation { get; set; } = Location.Server;
-    public bool UseDefaultPasswordEncryptionOnClient { get; set; } = false;
-    public bool UseDefaultPasswordEncryptionOnServer { get; set; } = false;
+    public SslRequirement SslRequirement { get; set; } = SslRequirement.Required;
 }

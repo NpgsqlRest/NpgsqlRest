@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using NpgsqlRest;
 
 namespace NpgsqlRestClient;
 
@@ -13,20 +14,18 @@ public class Config
     public string CurrentDir => Directory.GetCurrentDirectory();
     public Dictionary<string, string>? EnvDict { get; private set; } = null;
     
-    public void Build(string[] args)
+    public void Build(string[] args, string[] skip)
     {
-        // dump encrypted text and exit
-        if ( (args.Length == 2 && string.Equals(args[0], "encrypt", StringComparison.CurrentCultureIgnoreCase)) ||
-             (args.Length == 3 && string.Equals(args[0], "encrypted_basic_auth", StringComparison.CurrentCultureIgnoreCase)) )
+        if (args.Length >= 1 && skip.Contains(args[0], StringComparer.CurrentCultureIgnoreCase))
         {
             args = [];
         }
-
+        
         var tempBuilder = new ConfigurationBuilder();
         IConfigurationRoot tempCfg;
 
-        var arguments = new Arguments();
-        var (configFiles, commandLineArgs) = arguments.BuildFromArgs(args);
+        var arguments = new Out();
+        var (configFiles, commandLineArgs) = BuildFromArgs(args);
 
         if (configFiles.Count > 0)
         {
@@ -84,7 +83,7 @@ public class Config
         NpgsqlRestCfg = Cfg.GetSection("NpgsqlRest");
         ConnectionSettingsCfg = Cfg.GetSection("ConnectionSettings");
         
-        if (GetConfigBool("ParseConnectionStringWithEnvVars", ConnectionSettingsCfg, false) is true)
+        if (cfgCfg != null && GetConfigBool("ParseEnvironmentVariables", cfgCfg, true) is true)
         {
             EnvDict = new Dictionary<string, string>();
             var envVars = Environment.GetEnvironmentVariables();
@@ -113,54 +112,74 @@ public class Config
     public bool GetConfigBool(string key, IConfiguration? subsection = null, bool defaultVal = false)
     {
         var section = subsection?.GetSection(key) ?? Cfg.GetSection(key);
-        if (string.IsNullOrEmpty(section?.Value))
+        if (string.IsNullOrEmpty(section.Value))
         {
             return defaultVal;
         }
-        return string.Equals(section?.Value, "true", StringComparison.OrdinalIgnoreCase);
+
+        var value = EnvDict is not null ? 
+            Formatter.FormatString(section.Value.AsSpan(), EnvDict).ToString() : 
+            section.Value;
+
+        // Handle various boolean representations
+        return value.ToLowerInvariant() switch
+        {
+            "true" or "yes" or "1" => true,
+            "false" or "no" or "0" => false,
+            _ => throw new InvalidOperationException($"Invalid boolean value '{value}' for configuration key '{key}'. Valid values are: true, false, yes, no, 1, 0")
+        };
     }
 
     public string? GetConfigStr(string key, IConfiguration? subsection = null)
     {
         var section = subsection?.GetSection(key) ?? Cfg.GetSection(key);
-        return string.IsNullOrEmpty(section?.Value) ? null : section.Value;
+        if (string.IsNullOrEmpty(section.Value))
+        {
+            return null;
+        }
+        return EnvDict is not null ? 
+            Formatter.FormatString(section.Value.AsSpan(), EnvDict).ToString() : 
+            section.Value;
     }
 
     public int? GetConfigInt(string key, IConfiguration? subsection = null)
     {
         var section = subsection?.GetSection(key) ?? Cfg.GetSection(key);
-        if (section?.Value is null)
+        if (string.IsNullOrEmpty(section.Value))
         {
             return null;
         }
-        if (int.TryParse(section.Value, out var value))
-        {
-            return value;
-        }
-        return null;
+        var configValue = EnvDict is not null ? 
+            Formatter.FormatString(section.Value.AsSpan(), EnvDict).ToString() : 
+            section.Value;
+        return int.TryParse(configValue, out var value) ? value : 
+            throw new InvalidOperationException($"Invalid integer value '{configValue}' for configuration key '{key}'.");
     }
 
     public double? GetConfigDouble(string key, IConfiguration? subsection = null)
     {
         var section = subsection?.GetSection(key) ?? Cfg.GetSection(key);
-        if (section?.Value is null)
+        if (string.IsNullOrEmpty(section.Value))
         {
             return null;
         }
-        if (double.TryParse(section.Value, out var value))
-        {
-            return value;
-        }
-        return null;
+        var configValue = EnvDict is not null ? 
+            Formatter.FormatString(section.Value.AsSpan(), EnvDict).ToString() : 
+            section.Value;
+        return double.TryParse(configValue, out var value) ? value : 
+            throw new InvalidOperationException($"Invalid double value '{configValue}' for configuration key '{key}'.");
     }
 
     public T? GetConfigEnum<T>(string key, IConfiguration? subsection = null)
     {
         var section = subsection?.GetSection(key) ?? Cfg.GetSection(key);
-        if (string.IsNullOrEmpty(section?.Value))
+        if (string.IsNullOrEmpty(section.Value))
         {
             return default;
         }
+        var value = EnvDict is not null ? 
+            Formatter.FormatString(section.Value.AsSpan(), EnvDict).ToString() : 
+            section.Value;
         return GetEnum<T>(section?.Value);
     }
 
@@ -195,7 +214,16 @@ public class Config
         {
             return null;
         }
-        return children.Select(c => c.Value ?? "");
+
+        if (EnvDict is not null)
+        {
+            return children
+                .Where(c => string.IsNullOrEmpty(c.Value) is false)
+                .Select(c => Formatter.FormatString(c.Value.AsSpan(), EnvDict).ToString());
+        }
+        return children
+            .Where(c => string.IsNullOrEmpty(c.Value) is false)
+            .Select(c => c.Value!);
     }
 
     public T? GetConfigFlag<T>(string key, IConfiguration? subsection = null)
@@ -239,7 +267,11 @@ public class Config
         {
             if (section.Value is not null)
             {
-                result.TryAdd(section.Key, section.Value);
+                var value = EnvDict is not null ? 
+                    Formatter.FormatString(section.Value.AsSpan(), EnvDict).ToString() : 
+                    section.Value;
+                
+                result.TryAdd(section.Key, value);
             }
         }
         return result.Count == 0 ? null : result;
@@ -260,42 +292,74 @@ public class Config
             if (child.Path.EndsWith(":0"))
             {
                 var arr = new JsonArray();
-
                 foreach (var arrayChild in config.GetChildren())
                 {
                     arr.Add(SerializeConfig(arrayChild));
                 }
-
                 return arr;
             }
-            else
-            {
-                obj.Add(child.Key, SerializeConfig(child));
-            }
+            obj.Add(child.Key, SerializeConfig(child));
         }
 
         if (obj.Count == 0 && config is IConfigurationSection section)
         {
-            if (bool.TryParse(section.Value, out bool boolean))
+            var value = EnvDict is not null ? 
+                Formatter.FormatString(section.Value.AsSpan(), EnvDict).ToString() : 
+                section.Value;
+            if (bool.TryParse(value, out bool boolean))
             {
                 return JsonValue.Create(boolean);
             }
-            else if (decimal.TryParse(section.Value, out decimal real))
+            else if (decimal.TryParse(value, out decimal real))
             {
                 return JsonValue.Create(real);
             }
-            else if (long.TryParse(section.Value, out long integer))
+            else if (long.TryParse(value, out long integer))
             {
                 return JsonValue.Create(integer);
             }
             if (section.Path.StartsWith("ConnectionStrings:"))
             {
                 return JsonValue.Create(string.Join(';', 
-                    section?.Value?.Split(';')?.Where(p => p.StartsWith("password", StringComparison.OrdinalIgnoreCase) is false) ?? []));
+                    value?.Split(';')?.Where(p => p.StartsWith("password", StringComparison.OrdinalIgnoreCase) is false) ?? []));
             }
-            return JsonValue.Create(section.Value);
+            return JsonValue.Create(value);
         }
 
         return obj;
+    }
+    
+    public (List<(string fileName, bool optional)> configFiles, string[] commanLineArgs) BuildFromArgs(string[] args)
+    {
+        var configFiles = new List<(string fileName, bool optional)>();
+        var commandLineArgs = new List<string>();
+
+        bool nextIsOptional = false;
+        foreach (var arg in args)
+        {
+           
+            if (arg.StartsWith('-'))
+            {
+                var lower = arg.ToLowerInvariant();
+                if (lower is "-o" or "--optional")
+                {
+                    nextIsOptional = true;
+                }
+                else if (arg.StartsWith("--") && arg.Contains('='))
+                {
+                    commandLineArgs.Add(arg);
+                }
+                else
+                {
+                    throw new ArgumentException($"Unknown parameter {arg}");
+                }
+            }
+            else
+            {
+                configFiles.Add((arg, nextIsOptional));
+                nextIsOptional = false;
+            }
+        }
+        return (configFiles, commandLineArgs.ToArray());
     }
 }

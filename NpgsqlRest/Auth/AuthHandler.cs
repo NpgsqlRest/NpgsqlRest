@@ -375,10 +375,28 @@ public static class AuthHandler
         NpgsqlConnection connection,
         ILogger? logger)
     {
-        string realm =
-            (string.IsNullOrEmpty(endpoint.BasicAuth?.Realm) ? 
-                (string.IsNullOrEmpty(options.AuthenticationOptions.BasicAuth.Realm) ? "NpgsqlRest" : options.AuthenticationOptions.BasicAuth.Realm!) : 
-                endpoint.BasicAuth.Realm!);
+        var realm =
+            string.IsNullOrEmpty(endpoint.BasicAuth?.Realm) ? 
+                string.IsNullOrEmpty(options.AuthenticationOptions.BasicAuth.Realm) ? BasicAuthOptions.DefaultRealm : options.AuthenticationOptions.BasicAuth.Realm : 
+                endpoint.BasicAuth.Realm;
+        
+        if (context.Request.IsSsl() is false)
+        {
+            if (options.AuthenticationOptions.BasicAuth.SslRequirement == SslRequirement.Required)
+            {
+                logger?.LogError("Basic authentication with SslRequirement 'Required' cannot be used when SSL is disabled.");
+                await Challenge(context, realm);
+                return;
+            }
+            if (options.AuthenticationOptions.BasicAuth.SslRequirement == SslRequirement.Warning)
+            {
+                logger?.LogWarning("Using Basic Authentication when SSL is disabled.");
+            }
+            else if (options.AuthenticationOptions.BasicAuth.SslRequirement == SslRequirement.Ignore)
+            {
+                logger?.LogDebug("WARNING: Using Basic Authentication when SSL is disabled.");
+            }
+        }
         
         if (context.Request.Headers.TryGetValue("Authorization", out var authHeader) is false)
         {
@@ -435,74 +453,22 @@ public static class AuthHandler
             return;
         }
 
-        if (options.AuthenticationOptions.BasicAuth.UseDefaultPasswordEncryptionOnServer is true || 
-            options.AuthenticationOptions.BasicAuth.UseDefaultPasswordEncryptionOnClient is true)
+        string? basicAuthPassword = null;
+        if (endpoint.BasicAuth?.Users.ContainsKey(username) is true)
         {
-            if (options.AuthenticationOptions.DefaultDataProtector is null)
-            {
-                logger?.LogError(
-                    "DefaultDataProtector not configured for Basic Authentication Realm {realm}. Request: {Path}",
-                    realm,
-                    string.Concat(endpoint.Method.ToString(), endpoint.Url));
-                context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
-                await context.Response.CompleteAsync();
-                return;
-            }
+            basicAuthPassword = endpoint.BasicAuth.Users[username];
         }
-
-        if (options.AuthenticationOptions.BasicAuth.UseDefaultPasswordEncryptionOnClient is true)
+        else if (options.AuthenticationOptions.BasicAuth?.Users.ContainsKey(username) is true)
         {
-            try
-            {
-                password = options.AuthenticationOptions.DefaultDataProtector!.Unprotect(password);
-            }
-            catch (Exception ex)
-            {
-                logger?.LogWarning(ex, "Failed in decrypting Basic Authentication password in request with Basic Authentication Realm {realm}. Request: {Path}",
-                    realm,
-                    string.Concat(endpoint.Method.ToString(), endpoint.Url));
-                await Challenge(context, realm);
-                return;
-            }
+            basicAuthPassword = options.AuthenticationOptions.BasicAuth.Users[username];
         }
         
-        string basicAuthUsername = (string.IsNullOrEmpty(endpoint.BasicAuth?.Username) ? 
-            (string.IsNullOrEmpty(options.AuthenticationOptions.BasicAuth.Username) ? realm : options.AuthenticationOptions.BasicAuth.Username!) : 
-            endpoint.BasicAuth.Username!);
-        string? basicAuthPassword = (string.IsNullOrEmpty(endpoint.BasicAuth?.Password) ? 
-            (string.IsNullOrEmpty(options.AuthenticationOptions.BasicAuth.Password) ? null : options.AuthenticationOptions.BasicAuth.Password) : 
-            endpoint.BasicAuth.Password);
-        string? challengeCommand = endpoint.BasicAuth?.ChallengeCommand ?? options.AuthenticationOptions.BasicAuth.ChallengeCommand;
-        
-        if (options.AuthenticationOptions.BasicAuth.UseDefaultPasswordEncryptionOnServer is true && basicAuthPassword is not null)
-        {
-            try
-            {
-                basicAuthPassword = options.AuthenticationOptions.DefaultDataProtector!.Unprotect(basicAuthPassword);
-            }
-            catch (Exception ex)
-            {
-                logger?.LogWarning(ex, "Failed in decrypting Basic Authentication password in request with Basic Authentication Realm {realm}. Request: {Path}",
-                    realm,
-                    string.Concat(endpoint.Method.ToString(), endpoint.Url));
-                await Challenge(context, realm);
-                return;
-            }
-        }
+        bool? passwordValid = null;
+        string? challengeCommand = endpoint.BasicAuth?.ChallengeCommand ?? options.AuthenticationOptions.BasicAuth?.ChallengeCommand;
         
         if (basicAuthPassword is not null)
         {
-            if (string.Equals(basicAuthUsername, username, StringComparison.Ordinal) is false)
-            {
-                logger?.LogWarning("Basic Authentication failed for user {username} in request with Basic Authentication Realm {realm}. Request: {Path}",
-                    username,
-                    realm,
-                    string.Concat(endpoint.Method.ToString(), endpoint.Url));
-                await Challenge(context, realm);
-                return;
-            }
-            
-            if (options.AuthenticationOptions.BasicAuth.UseDefaultPasswordHasher is true)
+            if (options.AuthenticationOptions.BasicAuth?.UseDefaultPasswordHasher is true)
             {
                 if (options.AuthenticationOptions.PasswordHasher is null)
                 {
@@ -512,41 +478,20 @@ public static class AuthHandler
                     await Challenge(context, realm);
                     return;
                 }
-                if (
-                    (options.AuthenticationOptions.BasicAuth.PasswordHashLocation == Location.Server && 
-                     options.AuthenticationOptions.PasswordHasher?.VerifyHashedPassword(basicAuthPassword, password) is false)
-                    ||
-                    (options.AuthenticationOptions.BasicAuth.PasswordHashLocation == Location.Client && 
-                     options.AuthenticationOptions.PasswordHasher?.VerifyHashedPassword(password, basicAuthPassword) is false)
-                    )
-                {
-                    logger?.LogWarning("Basic Authentication failed for user {username} in request with Basic Authentication Realm {realm}. Request: {Path}",
-                        username,
-                        realm,
-                        string.Concat(endpoint.Method.ToString(), endpoint.Url));
-                    await Challenge(context, realm);
-                    return;
-                }
+                passwordValid =
+                    options.AuthenticationOptions.PasswordHasher?.VerifyHashedPassword(basicAuthPassword, password);
             }
             else
             {
-                if (string.Equals(basicAuthPassword, password, StringComparison.Ordinal) is false)
-                {
-                    logger?.LogWarning("Basic Authentication failed for user {username} in request with Basic Authentication Realm {realm}. Request: {Path}",
-                        username,
-                        realm,
-                        string.Concat(endpoint.Method.ToString(), endpoint.Url));
-                    await Challenge(context, realm);
-                    return;
-                }
+                passwordValid = string.Equals(basicAuthPassword, password, StringComparison.Ordinal);
             }
         }
         else
         {
             if (string.IsNullOrEmpty(challengeCommand) is true)
             {
-                // misconfigured: no password configured and no challenge command
-                logger?.LogError("No Basic Authentication password configured for user {username} in request with Basic Authentication Realm {realm}. Request: {Path}",
+                // misconfigured: no user with password configured and no challenge command
+                logger?.LogError("No Basic Authentication user configured for user {username} in request with Basic Authentication Realm {realm}. Request: {Path}",
                     username,
                     realm,
                     string.Concat(endpoint.Method.ToString(), endpoint.Url));
@@ -570,9 +515,17 @@ public static class AuthHandler
             }
             if (paramCount >= 3)
             {
-                command.Parameters.Add(NpgsqlRestParameter.CreateTextParam(realm));
+                command.Parameters.Add(new NpgsqlParameter
+                {
+                    NpgsqlDbType = NpgsqlDbType.Boolean,
+                    Value = passwordValid.HasValue ? passwordValid.Value : DBNull.Value
+                });
             }
             if (paramCount >= 4)
+            {
+                command.Parameters.Add(NpgsqlRestParameter.CreateTextParam(realm));
+            }
+            if (paramCount >= 5)
             {
                 command.Parameters.Add(NpgsqlRestParameter.CreateTextParam(endpoint.Url));
             }
@@ -598,15 +551,26 @@ public static class AuthHandler
             await Challenge(context, realm);
             return;
         }
-        
-        var principal = new ClaimsPrincipal(new ClaimsIdentity(
-            [
-                new Claim(options.AuthenticationOptions.DefaultNameClaimType, username)
-            ], 
-            options.AuthenticationOptions.DefaultAuthenticationType,
-            nameType: options.AuthenticationOptions.DefaultNameClaimType,
-            roleType: options.AuthenticationOptions.DefaultRoleClaimType));
-        context.User = principal;
+
+        if (passwordValid is true)
+        {
+            var principal = new ClaimsPrincipal(new ClaimsIdentity(
+                [
+                    new Claim(options.AuthenticationOptions.DefaultNameClaimType, username)
+                ],
+                options.AuthenticationOptions.DefaultAuthenticationType,
+                nameType: options.AuthenticationOptions.DefaultNameClaimType,
+                roleType: options.AuthenticationOptions.DefaultRoleClaimType));
+            context.User = principal;
+        }
+        else
+        {
+            logger?.LogWarning("Invalid password for user {username} in request with Basic Authentication Realm {realm}. Request: {Path}",
+                username,
+                realm,
+                string.Concat(endpoint.Method.ToString(), endpoint.Url));
+            await Challenge(context, realm);
+        }
     }
 
     private static async Task Challenge(HttpContext context, string realm)

@@ -1086,21 +1086,30 @@ internal static class DefaultCommentParser
                     }
                 }
 
-                // basic_authentication [ [ username ] [ password ] ]
-                // basic_auth [ [ username ] [ password ] ]
+                // basic_authentication [ username ] [ password ]
+                // basic_auth [ username ] [ password ]
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], BasicAuthKey))
                 {
-                    routineEndpoint.BasicAuth = new() { Enabled = true };
-                    if (len == 2)
+                    if (routineEndpoint.BasicAuth is null)
                     {
-                        routineEndpoint.BasicAuth.Password = words[1];
+                        routineEndpoint.BasicAuth = new() { Enabled = true };
+                        logger?.BasicAuthEnabled(description);
                     }
-                    else if (len == 3)
+
+                    if (len >= 3)
                     {
-                        routineEndpoint.BasicAuth.Username = words[1];
-                        routineEndpoint.BasicAuth.Password = words[2];
+                        var username = words[1];
+                        var password = words[2];
+                        if (string.IsNullOrEmpty(username) is false && string.IsNullOrEmpty(password) is false)
+                        {
+                            routineEndpoint.BasicAuth.Users[username] = password;
+                            logger?.BasicAuthUserAdded(description, username);
+                        }
                     }
-                    logger?.BasicAuthEnabled(description);
+                    else
+                    {
+                        logger?.BasicAuthUserFailed(description);
+                    }
                 }
                 
                 // basic_authentication_realm [ realm ]
@@ -1110,7 +1119,8 @@ internal static class DefaultCommentParser
                 {
                     if (routineEndpoint.BasicAuth is null)
                     {
-                        routineEndpoint.BasicAuth = new();
+                        routineEndpoint.BasicAuth = new() { Enabled = true };
+                        logger?.BasicAuthEnabled(description);
                     }
                     routineEndpoint.BasicAuth.Realm = words[1];
                     logger?.BasicAuthRealmSet(description, routineEndpoint.BasicAuth.Realm);
@@ -1119,13 +1129,14 @@ internal static class DefaultCommentParser
                 // basic_authentication_command [ command ]
                 // basic_auth_command [ command ]
                 // challenge_command [ command ]
-                else if (haveTag is true && len > 1 && StrEqualsToArray(wordsLower[0], BasicAuthCommandKey))
+                else if (haveTag is true && len > 1 && StrEqualsToArray(words[0], BasicAuthCommandKey))
                 {
                     if (routineEndpoint.BasicAuth is null)
                     {
-                        routineEndpoint.BasicAuth = new();
+                        routineEndpoint.BasicAuth = new() { Enabled = true };
+                        logger?.BasicAuthEnabled(description);
                     }
-                    routineEndpoint.BasicAuth.ChallengeCommand = line[(wordsLower[0].Length + 1)..];
+                    routineEndpoint.BasicAuth.ChallengeCommand = line[(words[0].Length + 1)..];
                     logger?.BasicAuthChallengeCommandSet(description, routineEndpoint.BasicAuth.ChallengeCommand);
                 }
             }
@@ -1243,11 +1254,41 @@ internal static class DefaultCommentParser
             }
         }
         
+        /*
+  
+         */
+        else if (StrEqualsToArray(name, BasicAuthKey))
+        {
+            if (endpoint.BasicAuth is null)
+            {
+                endpoint.BasicAuth = new() { Enabled = true };
+            }
+            var words = value.SplitWords();
+            if (words.Length >= 3)
+            {
+                var username = words[1];
+                var password = words[2];
+                if (string.IsNullOrEmpty(username) is false && string.IsNullOrEmpty(password) is false)
+                {
+                    endpoint.BasicAuth.Users[username] = password;
+                }
+            }
+        }
+
+        else if (StrEqualsToArray(name, BasicAuthRealmKey))
+        {
+            if (endpoint.BasicAuth is null)
+            {
+                endpoint.BasicAuth = new() { Enabled = true };
+            }
+            endpoint.BasicAuth.Realm = value;
+        }
+        
         else if (StrEqualsToArray(name, BasicAuthCommandKey))
         {
             if (endpoint.BasicAuth is null)
             {
-                endpoint.BasicAuth = new();
+                endpoint.BasicAuth = new() { Enabled = true };
             }
             endpoint.BasicAuth.ChallengeCommand = value;
         }

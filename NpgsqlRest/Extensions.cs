@@ -109,7 +109,7 @@ public static class Ext
             else
             {
                 if (claim.IsTypeOf(options.DefaultRoleClaimType))
-                    {
+                {
                     claimValues[claim.Type] = new List<string> { claim.Value };
                 }
                 else
@@ -270,5 +270,18 @@ public static class Ext
             sb.Append(command.CommandText);
             logger?.LogTrace("{name}:\n{query}", name, sb.ToString());
         }
+    }
+
+    public static bool IsSsl(this HttpRequest request)
+    {
+        if (request.IsHttps)
+        {
+            return true;
+        }
+        if (string.Equals(request.Scheme, "https", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+        return false;
     }
 }

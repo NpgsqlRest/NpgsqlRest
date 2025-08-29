@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Npgsql;
+using NpgsqlRest.Auth;
 using NpgsqlRest.UploadHandlers;
 
 #pragma warning disable CS8633 // Nullability in constraints for type parameter doesn't match the constraints for type parameter in implicitly implemented interface method'.
@@ -173,6 +174,10 @@ public class Program
                 PasswordVerificationFailedCommand = "call failed_login($1,$2,$3)",
                 PasswordVerificationSucceededCommand = "call succeeded_login($1,$2,$3)",
                 ClaimsJsonContextKey = "request.user_claims",
+                BasicAuth = new BasicAuthOptions()
+                {
+                    SslRequirement = SslRequirement.Ignore
+                }
             },
 
             UploadOptions = new()

@@ -14,7 +14,6 @@ using NpgsqlRest;
 using Serilog;
 using Serilog.Extensions.Logging;
 
-
 namespace NpgsqlRestClient;
 
 public class Builder
@@ -38,6 +37,7 @@ public class Builder
     public string? ConnectionString { get; private set; } = null;
     public string? ConnectionName { get; private set; } = null;
     public ExternalAuthConfig? ExternalAuthConfig { get; private set; } = null;
+    public bool SslEnabled { get; private set; } = false;
 
     public void BuildInstance()
     {
@@ -90,6 +90,7 @@ public class Builder
         {
             if (_config.GetConfigBool("Enabled", ssqlCfg) is true)
             {
+                SslEnabled = true;
                 Instance.WebHost.UseKestrelHttpsConfiguration();
                 UseHttpsRedirection = _config.GetConfigBool("UseHttpsRedirection", ssqlCfg, true);
                 UseHsts = _config.GetConfigBool("UseHsts", ssqlCfg, true);
@@ -567,107 +568,7 @@ public class Builder
         {
             connectionStringBuilder.ApplicationName = Instance.Environment.ApplicationName;
         }
-
-        if (_config.GetConfigBool("UseEnvVars", _config.ConnectionSettingsCfg) is true)
-        {
-            var envOverride = _config.GetConfigBool("EnvVarsOverride", _config.ConnectionSettingsCfg, false);
-
-            var hostEnvVar = _config.GetConfigStr("HostEnvVar", _config.ConnectionSettingsCfg) ?? "PGHOST";
-            if (string.IsNullOrEmpty(hostEnvVar) is false && string.IsNullOrEmpty(Environment.GetEnvironmentVariable(hostEnvVar)) is false)
-            {
-                if (envOverride is true)
-                {
-                    connectionStringBuilder.Host = Environment.GetEnvironmentVariable(hostEnvVar);
-                }
-                else if (envOverride is false && string.IsNullOrEmpty(connectionStringBuilder.Host))
-                {
-                    connectionStringBuilder.Host = Environment.GetEnvironmentVariable(hostEnvVar);
-                }
-            }
-
-            var portEnvVar = _config.GetConfigStr("PortEnvVar", _config.ConnectionSettingsCfg) ?? "PGPORT";
-            if (string.IsNullOrEmpty(portEnvVar) is false && int.TryParse(Environment.GetEnvironmentVariable(portEnvVar), out int port) is true)
-            {
-                if (envOverride is true)
-                {
-                    connectionStringBuilder.Port = port;
-                }
-                else if (envOverride is false && connectionStringBuilder.Port != port)
-                {
-                    connectionStringBuilder.Port = port;
-                }
-            }
-            var dbEnvVar = _config.GetConfigStr("DatabaseEnvVar", _config.ConnectionSettingsCfg) ?? "PGDATABASE";
-            if (string.IsNullOrEmpty(dbEnvVar) is false && string.IsNullOrEmpty(Environment.GetEnvironmentVariable(dbEnvVar)) is false)
-            {
-                if (envOverride is true)
-                {
-                    connectionStringBuilder.Database = Environment.GetEnvironmentVariable(dbEnvVar);
-                }
-                else if (envOverride is false && string.IsNullOrEmpty(connectionStringBuilder.Database))
-                {
-                    connectionStringBuilder.Database = Environment.GetEnvironmentVariable(dbEnvVar);
-                }
-            }
-            var userEnvVar = _config.GetConfigStr("UserEnvVar", _config.ConnectionSettingsCfg) ?? "PGUSER";
-            if (string.IsNullOrEmpty(userEnvVar) is false && string.IsNullOrEmpty(Environment.GetEnvironmentVariable(userEnvVar)) is false)
-            {
-                if (envOverride is true)
-                {
-                    connectionStringBuilder.Username = Environment.GetEnvironmentVariable(userEnvVar);
-                }
-                else if (envOverride is false && string.IsNullOrEmpty(connectionStringBuilder.Username))
-                {
-                    connectionStringBuilder.Username = Environment.GetEnvironmentVariable(userEnvVar);
-                }
-            }
-            var passEnvVar = _config.GetConfigStr("PasswordEnvVar", _config.ConnectionSettingsCfg) ?? "PGPASSWORD";
-            if (string.IsNullOrEmpty(passEnvVar) is false && string.IsNullOrEmpty(Environment.GetEnvironmentVariable(passEnvVar)) is false)
-            {
-                if (envOverride is true)
-                {
-                    connectionStringBuilder.Password = Environment.GetEnvironmentVariable(passEnvVar);
-                }
-                else if (envOverride is false && string.IsNullOrEmpty(connectionStringBuilder.Password))
-                {
-                    connectionStringBuilder.Password = Environment.GetEnvironmentVariable(passEnvVar);
-                }
-            }
-
-            var matchNpgsqlConnectionParameterNamesWithEnvVarNames = _config.GetConfigStr("MatchNpgsqlConnectionParameterNamesWithEnvVarNames", _config.ConnectionSettingsCfg);
-            if (matchNpgsqlConnectionParameterNamesWithEnvVarNames is not null && matchNpgsqlConnectionParameterNamesWithEnvVarNames.Contains("{0}"))
-            {
-                bool hasTwoFormatters = matchNpgsqlConnectionParameterNamesWithEnvVarNames?.Contains("{0}") is true && matchNpgsqlConnectionParameterNamesWithEnvVarNames?.Contains("{1}") is true;
-
-                foreach (var key in _connectionNames)
-                {
-                    string envVar;
-                    if (hasTwoFormatters is true)
-                    {
-                        envVar = string.Format(matchNpgsqlConnectionParameterNamesWithEnvVarNames!,
-                            connectionName?.ToUpperInvariant().Replace(' ', '_')!, 
-                            key.ToUpperInvariant().Replace(' ', '_'));
-                    }
-                    else
-                    {
-                        envVar = string.Format(matchNpgsqlConnectionParameterNamesWithEnvVarNames!, 
-                            key.ToUpperInvariant().Replace(' ', '_'));
-                    }
-                    if (string.IsNullOrEmpty(envVar) is false && string.IsNullOrEmpty(Environment.GetEnvironmentVariable(envVar)) is false)
-                    {
-                        if (envOverride is true)
-                        {
-                            connectionStringBuilder[key] = Environment.GetEnvironmentVariable(envVar);
-                        }
-                        else if (envOverride is false && string.IsNullOrEmpty(connectionStringBuilder[key] as string))
-                        {
-                            connectionStringBuilder[key] = Environment.GetEnvironmentVariable(envVar);
-                        }
-                    }
-                }
-            }
-        }
-
+        
         // Connection doesn't participate in ambient TransactionScope
         connectionStringBuilder.Enlist = false;
         // Connection doesn't have to have reset on close
