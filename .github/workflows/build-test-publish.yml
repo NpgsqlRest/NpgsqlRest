@@ -8,8 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-  CLIENT_VERSION: v2.27.1
-  LIBRARY_VERSION: v2.32.0
+  RELEASE_VERSION: v2.33.0
 
 # Add workflow-level permissions
 permissions:
@@ -55,8 +54,8 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: ${{ env.LIBRARY_VERSION }}-client-${{ env.CLIENT_VERSION }}
-        release_name: "AOT Client ${{ env.CLIENT_VERSION }} NpgsqlRest ${{ env.LIBRARY_VERSION }}"
+        tag_name: ${{ env.RELEASE_VERSION }}
+        release_name: "NpgsqlRest Client ${{ env.RELEASE_VERSION }}"
         draft: false
         prerelease: false
 
@@ -176,7 +175,7 @@ jobs:
         platforms: linux/amd64
         provenance: false
         tags: |
-          vbilopav/npgsqlrest:${{ env.CLIENT_VERSION }}
+          vbilopav/npgsqlrest:${{ env.RELEASE_VERSION }}
           vbilopav/npgsqlrest:latest
 
   npm-publish:
