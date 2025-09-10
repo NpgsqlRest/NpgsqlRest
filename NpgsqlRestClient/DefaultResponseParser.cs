@@ -1,7 +1,4 @@
-﻿using System.Collections.Generic;
-using System.Security.Claims;
-using Microsoft.AspNetCore.Antiforgery;
-using Microsoft.Extensions.Primitives;
+﻿using Microsoft.AspNetCore.Antiforgery;
 using NpgsqlRest;
 using NpgsqlRest.Auth;
 

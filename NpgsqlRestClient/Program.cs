@@ -154,19 +154,19 @@ if (args.Length >= 1 && string.Equals(args[0], "--encrypt", StringComparison.Cur
 appInstance.Configure(app, () =>
 {
     sw.Stop();
-    var message = config.Cfg?.GetSection("StartupMessage")?.Value ?? "Started in {0}, listening on {1}, version {2}";
+    var message = config.Cfg?.GetSection("StartupMessage")?.Value ?? "Started in {time}, listening on {urls}, version {version}";
     if (string.IsNullOrEmpty(message) is false)
     {
-        //
-        // TODO fix with named formatter!!!
-        //
         builder.Logger?.LogInformation(
-            string.Format(message,
-                sw,
-                app.Urls, 
-                System.Reflection.Assembly.GetAssembly(typeof(Program))?.GetName()?.Version?.ToString() ?? "-",
-                builder.Instance.Environment.EnvironmentName,
-                builder.Instance.Environment.ApplicationName));
+            Formatter.FormatString(
+                message.AsSpan(), 
+                new Dictionary<string, string> { 
+                    ["time"] = sw.ToString(),
+                    ["urls"] = string.Join(";", app.Urls.ToArray()),
+                    ["version"] = System.Reflection.Assembly.GetAssembly(typeof(Program))?.GetName()?.Version?.ToString() ?? "-",
+                    ["environment"] = builder.Instance.Environment.EnvironmentName,
+                    ["application"] = "builder.Instance.Environment.ApplicationName"
+                }).ToString());
     }
 });
 
