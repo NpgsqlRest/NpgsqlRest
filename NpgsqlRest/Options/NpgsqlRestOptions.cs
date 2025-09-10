@@ -61,6 +61,11 @@ public class NpgsqlRestOptions
     /// Retry options for the connection opening.
     /// </summary>
     public ConnectionRetryOptions ConnectionRetryOptions { get; set; } = new();
+    
+    /// <summary>
+    /// Command retry options for all commands.
+    /// </summary>
+    public CommandRetryOptions CommandRetryOptions { get; set; } = new();
 
     /// <summary>
     /// Filter schema names [similar to](https://www.postgresql.org/docs/current/functions-matching.html#FUNCTIONS-SIMILARTO-REGEXP) this parameter or `null` to ignore this parameter.

@@ -1,0 +1,165 @@
+﻿using Npgsql;
+
+namespace NpgsqlRest;
+
+public static class NpgsqlConnectionRetryExtensions
+{
+    public static void OpenRetry(this NpgsqlConnection connection, 
+        ConnectionRetryOptions settings, 
+        ILogger? logger = null)
+    {
+        if (connection.State != System.Data.ConnectionState.Closed)
+        {
+            connection.Close();
+        }
+        if (!settings.Enabled)
+        {
+            connection.Open();
+            return;
+        }
+        var maxRetries = settings.Strategy.RetrySequenceSeconds.Length;
+        var exceptionsEncountered = new List<Exception>(maxRetries);
+        
+        for (var attempt = 0; attempt <= maxRetries; attempt++)
+        {
+            try
+            {
+                connection.Open();
+                return;
+            }
+            catch (Exception ex) when (ShouldRetryOn(ex, settings))
+            {
+                exceptionsEncountered.Add(ex);
+
+                if (attempt < maxRetries)
+                {
+                    var delaySec = settings.Strategy.RetrySequenceSeconds[exceptionsEncountered.Count - 1];
+                    if (delaySec > 0)
+                    {
+                        var delay = TimeSpan.FromSeconds(delaySec);
+                        logger?.FailedToOpenConnectionRetry(attempt + 1, delay.TotalMilliseconds, ex.Message);
+                        Thread.Sleep(delay);
+                    }
+                    else
+                    {
+                        logger?.FailedToOpenConnectionRetry(attempt + 1, 0, ex.Message);
+                    }
+                }
+                else
+                {
+                    logger?.FailedToOpenConnectionAfter(ex, attempt + 1);
+                    ThrowRetryExhaustedException(exceptionsEncountered);
+                }
+            }
+            catch (Exception ex)
+            {
+                // Non-retryable exception
+                logger?.FailedToOpenNonRetryableConnection(ex, ex.Message);
+                throw;
+            }
+        }
+    }
+
+    public static async Task OpenRetryAsync(
+        this NpgsqlConnection connection,
+        ConnectionRetryOptions settings,
+        ILogger? logger = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (connection.State != System.Data.ConnectionState.Closed)
+        {
+            await connection.CloseAsync();
+        }
+        if (!settings.Enabled)
+        {
+            await connection.OpenAsync(cancellationToken);
+            return;
+        }
+        var maxRetries = settings.Strategy.RetrySequenceSeconds.Length;
+        var exceptionsEncountered = new List<Exception>(maxRetries);
+
+        for (var attempt = 0; attempt <= maxRetries; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                await connection.OpenAsync(cancellationToken);
+                return;
+            }
+            catch (Exception ex) when (ShouldRetryOn(ex, settings) && !cancellationToken.IsCancellationRequested)
+            {
+                exceptionsEncountered.Add(ex);
+
+                if (attempt < maxRetries)
+                {
+                    var delaySec = settings.Strategy.RetrySequenceSeconds[exceptionsEncountered.Count - 1];
+                    if (delaySec > 0)
+                    {
+                        var delay = TimeSpan.FromSeconds(delaySec);
+                        logger?.FailedToOpenConnectionRetry(attempt + 1, delay.TotalMilliseconds, ex.Message);
+                        await Task.Delay(delay, cancellationToken);
+                    }
+                    else
+                    {
+                        logger?.FailedToOpenConnectionRetry(attempt + 1, 0, ex.Message);
+                    }
+                }
+                else
+                {
+                    logger?.FailedToOpenConnectionAfter(ex, attempt + 1);
+                    ThrowRetryExhaustedException(exceptionsEncountered);
+                }
+            }
+            catch (Exception ex)
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                logger?.FailedToOpenNonRetryableConnection(ex, ex.Message);
+                throw;
+            }
+        }
+    }
+
+    private static bool ShouldRetryOn(Exception exception, ConnectionRetryOptions settings)
+    {
+        if (exception is NpgsqlException npgsqlException)
+        {
+            if (npgsqlException.IsTransient)
+            {
+                return true;
+            }
+            if (npgsqlException.SqlState is null)
+            {
+                return true;
+            }
+            if (settings.Strategy.ErrorCodes.Contains(npgsqlException.SqlState) == true)
+            {
+                return true;
+            }
+            return false;
+        }
+
+        // Handle other exception types (matching EF Core pattern)
+        return exception switch
+        {
+            TimeoutException => true,
+            System.Net.Sockets.SocketException => true,
+            System.Net.NetworkInformation.NetworkInformationException => true,
+            TaskCanceledException => false, // Don't retry cancellation
+            OperationCanceledException => false, // Don't retry cancellation
+            _ => false
+        };
+    }
+    
+    private static void ThrowRetryExhaustedException(List<Exception> exceptionsEncountered)
+    {
+        throw new NpgsqlRetryExhaustedException(
+            exceptionsEncountered.Count,
+            exceptionsEncountered.ToArray(),
+            $"Failed to open PostgreSQL connection after {exceptionsEncountered.Count} attempts. See inner exception for details.");
+    }
+}
+

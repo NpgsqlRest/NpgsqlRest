@@ -10,6 +10,9 @@ using Npgsql;
 using NpgsqlRest.CrudSource;
 using NpgsqlRest.HttpFiles;
 using NpgsqlRest.TsClient;
+using StackExchange.Redis;
+
+//var redis = await ConnectionMultiplexer.ConnectAsync("localhost:6379");
 
 Stopwatch sw = new();
 sw.Start();
@@ -104,8 +107,15 @@ if (args.Length >= 1 && string.Equals(args[0], "--config", StringComparison.Curr
     return;
 }
 
+var cmdRetryOpts = builder.BuildCommandRetryOptions();
+RetryStrategy? cmdRetryStrategy = null;
+if (cmdRetryOpts.Enabled && string.IsNullOrEmpty(cmdRetryOpts.DefaultStrategy))
+{
+    cmdRetryOpts.Strategies.TryGetValue(cmdRetryOpts.DefaultStrategy, out cmdRetryStrategy);
+}
+
 builder.BuildInstance();
-builder.BuildLogger();
+builder.BuildLogger(cmdRetryStrategy);
 
 var (connectionString, retryOpts) = builder.BuildConnectionString();
 if (connectionString is null)
@@ -117,7 +127,7 @@ var connectionStrings =
         builder.BuildConnectionStringDict() : 
         null;
 
-var dataProtectionName = builder.BuildDataProtection();
+var dataProtectionName = builder.BuildDataProtection(cmdRetryStrategy);
 builder.BuildAuthentication();
 var usingCors = builder.BuildCors();
 var compressionEnabled = builder.ConfigureResponseCompression();
@@ -147,12 +157,16 @@ appInstance.Configure(app, () =>
     var message = config.Cfg?.GetSection("StartupMessage")?.Value ?? "Started in {0}, listening on {1}, version {2}";
     if (string.IsNullOrEmpty(message) is false)
     {
-        builder.Logger?.LogInformation(message,
+        //
+        // TODO fix with named formatter!!!
+        //
+        builder.Logger?.LogInformation(
+            string.Format(message,
                 sw,
                 app.Urls, 
                 System.Reflection.Assembly.GetAssembly(typeof(Program))?.GetName()?.Version?.ToString() ?? "-",
                 builder.Instance.Environment.EnvironmentName,
-                builder.Instance.Environment.ApplicationName);
+                builder.Instance.Environment.ApplicationName));
     }
 });
 
@@ -236,7 +250,14 @@ app.UseNpgsqlRest(options);
 
 if (builder.ExternalAuthConfig?.Enabled is true)
 {
-    new ExternalAuth(builder.ExternalAuthConfig, connectionString, builder.Logger, app, options, logConnectionNoticeEventsMode);
+    new ExternalAuth(
+        builder.ExternalAuthConfig, 
+        connectionString, 
+        builder.Logger, 
+        app, 
+        options, 
+        cmdRetryStrategy,
+        logConnectionNoticeEventsMode);
 }
 
 if (builder.BearerTokenConfig is not null)

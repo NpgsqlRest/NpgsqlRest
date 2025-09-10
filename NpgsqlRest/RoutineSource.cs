@@ -33,7 +33,11 @@ public class RoutineSource(
     public string[]? IncludeLanguages { get; set; } = includeLanguages;
     public string[]? ExcludeLanguages { get; set; } = excludeLanguages;
 
-    public IEnumerable<(Routine, IRoutineSourceParameterFormatter)> Read(NpgsqlRestOptions options, IServiceProvider? serviceProvider, ILogger? logger)
+    public IEnumerable<(Routine, IRoutineSourceParameterFormatter)> Read(
+        NpgsqlRestOptions options, 
+        IServiceProvider? serviceProvider, 
+        RetryStrategy? retryStrategy, 
+        ILogger? logger)
     {
         NpgsqlConnection? connection = null;
         bool shouldDispose = true;
@@ -93,7 +97,7 @@ public class RoutineSource(
             logger.TraceCommand(command, nameof(RoutineSource));
 
             connection.Open();
-            using NpgsqlDataReader reader = command.ExecuteReader();
+            using NpgsqlDataReader reader = command.ExecuteReaderWithRetry(retryStrategy, logger);
             while (reader.Read())
             {
                 var type = reader.Get<string>(0);//"type");

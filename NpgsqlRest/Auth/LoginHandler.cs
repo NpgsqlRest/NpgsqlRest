@@ -9,12 +9,13 @@ using NpgsqlTypes;
 
 namespace NpgsqlRest.Auth;
 
-public static class AuthHandler
+public static class LoginHandler
 {
-    public static async Task HandleLoginAsync(
+    public static async Task HandleAsync(
         NpgsqlCommand command,
         HttpContext context,
         NpgsqlRestOptions options,
+        RetryStrategy? retryStrategy,
         ILogger? logger,
         string tracePath = "HandleLoginAsync",
         bool performHashVerification = true,
@@ -31,7 +32,7 @@ public static class AuthHandler
         var verificationFailed = false;
         
         logger?.TraceCommand(command, tracePath);
-        await using (NpgsqlDataReader reader = await command.ExecuteReaderAsync())
+        await using (NpgsqlDataReader reader = await command.ExecuteReaderWithRetryAsync(retryStrategy, logger))
         {
             if (await reader.ReadAsync() is false)
             {
@@ -189,7 +190,7 @@ public static class AuthHandler
                             failedCommand.Parameters.Add(NpgsqlRestParameter.CreateTextParam(userName));
                         }
                         logger?.TraceCommand(failedCommand, tracePath);
-                        await failedCommand.ExecuteNonQueryAsync();
+                        await failedCommand.ExecuteNonQueryWithRetryAsync(retryStrategy, logger);
                     }
                 }
                 return;
@@ -217,7 +218,7 @@ public static class AuthHandler
                             succeededCommand.Parameters.Add(NpgsqlRestParameter.CreateTextParam(userName));
                         }
                         logger?.TraceCommand(succeededCommand, tracePath);
-                        await succeededCommand.ExecuteNonQueryAsync();
+                        await succeededCommand.ExecuteNonQueryWithRetryAsync(retryStrategy, logger);
                     }
                 }
             }
@@ -256,10 +257,9 @@ public static class AuthHandler
         }
     }
 
-    public static (string? userName, string? userId) AddClaimFromReader(
+    private static (string? userName, string? userId) AddClaimFromReader(
         NpgsqlRestAuthenticationOptions options,
         int i,
-        //TypeDescriptor descriptor,
         bool isArray,
         NpgsqlDataReader reader,
         List<Claim> claims, 
@@ -312,271 +312,5 @@ public static class AuthHandler
         }
 
         return (userName, userId);
-    }
-
-    public static async Task HandleLogoutAsync(NpgsqlCommand command, RoutineEndpoint endpoint, HttpContext context, ILogger? logger)
-    {
-        var path = string.Concat(endpoint.Method.ToString(), " ", endpoint.Url);
-        logger?.TraceCommand(command, path);
-        
-        if (endpoint.Routine.IsVoid)
-        {
-            await command.ExecuteNonQueryAsync();
-            await Results.SignOut().ExecuteAsync(context);
-            await context.Response.CompleteAsync();
-            return;
-        }
-
-        List<string> schemes = new(5);
-        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-        while (await reader.ReadAsync())
-        {
-            for (int i = 0; i < reader?.FieldCount; i++)
-            {
-                if (await reader.IsDBNullAsync(i) is true)
-                {
-                    continue;
-                }
-
-                var descriptor = endpoint.Routine.ColumnsTypeDescriptor[i];
-                if (descriptor.IsArray)
-                {
-                    object[]? values = reader?.GetValue(i) as object[];
-                    for (int j = 0; j < values?.Length; j++)
-                    {
-                        var value = values[j]?.ToString();
-                        if (value is not null)
-                        {
-                            schemes.Add(value);
-                        }
-                    }
-                }
-                else
-                {
-                    string? value = reader?.GetValue(i)?.ToString();
-                    if (value is not null)
-                    {
-                        schemes.Add(value);
-                    }
-                }
-            }
-        }
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
-
-        await Results.SignOut(authenticationSchemes: schemes.Count == 0 ? null : schemes).ExecuteAsync(context);
-        await context.Response.CompleteAsync();
-    }
-
-    public static async Task HandleBasicAuthAsync(
-        HttpContext context, 
-        RoutineEndpoint endpoint,
-        NpgsqlRestOptions options, 
-        NpgsqlConnection connection,
-        ILogger? logger)
-    {
-        var realm =
-            string.IsNullOrEmpty(endpoint.BasicAuth?.Realm) ? 
-                string.IsNullOrEmpty(options.AuthenticationOptions.BasicAuth.Realm) ? BasicAuthOptions.DefaultRealm : options.AuthenticationOptions.BasicAuth.Realm : 
-                endpoint.BasicAuth.Realm;
-        
-        if (context.Request.IsSsl() is false)
-        {
-            if (options.AuthenticationOptions.BasicAuth.SslRequirement == SslRequirement.Required)
-            {
-                logger?.LogError("Basic authentication with SslRequirement 'Required' cannot be used when SSL is disabled.");
-                await Challenge(context, realm);
-                return;
-            }
-            if (options.AuthenticationOptions.BasicAuth.SslRequirement == SslRequirement.Warning)
-            {
-                logger?.LogWarning("Using Basic Authentication when SSL is disabled.");
-            }
-            else if (options.AuthenticationOptions.BasicAuth.SslRequirement == SslRequirement.Ignore)
-            {
-                logger?.LogDebug("WARNING: Using Basic Authentication when SSL is disabled.");
-            }
-        }
-        
-        if (context.Request.Headers.TryGetValue("Authorization", out var authHeader) is false)
-        {
-            logger?.LogWarning("No Authorization header found in request with Basic Authentication Realm {realm}. Request: {Path}",
-                realm,
-                string.Concat(endpoint.Method.ToString(), endpoint.Url));
-            await Challenge(context, realm);
-            return;
-        }
-
-        var authValue = authHeader.FirstOrDefault();
-        if (string.IsNullOrEmpty(authValue) || !authValue.StartsWith("Basic "))
-        {
-            logger?.LogWarning("Authorization header value missing or malformed found in request with Basic Authentication Realm {realm}. Request: {Path}",
-                realm,
-                string.Concat(endpoint.Method.ToString(), endpoint.Url));
-            await Challenge(context, realm);
-            return;
-        }
-
-        ReadOnlySpan<char> decodedCredentials;
-        try
-        {
-            decodedCredentials = Encoding.UTF8.GetString(Convert.FromBase64String(authValue["Basic ".Length..]))
-                .AsSpan();
-        }
-        catch (Exception ex)
-        {
-            logger?.LogError(ex, "Failed to decode Basic Authentication credentials in request with Basic Authentication Realm {realm}. Request: {Path}",
-                realm,
-                string.Concat(endpoint.Method.ToString(), endpoint.Url));
-            await Challenge(context, realm);
-            return;
-        }
-
-        var colonIndex = decodedCredentials.IndexOf(':');
-        if (colonIndex == -1)
-        {
-            logger?.LogWarning("Authorization header value malformed found in request with Basic Authentication Realm {realm}. Request: {Path}",
-                realm,
-                string.Concat(endpoint.Method.ToString(), endpoint.Url));
-            await Challenge(context, realm);
-            return;
-        }
-        var username = decodedCredentials[..colonIndex].ToString();
-        var password = decodedCredentials[(colonIndex + 1)..].ToString();
-        
-        if (string.IsNullOrEmpty(username) is true || string.IsNullOrEmpty(password) is true)
-        {
-            logger?.LogWarning("Username or password missing in request with Basic Authentication Realm {realm}. Request: {Path}",
-                realm,
-                string.Concat(endpoint.Method.ToString(), endpoint.Url));
-            await Challenge(context, realm);
-            return;
-        }
-
-        string? basicAuthPassword = null;
-        if (endpoint.BasicAuth?.Users.ContainsKey(username) is true)
-        {
-            basicAuthPassword = endpoint.BasicAuth.Users[username];
-        }
-        else if (options.AuthenticationOptions.BasicAuth?.Users.ContainsKey(username) is true)
-        {
-            basicAuthPassword = options.AuthenticationOptions.BasicAuth.Users[username];
-        }
-        
-        bool? passwordValid = null;
-        string? challengeCommand = endpoint.BasicAuth?.ChallengeCommand ?? options.AuthenticationOptions.BasicAuth?.ChallengeCommand;
-        
-        if (basicAuthPassword is not null)
-        {
-            if (options.AuthenticationOptions.BasicAuth?.UseDefaultPasswordHasher is true)
-            {
-                if (options.AuthenticationOptions.PasswordHasher is null)
-                {
-                    logger?.LogError("PasswordHasher not configured for Basic Authentication Realm {realm}. Request: {Path}",
-                        realm,
-                        string.Concat(endpoint.Method.ToString(), endpoint.Url));
-                    await Challenge(context, realm);
-                    return;
-                }
-                passwordValid =
-                    options.AuthenticationOptions.PasswordHasher?.VerifyHashedPassword(basicAuthPassword, password);
-            }
-            else
-            {
-                passwordValid = string.Equals(basicAuthPassword, password, StringComparison.Ordinal);
-            }
-        }
-        else
-        {
-            if (string.IsNullOrEmpty(challengeCommand) is true)
-            {
-                // misconfigured: no user with password configured and no challenge command
-                logger?.LogError("No Basic Authentication user configured for user {username} in request with Basic Authentication Realm {realm}. Request: {Path}",
-                    username,
-                    realm,
-                    string.Concat(endpoint.Method.ToString(), endpoint.Url));
-                await Challenge(context, realm);
-                return;
-            }
-        }
-        
-        if (string.IsNullOrEmpty(challengeCommand) is false)
-        {
-            await using var command = connection.CreateCommand();
-            command.CommandText = challengeCommand;
-            var paramCount = command.CommandText.PgCountParams();
-            if (paramCount >= 1)
-            {
-                command.Parameters.Add(NpgsqlRestParameter.CreateTextParam(username));
-            }
-            if (paramCount >= 2)
-            {
-                command.Parameters.Add(NpgsqlRestParameter.CreateTextParam(password));
-            }
-            if (paramCount >= 3)
-            {
-                command.Parameters.Add(new NpgsqlParameter
-                {
-                    NpgsqlDbType = NpgsqlDbType.Boolean,
-                    Value = passwordValid.HasValue ? passwordValid.Value : DBNull.Value
-                });
-            }
-            if (paramCount >= 4)
-            {
-                command.Parameters.Add(NpgsqlRestParameter.CreateTextParam(realm));
-            }
-            if (paramCount >= 5)
-            {
-                command.Parameters.Add(NpgsqlRestParameter.CreateTextParam(endpoint.Url));
-            }
-
-            await HandleLoginAsync(
-                command, 
-                context, 
-                options, 
-                logger, 
-                tracePath: string.Concat(endpoint.Method.ToString(), " ", endpoint.Url),
-                performHashVerification: false, 
-                assignUserPrincipalToContext: true);
-
-            if (context.Response.StatusCode == (int)HttpStatusCode.OK)
-            {
-                return;
-            }
-
-            logger?.LogError("ChallengeCommand denied user {username} in request with Basic Authentication Realm {realm}. Request: {Path}",
-                username,
-                realm,
-                string.Concat(endpoint.Method.ToString(), endpoint.Url));
-            await Challenge(context, realm);
-            return;
-        }
-
-        if (passwordValid is true)
-        {
-            var principal = new ClaimsPrincipal(new ClaimsIdentity(
-                [
-                    new Claim(options.AuthenticationOptions.DefaultNameClaimType, username)
-                ],
-                options.AuthenticationOptions.DefaultAuthenticationType,
-                nameType: options.AuthenticationOptions.DefaultNameClaimType,
-                roleType: options.AuthenticationOptions.DefaultRoleClaimType));
-            context.User = principal;
-        }
-        else
-        {
-            logger?.LogWarning("Invalid password for user {username} in request with Basic Authentication Realm {realm}. Request: {Path}",
-                username,
-                realm,
-                string.Concat(endpoint.Method.ToString(), endpoint.Url));
-            await Challenge(context, realm);
-        }
-    }
-
-    private static async Task Challenge(HttpContext context, string realm)
-    {
-        context.Response.StatusCode = 401;
-        context.Response.Headers.Append("WWW-Authenticate", string.Concat("Basic realm=\"", realm, "\""));
-        await context.Response.WriteAsync("Unauthorized");
     }
 }

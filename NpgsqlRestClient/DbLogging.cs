@@ -1,5 +1,6 @@
 ﻿using System.Text.RegularExpressions;
 using Npgsql;
+using NpgsqlRest;
 using Serilog;
 using Serilog.Configuration;
 using Serilog.Core;
@@ -7,51 +8,51 @@ using Serilog.Events;
 
 namespace NpgsqlRestClient;
 
-public class PostgresSink(string command, LogEventLevel restrictedToMinimumLevel, int paramCount, string? connectionString) : ILogEventSink
+public class PostgresSink(
+    string command, 
+    LogEventLevel restrictedToMinimumLevel, 
+    int paramCount, 
+    string? connectionString,
+    RetryStrategy? cmdRetryStrategy) : ILogEventSink
 {
-    private readonly string _command = command;
-    private readonly LogEventLevel _restrictedToMinimumLevel = restrictedToMinimumLevel;
-    private readonly int _paramCount = paramCount;
-    private readonly string? _connectionString = connectionString;
-
     public void Emit(LogEvent logEvent)
     {
-        if (string.IsNullOrEmpty(_connectionString) is true)
+        if (string.IsNullOrEmpty(connectionString) is true)
         {
             return;
         }
-        if (logEvent.Level < _restrictedToMinimumLevel)
+        if (logEvent.Level < restrictedToMinimumLevel)
         {
             return;
         }
 
         try
         {
-            using var connection = new NpgsqlConnection(_connectionString);
-            using var command = new NpgsqlCommand(_command, connection);
+            using var connection = new NpgsqlConnection(connectionString);
+            using var command1 = new NpgsqlCommand(command, connection);
 
-            if (_paramCount > 0)
+            if (paramCount > 0)
             {
-                command.Parameters.Add(new NpgsqlParameter() { Value = logEvent.Level.ToString() }); // $1
+                command1.Parameters.Add(new NpgsqlParameter() { Value = logEvent.Level.ToString() }); // $1
             }
-            if (_paramCount > 1)
+            if (paramCount > 1)
             {
-                command.Parameters.Add(new NpgsqlParameter() { Value = logEvent.RenderMessage() }); // $2
+                command1.Parameters.Add(new NpgsqlParameter() { Value = logEvent.RenderMessage() }); // $2
             }
-            if (_paramCount > 2)
+            if (paramCount > 2)
             {
-                command.Parameters.Add(new NpgsqlParameter() { Value = logEvent.Timestamp.UtcDateTime }); // $3
+                command1.Parameters.Add(new NpgsqlParameter() { Value = logEvent.Timestamp.UtcDateTime }); // $3
             }
-            if (_paramCount > 3)
+            if (paramCount > 3)
             {
-                command.Parameters.Add(new NpgsqlParameter() { Value = logEvent.Exception?.ToString() ?? (object)DBNull.Value }); // $4
+                command1.Parameters.Add(new NpgsqlParameter() { Value = logEvent.Exception?.ToString() ?? (object)DBNull.Value }); // $4
             }
-            if (_paramCount > 4)
+            if (paramCount > 4)
             {
-                command.Parameters.Add(new NpgsqlParameter() { Value = logEvent.Properties["SourceContext"]?.ToString()?.Trim('"') ?? (object)DBNull.Value }); // $5
+                command1.Parameters.Add(new NpgsqlParameter() { Value = logEvent.Properties["SourceContext"]?.ToString()?.Trim('"') ?? (object)DBNull.Value }); // $5
             }
             connection.Open();
-            command.ExecuteNonQuery();
+            command1.ExecuteNonQueryWithRetry(cmdRetryStrategy, null);
         }
         catch (Exception ex)
         {
@@ -65,10 +66,12 @@ public class PostgresSink(string command, LogEventLevel restrictedToMinimumLevel
 
 public static partial class PostgresSinkSinkExtensions
 {
-    public static LoggerConfiguration Postgres(this LoggerSinkConfiguration loggerConfiguration, 
+    public static LoggerConfiguration Postgres(
+        this LoggerSinkConfiguration loggerConfiguration, 
         string command,
         LogEventLevel restrictedToMinimumLevel,
-        string? connectionString)
+        string? connectionString,
+        RetryStrategy? cmdRetryStrategy)
     {
         var matches = ParameterRegex().Matches(command).ToArray();
         if (matches.Length < 1 || matches.Length > 5)
@@ -82,7 +85,7 @@ public static partial class PostgresSinkSinkExtensions
                 throw new ArgumentException($"Parameter ${i + 1} is missing in the command.");
             }
         }
-        return loggerConfiguration.Sink(new PostgresSink(command, restrictedToMinimumLevel, matches.Length, connectionString));
+        return loggerConfiguration.Sink(new PostgresSink(command, restrictedToMinimumLevel, matches.Length, connectionString, cmdRetryStrategy));
     }
 
     [GeneratedRegex(@"\$\d+")]

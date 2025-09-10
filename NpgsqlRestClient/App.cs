@@ -519,7 +519,9 @@ public class App
             ExcelUploadOptions.Instance.ExcelRowDataAsJson = _config.GetConfigBool("ExcelRowDataAsJson", uploadHandlersCfg, false);
             ExcelUploadOptions.Instance.ExcelUploadRowCommand = _config.GetConfigStr("ExcelUploadRowCommand", uploadHandlersCfg) ?? "call process_excel_row($1,$2,$3,$4)";
 
-            result?.UploadHandlers?.Add(_config.GetConfigStr("ExcelKey", uploadHandlersCfg) ?? "excel", logger => new ExcelUploadHandler(result, logger));
+            result?.UploadHandlers?.Add(
+                _config.GetConfigStr("ExcelKey", uploadHandlersCfg) ?? "excel", 
+                (strategy, logger) => new ExcelUploadHandler(result, strategy, logger));
         }
 
         if (result?.UploadHandlers is not null && result.UploadHandlers.Count > 1)
@@ -527,7 +529,8 @@ public class App
             _builder.Logger?.LogDebug("Using {Keys} upload handlers where {DefaultUploadHandler} is default.", result.UploadHandlers.Keys, result.DefaultUploadHandler);
             foreach (var uploadHandler in result.UploadHandlers)
             {
-                _builder.Logger?.LogDebug("Upload handler {Key} has following parameters: {Parameters}", uploadHandler.Key, uploadHandler.Value(null!).SetType(uploadHandler.Key).Parameters);
+                _builder.Logger?.LogDebug("Upload handler {Key} has following parameters: {Parameters}", 
+                    uploadHandler.Key, uploadHandler.Value(null!, null!).SetType(uploadHandler.Key).Parameters);
             }
         }
         return result!;

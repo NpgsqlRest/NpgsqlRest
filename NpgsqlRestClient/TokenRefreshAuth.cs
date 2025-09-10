@@ -14,11 +14,9 @@ public class BearerTokenConfig
 
 public class TokenRefreshAuth
 {
-    private readonly BearerTokenConfig? _bearerTokenConfig;
-    
     public TokenRefreshAuth(BearerTokenConfig? bearerTokenConfig, WebApplication app)
     {
-        _bearerTokenConfig = bearerTokenConfig;
+        var tokenConfig = bearerTokenConfig;
         
         if (bearerTokenConfig is null || 
             string.IsNullOrEmpty(bearerTokenConfig.RefreshPath) is true || 

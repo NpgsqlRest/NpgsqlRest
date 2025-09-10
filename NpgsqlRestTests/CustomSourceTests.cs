@@ -67,7 +67,11 @@ public class TestSource : IRoutineSource
     public string[]? ExcludeNames { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
     public CommentsMode? CommentsMode { get => null; set => throw new NotImplementedException(); }
 
-    public IEnumerable<(Routine, IRoutineSourceParameterFormatter)> Read(NpgsqlRestOptions options, IServiceProvider? serviceProvider, ILogger? logger)
+    public IEnumerable<(Routine, IRoutineSourceParameterFormatter)> Read(
+        NpgsqlRestOptions options, 
+        IServiceProvider? serviceProvider, 
+        RetryStrategy? retryStrategy, 
+        ILogger? logger)
     {
         yield return (
             CreateRoutine(

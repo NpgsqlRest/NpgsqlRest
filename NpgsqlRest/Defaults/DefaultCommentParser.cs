@@ -193,6 +193,12 @@ internal static class DefaultCommentParser
         "basic_auth_command",
         "challenge_command",
     ];
+    
+    private static readonly string[] RetryStrategyKey = [
+        "retry_strategy_name",
+        "retry_strategy",
+        "retry",
+    ];
 
     public static RoutineEndpoint? Parse(
         Routine routine,
@@ -270,7 +276,7 @@ internal static class DefaultCommentParser
                     {
                         routineEndpoint.CustomParamsNeedParsing = true;
                     }
-                    SetCustomParameter(routineEndpoint, customParamName, customParamValue, logger);
+                    SetCustomParameter(routineEndpoint, customParamName, customParamValue, logger, options);
                     if (options.LogAnnotationSetInfo)
                     {
                         logger?.CommentSetCustomParemeter(description, customParamName, customParamValue);
@@ -785,15 +791,15 @@ internal static class DefaultCommentParser
                     routineEndpoint.Cached = true;
                     if (len > 1)
                     {
-                        var names = wordsLower[1..];
+                        var names = words[1..];
                         HashSet<string> result = new(names.Length);
                         for (int j = 0; j < names.Length; j++)
                         {
                             var name = names[j];
-                            if (!routine.OriginalParamsHash.Contains(name) && !routine.ParamsHash.Contains(name))
+                            if (!routine.OriginalParamsHash.Contains(name))
                             {
                                 logger?.CommentInvalidCacheParam(description, name);
-                            }
+                            } 
                             else
                             {
                                 result.Add(name);
@@ -1139,6 +1145,23 @@ internal static class DefaultCommentParser
                     routineEndpoint.BasicAuth.ChallengeCommand = line[(words[0].Length + 1)..];
                     logger?.BasicAuthChallengeCommandSet(description, routineEndpoint.BasicAuth.ChallengeCommand);
                 }
+
+                // retry_strategy_name [ name ]
+                // retry_strategy [ name ]
+                // retry [ name ]
+                else if (haveTag is true && len >= 2 && StrEqualsToArray(wordsLower[0], RetryStrategyKey))
+                {
+                    var name = string.Join(Consts.Space, words[1..]);
+                    if (options.CommandRetryOptions.Strategies.TryGetValue(name, out var strategy))
+                    {
+                        routineEndpoint.RetryStrategy = strategy;
+                        logger?.RetryStrategySet(description, name);
+                    }
+                    else
+                    {
+                        logger?.RetryStrategyNotFound(description, name);
+                    }
+                }
             }
             if (disabled)
             {
@@ -1157,7 +1180,7 @@ internal static class DefaultCommentParser
         return routineEndpoint;
     }
 
-    public static void SetCustomParameter(RoutineEndpoint endpoint, string name, string value, ILogger? logger)
+    public static void SetCustomParameter(RoutineEndpoint endpoint, string name, string value, ILogger? logger, NpgsqlRestOptions options)
     {
         value = Regex.Unescape(value);
 
@@ -1254,9 +1277,6 @@ internal static class DefaultCommentParser
             }
         }
         
-        /*
-  
-         */
         else if (StrEqualsToArray(name, BasicAuthKey))
         {
             if (endpoint.BasicAuth is null)
@@ -1291,6 +1311,14 @@ internal static class DefaultCommentParser
                 endpoint.BasicAuth = new() { Enabled = true };
             }
             endpoint.BasicAuth.ChallengeCommand = value;
+        }
+        
+        else if (StrEqualsToArray(name, RetryStrategyKey))
+        {
+            if (options.CommandRetryOptions.Strategies.TryGetValue(name, out var strategy))
+            {
+                endpoint.RetryStrategy = strategy;
+            }
         }
 
         else

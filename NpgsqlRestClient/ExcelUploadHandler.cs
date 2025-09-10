@@ -22,7 +22,10 @@ public class ExcelUploadOptions
     public string ExcelUploadRowCommand { get; set; } = "call process_excel_row($1,$2,$3,$4)";
 }
 
-public class ExcelUploadHandler(NpgsqlRestUploadOptions options, ILogger? logger) : BaseUploadHandler, IUploadHandler
+public class ExcelUploadHandler(
+    NpgsqlRestUploadOptions options, 
+    RetryStrategy? cmdRetryStrategy,
+    ILogger? logger) : BaseUploadHandler, IUploadHandler
 {
     private const string SheetNameParam = "sheet_name";
     private const string AllSheetsParam = "all_sheets";
@@ -224,7 +227,7 @@ public class ExcelUploadHandler(NpgsqlRestUploadOptions options, ILogger? logger
                             command.Parameters[3].Value = string.Concat(rowMeta, ",\"rowIndex\":", excelRowIndex, '}');
                         }
 
-                        commandResult = await command.ExecuteScalarAsync();
+                        commandResult = await command.ExecuteScalarWithRetryAsync(cmdRetryStrategy, logger);
                     }
 
                     var finalJson = string.Concat(rowMeta,

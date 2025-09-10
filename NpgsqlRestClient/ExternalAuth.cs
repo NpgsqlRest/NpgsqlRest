@@ -152,9 +152,10 @@ public class ExternalAuth
         ILogger? logger,
         WebApplication app, 
         NpgsqlRestOptions options, 
+        RetryStrategy? retryStrategy,
         PostgresConnectionNoticeLoggingMode loggingMode)
     {
-        if (externalAuthConfig?.ClientConfigs.Where(c => c.Value.Enabled).Any() is false)
+        if ((externalAuthConfig?.ClientConfigs!).Any(c => c.Value.Enabled) is false)
         {
             return;
         }
@@ -193,7 +194,16 @@ public class ExternalAuth
                     string code = (node["code"]?.ToString()) ??
                         throw new ArgumentException("code retrieved from the external provider is null");
 
-                    await ProcessAsync(code, config!, context, options, connectionString!, logger, externalAuthConfig!, loggingMode);
+                    await ProcessAsync(
+                        code, 
+                        config, 
+                        context, 
+                        options, 
+                        connectionString,
+                        retryStrategy,
+                        logger, 
+                        externalAuthConfig, 
+                        loggingMode);
                     return;
                 }
                 catch (Exception e)
@@ -231,6 +241,7 @@ public class ExternalAuth
         HttpContext context, 
         NpgsqlRestOptions options,
         string connectionString,
+        RetryStrategy? retryStrategy,
         ILogger? logger,
         ExternalAuthConfig externalAuthConfig,
         PostgresConnectionNoticeLoggingMode loggingMode)
@@ -358,7 +369,7 @@ public class ExternalAuth
             };
         }
 
-        await NpgsqlConnectionRetryOpener.OpenAsync(connection, options.ConnectionRetryOptions, middlewareLogger, context.RequestAborted);
+        await connection.OpenRetryAsync(options.ConnectionRetryOptions, middlewareLogger, context.RequestAborted);
 
         await using var command = connection.CreateCommand();
         command.CommandText = externalAuthConfig!.LoginCommand;
@@ -405,10 +416,11 @@ public class ExternalAuth
             }
         }
         
-        await AuthHandler.HandleLoginAsync(
+        await LoginHandler.HandleAsync(
             command, 
             context, 
             options, 
+            retryStrategy,
             logger, 
             tracePath: "ExternalAuth.ProcessAsync",
             performHashVerification: false, 

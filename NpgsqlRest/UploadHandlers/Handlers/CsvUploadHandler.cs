@@ -6,7 +6,10 @@ using static NpgsqlRest.PgConverters;
 
 namespace NpgsqlRest.UploadHandlers.Handlers;
 
-public class CsvUploadHandler(NpgsqlRestUploadOptions options, ILogger? logger) : BaseUploadHandler, IUploadHandler
+public class CsvUploadHandler(
+    NpgsqlRestUploadOptions options, 
+    RetryStrategy? retryStrategy,
+    ILogger? logger) : BaseUploadHandler, IUploadHandler
 {
     private const string CheckFileParam = "check_format";
     private const string DelimitersParam = "delimiters";
@@ -173,7 +176,7 @@ public class CsvUploadHandler(NpgsqlRestUploadOptions options, ILogger? logger) 
                 {
                     command.Parameters[3].Value = fileJson.ToString();
                 }
-                commandResult = await command.ExecuteScalarAsync();
+                commandResult = await command.ExecuteScalarWithRetryAsync(retryStrategy, logger);
 
                 rowIndex++;
             }

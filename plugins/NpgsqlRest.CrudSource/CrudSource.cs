@@ -193,7 +193,11 @@ public class CrudSource(
     private bool Delete { get => (CrudTypes & CrudCommandType.Delete) == CrudCommandType.Delete; }
     private bool DeleteReturning { get => (CrudTypes & CrudCommandType.DeleteReturning) == CrudCommandType.DeleteReturning; }
 
-    public IEnumerable<(Routine, IRoutineSourceParameterFormatter)> Read(NpgsqlRestOptions options, IServiceProvider? serviceProvider, ILogger? logger)
+    public IEnumerable<(Routine, IRoutineSourceParameterFormatter)> Read(
+        NpgsqlRestOptions options, 
+        IServiceProvider? serviceProvider, 
+        RetryStrategy? retryStrategy, 
+        ILogger? logger)
     {
         NpgsqlConnection? connection = null;
         bool shouldDispose = true;
@@ -228,7 +232,7 @@ public class CrudSource(
                 yield break;
             }
 
-            foreach (var (routine, formatter, type) in ReadInternal(options, connection, logger))
+            foreach (var (routine, formatter, type) in ReadInternal(options, connection, retryStrategy, logger))
             {
                 if (Created is not null && !Created(routine, type))
                 {
@@ -249,6 +253,7 @@ public class CrudSource(
     private IEnumerable<(Routine routine, IRoutineSourceParameterFormatter formatter, CrudCommandType type)> ReadInternal(
         NpgsqlRestOptions options,
         NpgsqlConnection connection, 
+        RetryStrategy? retryStrategy, 
         ILogger? logger)
     {
         using var command = connection.CreateCommand();
@@ -274,7 +279,7 @@ public class CrudSource(
         logger.TraceCommand(command, nameof(CrudCommandType));
         
         connection.Open();
-        using NpgsqlDataReader reader = command.ExecuteReader();
+        using NpgsqlDataReader reader = command.ExecuteReaderWithRetry(retryStrategy, logger);
         while (reader.Read())
         {
             var type = reader.Get<string>(0) switch //"type") switch

@@ -11,11 +11,11 @@ public class NpgsqlRestCommand : NpgsqlCommand
 #pragma warning restore CS8603 // Possible null reference return.
     }
 
-    private static readonly NpgsqlRestCommand _instanceCache = new();
+    private static readonly NpgsqlRestCommand InstanceCache = new();
 
     public static NpgsqlCommand Create(NpgsqlConnection connection)
     {
-        var result = _instanceCache.NpgsqlCommandClone();
+        var result = InstanceCache.NpgsqlCommandClone();
         result.Connection = connection;
         return result;
     }

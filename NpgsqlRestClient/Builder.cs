@@ -105,7 +105,7 @@ public class Builder
 
     public WebApplication Build() => Instance.Build();
 
-    public void BuildLogger()
+    public void BuildLogger(RetryStrategy? cmdRetryStrategy)
     {
         var logCfg = _config.Cfg.GetSection("Log");
         Logger = null;
@@ -183,7 +183,8 @@ public class Builder
                     postgresCommand, 
                     restrictedToMinimumLevel:
                         _config.GetConfigEnum<Serilog.Events.LogEventLevel?>("PostgresMinimumLevel", logCfg) ?? Serilog.Events.LogEventLevel.Verbose,
-                    connectionString: ConnectionString);
+                    connectionString: ConnectionString,
+                    cmdRetryStrategy);
             }
             var serilog = loggerConfig.CreateLogger();
             var appName = _config.GetConfigStr("ApplicationName", _config.Cfg);
@@ -217,7 +218,7 @@ public class Builder
         Database
     }
 
-    public string? BuildDataProtection()
+    public string? BuildDataProtection(RetryStrategy? cmdRetryStrategy)
     {
         var dataProtectionCfg = _config.Cfg.GetSection("DataProtection");
         if (_config.Exists(dataProtectionCfg) is false || _config.GetConfigBool("Enabled", dataProtectionCfg) is false)
@@ -259,7 +260,9 @@ public class Builder
                 options.XmlRepository = new DbDataProtection(
                     ConnectionString,
                     getAllElementsCommand,
-                    storeElementCommand);
+                    storeElementCommand,
+                    cmdRetryStrategy,
+                    Logger);
             });
         }
 
@@ -620,16 +623,20 @@ public class Builder
             retryOptions.Enabled = _config.GetConfigBool("Enabled", retryCfg, true);
             if (retryOptions.Enabled is true)
             {
-                retryOptions.MaxRetryCount = _config.GetConfigInt("MaxRetryCount", retryCfg) ?? 6;
-                retryOptions.MaxRetryDelay = TimeSpan.FromSeconds(_config.GetConfigInt("MaxRetryDelaySeconds", retryCfg) ?? 30);
-                retryOptions.ExponentialBase = _config.GetConfigDouble("ExponentialBase", retryCfg) ?? 2.0;
-                retryOptions.RandomFactor = _config.GetConfigDouble("RandomFactor", retryCfg) ?? 1.1;
-                retryOptions.DelayCoefficient = TimeSpan.FromSeconds(_config.GetConfigInt("DelayCoefficientSeconds", retryCfg) ?? 1);
-                var additionalErrorCodes = _config.GetConfigEnumerable("AdditionalErrorCodes", retryCfg)?.ToHashSet();
-                if (additionalErrorCodes is not null && additionalErrorCodes.Count > 0)
-                {
-                    retryOptions.AdditionalErrorCodes = additionalErrorCodes;
-                }
+                retryOptions.Strategy.RetrySequenceSeconds = 
+                    _config.GetConfigEnumerable("RetrySequenceSeconds", retryCfg)? .Select(s => double.Parse(s)).ToArray()  ?? [1, 3, 6, 12];
+                retryOptions.Strategy.ErrorCodes = _config.GetConfigEnumerable("ErrorCodes", retryCfg)?.ToHashSet() 
+                                                   ?? [
+                                                       "08000", "08003", "08006", "08001", "08004", // Connection failure codes
+                                                       "55P03", // Lock not available
+                                                       "55006", // Object in use
+                                                       "53300", // Too many connections
+                                                       "57P03", // Cannot connect now
+                                                       "40001", // Serialization failure (can be retried)
+                                                   ];
+                Logger?.LogDebug("Using connection retry options with strategy: RetrySequenceSeconds={RetrySequenceSeconds}, ErrorCodes={ErrorCodes}",
+                    string.Join(",", retryOptions.Strategy.RetrySequenceSeconds),
+                    string.Join(",", retryOptions.Strategy.ErrorCodes));
             }
         }
         if (_config.GetConfigBool("TestConnectionStrings", _config.ConnectionSettingsCfg) is true)
@@ -637,7 +644,7 @@ public class Builder
             using var conn = new NpgsqlConnection(connectionString);
             try
             {
-                NpgsqlConnectionRetryOpener.Open(conn, retryOptions, Logger);
+                conn.OpenRetry(retryOptions, Logger);
             }
             finally
             {
@@ -732,5 +739,73 @@ public class Builder
             result.Add(section.Key, section.Value);
         }
         return result;
+    }
+
+    public CommandRetryOptions BuildCommandRetryOptions()
+    {
+        var retryCfg = _config.Cfg.GetSection("CommandRetryOptions");
+        var options = new CommandRetryOptions
+        {
+            Enabled = _config.GetConfigBool("Enabled", retryCfg),
+            DefaultStrategy = _config.GetConfigStr("DefaultStrategy", retryCfg) ?? "default"
+        };
+        if (options.Enabled is false)
+        {
+            return options;
+        }
+        foreach (var strategyCfg in retryCfg.GetSection("Strategies").GetChildren())
+        {
+            var strategy = new RetryStrategy
+            {
+                RetrySequenceSeconds = 
+                    _config.GetConfigEnumerable("RetrySequenceSeconds", strategyCfg)? .Select(s => double.Parse(s)).ToArray()  ?? [0, 1, 2, 5, 10],
+                ErrorCodes = _config.GetConfigEnumerable("ErrorCodes", strategyCfg)?.ToHashSet() 
+                             ?? [
+                                 // Serialization failures (MUST retry for correctness)
+                                 "40001", // serialization_failure 
+                                 "40P01", // deadlock_detected
+                                 // Connection issues (Class 08)
+                                 "08000", // connection_exception
+                                 "08003", // connection_does_not_exist
+                                 "08006", // connection_failure  
+                                 "08001", // sqlclient_unable_to_establish_sqlconnection
+                                 "08004", // sqlserver_rejected_establishment_of_sqlconnection
+                                 "08007", // transaction_resolution_unknown
+                                 "08P01", // protocol_violation
+                                 // Resource constraints (Class 53)
+                                 "53000", // insufficient_resources
+                                 "53100", // disk_full
+                                 "53200", // out_of_memory
+                                 "53300", // too_many_connections
+                                 "53400", // configuration_limit_exceeded
+                                 // System errors (Class 58) 
+                                 "57P01", // admin_shutdown
+                                 "57P02", // crash_shutdown  
+                                 "57P03", // cannot_connect_now
+                                 "58000", // system_error
+                                 "58030", // io_error
+                                 // Lock acquisition issues (Class 55)
+                                 "55P03", // lock_not_available
+                                 "55006", // object_in_use
+                                 "55000", // object_not_in_prerequisite_state
+                             ]
+            };
+            options.Strategies[strategyCfg.Key] = strategy;
+        }
+        if (Logger is not null && options.Enabled is true)
+        {
+            if (options.Strategies.TryGetValue(options.DefaultStrategy, out var defStrat) is true)
+            {
+                Logger?.LogDebug("Using command retry options with default strategy '{DefaultStrategy}': RetrySequenceSeconds={RetrySequenceSeconds}, ErrorCodes={ErrorCodes}",
+                    options.DefaultStrategy,
+                    string.Join(",", defStrat.RetrySequenceSeconds),
+                    string.Join(",", defStrat.ErrorCodes));
+            }
+            else
+            {
+                Logger?.LogWarning("Default command retry strategy '{DefaultStrategy}' not found in defined strategies.", options.DefaultStrategy);
+            }
+        }
+        return options;
     }
 }

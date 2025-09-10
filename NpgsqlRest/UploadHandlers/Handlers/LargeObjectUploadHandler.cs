@@ -5,7 +5,10 @@ using static NpgsqlRest.PgConverters;
 
 namespace NpgsqlRest.UploadHandlers.Handlers;
 
-public class LargeObjectUploadHandler(NpgsqlRestUploadOptions options, ILogger? logger) : BaseUploadHandler, IUploadHandler
+public class LargeObjectUploadHandler(
+    NpgsqlRestUploadOptions options, 
+    RetryStrategy? retryStrategy,
+    ILogger? logger) : BaseUploadHandler, IUploadHandler
 {
     private const string OidParam = "oid";
     protected override IEnumerable<string> GetParameters()
@@ -138,7 +141,7 @@ public class LargeObjectUploadHandler(NpgsqlRestUploadOptions options, ILogger? 
 
             result.Append(",\"oid\":");
             using var command = new NpgsqlCommand(oid is null ? "select lo_create(0)" : string.Concat("select lo_create(", oid.ToString(), ")"), connection);
-            var resultOid = await command.ExecuteScalarAsync();
+            var resultOid = await command.ExecuteScalarWithRetryAsync(retryStrategy, logger);
             
             result.Append(resultOid);
             result.Append('}');
@@ -157,7 +160,7 @@ public class LargeObjectUploadHandler(NpgsqlRestUploadOptions options, ILogger? 
             {
                 command.Parameters[1].Value = offset;
                 command.Parameters[2].Value = buffer.Take(bytesRead).ToArray();
-                await command.ExecuteNonQueryAsync();
+                await command.ExecuteNonQueryWithRetryAsync(retryStrategy, logger);
                 offset += bytesRead;
             }
             if (options.LogUploadEvent)

@@ -91,4 +91,5 @@ public class RoutineEndpoint(
     public InfoEventsScope InfoEventsScope { get; set; } = infoEventsScope;
     public HashSet<string>? InfoEventsRoles { get; set; } = infoEventsRoles;
     public Auth.EndpointBasicAuthOptions? BasicAuth { get; set; } = basicAuth;
+    public RetryStrategy? RetryStrategy { get; set; } = null;
 }

@@ -41,7 +41,19 @@ public static class NpgsqlRestMetadataBuilder
             {
                 options.CommentsMode = optionsCommentsMode;
             }
-            foreach (var (routine, formatter) in source.Read(options, builder?.ApplicationServices, logger))
+            
+            RetryStrategy? defaultStrategy = null;
+            if (options.CommandRetryOptions.Enabled is true && string.IsNullOrEmpty(options.CommandRetryOptions.DefaultStrategy) is false)
+            {
+                if (options.CommandRetryOptions.Strategies
+                        .TryGetValue(options.CommandRetryOptions.DefaultStrategy, out defaultStrategy) is false)
+                {
+                    logger?.LogWarning("Default retry strategy {defaultStrategy} not found in the list of strategies, command retry strategy will be ignored.",
+                        options.CommandRetryOptions.DefaultStrategy);
+                }
+            }
+            
+            foreach (var (routine, formatter) in source.Read(options, builder?.ApplicationServices, defaultStrategy, logger))
             {
                 RoutineEndpoint endpoint = DefaultEndpoint.Create(routine, options, logger)!;
 
@@ -49,7 +61,7 @@ public static class NpgsqlRestMetadataBuilder
                 {
                     continue;
                 }
-
+                
                 if (options.EndpointCreated is not null)
                 {
                     options.EndpointCreated(endpoint);
@@ -58,6 +70,11 @@ public static class NpgsqlRestMetadataBuilder
                 if (endpoint is null)
                 {
                     continue;
+                }
+                
+                if (defaultStrategy is not null && endpoint.RetryStrategy is null)
+                {
+                    endpoint.RetryStrategy = defaultStrategy;
                 }
                 
                 if (endpoint.Url.Length == 0)
