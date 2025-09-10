@@ -1,4 +1,5 @@
-﻿using Npgsql;
+﻿using System.Text;
+using Npgsql;
 
 namespace NpgsqlRest;
 
@@ -34,15 +35,16 @@ public static class NpgsqlConnectionRetryExtensions
                 if (attempt < maxRetries)
                 {
                     var delaySec = settings.Strategy.RetrySequenceSeconds[exceptionsEncountered.Count - 1];
+                    var message = BuildExceptionMessage(ex);
                     if (delaySec > 0)
                     {
                         var delay = TimeSpan.FromSeconds(delaySec);
-                        logger?.FailedToOpenConnectionRetry(attempt + 1, delay.TotalMilliseconds, ex.Message);
+                        logger?.FailedToOpenConnectionRetry(attempt + 1, delay.TotalMilliseconds, message);
                         Thread.Sleep(delay);
                     }
                     else
                     {
-                        logger?.FailedToOpenConnectionRetry(attempt + 1, 0, ex.Message);
+                        logger?.FailedToOpenConnectionRetry(attempt + 1, 0, message);
                     }
                 }
                 else
@@ -94,15 +96,16 @@ public static class NpgsqlConnectionRetryExtensions
                 if (attempt < maxRetries)
                 {
                     var delaySec = settings.Strategy.RetrySequenceSeconds[exceptionsEncountered.Count - 1];
+                    var message = BuildExceptionMessage(ex);
                     if (delaySec > 0)
                     {
                         var delay = TimeSpan.FromSeconds(delaySec);
-                        logger?.FailedToOpenConnectionRetry(attempt + 1, delay.TotalMilliseconds, ex.Message);
+                        logger?.FailedToOpenConnectionRetry(attempt + 1, delay.TotalMilliseconds, message);
                         await Task.Delay(delay, cancellationToken);
                     }
                     else
                     {
-                        logger?.FailedToOpenConnectionRetry(attempt + 1, 0, ex.Message);
+                        logger?.FailedToOpenConnectionRetry(attempt + 1, 0, message);
                     }
                 }
                 else
@@ -121,6 +124,31 @@ public static class NpgsqlConnectionRetryExtensions
                 throw;
             }
         }
+    }
+    
+    public static string BuildExceptionMessage(this Exception exception)
+    {
+        StringBuilder sb = new();
+        sb.Append(exception.Message);
+        if (exception is NpgsqlException npgsqlException)
+        {
+            if (npgsqlException.SqlState is not null)
+            {
+                sb.Append(" (SQL State: ");
+                sb.Append(npgsqlException.SqlState);
+                sb.Append(')');
+            }
+            if (npgsqlException.IsTransient)
+            {
+                sb.Append(" (transient)");
+            }
+        }
+        if (exception.InnerException is not null)
+        {
+            sb.Append(" ---> ");
+            sb.Append(BuildExceptionMessage(exception.InnerException));
+        }
+        return sb.ToString();
     }
 
     private static bool ShouldRetryOn(Exception exception, ConnectionRetryOptions settings)

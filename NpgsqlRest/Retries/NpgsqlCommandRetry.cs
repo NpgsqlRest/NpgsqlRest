@@ -33,15 +33,16 @@ public static class NpgsqlRetryExtensions
                 if (attempt < maxRetries)
                 {
                     var delaySec = strategy.RetrySequenceSeconds[exceptionsEncountered.Count - 1];
+                    var message = ex.BuildExceptionMessage();
                     if (delaySec > 0)
                     {
                         var delay = TimeSpan.FromSeconds(delaySec);
-                        logger?.FailedToExecuteCommandRetry(attempt + 1, delay.TotalMilliseconds, ex.Message);
+                        logger?.FailedToExecuteCommandRetry(attempt + 1, delay.TotalMilliseconds, message);
                         Thread.Sleep(delay);
                     }
                     else
                     {
-                        logger?.FailedToExecuteCommandRetry(attempt + 1, 0, ex.Message);
+                        logger?.FailedToExecuteCommandRetry(attempt + 1, 0, message);
                     }
                 }
                 else
@@ -85,15 +86,16 @@ public static class NpgsqlRetryExtensions
                 if (attempt < maxRetries)
                 {
                     var delaySec = strategy.RetrySequenceSeconds[exceptionsEncountered.Count - 1];
+                    var message = ex.BuildExceptionMessage();
                     if (delaySec > 0)
                     {
                         var delay = TimeSpan.FromSeconds(delaySec);
-                        logger?.FailedToExecuteCommandRetry(attempt + 1, delay.TotalMilliseconds, ex.Message);
+                        logger?.FailedToExecuteCommandRetry(attempt + 1, delay.TotalMilliseconds, message);
                         await Task.Delay(delay, cancellationToken);
                     }
                     else
                     {
-                        logger?.FailedToExecuteCommandRetry(attempt + 1, 0, ex.Message);
+                        logger?.FailedToExecuteCommandRetry(attempt + 1, 0, message);
                     }
                 }
                 else
@@ -138,15 +140,16 @@ public static class NpgsqlRetryExtensions
                 if (attempt < maxRetries)
                 {
                     var delaySec = strategy.RetrySequenceSeconds[exceptionsEncountered.Count - 1];
+                    var message = ex.BuildExceptionMessage();
                     if (delaySec > 0)
                     {
                         var delay = TimeSpan.FromSeconds(delaySec);
-                        logger?.FailedToExecuteCommandRetry(attempt + 1, delay.TotalMilliseconds, ex.Message);
+                        logger?.FailedToExecuteCommandRetry(attempt + 1, delay.TotalMilliseconds, message);
                         Thread.Sleep(delay);
                     }
                     else
                     {
-                        logger?.FailedToExecuteCommandRetry(attempt + 1, 0, ex.Message);
+                        logger?.FailedToExecuteCommandRetry(attempt + 1, 0, message);
                     }
                 }
                 else
@@ -164,58 +167,6 @@ public static class NpgsqlRetryExtensions
         throw new InvalidOperationException("This should never be reached");
     }
     
-    public static NpgsqlDataReader ExecuteReaderWithRetry(
-        this NpgsqlCommand command,
-        CommandBehavior behavior, 
-        RetryStrategy? strategy, 
-        ILogger? logger)
-    {
-        if (strategy == null || strategy.RetrySequenceSeconds.Length == 0)
-        {
-            return command.ExecuteReader(behavior);
-        }
-        var maxRetries = strategy.RetrySequenceSeconds.Length;
-        var exceptionsEncountered = new List<Exception>(maxRetries);
-
-        for (var attempt = 0; attempt <= maxRetries; attempt++)
-        {
-            try
-            {
-                return command.ExecuteReader(behavior);
-            }
-            catch (Exception ex) when (ShouldRetryOn(ex, strategy))
-            {
-                exceptionsEncountered.Add(ex);
-                if (attempt < maxRetries)
-                {
-                    var delaySec = strategy.RetrySequenceSeconds[exceptionsEncountered.Count - 1];
-                    if (delaySec > 0)
-                    {
-                        var delay = TimeSpan.FromSeconds(delaySec);
-                        logger?.FailedToExecuteCommandRetry(attempt + 1, delay.TotalMilliseconds, ex.Message);
-                        Thread.Sleep(delay);
-                    }
-                    else
-                    {
-                        logger?.FailedToExecuteCommandRetry(attempt + 1, 0, ex.Message);
-                    }
-                }
-                else
-                {
-                    logger?.FailedToExecuteCommandAfter(ex, attempt + 1);
-                    ThrowRetryExhaustedException(exceptionsEncountered);
-                }
-            }
-            catch (Exception ex)
-            {
-                logger?.FailedToExecuteNonRetryableCommand(ex, ex.Message);
-                throw;
-            }
-        }
-        
-        throw new InvalidOperationException("This should never be reached");
-    }
-
     public static async Task<NpgsqlDataReader> ExecuteReaderWithRetryAsync(
         this NpgsqlCommand command, 
         RetryStrategy? strategy, ILogger? logger, 
@@ -240,15 +191,16 @@ public static class NpgsqlRetryExtensions
                 if (attempt < maxRetries)
                 {
                     var delaySec = strategy.RetrySequenceSeconds[exceptionsEncountered.Count - 1];
+                    var message = ex.BuildExceptionMessage();
                     if (delaySec > 0)
                     {
                         var delay = TimeSpan.FromSeconds(delaySec);
-                        logger?.FailedToExecuteCommandRetry(attempt + 1, delay.TotalMilliseconds, ex.Message);
+                        logger?.FailedToExecuteCommandRetry(attempt + 1, delay.TotalMilliseconds, message);
                         await Task.Delay(delay, cancellationToken);
                     }
                     else
                     {
-                        logger?.FailedToExecuteCommandRetry(attempt + 1, 0, ex.Message);
+                        logger?.FailedToExecuteCommandRetry(attempt + 1, 0, message);
                     }
                 }
                 else
@@ -299,15 +251,16 @@ public static class NpgsqlRetryExtensions
                 if (attempt < maxRetries)
                 {
                     var delaySec = strategy.RetrySequenceSeconds[exceptionsEncountered.Count - 1];
+                    var message = ex.BuildExceptionMessage();
                     if (delaySec > 0)
                     {
                         var delay = TimeSpan.FromSeconds(delaySec);
-                        logger?.FailedToExecuteCommandRetry(attempt + 1, delay.TotalMilliseconds, ex.Message);
+                        logger?.FailedToExecuteCommandRetry(attempt + 1, delay.TotalMilliseconds, message);
                         await Task.Delay(delay, cancellationToken);
                     }
                     else
                     {
-                        logger?.FailedToExecuteCommandRetry(attempt + 1, 0, ex.Message);
+                        logger?.FailedToExecuteCommandRetry(attempt + 1, 0, message);
                     }
                 }
                 else
@@ -329,57 +282,6 @@ public static class NpgsqlRetryExtensions
         
         throw new InvalidOperationException("This should never be reached");
     }
-    
-    // public static object? ExecuteScalarWithRetry(
-    //     this NpgsqlCommand command, 
-    //     RetryStrategy? strategy, 
-    //     ILogger? logger)
-    // {
-    //     if (strategy == null || strategy.RetrySequenceSeconds.Length == 0)
-    //     {
-    //         return command.ExecuteScalar();
-    //     }
-    //     var maxRetries = strategy.RetrySequenceSeconds.Length;
-    //     var exceptionsEncountered = new List<Exception>(maxRetries);
-    //     
-    //     for (var attempt = 0; attempt <= maxRetries; attempt++)
-    //     {
-    //         try
-    //         {
-    //             return command.ExecuteScalar();
-    //         }
-    //         catch (Exception ex) when (ShouldRetryOn(ex, strategy))
-    //         {
-    //             exceptionsEncountered.Add(ex);
-    //             if (attempt < maxRetries)
-    //             {
-    //                 var delaySec = strategy.RetrySequenceSeconds[exceptionsEncountered.Count - 1];
-    //                 if (delaySec > 0)
-    //                 {
-    //                     var delay = TimeSpan.FromSeconds(delaySec);
-    //                     logger?.FailedToExecuteCommandRetry(attempt + 1, delay.TotalMilliseconds, ex.Message);
-    //                     Thread.Sleep(delay);
-    //                 }
-    //                 else
-    //                 {
-    //                     logger?.FailedToExecuteCommandRetry(attempt + 1, 0, ex.Message);
-    //                 }
-    //             }
-    //             else
-    //             {
-    //                 logger?.FailedToExecuteCommandAfter(ex, attempt + 1);
-    //                 ThrowRetryExhaustedException(exceptionsEncountered);
-    //             }
-    //         }
-    //         catch (Exception ex)
-    //         {
-    //             logger?.FailedToExecuteNonRetryableCommand(ex, ex.Message);
-    //             throw;
-    //         }
-    //     }
-    //     
-    //     throw new InvalidOperationException("This should never be reached");
-    // }
     
     public static async Task<object?> ExecuteScalarWithRetryAsync(
         this NpgsqlCommand command, 
@@ -406,15 +308,16 @@ public static class NpgsqlRetryExtensions
                 if (attempt < maxRetries)
                 {
                     var delaySec = strategy.RetrySequenceSeconds[exceptionsEncountered.Count - 1];
+                    var message = ex.BuildExceptionMessage();
                     if (delaySec > 0)
                     {
                         var delay = TimeSpan.FromSeconds(delaySec);
-                        logger?.FailedToExecuteCommandRetry(attempt + 1, delay.TotalMilliseconds, ex.Message);
+                        logger?.FailedToExecuteCommandRetry(attempt + 1, delay.TotalMilliseconds, message);
                         await Task.Delay(delay, cancellationToken);
                     }
                     else
                     {
-                        logger?.FailedToExecuteCommandRetry(attempt + 1, 0, ex.Message);
+                        logger?.FailedToExecuteCommandRetry(attempt + 1, 0, message);
                     }
                 }
                 else
@@ -464,15 +367,16 @@ public static class NpgsqlRetryExtensions
                 if (attempt < maxRetries)
                 {
                     var delaySec = strategy.RetrySequenceSeconds[exceptionsEncountered.Count - 1];
+                    var message = ex.BuildExceptionMessage();
                     if (delaySec > 0)
                     {
                         var delay = TimeSpan.FromSeconds(delaySec);
-                        logger?.FailedToExecuteCommandRetry(attempt + 1, delay.TotalMilliseconds, ex.Message);
+                        logger?.FailedToExecuteCommandRetry(attempt + 1, delay.TotalMilliseconds, message);
                         await Task.Delay(delay, cancellationToken);
                     }
                     else
                     {
-                        logger?.FailedToExecuteCommandRetry(attempt + 1, 0, ex.Message);
+                        logger?.FailedToExecuteCommandRetry(attempt + 1, 0, message);
                     }
                 }
                 else
