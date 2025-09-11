@@ -4,6 +4,15 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [2.33.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/2.34.0) (2025-09-12)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/2.33.0...2.34.0)
+
+- Improved connection retry mechanism (see ConnectionSettings.RetryOptions).
+- Added command retry on all levels (see CommandRetryOptions).
+- Fixed StartupMessage rednering and added named formats.
+- Added cache settings (see CacheOptions) and Redis cache as second option (beside memory cache).
+
 ## Version [2.33.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/2.33.0) (2025-08-29)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/client-2.27.1...2.33.0)
