@@ -808,4 +808,51 @@ public class Builder
         }
         return options;
     }
+    
+    public enum CacheType { Memory, Redis }
+    
+    public CacheOptions BuildCacheOptions(WebApplication app)
+    {
+        var cacheCfg = _config.Cfg.GetSection("CacheOptions");
+        var options = new CacheOptions()
+        {
+            DefaultRoutineCache = null
+        };
+        if (cacheCfg is null || _config.GetConfigBool("Enabled", cacheCfg) is false)
+        {
+            Logger?.LogDebug("Routine caching is disabled.");
+            return options;
+        }
+        
+        var type = _config.GetConfigEnum<CacheType?>("Type", cacheCfg) ?? CacheType.Memory;
+        if (type == CacheType.Memory)
+        {
+            options.MemoryCachePruneIntervalSeconds =
+                _config.GetConfigInt("MemoryCachePruneIntervalSeconds", cacheCfg) ?? 60;
+            options.DefaultRoutineCache = new RoutineCache();
+            Logger?.LogDebug("Using in-memory routine cache with prune interval of {MemoryCachePruneIntervalSeconds} seconds.", options.MemoryCachePruneIntervalSeconds);
+        }
+        else if (type == CacheType.Redis)
+        {
+            var configuration = _config.GetConfigStr("RedisConfiguration", cacheCfg) ??
+                                "localhost:6379,abortConnect=false,ssl=false,connectTimeout=10000,syncTimeout=5000,connectRetry=3";
+            
+            try
+            {
+                var redisCache = new RedisCache(configuration, Logger);
+                options.DefaultRoutineCache = redisCache;
+                Logger?.LogDebug("Using Redis routine cache with configuration: {RedisConfiguration}", configuration);
+                app.Lifetime.ApplicationStopping.Register(() => redisCache.Dispose());
+            }
+            catch (Exception ex)
+            {
+                Logger?.LogError(ex, "Failed to initialize Redis cache with configuration: {RedisConfiguration}", configuration);
+                Logger?.LogWarning("Falling back to in-memory cache due to Redis initialization failure");
+                options.DefaultRoutineCache = new RoutineCache();
+                options.MemoryCachePruneIntervalSeconds = _config.GetConfigInt("MemoryCachePruneIntervalSeconds", cacheCfg) ?? 60;
+            }
+        }
+        
+        return options;
+    }
 }

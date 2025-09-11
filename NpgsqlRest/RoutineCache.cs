@@ -26,8 +26,8 @@ public class RoutineCache : IRoutineCache
         _cleanupTimer = new Timer(
             _ => CleanupExpiredEntriesInternal(),
             null,
-            TimeSpan.FromMinutes(options.CachePruneIntervalMin),
-            TimeSpan.FromMinutes(options.CachePruneIntervalMin));
+            TimeSpan.FromSeconds(options.CacheOptions.MemoryCachePruneIntervalSeconds),
+            TimeSpan.FromSeconds(options.CacheOptions.MemoryCachePruneIntervalSeconds));
     }
 
     public static void Shutdown()

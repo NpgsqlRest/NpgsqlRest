@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Text;
 using Microsoft.AspNetCore.DataProtection;
-using Microsoft.Extensions.DependencyInjection;
 using NpgsqlRest;
 using NpgsqlRest.Defaults;
 using NpgsqlRestClient;
@@ -10,9 +9,6 @@ using Npgsql;
 using NpgsqlRest.CrudSource;
 using NpgsqlRest.HttpFiles;
 using NpgsqlRest.TsClient;
-using StackExchange.Redis;
-
-//var redis = await ConnectionMultiplexer.ConnectAsync("localhost:6379");
 
 Stopwatch sw = new();
 sw.Start();
@@ -244,6 +240,8 @@ NpgsqlRestOptions options = new()
     RefreshPath = config.GetConfigStr("Path", refreshOptionsCfg) ?? "/api/npgsqlrest/refresh",
     RefreshMethod = config.GetConfigStr("Method", refreshOptionsCfg) ?? "GET",
     UploadOptions = appInstance.CreateUploadOptions(),
+    
+    CacheOptions = builder.BuildCacheOptions(app)
 };
 
 app.UseNpgsqlRest(options);

@@ -198,7 +198,7 @@ public static class NpgsqlRestMetadataBuilder
             }
         }
 
-        if (hasCachedRoutine is true && options.DefaultRoutineCache is RoutineCache)
+        if (hasCachedRoutine is true && options.CacheOptions.DefaultRoutineCache is RoutineCache)
         {
             RoutineCache.Start(options);
             if (builder is WebApplication app)

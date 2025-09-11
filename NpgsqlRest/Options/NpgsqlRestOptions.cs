@@ -323,15 +323,10 @@ public class NpgsqlRestOptions
     public string RefreshPath { get; set; } = "/api/npgsqlrest/refresh";
 
     /// <summary>
-    /// Default routine cache object. Inject custom cache object to override default cache.
+    /// Cache options
     /// </summary>
-    public IRoutineCache DefaultRoutineCache { get; set; } = new RoutineCache();
-
-    /// <summary>
-    /// When cache is enabled, this value sets the interval in minutes for cache pruning (removing expired entries). Default is 1 minute.
-    /// </summary>
-    public int CachePruneIntervalMin { get; set; } = 1;
-
+    public CacheOptions CacheOptions { get; set; } = new CacheOptions();
+    
     /// <summary>
     /// Default Upload Options
     /// </summary>

@@ -1281,9 +1281,9 @@ public class NpgsqlRestMiddleware(RequestDelegate next)
                     TypeDescriptor descriptor = routine.ColumnsTypeDescriptor[0];
 
                     object? valueResult;
-                    if (endpoint.Cached is true)
+                    if (Options.CacheOptions.DefaultRoutineCache is not null && endpoint.Cached is true)
                     {
-                        if (Options.DefaultRoutineCache.Get(endpoint, cacheKeys?.ToString()!, out valueResult) is false)
+                        if (Options.CacheOptions.DefaultRoutineCache.Get(endpoint, cacheKeys?.ToString()!, out valueResult) is false)
                         {
                             if (await PrepareCommand(connection, command, commandText, context, endpoint, true) is false)
                             {
@@ -1302,7 +1302,7 @@ public class NpgsqlRestMiddleware(RequestDelegate next)
                             if (await reader.ReadAsync())
                             {
                                 valueResult = descriptor.IsBinary ? reader.GetFieldValue<byte[]>(0) : reader.GetValue(0) as string;
-                                Options.DefaultRoutineCache.AddOrUpdate(endpoint, cacheKeys?.ToString()!, valueResult);
+                                Options.CacheOptions.DefaultRoutineCache.AddOrUpdate(endpoint, cacheKeys?.ToString()!, valueResult);
                             }
                             else
                             {

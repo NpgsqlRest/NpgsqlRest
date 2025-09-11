@@ -814,8 +814,8 @@ internal static class DefaultCommentParser
                     }
                 }
 
-                // cache_expires
-                // cache_expires_in
+                // cache_expires [ value ]
+                // cache_expires_in [ value ]
                 else if (haveTag is true && len >= 2 && StrEqualsToArray(wordsLower[0], CacheExpiresInKey))
                 {
                     var value = Parser.ParsePostgresInterval(string.Join(Consts.Space, wordsLower[1..]));
