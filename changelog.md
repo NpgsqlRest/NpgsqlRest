@@ -4,7 +4,7 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
-## Version [2.33.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/2.34.0) (2025-09-12)
+## Version [2.34.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/2.34.0) (2025-09-12)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/2.33.0...2.34.0)
 
