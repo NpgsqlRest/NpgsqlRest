@@ -12,6 +12,8 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 2. Fix startup message issue. 
 3. Fix custom header lines configuration issue.
 
+Added OpenTelemetry support. See Log configuration for more details.
+
 ## Version [2.34.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/2.34.0) (2025-09-12)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/2.33.0...2.34.0)
