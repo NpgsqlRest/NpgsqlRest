@@ -121,30 +121,39 @@ public class Builder
             bool npgsqlRestAdded = false;
             bool systemAdded = false;
             bool microsoftAdded = false;
+            var appName = _config.GetConfigStr("ApplicationName", _config.Cfg);
+            string npgsqlRestLoggerName = string.IsNullOrEmpty(appName) ? "NpgsqlRest": appName;
             foreach (var level in logCfg?.GetSection("MinimalLevels")?.GetChildren() ?? [])
             {
                 var key = level.Key;
                 var value = _config.GetEnum<Serilog.Events.LogEventLevel?>(level.Value);
                 if (value is not null && key is not null)
                 {
-                    loggerConfig.MinimumLevel.Override(key, value.Value);
+                    
                     if (string.Equals(key, "NpgsqlRest", StringComparison.OrdinalIgnoreCase))
                     {
+                        loggerConfig.MinimumLevel.Override(npgsqlRestLoggerName, value.Value);
                         npgsqlRestAdded = true;
                     }
                     if (string.Equals(key, "System", StringComparison.OrdinalIgnoreCase))
                     {
+                        loggerConfig.MinimumLevel.Override(key, value.Value);
                         systemAdded = true;
                     }
                     if (string.Equals(key, "Microsoft", StringComparison.OrdinalIgnoreCase))
                     {
+                        loggerConfig.MinimumLevel.Override(key, value.Value);
                         microsoftAdded = true;
+                    }
+                    else
+                    {
+                        loggerConfig.MinimumLevel.Override(key, value.Value);
                     }
                 }
             }
             if (npgsqlRestAdded is false)
             {
-                loggerConfig.MinimumLevel.Override("NpgsqlRest", Serilog.Events.LogEventLevel.Debug);
+                loggerConfig.MinimumLevel.Override(npgsqlRestLoggerName, Serilog.Events.LogEventLevel.Information);
             }
             if (systemAdded is false)
             {
@@ -187,7 +196,6 @@ public class Builder
                     cmdRetryStrategy);
             }
             var serilog = loggerConfig.CreateLogger();
-            var appName = _config.GetConfigStr("ApplicationName", _config.Cfg);
             
             Logger = string.IsNullOrEmpty(appName) ? 
                 new SerilogLoggerFactory(serilog.ForContext("SourceContext", "NpgsqlRest")).CreateLogger("NpgsqlRest") : 
@@ -552,9 +560,7 @@ public class Builder
         });
         return true;
     }
-
-    private readonly string[] _connectionNames = ["Host", "Port", "Database", "Username", "Password", "Passfile", "SSL Mode", "Trust Server Certificate", "SSL Certificate", "SSL Key", "SSL Password", "Root Certificate", "Check Certificate Revocation", "SSL Negotiation", "Channel Binding", "Persist Security Info", "Kerberos Service Name", "Include Realm", "Include Error Detail", "Log Parameters", "Pooling", "Minimum Pool Size", "Maximum Pool Size", "Connection Idle Lifetime", "Connection Pruning Interval", "Connection Lifetime", "Timeout", "Command Timeout", "Cancellation Timeout", "Keepalive", "Tcp Keepalive", "Tcp Keepalive Time", "Tcp Keepalive Interval", "Max Auto Prepare", "Auto Prepare Min Usages", "Read Buffer Size", "Write Buffer Size", "Socket Receive Buffer Size", "Socket Send Buffer Size", "No Reset On Close", "Target Session Attributes", "Load Balance Hosts", "Host Recheck Seconds", "Options", "Application Name", "Enlist", "Search Path", "Client Encoding", "Encoding", "Timezone", "Array Nullability Mode"];
-
+    
     private (string?, ConnectionRetryOptions) BuildConnection(
         string? connectionName, 
         string connectionString, 
@@ -669,6 +675,11 @@ public class Builder
             var item = section.GetChildren().FirstOrDefault();
             connectionName = item?.Key;
             connectionString = item?.Value;
+        }
+
+        if (connectionString is null)
+        {
+            connectionString = "Host={PGHOST};Port=5432;Database={PGDATABASE};Username={PGUSER};Password={PGPASSWORD}";
         }
 
         var (result, retryOpts) = BuildConnection(connectionName, connectionString!, isMain: true, skipRetryOpts: false);

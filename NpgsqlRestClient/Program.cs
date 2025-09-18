@@ -82,7 +82,7 @@ if (args.Length >= 2 && string.Equals(args[0], "--hash", StringComparison.Curren
     Console.ResetColor();
     return;
 }
-        
+
 if (args.Length >= 3 && string.Equals(args[0], "--basic_auth", StringComparison.CurrentCultureIgnoreCase))
 {
     Console.ForegroundColor = ConsoleColor.Red;
@@ -95,7 +95,7 @@ var config = new Config();
 var builder = new Builder(config);
 var appInstance = new App(config, builder);
 
-config.Build(args,["--config", "--encrypt"]);
+config.Build(args,["--encrypt"]);
 
 if (args.Length >= 1 && string.Equals(args[0], "--config", StringComparison.CurrentCultureIgnoreCase))
 {
@@ -162,7 +162,7 @@ appInstance.Configure(app, () =>
                     ["urls"] = string.Join(";", app.Urls.ToArray()),
                     ["version"] = System.Reflection.Assembly.GetAssembly(typeof(Program))?.GetName()?.Version?.ToString() ?? "-",
                     ["environment"] = builder.Instance.Environment.EnvironmentName,
-                    ["application"] = "builder.Instance.Environment.ApplicationName"
+                    ["application"] = builder.Instance.Environment.ApplicationName
                 }).ToString());
     }
 });

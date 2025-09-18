@@ -26,7 +26,7 @@ public class Config
 
         var arguments = new Out();
         var (configFiles, commandLineArgs) = BuildFromArgs(args);
-
+        
         if (configFiles.Count > 0)
         {
             foreach (var (fileName, optional) in configFiles)
@@ -328,8 +328,8 @@ public class Config
 
         return obj;
     }
-    
-    public (List<(string fileName, bool optional)> configFiles, string[] commanLineArgs) BuildFromArgs(string[] args)
+
+    private (List<(string fileName, bool optional)> configFiles, string[] commanLineArgs) BuildFromArgs(string[] args)
     {
         var configFiles = new List<(string fileName, bool optional)>();
         var commandLineArgs = new List<string>();
@@ -345,7 +345,7 @@ public class Config
                 {
                     nextIsOptional = true;
                 }
-                else if (arg.StartsWith("--") && arg.Contains('='))
+                else if ((arg.StartsWith("--") && arg.Contains('=')) || string.Equals("--config", lower))
                 {
                     commandLineArgs.Add(arg);
                 }

@@ -145,7 +145,7 @@ public class NpgsqlRestOptions
     /// <summary>
     ///  Change the logger name with this option. 
     /// </summary>
-    public string? LoggerName { get; set; }
+    public string? LoggerName { get; set; } = "NpgsqlRest";
 
     /// <summary>
     /// Log endpoint created events.

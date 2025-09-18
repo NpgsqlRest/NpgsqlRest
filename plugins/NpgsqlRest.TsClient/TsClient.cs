@@ -270,7 +270,10 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 return;
             }
             var now = DateTime.Now.ToString("O");
-            sb.Insert(0, string.Join(Environment.NewLine, options.HeaderLines.Select(l => string.Format(l, now))));
+            sb.Insert(0, string.Concat(string.Join(
+                Environment.NewLine, 
+                options.HeaderLines.Select(l => string.Format(l, now).Trim())), Environment.NewLine)
+            );
         }
 
         bool Handle(RoutineEndpoint endpoint)
