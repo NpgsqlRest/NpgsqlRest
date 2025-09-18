@@ -155,21 +155,7 @@ public class Config
         return int.TryParse(configValue, out var value) ? value : 
             throw new InvalidOperationException($"Invalid integer value '{configValue}' for configuration key '{key}'.");
     }
-
-    public double? GetConfigDouble(string key, IConfiguration? subsection = null)
-    {
-        var section = subsection?.GetSection(key) ?? Cfg.GetSection(key);
-        if (string.IsNullOrEmpty(section.Value))
-        {
-            return null;
-        }
-        var configValue = EnvDict is not null ? 
-            Formatter.FormatString(section.Value.AsSpan(), EnvDict).ToString() : 
-            section.Value;
-        return double.TryParse(configValue, out var value) ? value : 
-            throw new InvalidOperationException($"Invalid double value '{configValue}' for configuration key '{key}'.");
-    }
-
+    
     public T? GetConfigEnum<T>(string key, IConfiguration? subsection = null)
     {
         var section = subsection?.GetSection(key) ?? Cfg.GetSection(key);

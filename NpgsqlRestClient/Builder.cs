@@ -13,6 +13,7 @@ using Npgsql;
 using NpgsqlRest;
 using Serilog;
 using Serilog.Extensions.Logging;
+using Serilog.Sinks.OpenTelemetry;
 
 namespace NpgsqlRestClient;
 
@@ -27,9 +28,13 @@ public class Builder
     
     public WebApplicationBuilder Instance { get; private set; }  = default!;
 
-    public bool LogToConsole { get; private set; } = false;
-    public bool LogToFile { get; private set; } = false;
-    public bool LogToPostgres { get; private set; } = false;
+    // public bool LogToConsole { get; private set; } = false;
+    // public bool LogToFile { get; private set; } = false;
+    // public bool LogToPostgres { get; private set; } = false;
+    // public bool LogToOpenTelemetry { get; private set; } = false;
+    
+    public bool LoggingEnabled { get; private set; } = false;
+    
     public Microsoft.Extensions.Logging.ILogger? Logger { get; private set; } = null;
     public bool UseHttpsRedirection { get; private set; } = false;
     public bool UseHsts { get; private set; } = false;
@@ -109,20 +114,29 @@ public class Builder
     {
         var logCfg = _config.Cfg.GetSection("Log");
         Logger = null;
-        LogToConsole = _config.GetConfigBool("ToConsole", logCfg, true);
-        LogToFile = _config.GetConfigBool("ToFile", logCfg);
+        var logToConsole = _config.GetConfigBool("ToConsole", logCfg, true);
+        var logToFile = _config.GetConfigBool("ToFile", logCfg);
         var filePath = _config.GetConfigStr("FilePath", logCfg) ?? "logs/log.txt";
-        LogToPostgres = _config.GetConfigBool("ToPostgres", logCfg);
+        var logToPostgres = _config.GetConfigBool("ToPostgres", logCfg);
         var postgresCommand = _config.GetConfigStr("PostgresCommand", logCfg);
+        
+        var logToOpenTelemetry = _config.GetConfigBool("ToOpenTelemetry", logCfg);
 
-        if (LogToConsole is true || (LogToFile is true)  || (LogToPostgres is true && postgresCommand is not null))
+        if (
+            logToConsole is true || 
+            (logToFile is true) || 
+            (logToPostgres is true && postgresCommand is not null) || 
+            (logToOpenTelemetry is true))
         {
+            LoggingEnabled = true;
             var loggerConfig = new LoggerConfiguration().MinimumLevel.Verbose();
             bool npgsqlRestAdded = false;
             bool systemAdded = false;
             bool microsoftAdded = false;
             var appName = _config.GetConfigStr("ApplicationName", _config.Cfg);
+            var envName = _config.GetConfigStr("EnvironmentName", _config.Cfg) ?? "Production";
             string npgsqlRestLoggerName = string.IsNullOrEmpty(appName) ? "NpgsqlRest": appName;
+            
             foreach (var level in logCfg?.GetSection("MinimalLevels")?.GetChildren() ?? [])
             {
                 var key = level.Key;
@@ -166,34 +180,76 @@ public class Builder
 
             string outputTemplate = _config.GetConfigStr("OutputTemplate", logCfg) ?? 
                 "[{Timestamp:HH:mm:ss.fff} {Level:u3}] {Message:lj} [{SourceContext}]{NewLine}{Exception}";
-            if (LogToConsole is true)
+            
+            List<string> logDebug = new(4);
+            
+            if (logToConsole is true)
             {
+                var minLevel = _config.GetConfigEnum<Serilog.Events.LogEventLevel?>("ConsoleMinimumLevel", logCfg) ?? Serilog.Events.LogEventLevel.Verbose;
                 loggerConfig = loggerConfig.WriteTo.Console(
-                    restrictedToMinimumLevel: 
-                        _config.GetConfigEnum<Serilog.Events.LogEventLevel?>("ConsoleMinimumLevel", logCfg) ?? Serilog.Events.LogEventLevel.Verbose,
+                    restrictedToMinimumLevel: minLevel,
                     outputTemplate: outputTemplate,
                     theme: Serilog.Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code);
+                
+                logDebug.Add(string.Concat("Console (minimum level: ", minLevel.ToString(), ")"));
             }
-            if (LogToFile is true)
+            if (logToFile is true)
             {
+                var minLevel = _config.GetConfigEnum<Serilog.Events.LogEventLevel?>("FileMinimumLevel", logCfg) ?? Serilog.Events.LogEventLevel.Verbose;
                 loggerConfig = loggerConfig.WriteTo.File(
-                    restrictedToMinimumLevel:
-                        _config.GetConfigEnum<Serilog.Events.LogEventLevel?>("FileMinimumLevel", logCfg) ?? Serilog.Events.LogEventLevel.Verbose,
+                    restrictedToMinimumLevel: minLevel,
                     path: filePath ?? "logs/log.txt",
                     rollingInterval: RollingInterval.Day,
                     fileSizeLimitBytes: _config.GetConfigInt("FileSizeLimitBytes", logCfg) ?? 30000000,
                     retainedFileCountLimit: _config.GetConfigInt("RetainedFileCountLimit", logCfg) ?? 30,
                     rollOnFileSizeLimit: _config.GetConfigBool("RollOnFileSizeLimit", logCfg, defaultVal: true),
                     outputTemplate: outputTemplate);
+                
+                logDebug.Add(string.Concat("Rolling File (minimum level: ", minLevel.ToString(), ")"));
             }
-            if (LogToPostgres is true && postgresCommand is not null)
+            if (logToPostgres is true && postgresCommand is not null)
             {
+                var minLevel = _config.GetConfigEnum<Serilog.Events.LogEventLevel?>("PostgresMinimumLevel", logCfg) ?? Serilog.Events.LogEventLevel.Verbose;
                 loggerConfig = loggerConfig.WriteTo.Postgres(
                     postgresCommand, 
-                    restrictedToMinimumLevel:
-                        _config.GetConfigEnum<Serilog.Events.LogEventLevel?>("PostgresMinimumLevel", logCfg) ?? Serilog.Events.LogEventLevel.Verbose,
+                    restrictedToMinimumLevel: minLevel,
                     connectionString: ConnectionString,
                     cmdRetryStrategy);
+                
+                logDebug.Add(string.Concat("PostgreSQL Database (minimum level: ", minLevel.ToString(), ", command: ", postgresCommand, ")"));
+            }
+
+            if (logToOpenTelemetry)
+            {
+                var minLevel = _config.GetConfigEnum<Serilog.Events.LogEventLevel?>("OTLPMinimumLevel", logCfg) ?? Serilog.Events.LogEventLevel.Verbose;
+                var endpoint = _config.GetConfigStr("OTLPEndpoint", logCfg) ?? "http://localhost:4317";
+                var protocol = _config.GetConfigEnum<OtlpProtocol?>("OTLPProtocol", logCfg) ?? OtlpProtocol.Grpc;
+                loggerConfig = loggerConfig.WriteTo.OpenTelemetry(options => 
+                {
+                    options.Endpoint = endpoint;
+                    options.Protocol = protocol;
+                    var formatDict = new Dictionary<string, string>
+                    {
+                        ["application"] = appName ?? "NpgsqlRest",
+                        ["environment"] = envName
+                    };
+                    if (logCfg is not null)
+                    {
+                        options.ResourceAttributes =
+                            (_config.GetConfigDict(logCfg.GetSection("OTLResourceAttributes")) ??
+                             new Dictionary<string, string>())
+                            .ToDictionary(kv => kv.Key,
+                                kv => (object)Formatter.FormatString(kv.Value.AsSpan(), formatDict).ToString());
+                        var headers = _config.GetConfigDict(logCfg.GetSection("OTLPHeaders"));
+                        if (headers is not null && headers.Count > 0)
+                        {
+                            options.Headers = headers;
+                        }
+                    }
+                    options.LevelSwitch = new Serilog.Core.LoggingLevelSwitch(minLevel);
+                });
+                
+                logDebug.Add(string.Concat("OpenTelemetry (minimum level: ", minLevel.ToString(), ", endpoint: ", endpoint, ", protocol: ", protocol.ToString(), ")"));
             }
             var serilog = loggerConfig.CreateLogger();
             
@@ -215,7 +271,12 @@ public class Builder
                 }
                 return str;
             }).Aggregate((a, b) => string.Concat(a, ", ", b));
+            
             Logger?.LogDebug("----> Starting with configuration(s): {providerString}", providerString);
+            if (logDebug.Count > 0)
+            {
+                Logger?.LogDebug("----> Logging enabled: {logDebug}", string.Join(", ", logDebug));
+            }
         }
     }
 

@@ -38,7 +38,7 @@ public class App
             app.UseHsts();
         }
 
-        if (_builder.LogToConsole is true || _builder.LogToFile is true || _builder.LogToPostgres is true)
+        if (_builder.LoggingEnabled is true)
         {
             app.UseSerilogRequestLogging();
         }

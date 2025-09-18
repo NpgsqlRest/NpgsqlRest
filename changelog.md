@@ -4,6 +4,14 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [2.35.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/2.35.0) (2025-09-18)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/2.34.0...2.35.0)
+
+1. Fix logging config issues.
+2. Fix startup message issue. 
+3. Fix custom header lines configuration issue.
+
 ## Version [2.34.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/2.34.0) (2025-09-12)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/2.33.0...2.34.0)
