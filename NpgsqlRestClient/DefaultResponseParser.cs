@@ -7,17 +7,9 @@ namespace NpgsqlRestClient;
 public class DefaultResponseParser(
     NpgsqlRestAuthenticationOptions options,
     string? antiforgeryFieldNameTag,
-    string? antiforgeryTokenTag)
+    string? antiforgeryTokenTag,
+    string[]? availableClaimTypes)
 {
-    private readonly NpgsqlRestAuthenticationOptions options = options;
-    private readonly string? antiforgeryFieldNameTag = antiforgeryFieldNameTag;
-    private readonly string? antiforgeryTokenTag = antiforgeryTokenTag;
-
-    public ReadOnlySpan<char> Parse(ReadOnlySpan<char> input, RoutineEndpoint endpoint, HttpContext context)
-    {
-        return Parse(input, context, null);
-    }
-
     public ReadOnlySpan<char> Parse(
         ReadOnlySpan<char> input, 
         HttpContext context, 
@@ -73,6 +65,13 @@ public class DefaultResponseParser(
             if (antiforgeryTokenTag is not null && tokenSet.RequestToken is not null)
             {
                 replacements.Add(antiforgeryTokenTag, tokenSet.RequestToken);
+            }
+        }
+        if (availableClaimTypes is not null && availableClaimTypes.Length > 0)
+        {
+            for (int i = 0; i < availableClaimTypes.Length; i++)
+            {
+                replacements.TryAdd(availableClaimTypes[i], Consts.Null);
             }
         }
         return Formatter.FormatString(input, replacements);

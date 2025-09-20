@@ -35,7 +35,7 @@ public class AppStaticFileMiddleware(RequestDelegate next, IWebHostEnvironment h
     private static string? _unauthorizedReturnToQueryParameter;
     private static bool _checkAuthorize = false;
     private static string[] _defaultFileNames = default!;
-
+    
     public static void ConfigureStaticFileMiddleware(
         bool parse,
         string[]? parsePatterns,
@@ -48,6 +48,7 @@ public class AppStaticFileMiddleware(RequestDelegate next, IWebHostEnvironment h
         string[]? authorizePaths,
         string? unauthorizedRedirectPath,
         string? unautorizedReturnToQueryParameter,
+        string[]? availableClaimTypes,
         ILogger? logger)
     {
         _parsePatterns = parse == false || parsePatterns == null || parsePatterns.Length == 0 ? null : parsePatterns?.Where(p => !string.IsNullOrEmpty(p)).ToArray();
@@ -57,7 +58,7 @@ public class AppStaticFileMiddleware(RequestDelegate next, IWebHostEnvironment h
         }
         else
         {
-            _parser = new DefaultResponseParser(options, antiforgeryFieldNameTag, antiforgeryTokenTag);
+            _parser = new DefaultResponseParser(options, antiforgeryFieldNameTag, antiforgeryTokenTag, availableClaimTypes);
         }
 
         _antiforgery = antiforgery;
