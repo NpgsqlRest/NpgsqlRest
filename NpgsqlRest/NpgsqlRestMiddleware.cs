@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http.Extensions;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using Npgsql;
 using NpgsqlRest.Auth;
@@ -82,9 +83,19 @@ public class NpgsqlRestMiddleware(RequestDelegate next)
             await next(context);
             return;
         }
-
+        
+        
         Routine routine = entry.Endpoint.Routine;
         RoutineEndpoint endpoint = entry.Endpoint;
+        
+        if (Options.RateLimiterOptions.Enabled is true && (endpoint.RateLimiterPolicy is not null || Options.RateLimiterOptions.DefaultPolicy is not null))
+        {
+            //var policyName = endpoint.RateLimiterPolicy ?? Options.RateLimiterOptions.DefaultPolicy!;
+            //var rateLimiterOptionsAccessor = serviceProvider.GetService<IOptions<Microsoft.AspNetCore.RateLimiting.RateLimiterOptions>>();
+            //var rateLimiterOptions = rateLimiterOptionsAccessor?.Value;
+            //if (rateLimiterOptions is null || rateLimiterOptions.PolicyMap.TryGetValue(policyName
+        }
+        
         IRoutineSourceParameterFormatter formatter = entry.Formatter;
 
         string? headers = null;

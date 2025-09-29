@@ -1,11 +1,13 @@
 ﻿using System.Collections.Frozen;
 using System.IO.Compression;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.BearerToken;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption;
 using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption.ConfigurationModel;
 using Microsoft.AspNetCore.DataProtection.KeyManagement;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.Primitives;
 using Microsoft.Net.Http.Headers;
@@ -14,6 +16,7 @@ using NpgsqlRest;
 using Serilog;
 using Serilog.Extensions.Logging;
 using Serilog.Sinks.OpenTelemetry;
+using RateLimiterOptions = NpgsqlRest.RateLimiterOptions;
 
 namespace NpgsqlRestClient;
 
@@ -926,5 +929,115 @@ public class Builder
         }
         
         return options;
+    }
+    
+    public enum RateLimiterType { FixedWindow, SlidingWindow, TokenBucket, Concurrency }
+
+    public RateLimiterOptions? BuildRateLimiter()
+    {
+        var rateLimiterCfg = _config.Cfg.GetSection("RateLimiterOptions");
+        if (_config.Exists(rateLimiterCfg) is false || _config.GetConfigBool("Enabled", rateLimiterCfg) is false)
+        {
+            return null;
+        }
+        var policiesCfg = rateLimiterCfg.GetSection("Policies");
+        if (_config.Exists(policiesCfg) is false)
+        {
+            return null;
+        }
+        
+        var result = new RateLimiterOptions
+        {
+            Enabled = true,
+            DefaultPolicy = _config.GetConfigStr("DefaultPolicy", rateLimiterCfg),
+            StatusCode = _config.GetConfigInt("StatusCode", rateLimiterCfg) ?? 429,
+            Message = _config.GetConfigStr("Message", rateLimiterCfg) ?? "Too many requests. Please try again later."
+        };
+        
+        Instance.Services.AddRateLimiter(options =>
+        {
+            foreach (var sectionCfg in policiesCfg.GetChildren())
+            {
+                var type = _config.GetConfigEnum<RateLimiterType?>("Type", sectionCfg);
+                if (type is null)
+                {
+                    continue;
+                }
+                if (_config.GetConfigBool("Enabled", sectionCfg) is false)
+                {
+                    continue;
+                }
+                var name = _config.GetConfigStr("Name", sectionCfg) ?? type.ToString()!;
+                
+                if (type == RateLimiterType.FixedWindow)
+                {
+                    options.AddFixedWindowLimiter(name, config =>
+                    {
+                        config.PermitLimit = _config.GetConfigInt("PermitLimit", sectionCfg) ?? 100;
+                        config.Window = TimeSpan.FromSeconds(_config.GetConfigInt("WindowSeconds", sectionCfg) ?? 60);
+                        config.QueueLimit = _config.GetConfigInt("QueueLimit", sectionCfg) ?? 10;
+                        config.AutoReplenishment = _config.GetConfigBool("AutoReplenishment", sectionCfg, true);
+                    });
+                    Logger?.LogDebug("Using Fixed Window rate limiter with name {Name}: PermitLimit={PermitLimit}, WindowSeconds={WindowSeconds}, QueueLimit={QueueLimit}, AutoReplenishment={AutoReplenishment}",
+                        name,
+                        _config.GetConfigInt("PermitLimit", sectionCfg) ?? 100,
+                        _config.GetConfigInt("WindowSeconds", sectionCfg) ?? 60,
+                        _config.GetConfigInt("QueueLimit", sectionCfg) ?? 10,
+                        _config.GetConfigBool("AutoReplenishment", sectionCfg, true));
+                }
+                else if (type == RateLimiterType.SlidingWindow)
+                {
+                    options.AddSlidingWindowLimiter(name, config =>
+                    {
+                        config.PermitLimit = _config.GetConfigInt("PermitLimit", sectionCfg) ?? 100;
+                        config.Window = TimeSpan.FromSeconds(_config.GetConfigInt("WindowSeconds", sectionCfg) ?? 60);
+                        config.SegmentsPerWindow = _config.GetConfigInt("SegmentsPerWindow", sectionCfg) ?? 6;
+                        config.QueueLimit = _config.GetConfigInt("QueueLimit", sectionCfg) ?? 10;
+                        config.AutoReplenishment = _config.GetConfigBool("AutoReplenishment", sectionCfg, true);
+                    });
+                    Logger?.LogDebug("Using Sliding Window rate limiter with name {Name}: PermitLimit={PermitLimit}, WindowSeconds={WindowSeconds}, SegmentsPerWindow={SegmentsPerWindow}, QueueLimit={QueueLimit}, AutoReplenishment={AutoReplenishment}",
+                        name,
+                        _config.GetConfigInt("PermitLimit", sectionCfg) ?? 100,
+                        _config.GetConfigInt("WindowSeconds", sectionCfg) ?? 60,
+                        _config.GetConfigInt("SegmentsPerWindow", sectionCfg) ?? 6,
+                        _config.GetConfigInt("QueueLimit", sectionCfg) ?? 10,
+                        _config.GetConfigBool("AutoReplenishment", sectionCfg, true));
+                }
+                else if (type == RateLimiterType.TokenBucket)
+                {
+                    options.AddTokenBucketLimiter(name, config =>
+                    {
+                        config.TokenLimit = _config.GetConfigInt("TokenLimit", sectionCfg) ?? 100;
+                        config.TokensPerPeriod = _config.GetConfigInt("TokensPerPeriod", sectionCfg) ?? 10;
+                        config.ReplenishmentPeriod = TimeSpan.FromSeconds(_config.GetConfigInt("ReplenishmentPeriodSeconds", sectionCfg) ?? 10);
+                        config.QueueLimit = _config.GetConfigInt("QueueLimit", sectionCfg) ?? 10;
+                        config.AutoReplenishment = _config.GetConfigBool("AutoReplenishment", sectionCfg, true);
+                    });
+                    Logger?.LogDebug("Using Token Bucket rate limiter with name {Name}: TokenLimit={TokenLimit}, TokensPerPeriod={TokensPerPeriod}, ReplenishmentPeriodSeconds={ReplenishmentPeriodSeconds}, QueueLimit={QueueLimit}, AutoReplenishment={AutoReplenishment}",
+                        name,
+                        _config.GetConfigInt("TokenLimit", sectionCfg) ?? 100,
+                        _config.GetConfigInt("TokensPerPeriod", sectionCfg) ?? 10,
+                        _config.GetConfigInt("ReplenishmentPeriodSeconds", sectionCfg) ?? 1,
+                        _config.GetConfigInt("QueueLimit", sectionCfg) ?? 10,
+                        _config.GetConfigBool("AutoReplenishment", sectionCfg, true));
+                }
+                else if (type == RateLimiterType.Concurrency)
+                {
+                    options.AddConcurrencyLimiter(name, config =>
+                    {
+                        config.PermitLimit = _config.GetConfigInt("PermitLimit", sectionCfg) ?? 100;
+                        config.QueueLimit = _config.GetConfigInt("QueueLimit", sectionCfg) ?? 10;
+                        config.QueueProcessingOrder = _config.GetConfigBool("OldestFirst", sectionCfg, true) is true ? QueueProcessingOrder.OldestFirst : QueueProcessingOrder.NewestFirst;
+                    });
+                    Logger?.LogDebug("Using Concurrency rate limiter with name {Name}: PermitLimit={PermitLimit}, QueueLimit={QueueLimit}, OldestFirst={OldestFirst}",
+                        name,
+                        _config.GetConfigInt("PermitLimit", sectionCfg) ?? 100,
+                        _config.GetConfigInt("QueueLimit", sectionCfg) ?? 10,
+                        _config.GetConfigBool("OldestFirst", sectionCfg, true));
+                }
+            }
+        });
+
+        return result;
     }
 }

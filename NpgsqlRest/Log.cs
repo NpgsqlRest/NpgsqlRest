@@ -212,15 +212,12 @@ public static partial class Log
     [LoggerMessage(Level = LogLevel.Warning, Message = "{description} has failed to set BASIC AUTH USER by the comment annotation.")]
     public static partial void BasicAuthUserFailed(this ILogger logger, string description);
     
-    [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has set RETRY STRATEGY set to {name} by the comment annotation.")]
+    [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has set RETRY STRATEGY to {name} by the comment annotation.")]
     public static partial void RetryStrategySet(this ILogger logger, string description, string name);
     
     [LoggerMessage(Level = LogLevel.Warning, Message = "{description} has failed to set RETRY STRATEGY by the comment annotation. Strategy {name} not found in the list of strategies.")]
     public static partial void RetryStrategyNotFound(this ILogger logger, string description, string name);
-    
-    
-    
-    
+
     [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to open connection on attempt {attempt}. Retrying in {delay}ms. Error: {error}")]
     public static partial void FailedToOpenConnectionRetry(this ILogger logger, int attempt, double delay, string error);
     
@@ -229,10 +226,7 @@ public static partial class Log
     
     [LoggerMessage(Level = LogLevel.Error, Message = "Non-retryable error occurred while opening connection: {error}")]
     public static partial void FailedToOpenNonRetryableConnection(this ILogger logger, Exception exception, string error);
-    
-    
-    
-    
+
     [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to execute command on attempt {attempt}. Retrying in {delay}ms. Error: {error}")]
     public static partial void FailedToExecuteCommandRetry(this ILogger logger, int attempt, double delay, string error);
     
@@ -240,4 +234,7 @@ public static partial class Log
     public static partial void FailedToExecuteCommandAfter(this ILogger logger, Exception exception, int totalAttempts);
     [LoggerMessage(Level = LogLevel.Error, Message = "Non-retryable error occurred while executing command: {error}")]
     public static partial void FailedToExecuteNonRetryableCommand(this ILogger logger, Exception exception, string error);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has set RATE LIMITER POLICY NAME to {name} by the comment annotation.")]
+    public static partial void RateLimiterPolicySet(this ILogger logger, string description, string name);
 }
