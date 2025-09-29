@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http.Extensions;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using Npgsql;
 using NpgsqlRest.Auth;
@@ -18,8 +19,6 @@ namespace NpgsqlRest;
 
 public class NpgsqlRestMiddleware(RequestDelegate next)
 {
-    private readonly RequestDelegate _next = next;
-
     private static ILogger? logger = default;
     private static IServiceProvider serviceProvider = default!;
 
@@ -64,7 +63,7 @@ public class NpgsqlRestMiddleware(RequestDelegate next)
                 var pathKey2 = pathKeybuffer[..position];
                 if (!lookup.TryGetValue(pathKey2, out entry))
                 {
-                    await _next(context);
+                    await next(context);
                     return;
                 }
             }
@@ -73,7 +72,7 @@ public class NpgsqlRestMiddleware(RequestDelegate next)
                 var pathKey2 = pathKeybuffer[..(position - 1)];
                 if (!lookup.TryGetValue(pathKey2, out entry))
                 {
-                    await _next(context);
+                    await next(context);
                     return;
                 }
             }
@@ -81,12 +80,22 @@ public class NpgsqlRestMiddleware(RequestDelegate next)
 
         if (entry is null)
         {
-            await _next(context);
+            await next(context);
             return;
         }
-
+        
+        
         Routine routine = entry.Endpoint.Routine;
         RoutineEndpoint endpoint = entry.Endpoint;
+        
+        if (Options.RateLimiterOptions.Enabled is true && (endpoint.RateLimiterPolicy is not null || Options.RateLimiterOptions.DefaultPolicy is not null))
+        {
+            //var policyName = endpoint.RateLimiterPolicy ?? Options.RateLimiterOptions.DefaultPolicy!;
+            //var rateLimiterOptionsAccessor = serviceProvider.GetService<IOptions<Microsoft.AspNetCore.RateLimiting.RateLimiterOptions>>();
+            //var rateLimiterOptions = rateLimiterOptionsAccessor?.Value;
+            //if (rateLimiterOptions is null || rateLimiterOptions.PolicyMap.TryGetValue(policyName
+        }
+        
         IRoutineSourceParameterFormatter formatter = entry.Formatter;
 
         string? headers = null;
@@ -288,7 +297,7 @@ public class NpgsqlRestMiddleware(RequestDelegate next)
                 {
                     shouldCommit = false;
                     uploadHandler?.OnError(connection, context, null);
-                    await _next(context);
+                    await next(context);
                     return;
                 }
 
@@ -629,7 +638,7 @@ public class NpgsqlRestMiddleware(RequestDelegate next)
                                 {
                                     shouldCommit = false;
                                     uploadHandler?.OnError(connection, context, null);
-                                    await _next(context);
+                                    await next(context);
                                     return;
                                 }
                                 continue;
@@ -643,7 +652,7 @@ public class NpgsqlRestMiddleware(RequestDelegate next)
                         {
                             shouldCommit = false;
                             uploadHandler?.OnError(connection, context, null);
-                            await _next(context);
+                            await next(context);
                             return;
                         }
                         continue;
@@ -727,7 +736,7 @@ public class NpgsqlRestMiddleware(RequestDelegate next)
                     {
                         shouldCommit = false;
                         uploadHandler?.OnError(connection, context, null);
-                        await _next(context);
+                        await next(context);
                         return;
                     }
                 }
@@ -739,7 +748,7 @@ public class NpgsqlRestMiddleware(RequestDelegate next)
                 {
                     shouldCommit = false;
                     uploadHandler?.OnError(connection, context, null);
-                    await _next(context);
+                    await next(context);
                     return;
                 }
 
@@ -917,7 +926,7 @@ public class NpgsqlRestMiddleware(RequestDelegate next)
                                 if (parameter.TypeDescriptor.HasDefault is false)
                                 {
                                     transaction?.RollbackAsync();
-                                    await _next(context);
+                                    await next(context);
                                     return;
                                 }
                                 continue;
@@ -931,7 +940,7 @@ public class NpgsqlRestMiddleware(RequestDelegate next)
                         {
                             shouldCommit = false;
                             uploadHandler?.OnError(connection, context, null);
-                            await _next(context);
+                            await next(context);
                             return;
                         }
                         continue;
@@ -1014,7 +1023,7 @@ public class NpgsqlRestMiddleware(RequestDelegate next)
                     {
                         shouldCommit = false;
                         uploadHandler?.OnError(connection, context, null);
-                        await _next(context);
+                        await next(context);
                         return;
                     }
                 }
@@ -1067,7 +1076,7 @@ public class NpgsqlRestMiddleware(RequestDelegate next)
             {
                 shouldCommit = false;
                 uploadHandler?.OnError(connection, context, null);
-                await _next(context);
+                await next(context);
                 return;
             }
 
@@ -1709,7 +1718,7 @@ public class NpgsqlRestMiddleware(RequestDelegate next)
             }
         }
 
-        await _next(context);
+        await next(context);
         return;
     }
     

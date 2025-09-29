@@ -199,6 +199,13 @@ internal static class DefaultCommentParser
         "retry_strategy",
         "retry",
     ];
+    
+    private static readonly string[] RateLimiterPolicyKey = [
+        "rate_limiter_policy_name",
+        "rate_limiter_policy",
+        "rate_limiter",
+        "rate",
+    ];
 
     public static RoutineEndpoint? Parse(
         Routine routine,
@@ -1162,6 +1169,16 @@ internal static class DefaultCommentParser
                         logger?.RetryStrategyNotFound(description, name);
                     }
                 }
+                
+                // rate_limiter_policy_name [ name ]
+                // rate_limiter_policy [ name ]
+                // rate_limiter [ name ]
+                // rate [ name ]
+                else if (haveTag is true && len >= 2 && StrEqualsToArray(wordsLower[0], RateLimiterPolicyKey))
+                {
+                    routineEndpoint.RateLimiterPolicy = string.Join(Consts.Space, words[1..]);
+                    logger?.RateLimiterPolicySet(description, routineEndpoint.RateLimiterPolicy);
+                }
             }
             if (disabled)
             {
@@ -1315,10 +1332,15 @@ internal static class DefaultCommentParser
         
         else if (StrEqualsToArray(name, RetryStrategyKey))
         {
-            if (options.CommandRetryOptions.Strategies.TryGetValue(name, out var strategy))
+            if (options.CommandRetryOptions.Strategies.TryGetValue(value, out var strategy))
             {
                 endpoint.RetryStrategy = strategy;
             }
+        }
+        
+        else if (StrEqualsToArray(name, RateLimiterPolicyKey))
+        {
+            endpoint.RateLimiterPolicy = value;
         }
 
         else

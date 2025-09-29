@@ -114,6 +114,7 @@ if (cmdRetryOpts.Enabled && string.IsNullOrEmpty(cmdRetryOpts.DefaultStrategy))
 
 builder.BuildInstance();
 builder.BuildLogger(cmdRetryStrategy);
+var rateLimiterOptions = builder.BuildRateLimiter();
 
 var (connectionString, retryOpts) = builder.BuildConnectionString();
 if (connectionString is null)
@@ -132,6 +133,11 @@ var compressionEnabled = builder.ConfigureResponseCompression();
 var antiForgeryUsed = builder.ConfigureAntiForgery();
 
 WebApplication app = builder.Build();
+
+// if (rateLimiterOptions is not null && rateLimiterOptions.Enabled)
+// {
+//     app.UseRateLimiter();
+// }
 
 // dump encrypted text and exit
 if (args.Length >= 1 && string.Equals(args[0], "--encrypt", StringComparison.CurrentCultureIgnoreCase))
@@ -243,7 +249,8 @@ NpgsqlRestOptions options = new()
     RefreshMethod = config.GetConfigStr("Method", refreshOptionsCfg) ?? "GET",
     UploadOptions = appInstance.CreateUploadOptions(),
     
-    CacheOptions = builder.BuildCacheOptions(app)
+    CacheOptions = builder.BuildCacheOptions(app),
+    RateLimiterOptions = rateLimiterOptions ?? new RateLimiterOptions(),
 };
 
 app.UseNpgsqlRest(options);

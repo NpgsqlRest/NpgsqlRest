@@ -4,10 +4,13 @@ using Microsoft.Extensions.Logging;
 using NpgsqlRest.CrudSource;
 using Microsoft.Extensions.DependencyInjection;
 using System.Security.Claims;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.RateLimiting;
 using Npgsql;
 using NpgsqlRest.Auth;
 using NpgsqlRest.UploadHandlers;
+using RateLimiterOptions = NpgsqlRest.RateLimiterOptions;
 
 #pragma warning disable CS8633 // Nullability in constraints for type parameter doesn't match the constraints for type parameter in implicitly implemented interface method'.
 #pragma warning disable CS8767 // Nullability of reference types in type of parameter doesn't match implicitly implemented member (possibly because of nullability attributes).
@@ -78,6 +81,25 @@ public class Program
 
         var builder = WebApplication.CreateBuilder([]);
 
+        builder.Services.AddRateLimiter(options =>
+        {
+            options.AddFixedWindowLimiter("max 2 per second", config =>
+            {
+                config.PermitLimit = 2;
+                config.Window = TimeSpan.FromSeconds(1);
+                config.AutoReplenishment = true;
+            });
+            
+            //var fixedWindowRateLimiterOptions = new FixedWindowRateLimiterOptions();
+            //var policyName = "max 2 per second (from AddPolicy)";
+            // options.AddPolicy(policyName, context =>
+            // {
+            //     return fixedWindowRateLimiterOptions;
+            // });
+        });
+        
+        var fixedWindowRateLimiterOptions = new FixedWindowRateLimiterOptions();
+ 
         builder
             .Services
             .AddAuthentication()
@@ -85,6 +107,7 @@ public class Program
             .AddCookie();
 
         var app = builder.Build();
+        //app.UseRateLimiter();
 
         var authOptions = new NpgsqlRest.Auth.NpgsqlRestAuthenticationOptions
         {
@@ -186,7 +209,8 @@ public class Program
                 DefaultUploadMetadataParameterName = "_default_upload_metadata",
                 UseDefaultUploadMetadataContextKey = true,
                 //DefaultUploadMetadataContextKey = "request.upload_metadata",
-            }
+            },
+            RateLimiterOptions = new RateLimiterOptions { Enabled = true }
         });
         app.Run();
     }
