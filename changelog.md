@@ -4,6 +4,16 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [2.36.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/2.36.0) (2025-09-29)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/2.35.0...2.36.0)
+
+- Added `AvailableClaims` to `StaticFiles.ParseContentOptions` client configuration section. 
+
+This is fix. Previously, if the user was not authenticated, or claim was not found in the claims collection, the tag would not be replaced. Now it will be replaced with NULL. Without this, resulting template may be malformed, for example  if it was in JavaScript.
+
+- Removed unused fields in [NpgsqlRest.csproj](NpgsqlRest/NpgsqlRest.csproj)
+
 ## Version [2.35.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/2.35.0) (2025-09-18)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/2.34.0...2.35.0)
@@ -20,7 +30,7 @@ Added OpenTelemetry support. See Log configuration for more details.
 
 - Improved connection retry mechanism (see ConnectionSettings.RetryOptions).
 - Added command retry on all levels (see CommandRetryOptions).
-- Fixed StartupMessage rednering and added named formats.
+- Fixed StartupMessage rendering and added named formats.
 - Added cache settings (see CacheOptions) and Redis cache as second option (beside memory cache).
 
 ## Version [2.33.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/2.33.0) (2025-08-29)
