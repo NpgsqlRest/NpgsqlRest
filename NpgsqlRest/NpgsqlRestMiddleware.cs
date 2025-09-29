@@ -18,8 +18,6 @@ namespace NpgsqlRest;
 
 public class NpgsqlRestMiddleware(RequestDelegate next)
 {
-    private readonly RequestDelegate _next = next;
-
     private static ILogger? logger = default;
     private static IServiceProvider serviceProvider = default!;
 
@@ -64,7 +62,7 @@ public class NpgsqlRestMiddleware(RequestDelegate next)
                 var pathKey2 = pathKeybuffer[..position];
                 if (!lookup.TryGetValue(pathKey2, out entry))
                 {
-                    await _next(context);
+                    await next(context);
                     return;
                 }
             }
@@ -73,7 +71,7 @@ public class NpgsqlRestMiddleware(RequestDelegate next)
                 var pathKey2 = pathKeybuffer[..(position - 1)];
                 if (!lookup.TryGetValue(pathKey2, out entry))
                 {
-                    await _next(context);
+                    await next(context);
                     return;
                 }
             }
@@ -81,7 +79,7 @@ public class NpgsqlRestMiddleware(RequestDelegate next)
 
         if (entry is null)
         {
-            await _next(context);
+            await next(context);
             return;
         }
 
@@ -288,7 +286,7 @@ public class NpgsqlRestMiddleware(RequestDelegate next)
                 {
                     shouldCommit = false;
                     uploadHandler?.OnError(connection, context, null);
-                    await _next(context);
+                    await next(context);
                     return;
                 }
 
@@ -629,7 +627,7 @@ public class NpgsqlRestMiddleware(RequestDelegate next)
                                 {
                                     shouldCommit = false;
                                     uploadHandler?.OnError(connection, context, null);
-                                    await _next(context);
+                                    await next(context);
                                     return;
                                 }
                                 continue;
@@ -643,7 +641,7 @@ public class NpgsqlRestMiddleware(RequestDelegate next)
                         {
                             shouldCommit = false;
                             uploadHandler?.OnError(connection, context, null);
-                            await _next(context);
+                            await next(context);
                             return;
                         }
                         continue;
@@ -727,7 +725,7 @@ public class NpgsqlRestMiddleware(RequestDelegate next)
                     {
                         shouldCommit = false;
                         uploadHandler?.OnError(connection, context, null);
-                        await _next(context);
+                        await next(context);
                         return;
                     }
                 }
@@ -739,7 +737,7 @@ public class NpgsqlRestMiddleware(RequestDelegate next)
                 {
                     shouldCommit = false;
                     uploadHandler?.OnError(connection, context, null);
-                    await _next(context);
+                    await next(context);
                     return;
                 }
 
@@ -917,7 +915,7 @@ public class NpgsqlRestMiddleware(RequestDelegate next)
                                 if (parameter.TypeDescriptor.HasDefault is false)
                                 {
                                     transaction?.RollbackAsync();
-                                    await _next(context);
+                                    await next(context);
                                     return;
                                 }
                                 continue;
@@ -931,7 +929,7 @@ public class NpgsqlRestMiddleware(RequestDelegate next)
                         {
                             shouldCommit = false;
                             uploadHandler?.OnError(connection, context, null);
-                            await _next(context);
+                            await next(context);
                             return;
                         }
                         continue;
@@ -1014,7 +1012,7 @@ public class NpgsqlRestMiddleware(RequestDelegate next)
                     {
                         shouldCommit = false;
                         uploadHandler?.OnError(connection, context, null);
-                        await _next(context);
+                        await next(context);
                         return;
                     }
                 }
@@ -1067,7 +1065,7 @@ public class NpgsqlRestMiddleware(RequestDelegate next)
             {
                 shouldCommit = false;
                 uploadHandler?.OnError(connection, context, null);
-                await _next(context);
+                await next(context);
                 return;
             }
 
@@ -1709,7 +1707,7 @@ public class NpgsqlRestMiddleware(RequestDelegate next)
             }
         }
 
-        await _next(context);
+        await next(context);
         return;
     }
     
