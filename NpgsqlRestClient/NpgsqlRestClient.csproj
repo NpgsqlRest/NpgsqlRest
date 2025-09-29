@@ -12,10 +12,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="ExcelDataReader" Version="3.7.0" />
+    <PackageReference Include="ExcelDataReader" Version="3.8.0" />
     <PackageReference Include="Serilog.AspNetCore" Version="9.0.0" />
     <PackageReference Include="Serilog.Sinks.OpenTelemetry" Version="4.2.0" />
-    <PackageReference Include="StackExchange.Redis" Version="2.9.17" />
+    <PackageReference Include="StackExchange.Redis" Version="2.9.25" />
     <PackageReference Include="System.Text.Json" Version="9.0.9" />
   </ItemGroup>
   
