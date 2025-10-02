@@ -338,6 +338,7 @@ public class App
                 XsrfTokenHeaderName = _config.GetConfigStr("XsrfTokenHeaderName", tsClientCfg),
                 ExportEventSources = _config.GetConfigBool("ExportEventSources", tsClientCfg, true),
                 CustomImports = _config.GetConfigEnumerable("CustomImports", tsClientCfg)?.ToArray() ?? [],
+                IncludeSchemaInNames = _config.GetConfigBool("IncludeSchemaInNames", tsClientCfg, true),
             };
 
             Dictionary<string, string> customHeaders = [];

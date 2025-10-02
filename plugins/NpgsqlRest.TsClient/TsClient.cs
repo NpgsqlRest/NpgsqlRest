@@ -14,16 +14,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
     private const string IncludeParseUrl = "tsclient_parse_url";
     private const string IncludeParseRequest = "tsclient_parse_request";
     private const string IncludeStatusCode = "tsclient_status_code";
-
-    public TsClient(string filePath) : this(new TsClientOptions(filePath)) { }
-
-    public TsClient(string filePath, 
-        bool fileOverwrite = false, 
-        bool includeHost = false, 
-        string? customHost = null, 
-        CommentHeader commentHeader = CommentHeader.Simple,
-        bool includeStatusCode = false) : this(new TsClientOptions(filePath, fileOverwrite, includeHost, customHost, commentHeader, includeStatusCode)) { }
-
+    
     public void Setup(IApplicationBuilder builder, ILogger? logger, NpgsqlRestOptions options)
     {
         if (builder is WebApplication app)
@@ -306,7 +297,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             {
                 if (options.UseRoutineNameInsteadOfEndpoint)
                 {
-                    name = string.Concat(routine.Schema, "/", routine.Name);
+                    name = options.IncludeSchemaInNames ? string.Concat(routine.Schema, "/", routine.Name) : routine.Name;
                 }
                 else
                 {
@@ -322,12 +313,13 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             }
             catch
             {
-                name = string.Concat(routine.Schema, "/", routine.Name);
+                name = options.IncludeSchemaInNames ? string.Concat(routine.Schema, "/", routine.Name) : routine.Name;
             }
             if (name.Length < 3)
             {
-                name = string.Concat(routine.Schema, "/", routine.Name);
+                name = options.IncludeSchemaInNames ? string.Concat(routine.Schema, "/", routine.Name) : routine.Name;
             }
+            
             var routineType = routine.Type;
             var paramCount = routine.ParamCount;
             //var paramTypeDescriptors = routine.ParamTypeDescriptor;
@@ -438,7 +430,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                         "        status: response.status,",
                         Environment.NewLine,
                         "        response: ", 
-                        (responseExp == "await response.text()" ? responseExp : string.Concat("response.status == 200 ? ", responseExp, " : await response.text()")),
+                        (responseExp == "await response.text()" ? responseExp : string.Concat("response.status == 200 ? ", responseExp, " : await response.text() as any")),
                         Environment.NewLine,
                         "    };");
                 }
@@ -747,7 +739,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             else
             {
                 resultType = includeStatusCode ?
-                    string.Concat("{status: number, response: ", responseName, (responseName == "string" ? "" : " | string"), "}") :
+                    string.Concat("{status: number, response: ", responseName, "", "}") :
                     responseName;
             }
 
@@ -889,7 +881,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 }
                 else
                 {
-                    resultType = "{status: number, response: object[] | string}";
+                    resultType = "{status: number, response: object[]}";
                     returnExp = "{status: this.status, response: JSON.parse(this.responseText)}";
                     parameters = (parameters ?? "").Trim('\n', '\r');
                     content.AppendLine(string.Format(

@@ -1,51 +1,26 @@
 ﻿namespace NpgsqlRest.TsClient;
 
-public class TsClientOptions(
-    string filePath = default!,
-    bool fileOverwrite = false,
-    bool includeHost = false,
-    string? customHost = null,
-    CommentHeader commentHeader = CommentHeader.Simple,
-    bool commentHeaderIncludeComments = true,
-    bool includeStatusCode = false,
-    bool bySchema = false,
-    bool createSeparateTypeFile = true,
-    string? importBaseUrlFrom = null,
-    string? importParseQueryFrom = null,
-    bool includeParseUrlParam = false,
-    bool includeParseRequestParam = false,
-    string[]? skipRoutineNames = null,
-    string[]? skipFunctionNames = null,
-    string[]? skipPaths = null,
-    string defaultJsonType = "string",
-    bool useRoutineNameInsteadOfEndpoint = false,
-    bool exportUrls = false,
-    bool skipTypes = false,
-    bool uniqueModels = false,
-    string? xsrfTokenHeaderName = null,
-    bool exportEventSources = true,
-    string[]? customImports = null,
-    Dictionary<string, string>? customHeaders = null)
+public class TsClientOptions
 {
     /// <summary>
     /// File path for the generated code. Set to null to skip the code generation. Use {0} to set schema name when BySchema is true
     /// </summary>
-    public string? FilePath { get; set; } = filePath;
+    public string? FilePath { get; set; } = null!;
 
     /// <summary>
     /// Force file overwrite.
     /// </summary>
-    public bool FileOverwrite { get; set; } = fileOverwrite;
+    public bool FileOverwrite { get; set; } = false;
 
     /// <summary>
     /// Include current host information in the URL prefix.
     /// </summary>
-    public bool IncludeHost { get; set; } = includeHost;
+    public bool IncludeHost { get; set; } = false;
 
     /// <summary>
     /// Set the custom host prefix information.
     /// </summary>
-    public string? CustomHost { get; set; } = customHost;
+    public string? CustomHost { get; set; } = null;
 
     /// <summary>
     /// Adds comment header to above request based on PostgreSQL routine
@@ -53,27 +28,27 @@ public class TsClientOptions(
     /// Set Simple (default) to add name, parameters and return values to comment header.
     /// Set Full to add the entire routine code as comment header.
     /// </summary>
-    public CommentHeader CommentHeader { get; set; } = commentHeader;
+    public CommentHeader CommentHeader { get; set; } = CommentHeader.Simple;
 
     /// <summary>
     /// When CommentHeader is set to Simple or Full, set to true to include routine comments in comment header.
     /// </summary>
-    public bool CommentHeaderIncludeComments { get; set; } = commentHeaderIncludeComments;
+    public bool CommentHeaderIncludeComments { get; set; } = true;
 
     /// <summary>
     /// Set to true to include status code in response: {status: response.status, response: model}
     /// </summary>
-    public bool IncludeStatusCode { get; set; } = includeStatusCode;
+    public bool IncludeStatusCode { get; set; } = false;
 
     /// <summary>
     /// Create files by PostgreSQL schema. File name will use formatted FilePath where {0} is is the schema name in the pascal case.
     /// </summary>
-    public bool BySchema { get; set; } = bySchema;
+    public bool BySchema { get; set; } = false;
 
     /// <summary>
     /// Create separate file with global types {name}Types.d.ts
     /// </summary>
-    public bool CreateSeparateTypeFile { get; set; } = createSeparateTypeFile;
+    public bool CreateSeparateTypeFile { get; set; } = true;
 
     /// <summary>
     /// Lines to add to each header. {0} format placeholder is current timestamp
@@ -83,85 +58,90 @@ public class TsClientOptions(
     /// <summary>
     /// Module name to import "baseUrl" constant, instead of defining it in a module.
     /// </summary>
-    public string? ImportBaseUrlFrom { get; set; } = importBaseUrlFrom;
+    public string? ImportBaseUrlFrom { get; set; } = null;
 
     /// <summary>
     /// Module name to import "pasreQuery" function, instead of defining it in a module.
     /// </summary>
-    public string? ImportParseQueryFrom { get; set; } = importParseQueryFrom;
+    public string? ImportParseQueryFrom { get; set; } = null;
 
     /// <summary>
     /// Include optional parameter `parseUrl: (url: string) => string = url=>url` that will parse constructed url.
     /// </summary>
-    public bool IncludeParseUrlParam { get; set; } = includeParseUrlParam;
+    public bool IncludeParseUrlParam { get; set; } = false;
 
     /// <summary>
     /// Include optional parameter `parseRequest: (request: RequestInit) => RequestInit = request=>request` that will parse constructed request.
     /// </summary>
-    public bool IncludeParseRequestParam { get; set; } = includeParseRequestParam;
+    public bool IncludeParseRequestParam { get; set; } = false;
 
     /// <summary>
     /// Array of routine names to skip (without schema)
     /// </summary>
-    public string[] SkipRoutineNames { get; set; } = skipRoutineNames ?? [];
+    public string[] SkipRoutineNames { get; set; } = [];
 
     /// <summary>
     /// Array of generated function names to skip (without schema)
     /// </summary>
-    public string[] SkipFunctionNames { get; set; } = skipFunctionNames ?? [];
+    public string[] SkipFunctionNames { get; set; } = [];
 
     /// <summary>
     /// Array of url paths to skip
     /// </summary>
-    public string[] SkipPaths { get; set; } = skipPaths ?? [];
+    public string[] SkipPaths { get; set; } = [];
 
     /// <summary>
     /// Array of schema names to skip
     /// </summary>
-    public string[] SkipSchemas { get; set; } = skipPaths ?? [];
+    public string[] SkipSchemas { get; set; } = [];
 
     /// <summary>
     /// Default TypeScript type for JSON types.
     /// </summary>
-    public string DefaultJsonType { get; set; } = defaultJsonType;
+    public string DefaultJsonType { get; set; } = "string";
 
     /// <summary>
     /// Use routine name instead of endpoint name when generating a function name.
     /// </summary>
-    public bool UseRoutineNameInsteadOfEndpoint { get; set; } = useRoutineNameInsteadOfEndpoint;
+    public bool UseRoutineNameInsteadOfEndpoint { get; set; } = false;
 
     /// <summary>
     /// Export URLs as constants.
     /// </summary>
-    public bool ExportUrls { get; set; } = exportUrls;
+    public bool ExportUrls { get; set; } = false;
 
     /// <summary>
     /// Skip generating types and produce pure JavaScript code. Setting this to true will also change .ts extension to .js where applicable.
     /// </summary>
-    public bool SkipTypes { get; set; } = skipTypes;
+    public bool SkipTypes { get; set; } = false;
 
     /// <summary>
     /// Keep TypeScript models unique, meaning, models will same fields and types will be merged into one model with name of the last model. Significantly reduces number of generated models. 
     /// </summary>
-    public bool UniqueModels { get; set; } = uniqueModels;
+    public bool UniqueModels { get; set; } = false;
 
     /// <summary>
     /// Name of the header to use for XSRF token. Set to null to skip.
     /// </summary>
-    public string? XsrfTokenHeaderName { get; set; } = xsrfTokenHeaderName;
+    public string? XsrfTokenHeaderName { get; set; } = null;
 
     /// <summary>
     /// Export event sources create functions for streaming events.
     /// </summary>
-    public bool ExportEventSources { get; set; } = exportEventSources;
+    public bool ExportEventSources { get; set; } = true;
 
     /// <summary>
     /// List if custom imports to add to the generated code. It adds line to a file. Use full expression like `import { MyType } from './my-type';`
     /// </summary>
-    public string[] CustomImports { get; set; } = customImports ?? [];
+    public string[] CustomImports { get; set; } = [];
 
     /// <summary>
     /// List if custom headers to add to the each request in generated code. Header key is automatically quoted if it doesn't contain quotes.
     /// </summary>
-    public Dictionary<string, string> CustomHeaders { get; set; } = customHeaders ?? [];
+    public Dictionary<string, string> CustomHeaders { get; set; } = [];
+    
+    /// <summary>
+    /// When true, include PostgreSQL schema name in the generated type names to avoid name collisions. Set to false to simplify type names when no name collisions are expected.
+    /// </summary>
+    public bool IncludeSchemaInNames { get; set; } = false;
 }
