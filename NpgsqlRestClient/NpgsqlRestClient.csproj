@@ -8,7 +8,7 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <NoDefaultLaunchSettingsFile>true</NoDefaultLaunchSettingsFile>
     <PublishAot>true</PublishAot>
-    <Version>2.36.0</Version>
+    <Version>2.36.1</Version>
   </PropertyGroup>
 
   <ItemGroup>
@@ -24,5 +24,9 @@
     <ProjectReference Include="..\plugins\NpgsqlRest.CrudSource\NpgsqlRest.CrudSource.csproj" />
     <ProjectReference Include="..\plugins\NpgsqlRest.HttpFiles\NpgsqlRest.HttpFiles.csproj" />
     <ProjectReference Include="..\plugins\NpgsqlRest.TsClient\NpgsqlRest.TsClient.csproj" />
+  </ItemGroup>
+  
+  <ItemGroup>
+    <Folder Include="src\app\api\" />
   </ItemGroup>
 </Project>
