@@ -81,24 +81,24 @@ public class Program
 
         var builder = WebApplication.CreateBuilder([]);
 
-        builder.Services.AddRateLimiter(options =>
-        {
-            options.AddFixedWindowLimiter("max 2 per second", config =>
-            {
-                config.PermitLimit = 2;
-                config.Window = TimeSpan.FromSeconds(1);
-                config.AutoReplenishment = true;
-            });
-            
-            //var fixedWindowRateLimiterOptions = new FixedWindowRateLimiterOptions();
-            //var policyName = "max 2 per second (from AddPolicy)";
-            // options.AddPolicy(policyName, context =>
-            // {
-            //     return fixedWindowRateLimiterOptions;
-            // });
-        });
+        // builder.Services.AddRateLimiter(options =>
+        // {
+        //     options.AddFixedWindowLimiter("max 2 per second", config =>
+        //     {
+        //         config.PermitLimit = 2;
+        //         config.Window = TimeSpan.FromSeconds(1);
+        //         config.AutoReplenishment = true;
+        //     });
+        //     
+        //     //var fixedWindowRateLimiterOptions = new FixedWindowRateLimiterOptions();
+        //     //var policyName = "max 2 per second (from AddPolicy)";
+        //     // options.AddPolicy(policyName, context =>
+        //     // {
+        //     //     return fixedWindowRateLimiterOptions;
+        //     // });
+        // });
         
-        var fixedWindowRateLimiterOptions = new FixedWindowRateLimiterOptions();
+        //var fixedWindowRateLimiterOptions = new FixedWindowRateLimiterOptions();
  
         builder
             .Services
@@ -210,7 +210,8 @@ public class Program
                 UseDefaultUploadMetadataContextKey = true,
                 //DefaultUploadMetadataContextKey = "request.upload_metadata",
             },
-            RateLimiterOptions = new RateLimiterOptions { Enabled = true }
+            
+            //RateLimiterOptions = new RateLimiterOptions { Enabled = true }
         });
         app.Run();
     }
