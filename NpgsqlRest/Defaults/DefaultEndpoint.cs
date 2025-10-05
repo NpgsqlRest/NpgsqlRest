@@ -27,7 +27,7 @@ internal static class DefaultEndpoint
 
         RoutineEndpoint routineEndpoint = new(
                 routine,
-                url: url,
+                path: url,
                 method: method,
                 requestParamType: requestParamType,
                 requiresAuthorization: options.RequiresAuthorization,

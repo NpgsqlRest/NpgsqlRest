@@ -190,8 +190,6 @@ if (antiForgeryUsed)
 }
 appInstance.ConfigureStaticFiles(app, authenticationOptions);
 
-var refreshOptionsCfg = config.NpgsqlRestCfg.GetSection("RefreshOptions");
-
 await using var dataSource = new NpgsqlDataSourceBuilder(connectionString).Build();
 var logConnectionNoticeEventsMode = config.GetConfigEnum<PostgresConnectionNoticeLoggingMode?>("LogConnectionNoticeEventsMode", config.NpgsqlRestCfg) ?? PostgresConnectionNoticeLoggingMode.FirstStackFrameAndMessage;
 
@@ -244,9 +242,6 @@ NpgsqlRestOptions options = new()
     CustomServerSentEventsResponseHeaders = builder.GetCustomServerSentEventsResponseHeaders(),
 
     RoutineSources = appInstance.CreateRoutineSources(),
-    RefreshEndpointEnabled = config.GetConfigBool("Enabled", refreshOptionsCfg, false),
-    RefreshPath = config.GetConfigStr("Path", refreshOptionsCfg) ?? "/api/npgsqlrest/refresh",
-    RefreshMethod = config.GetConfigStr("Method", refreshOptionsCfg) ?? "GET",
     UploadOptions = appInstance.CreateUploadOptions(),
     
     CacheOptions = builder.BuildCacheOptions(app),
@@ -269,7 +264,7 @@ if (builder.ExternalAuthConfig?.Enabled is true)
 
 if (builder.BearerTokenConfig is not null)
 {
-    new TokenRefreshAuth(builder.BearerTokenConfig, app);
+    new TokenRefreshAuth(builder.BearerTokenConfig, app, builder.Logger);
 }
 
 app.Run();

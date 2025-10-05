@@ -4,7 +4,7 @@ namespace NpgsqlRest;
 
 public class RoutineEndpoint(
     Routine routine,
-    string url,
+    string path,
     Method method,
     RequestParamType requestParamType,
     bool requiresAuthorization,
@@ -46,7 +46,7 @@ public class RoutineEndpoint(
     internal bool CustomParamsNeedParsing { get; set; } = false;
 
     public Routine Routine { get; } = routine;
-    public string Url { get; set; } = url;
+    public string Path { get; set; } = path;
     public Method Method { get; set; } = method;
     public RequestParamType RequestParamType { get; set; } = requestParamType;
     public bool RequiresAuthorization { get; set; } = requiresAuthorization;

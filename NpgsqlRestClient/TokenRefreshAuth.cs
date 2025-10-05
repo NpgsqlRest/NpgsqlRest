@@ -14,7 +14,7 @@ public class BearerTokenConfig
 
 public class TokenRefreshAuth
 {
-    public TokenRefreshAuth(BearerTokenConfig? bearerTokenConfig, WebApplication app)
+    public TokenRefreshAuth(BearerTokenConfig? bearerTokenConfig, WebApplication app, ILogger? logger)
     {
         var tokenConfig = bearerTokenConfig;
         
@@ -59,7 +59,7 @@ public class TokenRefreshAuth
             }
             catch (Exception ex)
             {
-                NpgsqlRestMiddleware.Logger?.LogError(ex, "Failed to read refresh token from request body.");
+                logger?.LogError(ex, "Failed to read refresh token from request body.");
                 result = Results.BadRequest(context.Response);
                 await result.ExecuteAsync(context);
                 return;
@@ -77,7 +77,7 @@ public class TokenRefreshAuth
 
             if (Results.SignIn(principal: context.User, authenticationScheme: scheme) is not SignInHttpResult signInResult)
             {
-                NpgsqlRestMiddleware.Logger?.LogError("Failed in constructing user identity for authentication.");
+                logger?.LogError("Failed in constructing user identity for authentication.");
                 context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
                 return;
             }

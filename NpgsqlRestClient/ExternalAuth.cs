@@ -359,17 +359,17 @@ public class ExternalAuth
             throw new ArgumentException("email retrieved from the external provider is null");
         }
 
-        var middlewareLogger = NpgsqlRestMiddleware.Logger;
+        //var middlewareLogger = NpgsqlRestMiddleware.Logger;
         await using var connection = new NpgsqlConnection(connectionString);
-        if (options.LogConnectionNoticeEvents && middlewareLogger != null)
+        if (options.LogConnectionNoticeEvents)
         {
             connection.Notice += (sender, args) =>
             {
-                NpgsqlRestLogger.LogConnectionNotice(middlewareLogger, args.Notice, loggingMode);
+                NpgsqlRestLogger.LogConnectionNotice(logger, args.Notice, loggingMode);
             };
         }
 
-        await connection.OpenRetryAsync(options.ConnectionRetryOptions, middlewareLogger, context.RequestAborted);
+        await connection.OpenRetryAsync(options.ConnectionRetryOptions, logger, context.RequestAborted);
 
         await using var command = connection.CreateCommand();
         command.CommandText = externalAuthConfig!.LoginCommand;

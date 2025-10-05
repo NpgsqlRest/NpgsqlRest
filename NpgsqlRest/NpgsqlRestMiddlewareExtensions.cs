@@ -1,11 +1,12 @@
-﻿using System.Net;
+﻿using System.Diagnostics.CodeAnalysis;
+using System.Net;
 using static System.Net.Mime.MediaTypeNames;
 
 namespace NpgsqlRest;
 
 public static class NpgsqlRestMiddlewareExtensions
 {
-    public static IApplicationBuilder UseNpgsqlRest(this IApplicationBuilder builder, NpgsqlRestOptions options)
+    public static IApplicationBuilder UseNpgsqlRest(this WebApplication builder, NpgsqlRestOptions options)
     {
         if (options.ConnectionString is null && options.DataSource is null && options.ServiceProviderMode == ServiceProviderObject.None)
         {
@@ -16,70 +17,52 @@ public static class NpgsqlRestMiddlewareExtensions
         {
             throw new ArgumentException("Both ConnectionString and DataSource are provided. Please specify only one.");
         }
-
+        ILogger? logger = null;
         if (options.Logger is not null)
         {
-            NpgsqlRestMiddleware.SetLogger(options.Logger);
+            logger = options.Logger;
         }
         else if (builder is WebApplication app)
         {
             var factory = app.Services.GetRequiredService<ILoggerFactory>();
-            NpgsqlRestMiddleware.SetLogger(factory is not null ? factory.CreateLogger(options.LoggerName ?? typeof(NpgsqlRestMiddlewareExtensions).Namespace ?? "NpgsqlRest") : app.Logger);
+            logger = factory is not null ? factory.CreateLogger(options.LoggerName ?? typeof(NpgsqlRestMiddlewareExtensions).Namespace ?? "NpgsqlRest") : app.Logger;
         }
 
-
-        NpgsqlRestMiddleware.SetMetadata(NpgsqlRestMetadataBuilder.Build(options, NpgsqlRestMiddleware.Logger, builder));
-        if (NpgsqlRestMiddleware.Metadata.Entries.Count == 0)
+        var (entries,overloads, hasStreamingEvents) = 
+            NpgsqlRestMetadataBuilder.Build(options, logger, builder);
+        if (entries.Count == 0)
         {
             return builder;
         }
-        NpgsqlRestMiddleware.SetOptions(options);
-        NpgsqlRestMiddleware.SetServiceProvider(builder.ApplicationServices);
-        bool streamingEventsItialized = false;
-
-        if (NpgsqlRestMiddleware.metadata.HasStreamingEvents is true)
+        
+        if (hasStreamingEvents is true)
         {
+            // todo: revert to endpoint 
+            NpgsqlRestNoticeEventSource.SetOptions(options, logger);
             builder.UseMiddleware<NpgsqlRestNoticeEventSource>();
-            streamingEventsItialized = true;
         }
-
-        if (options.RefreshEndpointEnabled)
+        
+        foreach (var entry in entries)
         {
-            var refreshMethodUpper = options.RefreshMethod.ToUpperInvariant();
-            var refreshPathUpper = options.RefreshPath.ToUpperInvariant();
-
-            builder.Use(async (context, next) =>
+            var handler = new NpgsqlRestEndpoint(entry, options, overloads, logger);
+            var routeBuilder = builder.MapMethods(entry.Endpoint.Path, [entry.Endpoint.Method.ToString()], handler.InvokeAsync);
+            
+            if (options.RouteHandlerCreated is not null)
             {
-                if (context.Request.Method.Equals(refreshMethodUpper, StringComparison.OrdinalIgnoreCase) &&
-                context.Request.Path.Equals(refreshPathUpper, StringComparison.OrdinalIgnoreCase))
+                options.RouteHandlerCreated(routeBuilder, entry.Endpoint);
+            }
+            
+            if (options.LogEndpointCreatedInfo)
+            {
+                var urlInfo = string.Concat(entry.Endpoint.Method, " ", entry.Endpoint.Path);
+                logger?.EndpointCreated(urlInfo);
+                if (entry.Endpoint.InfoEventsStreamingPath is not null)
                 {
-                    try
-                    {
-                        Volatile.Write(ref NpgsqlRestMiddleware.metadata, NpgsqlRestMetadataBuilder.Build(options, options.Logger, builder));
-                        NpgsqlRestMiddleware.lookup = NpgsqlRestMiddleware.metadata.Entries.GetAlternateLookup<ReadOnlySpan<char>>();
-                        context.Response.StatusCode = (int)HttpStatusCode.OK;
-                        await context.Response.CompleteAsync();
-
-                        if (NpgsqlRestMiddleware.metadata.HasStreamingEvents is true && streamingEventsItialized is false)
-                        {
-                            builder.UseMiddleware<NpgsqlRestNoticeEventSource>();
-                            streamingEventsItialized = true;
-                        }
-                    }
-                    catch (Exception e)
-                    {
-                        options.Logger?.LogError(e, "Failed to refresh metadata");
-                        context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
-                        context.Response.ContentType = Text.Plain;
-                        await context.Response.WriteAsync($"Failed to refresh metadata: {e.Message}");
-                        await context.Response.CompleteAsync();
-                    }
-                    return;
+                    logger?.EndpointInfoStreamingPath(urlInfo, entry.Endpoint.InfoEventsStreamingPath);
                 }
-                await next(context);
-            });
+            }
         }
-
-        return builder.UseMiddleware<NpgsqlRestMiddleware>();
+        
+        return builder;
     }
 }

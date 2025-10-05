@@ -2,15 +2,20 @@
 using Npgsql;
 using NpgsqlRest.Defaults;
 using NpgsqlRest.UploadHandlers;
+using System.Collections.Frozen;
 
 namespace NpgsqlRest;
 
+using Metadata = (
+    List<NpgsqlRestMetadataEntry> entries,
+    FrozenDictionary<string, NpgsqlRestMetadataEntry> overloads,
+    bool hasStreamingEvents);
+
 public static class NpgsqlRestMetadataBuilder
 {
-    public const int MaxKeyLength = 2056;
-    public const int MaxPathLength = 2048;
+    private const int MaxPathLength = 2048;
 
-    public static NpgsqlRestMetadata Build(NpgsqlRestOptions options, ILogger? logger, IApplicationBuilder? builder)
+    public static Metadata Build(NpgsqlRestOptions options, ILogger? logger, IApplicationBuilder? builder)
     {
         Dictionary<string, NpgsqlRestMetadataEntry> lookup = [];
         Dictionary<string, NpgsqlRestMetadataEntry> overloads = [];
@@ -77,37 +82,37 @@ public static class NpgsqlRestMetadataBuilder
                     endpoint.RetryStrategy = defaultStrategy;
                 }
                 
-                if (endpoint.Url.Length == 0)
+                if (endpoint.Path.Length == 0)
                 {
-                    throw new ArgumentException($"URL path for URL {endpoint.Url}, routine {routine.Name}  is empty.");
+                    throw new ArgumentException($"URL path for URL {endpoint.Path}, routine {routine.Name}  is empty.");
                 }
 
-                if (endpoint.Url.Length > MaxPathLength)
+                if (endpoint.Path.Length > MaxPathLength)
                 {
-                    throw new ArgumentException($"URL path for URL {endpoint.Url}, routine {routine.Name} length exceeds {MaxPathLength} characters.");
+                    throw new ArgumentException($"URL path for URL {endpoint.Path}, routine {routine.Name} length exceeds {MaxPathLength} characters.");
                 }
 
                 var method = endpoint.Method.ToString();
                 if (endpoint.HasBodyParameter is true && endpoint.RequestParamType == RequestParamType.BodyJson)
                 {
                     endpoint.RequestParamType = RequestParamType.QueryString;
-                    logger?.EndpointTypeChangedBodyParam(method, endpoint.Url, endpoint!.BodyParameterName ?? "");
+                    logger?.EndpointTypeChangedBodyParam(method, endpoint.Path, endpoint!.BodyParameterName ?? "");
                 }
                 if (endpoint.Upload is true)
                 {
                     if (endpoint.Method != Method.POST)
                     {
-                        logger?.EndpointMethodChangedUpload(method, endpoint.Url, Method.POST.ToString());
+                        logger?.EndpointMethodChangedUpload(method, endpoint.Path, Method.POST.ToString());
                         endpoint.Method = Method.POST;
                     }
                     if (endpoint.RequestParamType == RequestParamType.BodyJson)
                     {
                         endpoint.RequestParamType = RequestParamType.QueryString;
-                        logger?.EndpointTypeChangedUpload(method, endpoint.Url);
+                        logger?.EndpointTypeChangedUpload(method, endpoint.Path);
                     }
                 }
 
-                var key = string.Concat(method, endpoint?.Url);
+                var key = string.Concat(method, endpoint?.Path);
                 var value = new NpgsqlRestMetadataEntry(endpoint!, formatter, key);
                 if (lookup.TryGetValue(key, out var existing))
                 {
@@ -143,10 +148,10 @@ public static class NpgsqlRestMetadataBuilder
 
                 if (endpoint?.InfoEventsStreamingPath is not null)
                 {
-                    if (endpoint.InfoEventsStreamingPath.StartsWith(endpoint.Url) is false)
+                    if (endpoint.InfoEventsStreamingPath.StartsWith(endpoint.Path) is false)
                     {
                         endpoint.InfoEventsStreamingPath = string.Concat(
-                            endpoint.Url.EndsWith('/') ? endpoint.Url[..^1] : endpoint.Url , "/", 
+                            endpoint.Path.EndsWith('/') ? endpoint.Path[..^1] : endpoint.Path , "/", 
                             endpoint.InfoEventsStreamingPath.StartsWith('/') ? endpoint.InfoEventsStreamingPath[1..] : endpoint.InfoEventsStreamingPath);
                     }
 
@@ -157,18 +162,7 @@ public static class NpgsqlRestMetadataBuilder
                         hasStreamingEvents = true;
                     }
                 }
-
-                if (options.LogEndpointCreatedInfo)
-                {
-                    var urlInfo = string.Concat(method, " ", endpoint!.Url);
-                    logger?.EndpointCreated(urlInfo);
-
-                    if (endpoint?.InfoEventsStreamingPath is not null)
-                    {
-                        logger?.EndpointInfoStreamingPath(urlInfo, endpoint.InfoEventsStreamingPath);
-                    }
-                }
-
+                
                 if (endpoint?.Login is true)
                 {
                     if (hasLogin is false)
@@ -215,9 +209,10 @@ public static class NpgsqlRestMetadataBuilder
             logger?.LogError("Default upload handler {defaultUploadHandler} not found in the list of upload handlers. Using upload endpoint with default handler may cause an error.", options.UploadOptions.DefaultUploadHandler);
         }
 
+        var entries = lookup.Values.ToList();
         if (options.EndpointsCreated is not null)
         {
-            options.EndpointsCreated([.. lookup.Values.Select(x => x.Endpoint)]);
+            options.EndpointsCreated([.. entries.Select(x => x.Endpoint)]);
         }
 
         if (builder is not null)
@@ -225,12 +220,12 @@ public static class NpgsqlRestMetadataBuilder
             RoutineEndpoint[]? array = null;
             foreach (var handler in options.EndpointCreateHandlers)
             {
-                array ??= [.. lookup.Values.Select(x => x.Endpoint)];
+                array ??= [.. entries.Select(x => x.Endpoint)];
                 handler.Cleanup(array);
                 handler.Cleanup();
             }
         }
-
-        return new NpgsqlRestMetadata(lookup, overloads) { HasStreamingEvents = hasStreamingEvents };
+        
+        return (entries, overloads.ToFrozenDictionary(), hasStreamingEvents);
     }
 }

@@ -218,7 +218,7 @@ internal static class DefaultCommentParser
             return routineEndpoint;
         }
 
-        var originalUrl = routineEndpoint.Url;
+        var originalUrl = routineEndpoint.Path;
         var originalMethod = routineEndpoint.Method;
         var originalParamType = routineEndpoint.RequestParamType;
 
@@ -236,7 +236,7 @@ internal static class DefaultCommentParser
         {
 
             var routineDescription = string.Concat(routine.Type, " ", routine.Schema, ".", routine.Name);
-            var urlDescription = string.Concat(routineEndpoint.Method.ToString(), " ", routineEndpoint.Url);
+            var urlDescription = string.Concat(routineEndpoint.Method.ToString(), " ", routineEndpoint.Path);
             var description = string.Concat(routineDescription, " mapped to ", urlDescription);
 
             string[] lines = comment.Split(NewlineSeparator, StringSplitOptions.RemoveEmptyEntries);
@@ -414,24 +414,24 @@ internal static class DefaultCommentParser
                     {
                         if (!Uri.TryCreate(urlPathSegment, UriKind.Relative, out Uri? uri))
                         {
-                            logger?.InvalidUrlPathSegmentComment(urlPathSegment, description, routineEndpoint.Url);
+                            logger?.InvalidUrlPathSegmentComment(urlPathSegment, description, routineEndpoint.Path);
                         }
                         else
                         {
-                            routineEndpoint.Url = uri.ToString();
-                            if (!routineEndpoint.Url.StartsWith('/'))
+                            routineEndpoint.Path = uri.ToString();
+                            if (!routineEndpoint.Path.StartsWith('/'))
                             {
-                                routineEndpoint.Url = string.Concat("/", routineEndpoint.Url);
+                                routineEndpoint.Path = string.Concat("/", routineEndpoint.Path);
                             }
                         }
                     }
-                    if (routineEndpoint.Method != originalMethod || !string.Equals(routineEndpoint.Url, originalUrl))
+                    if (routineEndpoint.Method != originalMethod || !string.Equals(routineEndpoint.Path, originalUrl))
                     {
                         if (options.LogAnnotationSetInfo)
                         {
-                            logger?.CommentSetHttp(description, routineEndpoint.Method, routineEndpoint.Url);
+                            logger?.CommentSetHttp(description, routineEndpoint.Method, routineEndpoint.Path);
                         }
-                        urlDescription = string.Concat(routineEndpoint.Method.ToString(), " ", routineEndpoint.Url);
+                        urlDescription = string.Concat(routineEndpoint.Method.ToString(), " ", routineEndpoint.Path);
                         description = string.Concat(routineDescription, " mapped to ", urlDescription);
                     }
                 }
@@ -444,21 +444,21 @@ internal static class DefaultCommentParser
                         string? urlPathSegment = wordsLower[1];
                         if (!Uri.TryCreate(urlPathSegment, UriKind.Relative, out Uri? uri))
                         {
-                            logger?.InvalidUrlPathSegmentComment(urlPathSegment, description, routineEndpoint.Url);
+                            logger?.InvalidUrlPathSegmentComment(urlPathSegment, description, routineEndpoint.Path);
                         }
                         else
                         {
-                            routineEndpoint.Url = uri.ToString();
-                            if (!routineEndpoint.Url.StartsWith('/'))
+                            routineEndpoint.Path = uri.ToString();
+                            if (!routineEndpoint.Path.StartsWith('/'))
                             {
-                                routineEndpoint.Url = string.Concat("/", routineEndpoint.Url);
+                                routineEndpoint.Path = string.Concat("/", routineEndpoint.Path);
                             }
 
                             if (options.LogAnnotationSetInfo)
                             {
-                                logger?.CommentSetHttp(description, routineEndpoint.Method, routineEndpoint.Url);
+                                logger?.CommentSetHttp(description, routineEndpoint.Method, routineEndpoint.Path);
                             }
-                            urlDescription = string.Concat(routineEndpoint.Method.ToString(), " ", routineEndpoint.Url);
+                            urlDescription = string.Concat(routineEndpoint.Method.ToString(), " ", routineEndpoint.Path);
                             description = string.Concat(routineDescription, " mapped to ", urlDescription);
                         }
                     }

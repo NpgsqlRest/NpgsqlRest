@@ -233,7 +233,12 @@ public class NpgsqlRestOptions
     /// Callback, if defined will be executed after all endpoints are created and receive an array of routine info and endpoint info tuples `(Routine routine, RoutineEndpoint endpoint)`. Used mostly for code generation.
     /// </summary>
     public Action<RoutineEndpoint[]>? EndpointsCreated { get; set; }
-
+    
+    /// <summary>
+    /// Callback, if defined will be executed after every route handler is created and receive the `RouteHandlerBuilder` instance and the `RoutineEndpoint` instance. Used mostly to add custom metadata to the endpoint or add custom filters or other configurations.
+    /// </summary>
+    public Action<RouteHandlerBuilder, RoutineEndpoint>? RouteHandlerCreated { get; set; }
+    
     /// <summary>
     /// Asynchronous callback function that will be called after every database command is created and before it has been executed. It receives a tuple parameter with routine info, created command and current HTTP context. Command instance and HTTP context offer the opportunity to execute the command and return a completely different, custom response format.
     /// </summary>
@@ -306,22 +311,7 @@ public class NpgsqlRestOptions
     /// Routine sources default list.
     /// </summary>
     public List<IRoutineSource> RoutineSources { get; set; } = [new RoutineSource()];
-
-    /// <summary>
-    /// Enable refresh endpoint for Metadata.
-    /// </summary>
-    public bool RefreshEndpointEnabled { get; set; }
-
-    /// <summary>
-    /// Refresh endpoint method.
-    /// </summary>
-    public string RefreshMethod { get; set; } = "GET";
-
-    /// <summary>
-    /// Refresh endpoint path.
-    /// </summary>
-    public string RefreshPath { get; set; } = "/api/npgsqlrest/refresh";
-
+    
     /// <summary>
     /// Cache options
     /// </summary>

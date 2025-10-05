@@ -94,12 +94,12 @@ public class HttpFile(HttpFileOptions httpFileOptions) : IEndpointCreateHandler
         }
         if (endpoint.Routine.Parameters.Length == 0 || endpoint.RequestParamType != RequestParamType.QueryString)
         {
-            sb.AppendLine(string.Concat(endpoint.Method, " {{host}}", endpoint.Url));
+            sb.AppendLine(string.Concat(endpoint.Method, " {{host}}", endpoint.Path));
         }
 
         if (endpoint.Routine.Parameters.Length > 0 && endpoint.RequestParamType == RequestParamType.QueryString)
         {
-            var line = string.Concat(endpoint.Method, " {{host}}", endpoint.Url, "?",
+            var line = string.Concat(endpoint.Method, " {{host}}", endpoint.Path, "?",
                 string.Join("&", endpoint.Routine
                     .Parameters
                     .Where((p, i) =>

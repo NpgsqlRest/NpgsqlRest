@@ -13,7 +13,7 @@ public static class LogoutHandler
 {
     public static async Task HandleAsync(NpgsqlCommand command, RoutineEndpoint endpoint, HttpContext context, ILogger? logger)
     {
-        var path = string.Concat(endpoint.Method.ToString(), " ", endpoint.Url);
+        var path = string.Concat(endpoint.Method.ToString(), " ", endpoint.Path);
         logger?.TraceCommand(command, path);
         
         if (endpoint.Routine.IsVoid)

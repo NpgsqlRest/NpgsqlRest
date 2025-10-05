@@ -214,6 +214,6 @@ public class CrudSelectTests(TestFixture test)
         using var body = new StringContent("{\"id\":1,\"status\":false}", Encoding.UTF8, "application/json");
         using var response = await test.Client.PostAsync("/api/crud-select-tests/", body);
         // no primary keys, no update
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
     }
 }

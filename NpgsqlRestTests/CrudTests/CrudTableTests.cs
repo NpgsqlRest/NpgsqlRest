@@ -74,11 +74,11 @@ public class CrudTableTests(TestFixture test)
 
         using var updateBody = new StringContent("{\"id\":1,\"name\":\"some name\"}", Encoding.UTF8, "application/json");
         using var update = await test.Client.PostAsync("/api/crud-table1-nokeys/", updateBody);
-        update.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        update.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
 
         using var updateReturningBody = new StringContent("{\"id\":1,\"name\":\"some name\"}", Encoding.UTF8, "application/json");
         using var updateReturning = await test.Client.PostAsync("/api/crud-table1-nokeys/returning/", updateReturningBody);
-        updateReturning.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        updateReturning.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
 
         using var delete = await test.Client.DeleteAsync("/api/crud-table1-nokeys/?id=1");
         delete.StatusCode.Should().Be(HttpStatusCode.NoContent);

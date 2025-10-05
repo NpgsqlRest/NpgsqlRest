@@ -226,7 +226,7 @@ public class App
             {
                 return;
             }
-            if (loginPath is not null && string.Equals(endpoint.Url, loginPath, StringComparison.OrdinalIgnoreCase))
+            if (loginPath is not null && string.Equals(endpoint.Path, loginPath, StringComparison.OrdinalIgnoreCase))
             {
                 endpoint.Login = true;
             }

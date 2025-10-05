@@ -62,7 +62,7 @@ public class CrudTableTagCommentTests(TestFixture test)
         using var select1 = await test.Client.GetAsync($"/api/crud-commented-table/?id={id}");
 
         // Assert
-        select1.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        select1.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
     }
 
     [Fact]
@@ -235,7 +235,7 @@ public class CrudTableTagCommentTests(TestFixture test)
         using var update = await test.Client.PostAsync("/api/crud-select-only/", updateBody);
 
         // Assert
-        update.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        update.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
     }
 
     [Fact]
@@ -248,7 +248,7 @@ public class CrudTableTagCommentTests(TestFixture test)
         using var updateReturning = await test.Client.PostAsync("/api/crud-select-only/returning/", updateReturningBody);
 
         // Assert
-        updateReturning.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        updateReturning.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
     }
 
     [Fact]
@@ -287,7 +287,7 @@ public class CrudTableTagCommentTests(TestFixture test)
         using var insert = await test.Client.PutAsync("/api/crud-select-only/", insertBody);
 
         // Assert
-        insert.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        insert.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
     }
 
     [Fact]
@@ -300,7 +300,7 @@ public class CrudTableTagCommentTests(TestFixture test)
         using var insertReturning = await test.Client.PutAsync("/api/crud-select-only/returning/", insertReturningBody);
 
         // Assert
-        insertReturning.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        insertReturning.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
     }
 
     [Fact]

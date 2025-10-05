@@ -55,7 +55,7 @@ public class CommentHttpAttrTests(TestFixture test)
     public async Task Test_comment_wrong_verb()
     {
         using var response1 = await test.Client.GetAsync("/wrong-verb");
-        response1?.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response1?.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
 
         using var response2 = await test.Client.PostAsync("/wrong-verb", null);
         //response2?.StatusCode.Should().Be(HttpStatusCode.NotFound);

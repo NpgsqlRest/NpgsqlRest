@@ -287,7 +287,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             {
                 return false;
             }
-            if (options.SkipPaths.Contains(endpoint.Url))
+            if (options.SkipPaths.Contains(endpoint.Path))
             {
                 return false;
             }
@@ -301,13 +301,13 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 }
                 else
                 {
-                    if (string.IsNullOrEmpty(_npgsqlRestoptions?.UrlPathPrefix) || _npgsqlRestoptions.UrlPathPrefix.Length > endpoint.Url.Length)
+                    if (string.IsNullOrEmpty(_npgsqlRestoptions?.UrlPathPrefix) || _npgsqlRestoptions.UrlPathPrefix.Length > endpoint.Path.Length)
                     {
-                        name = endpoint.Url;
+                        name = endpoint.Path;
                     }
                     else
                     {
-                        name = endpoint.Url[_npgsqlRestoptions.UrlPathPrefix.Length..];
+                        name = endpoint.Path[_npgsqlRestoptions.UrlPathPrefix.Length..];
                     }
                 }
             }
@@ -684,8 +684,8 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             if (options.ExportUrls is false)
             {
                 url = includeParseUrlParam is true ?
-                    string.Format("parseUrl(baseUrl + \"{0}\"{1})", endpoint.Url, qs) :
-                    string.Format("baseUrl + \"{0}\"{1}", endpoint.Url, qs);
+                    string.Format("parseUrl(baseUrl + \"{0}\"{1})", endpoint.Path, qs) :
+                    string.Format("baseUrl + \"{0}\"{1}", endpoint.Path, qs);
             }
             else
             {
@@ -699,7 +699,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                         "export const {0}Url = {1} => baseUrl + \"{2}\"{3};",
                         camel,
                         requestName is not null && body is null ? string.Format("(request: {0})", requestName) : "()",
-                        endpoint.Url,
+                        endpoint.Path,
                         qs));
                 }
                 else
@@ -708,7 +708,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                         "export const {0}Url = {1} => baseUrl + \"{2}\"{3};",
                         camel,
                         requestName is not null && body is null ? "request" : "()",
-                        endpoint.Url,
+                        endpoint.Path,
                         qs));
                 }
             }

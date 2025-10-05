@@ -46,7 +46,7 @@ public class VolatilityVerbTests(TestFixture test)
     public async Task Test_stable_func_Post()
     {
         using var response = await test.Client.PostAsync("/api/stable-func/", null);
-        response?.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response?.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
     }
 
     [Fact]
@@ -60,7 +60,7 @@ public class VolatilityVerbTests(TestFixture test)
     public async Task Test_immutable_func_Post()
     {
         using var response = await test.Client.PostAsync("/api/immutable-func/", null);
-        response?.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response?.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
     }
 
     [Fact]
