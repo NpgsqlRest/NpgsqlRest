@@ -1183,7 +1183,10 @@ public class NpgsqlRestEndpoint(
                 {
                     return;
                 }
-
+                if (shouldLog)
+                {
+                    NpgsqlRestLogger.LogEndpoint(logger, endpoint, cmdLog?.ToString() ?? "", command.CommandText);
+                }
                 await LoginHandler.HandleAsync(
                     command,
                     context,
@@ -1207,7 +1210,10 @@ public class NpgsqlRestEndpoint(
                 {
                     return;
                 }
-
+                if (shouldLog)
+                {
+                    NpgsqlRestLogger.LogEndpoint(logger, endpoint, cmdLog?.ToString() ?? "", command.CommandText);
+                }
                 await LogoutHandler.HandleAsync(command, endpoint, context, logger);
                 return;
             }
@@ -1218,7 +1224,10 @@ public class NpgsqlRestEndpoint(
                 {
                     return;
                 }
-
+                if (shouldLog)
+                {
+                    NpgsqlRestLogger.LogEndpoint(logger, endpoint, cmdLog?.ToString() ?? "", command.CommandText);
+                }
                 await command.ExecuteNonQueryWithRetryAsync(endpoint.RetryStrategy, logger, cancellationToken);
                 context.Response.StatusCode = (int)HttpStatusCode.NoContent;
                 return;

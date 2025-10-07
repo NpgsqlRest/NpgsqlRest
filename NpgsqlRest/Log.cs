@@ -230,10 +230,11 @@ public static partial class Log
     [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to execute command on attempt {attempt}. Retrying in {delay}ms. Error: {error}")]
     public static partial void FailedToExecuteCommandRetry(this ILogger logger, int attempt, double delay, string error);
     
-    [LoggerMessage(Level = LogLevel.Error, Message = "Failed to execute command after {totalAttempts} attempts.")]
-    public static partial void FailedToExecuteCommandAfter(this ILogger logger, Exception exception, int totalAttempts);
-    [LoggerMessage(Level = LogLevel.Error, Message = "Non-retryable error occurred while executing command: {error}")]
-    public static partial void FailedToExecuteNonRetryableCommand(this ILogger logger, Exception exception, string error);
+    [LoggerMessage(Level = LogLevel.Error, Message = "Failed to execute command {command} after {totalAttempts} attempts.")]
+    public static partial void FailedToExecuteCommandAfter(this ILogger logger, string command, double totalAttempts);
+    
+    [LoggerMessage(Level = LogLevel.Error, Message = "Non-retryable error occurred while executing command: {command}")]
+    public static partial void FailedToExecuteNonRetryableCommand(this ILogger logger, string command);
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has set RATE LIMITER POLICY NAME to {name} by the comment annotation.")]
     public static partial void RateLimiterPolicySet(this ILogger logger, string description, string name);

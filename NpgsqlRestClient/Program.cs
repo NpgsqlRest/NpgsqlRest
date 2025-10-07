@@ -113,6 +113,8 @@ if (cmdRetryOpts.Enabled && string.IsNullOrEmpty(cmdRetryOpts.DefaultStrategy))
 }
 
 builder.BuildInstance();
+builder.Instance.Services.AddRouting();
+
 builder.BuildLogger(cmdRetryStrategy);
 var rateLimiterOptions = builder.BuildRateLimiter();
 
