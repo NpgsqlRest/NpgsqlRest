@@ -1,28 +1,15 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Logging;
-using NpgsqlRest.CrudSource;
 using Microsoft.Extensions.DependencyInjection;
-using System.Security.Claims;
-using System.Threading.RateLimiting;
-using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.AspNetCore.RateLimiting;
-using Npgsql;
 using NpgsqlRest.Auth;
+using NpgsqlRest.CrudSource;
 using NpgsqlRest.UploadHandlers;
-using RateLimiterOptions = NpgsqlRest.RateLimiterOptions;
 
 #pragma warning disable CS8633 // Nullability in constraints for type parameter doesn't match the constraints for type parameter in implicitly implemented interface method'.
 #pragma warning disable CS8767 // Nullability of reference types in type of parameter doesn't match implicitly implemented member (possibly because of nullability attributes).
-#pragma warning disable IDE0130 // Namespace does not match folder structure
-namespace NpgsqlRestTests;
-
-public class EmptyLogger : ILogger
-{
-    public IDisposable BeginScope<TState>(TState state) => throw new NotImplementedException();
-    public bool IsEnabled(LogLevel logLevel) => false;
-    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter) { }
-}
+namespace NpgsqlRestTests.Setup;
 
 public class Program
 {
@@ -31,12 +18,12 @@ public class Program
         if (p.Routine.Name == "case_jsonpath_param" && p.Parameter.Value?.ToString() == "XXX")
         {
             p.Context.Response.StatusCode = (int)HttpStatusCode.BadRequest;
-            await p.Context.Response.WriteAsync($"Paramater {p.Parameter.ActualName} is not valid.");
+            await p.Context.Response.WriteAsync($"Parameter {p.Parameter.ActualName} is not valid.");
         }
 
         if (string.Equals(p.Parameter.ParameterName, "_user_id", StringComparison.Ordinal))
         {
-            if (p.Context?.User?.Identity?.IsAuthenticated is true)
+            if (p.Context.User.Identity?.IsAuthenticated is true)
             {
                 p.Parameter.Value = p.Context.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value;
             }
@@ -48,9 +35,9 @@ public class Program
 
         if (string.Equals(p.Parameter.ParameterName, "_user_roles", StringComparison.Ordinal))
         {
-            if (p.Context?.User?.Identity?.IsAuthenticated is true)
+            if (p.Context.User.Identity?.IsAuthenticated is true)
             {
-                p.Parameter.Value = p.Context.User?.Claims?.Where(c => c.Type == ClaimTypes.Role).Select(c => c.Value).ToArray() ?? [];
+                p.Parameter.Value = p.Context.User.Claims.Where(c => c.Type == ClaimTypes.Role).Select(c => c.Value).ToArray();
             }
             else
             {
@@ -109,7 +96,7 @@ public class Program
         var app = builder.Build();
         //app.UseRateLimiter();
 
-        var authOptions = new NpgsqlRest.Auth.NpgsqlRestAuthenticationOptions
+        var authOptions = new NpgsqlRestAuthenticationOptions
         {
             DefaultUserIdClaimType = "name_identifier",
             DefaultNameClaimType = "name",

@@ -1,4 +1,4 @@
-namespace NpgsqlRestTests;
+namespace NpgsqlRestTests.Setup;
 
 [CollectionDefinition("TestFixture")]
 public class TestFixtureCollection : ICollectionFixture<TestFixture> { }

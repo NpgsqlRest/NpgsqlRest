@@ -161,7 +161,6 @@ public static partial class Database
     }
 }
 
-
 [Collection("TestFixture")]
 public class ConcurrentTests(TestFixture test)
 {

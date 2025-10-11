@@ -1,6 +1,7 @@
 ﻿using System.Reflection;
 using Npgsql;
 
+// ReSharper disable once CheckNamespace
 namespace NpgsqlRestTests;
 
 public static partial class Database
