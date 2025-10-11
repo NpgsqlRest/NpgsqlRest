@@ -203,30 +203,8 @@ public class CrudSource(
         bool shouldDispose = true;
         try
         {
-            if (serviceProvider is not null && options.ServiceProviderMode != ServiceProviderObject.None)
-            {
-                if (options.ServiceProviderMode == ServiceProviderObject.NpgsqlDataSource)
-                {
-                    connection = serviceProvider.GetRequiredService<NpgsqlDataSource>().OpenConnection();
-                }
-                else if (options.ServiceProviderMode == ServiceProviderObject.NpgsqlConnection)
-                {
-                    shouldDispose = false;
-                    connection = serviceProvider.GetRequiredService<NpgsqlConnection>();
-                }
-            }
-            else
-            {
-                if (options.DataSource is not null)
-                {
-                    connection = options.DataSource.CreateConnection();
-                }
-                else
-                {
-                    connection = new(options.ConnectionString);
-                }
-            }
-
+            options.CreateAndOpenSourceConnection(serviceProvider, logger, ref connection, ref shouldDispose);
+            
             if (connection is null)
             {
                 yield break;
@@ -277,8 +255,6 @@ public class CrudSource(
         AddParameter(command, ExcludeNames ?? options.ExcludeNames, true); // $8
         
         logger.TraceCommand(command, nameof(CrudCommandType));
-        
-        connection.Open();
         using NpgsqlDataReader reader = command.ExecuteReaderWithRetry(retryStrategy, logger);
         while (reader.Read())
         {

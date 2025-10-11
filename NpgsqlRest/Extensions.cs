@@ -7,6 +7,206 @@ namespace NpgsqlRest;
 
 public static class Ext
 {
+    public static void CreateAndOpenSourceConnection(this NpgsqlRestOptions options,
+        IServiceProvider? serviceProvider,
+        ILogger? logger,
+        ref NpgsqlConnection? connection,
+        ref bool shouldDispose)
+    {
+        // Try named connection string first
+        if (options.MetadataQueryConnectionName is not null)
+        {
+            if (options.ConnectionStrings is null)
+            {
+                throw new ArgumentException("ConnectionStrings must be provided when using named connection strings.");
+            }
+            if (!options.ConnectionStrings.TryGetValue(options.MetadataQueryConnectionName, out var connectionString))
+            {
+                throw new ArgumentException($"Connection string '{options.MetadataQueryConnectionName}' not found in ConnectionStrings.");
+            }
+
+            if (options.MetadataQuerySchema is not null)
+            {
+                if (HasSearchPathInConnectionString(connectionString, options.MetadataQuerySchema) is false)
+                {
+                    var connectionStringBuilder = new NpgsqlConnectionStringBuilder(connectionString)
+                    {
+                        SearchPath = options.MetadataQuerySchema
+                    };
+                    connection = new NpgsqlConnection(connectionStringBuilder.ConnectionString);
+                }
+                else
+                {
+                    connection = new NpgsqlConnection(connectionString);
+                }
+                shouldDispose = true;
+                logger?.LogDebug("Using named connection string '{name}' with schema '{schema}' for metadata queries.",
+                    options.MetadataQueryConnectionName,
+                    options.MetadataQuerySchema);
+            }
+            else
+            {
+                connection = new NpgsqlConnection(connectionString);
+                shouldDispose = true;
+                logger?.LogDebug("Using named connection string '{name}' for metadata queries.",
+                    options.MetadataQueryConnectionName);
+            }
+            connection.Open();
+            return;
+        }
+
+        // Try service provider
+        if (options.ServiceProviderMode != ServiceProviderObject.None)
+        {
+            if (serviceProvider is null)
+            {
+                throw new ArgumentException($"ServiceProvider must be provided when ServiceProviderMode is set to {options.ServiceProviderMode}.");
+            }
+
+            if (options.ServiceProviderMode == ServiceProviderObject.NpgsqlDataSource)
+            {
+                var dataSource = serviceProvider.GetRequiredService<NpgsqlDataSource>();
+                connection = dataSource.OpenConnection();
+                shouldDispose = true;
+
+                if (options.MetadataQuerySchema is not null && HasSearchPathInConnectionString(connection.ConnectionString, options.MetadataQuerySchema) is false)
+                {
+                    SetSearchPath(connection, options.MetadataQuerySchema);
+                    logger?.LogDebug("Using NpgsqlDataSource from service provider with schema '{schema}' for metadata queries.",
+                        options.MetadataQuerySchema);
+                }
+                else
+                {
+                    logger?.LogDebug("Using NpgsqlDataSource from service provider for metadata queries.");
+                }
+            }
+            else if (options.ServiceProviderMode == ServiceProviderObject.NpgsqlConnection)
+            {
+                shouldDispose = false;
+                connection = serviceProvider.GetRequiredService<NpgsqlConnection>();
+
+                if (connection.State != System.Data.ConnectionState.Open)
+                {
+                    connection.Open();
+                }
+
+                if (options.MetadataQuerySchema is not null && HasSearchPathInConnectionString(connection.ConnectionString, options.MetadataQuerySchema) is false)
+                {
+                    SetSearchPath(connection, options.MetadataQuerySchema);
+                    logger?.LogDebug("Using NpgsqlConnection from service provider with schema '{schema}' for metadata queries.",
+                        options.MetadataQuerySchema);
+                }
+                else
+                {
+                    logger?.LogDebug("Using NpgsqlConnection from service provider for metadata queries.");
+                }
+            }
+            return;
+        }
+
+        // Try DataSource
+        if (options.DataSource is not null)
+        {
+            connection = options.DataSource.CreateConnection();
+            shouldDispose = true;
+            connection.Open();
+
+            if (options.MetadataQuerySchema is not null && HasSearchPathInConnectionString(connection.ConnectionString, options.MetadataQuerySchema) is false)
+            {
+                SetSearchPath(connection, options.MetadataQuerySchema);
+                logger?.LogDebug("Using DataSource with schema '{schema}' for metadata queries.",
+                    options.MetadataQuerySchema);
+            }
+            else
+            {
+                logger?.LogDebug("Using DataSource for metadata queries.");
+            }
+            return;
+        }
+
+        // Fall back to connection string
+        if (string.IsNullOrEmpty(options.ConnectionString))
+        {
+            throw new ArgumentException("ConnectionString must be provided when no other connection source is configured.");
+        }
+
+        if (options.MetadataQuerySchema is not null)
+        {
+            if (HasSearchPathInConnectionString(options.ConnectionString, options.MetadataQuerySchema) is false)
+            {
+                var connectionStringBuilder = new NpgsqlConnectionStringBuilder(options.ConnectionString)
+                {
+                    SearchPath = options.MetadataQuerySchema
+                };
+                connection = new NpgsqlConnection(connectionStringBuilder.ConnectionString);
+            }
+            else
+            {
+                connection = new NpgsqlConnection(options.ConnectionString);
+            }
+            shouldDispose = true;
+            connection.Open();
+            logger?.LogDebug("Using default connection string with schema '{schema}' for metadata queries.",
+                options.MetadataQuerySchema);
+        }
+        else
+        {
+            connection = new NpgsqlConnection(options.ConnectionString);
+            shouldDispose = true;
+            connection.Open();
+            logger?.LogDebug("Using default connection string for metadata queries.");
+        }
+    }
+
+    private static bool HasSearchPathInConnectionString(string connectionString, string schema)
+    {
+        // Fast string search for "Search Path=schema" pattern
+        // This avoids expensive NpgsqlConnectionStringBuilder parsing
+        int index = connectionString.IndexOf("Search Path", StringComparison.OrdinalIgnoreCase);
+        if (index == -1)
+        {
+            return false;
+        }
+
+        // Find the value after the key
+        int equalsIndex = connectionString.IndexOf('=', index);
+        if (equalsIndex == -1)
+        {
+            return false;
+        }
+
+        // Skip whitespace after '='
+        int valueStart = equalsIndex + 1;
+        while (valueStart < connectionString.Length && char.IsWhiteSpace(connectionString[valueStart]))
+        {
+            valueStart++;
+        }
+
+        // Find end of value (semicolon or end of string)
+        int valueEnd = connectionString.IndexOf(';', valueStart);
+        if (valueEnd == -1)
+        {
+            valueEnd = connectionString.Length;
+        }
+
+        // Extract and trim the value
+        int valueLength = valueEnd - valueStart;
+        if (valueLength == 0)
+        {
+            return false;
+        }
+
+        var value = connectionString.AsSpan(valueStart, valueLength).Trim();
+        return value.Equals(schema.AsSpan(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void SetSearchPath(NpgsqlConnection connection, string schema)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = $"SET search_path TO \"{schema.Replace("\"", "\"\"")}\"";
+        command.ExecuteNonQuery();
+    }
+    
     public static T Get<T>(this NpgsqlDataReader reader, int ordinal)
     {
         object? value;
@@ -83,8 +283,7 @@ public static class Ext
         sb.Append('}');
         return sb.ToString();
     }
-
-
+    
     public static Dictionary<string, object> BuildClaimsDictionary(this ClaimsPrincipal? user, NpgsqlRestAuthenticationOptions options)
     {
         Dictionary<string, object> claimValues = [];

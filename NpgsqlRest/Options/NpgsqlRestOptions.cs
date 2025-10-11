@@ -56,6 +56,16 @@ public class NpgsqlRestOptions
     /// For example, some routines might use the primary database connection string, while others might use a read-only connection string from the replica servers.
     /// </summary>
     public IDictionary<string, string>? ConnectionStrings { get; set; }
+    
+    /// <summary>
+    /// The connection name in ConnectionStrings dictionary that will be used to execute the metadata query. If this value is null, the default connection string or data source will be used.
+    /// </summary>
+    public string? MetadataQueryConnectionName { get; set; } = null;
+    
+    /// <summary>
+    /// Set the search path to this schema that contains the metadata query function. Default is `public`.
+    /// </summary>
+    public string? MetadataQuerySchema { get; set; } = null;
 
     /// <summary>
     /// Retry options for the connection opening.

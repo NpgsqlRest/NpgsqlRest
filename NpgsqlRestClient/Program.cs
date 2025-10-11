@@ -197,12 +197,26 @@ var logConnectionNoticeEventsMode = config.GetConfigEnum<PostgresConnectionNotic
 
 appInstance.ConfigureThreadPool();
 
+/*
+    //
+   // The connection name in ConnectionStrings configuration that will be used to execute the metadata query. If this value is null, the default connection string will be used.
+   //
+   "MetadataQueryConnectionName": null,
+   //
+   // Set the search path to this schema that contains the metadata query function. Default is `public`.
+   // This is needed when using non superuser connection roles with limited schema access and mapping the metadata function to a specific schema. 
+   // If the connection string contains the same "Search Path=" it will be skipped.
+   //
+   "MetadataQuerySchema": null,
+ */
 NpgsqlRestOptions options = new()
 {
     DataSource = dataSource,
     ServiceProviderMode = ServiceProviderObject.None,
     ConnectionStrings = connectionStrings,
     ConnectionRetryOptions = retryOpts,
+    MetadataQueryConnectionName = config.GetConfigStr("MetadataQueryConnectionName", config.ConnectionSettingsCfg),
+    MetadataQuerySchema = config.GetConfigStr("MetadataQuerySchema", config.ConnectionSettingsCfg),
     SchemaSimilarTo = config.GetConfigStr("SchemaSimilarTo", config.NpgsqlRestCfg),
     SchemaNotSimilarTo = config.GetConfigStr("SchemaNotSimilarTo", config.NpgsqlRestCfg),
     IncludeSchemas = config.GetConfigEnumerable("IncludeSchemas", config.NpgsqlRestCfg)?.ToArray(),

@@ -39,33 +39,11 @@ public class RoutineSource(
         RetryStrategy? retryStrategy, 
         ILogger? logger)
     {
-        NpgsqlConnection? connection = null;
         bool shouldDispose = true;
+        NpgsqlConnection? connection = null;
         try
         {
-            if (serviceProvider is not null && options.ServiceProviderMode != ServiceProviderObject.None)
-            {
-                if (options.ServiceProviderMode == ServiceProviderObject.NpgsqlDataSource)
-                {
-                    connection = serviceProvider.GetRequiredService<NpgsqlDataSource>().OpenConnection();
-                }
-                else if (options.ServiceProviderMode == ServiceProviderObject.NpgsqlConnection)
-                {
-                    shouldDispose = false;
-                    connection = serviceProvider.GetRequiredService<NpgsqlConnection>();
-                }
-            }
-            else
-            {
-                if (options.DataSource is not null)
-                {
-                    connection = options.DataSource.CreateConnection();
-                }
-                else
-                {
-                    connection = new(options.ConnectionString);
-                }
-            }
+            options.CreateAndOpenSourceConnection(serviceProvider, logger, ref connection, ref shouldDispose);
 
             if (connection is null)
             {
@@ -95,8 +73,6 @@ public class RoutineSource(
             AddParameter(command, ExcludeLanguages is null ? ["c", "internal"] : ExcludeLanguages, true); // $10
 
             logger.TraceCommand(command, nameof(RoutineSource));
-
-            connection.Open();
             using NpgsqlDataReader reader = command.ExecuteReaderWithRetry(retryStrategy, logger);
             while (reader.Read())
             {

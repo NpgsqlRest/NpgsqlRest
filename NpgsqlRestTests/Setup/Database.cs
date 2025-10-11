@@ -20,7 +20,9 @@ public static partial class Database
             }
         }
     }
-
+    
+    public static string GetIinitialConnectionString() => InitialConnectionString;
+    
     public static NpgsqlConnection CreateConnection()
     {
         var builder = new NpgsqlConnectionStringBuilder(InitialConnectionString)
