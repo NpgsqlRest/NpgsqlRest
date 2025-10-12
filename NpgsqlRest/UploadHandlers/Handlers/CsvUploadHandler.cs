@@ -3,13 +3,11 @@ using Microsoft.VisualBasic.FileIO;
 using Npgsql;
 using NpgsqlTypes;
 using static NpgsqlRest.PgConverters;
+using static NpgsqlRest.NpgsqlRestOptions;
 
 namespace NpgsqlRest.UploadHandlers.Handlers;
 
-public class CsvUploadHandler(
-    NpgsqlRestUploadOptions options, 
-    RetryStrategy? retryStrategy,
-    ILogger? logger) : BaseUploadHandler, IUploadHandler
+public class CsvUploadHandler(RetryStrategy? retryStrategy, ILogger? logger) : BaseUploadHandler, IUploadHandler
 {
     private const string CheckFileParam = "check_format";
     private const string DelimitersParam = "delimiters";
@@ -34,13 +32,13 @@ public class CsvUploadHandler(
 
     public async Task<string> UploadAsync(NpgsqlConnection connection, HttpContext context, Dictionary<string, string>? parameters)
     {
-        bool checkFileStatus = options.DefaultUploadHandlerOptions.CsvUploadCheckFileStatus;
-        int testBufferSize = options.DefaultUploadHandlerOptions.TextTestBufferSize;
-        int nonPrintableThreshold = options.DefaultUploadHandlerOptions.TextNonPrintableThreshold;
-        string delimiters = options.DefaultUploadHandlerOptions.CsvUploadDelimiterChars;
-        bool hasFieldsEnclosedInQuotes = options.DefaultUploadHandlerOptions.CsvUploadHasFieldsEnclosedInQuotes;
-        bool setWhiteSpaceToNull = options.DefaultUploadHandlerOptions.CsvUploadSetWhiteSpaceToNull;
-        string rowCommand = options.DefaultUploadHandlerOptions.CsvUploadRowCommand;
+        bool checkFileStatus = Options.UploadOptions.DefaultUploadHandlerOptions.CsvUploadCheckFileStatus;
+        int testBufferSize = Options.UploadOptions.DefaultUploadHandlerOptions.TextTestBufferSize;
+        int nonPrintableThreshold = Options.UploadOptions.DefaultUploadHandlerOptions.TextNonPrintableThreshold;
+        string delimiters = Options.UploadOptions.DefaultUploadHandlerOptions.CsvUploadDelimiterChars;
+        bool hasFieldsEnclosedInQuotes = Options.UploadOptions.DefaultUploadHandlerOptions.CsvUploadHasFieldsEnclosedInQuotes;
+        bool setWhiteSpaceToNull = Options.UploadOptions.DefaultUploadHandlerOptions.CsvUploadSetWhiteSpaceToNull;
+        string rowCommand = Options.UploadOptions.DefaultUploadHandlerOptions.CsvUploadRowCommand;
 
         if (parameters is not null)
         {
@@ -74,10 +72,10 @@ public class CsvUploadHandler(
             }
         }
 
-        if (options.LogUploadParameters is true)
+        if (Options.UploadOptions.LogUploadParameters is true)
         {
             logger?.LogDebug("Upload for {_type}: includedMimeTypePatterns={includedMimeTypePatterns}, excludedMimeTypePatterns={excludedMimeTypePatterns}, checkFileStatus={checkFileStatus}, testBufferSize={testBufferSize}, nonPrintableThreshold={nonPrintableThreshold}, delimiters={delimiters}, hasFieldsEnclosedInQuotes={hasFieldsEnclosedInQuotes}, setWhiteSpaceToNull={setWhiteSpaceToNull}, rowCommand={rowCommand}",
-                _type, _includedMimeTypePatterns, _excludedMimeTypePatterns, checkFileStatus, testBufferSize, nonPrintableThreshold, delimiters, hasFieldsEnclosedInQuotes, setWhiteSpaceToNull, rowCommand);
+                Type, IncludedMimeTypePatterns, ExcludedMimeTypePatterns, checkFileStatus, testBufferSize, nonPrintableThreshold, delimiters, hasFieldsEnclosedInQuotes, setWhiteSpaceToNull, rowCommand);
         }
 
         string[] delimitersArr = [.. delimiters.Select(c => c.ToString())];
@@ -100,10 +98,10 @@ public class CsvUploadHandler(
             }
 
             StringBuilder fileJson = new(100);
-            if (_type is not null)
+            if (Type is not null)
             {
                 fileJson.Append("{\"type\":");
-                fileJson.Append(SerializeString(_type));
+                fileJson.Append(SerializeString(Type));
                 fileJson.Append(",\"fileName\":");
             }
             else
@@ -117,7 +115,7 @@ public class CsvUploadHandler(
             fileJson.Append(formFile.Length);
 
             UploadFileStatus status = UploadFileStatus.Ok;
-            if (_stopAfterFirstSuccess is true && _skipFileNames.Contains(formFile.FileName, StringComparer.OrdinalIgnoreCase))
+            if (StopAfterFirstSuccess is true && SkipFileNames.Contains(formFile.FileName, StringComparer.OrdinalIgnoreCase))
             {
                 status = UploadFileStatus.Ignored;
             }
@@ -136,14 +134,14 @@ public class CsvUploadHandler(
             fileJson.Append('}');
             if (status != UploadFileStatus.Ok)
             {
-                logger?.FileUploadFailed(_type, formFile.FileName, formFile.ContentType, formFile.Length, status);
+                logger?.FileUploadFailed(Type, formFile.FileName, formFile.ContentType, formFile.Length, status);
                 result.Append(fileJson);
                 fileId++;
                 continue;
             }
-            if (_stopAfterFirstSuccess is true)
+            if (StopAfterFirstSuccess is true)
             {
-                _skipFileNames.Add(formFile.FileName);
+                SkipFileNames.Add(formFile.FileName);
             }
 
             using var fileStream = formFile.OpenReadStream();
@@ -185,7 +183,7 @@ public class CsvUploadHandler(
             fileJson.Append(SerializeDatbaseObject(commandResult));
             fileJson.Append('}');
 
-            if (options.LogUploadEvent)
+            if (Options.UploadOptions.LogUploadEvent)
             {
                 logger?.UploadedCsvFile(formFile.FileName, formFile.ContentType, formFile.Length, rowCommand);
             }

@@ -419,7 +419,6 @@ public class ExternalAuth
         await LoginHandler.HandleAsync(
             command, 
             context, 
-            options, 
             retryStrategy,
             logger, 
             tracePath: "ExternalAuth.ProcessAsync",

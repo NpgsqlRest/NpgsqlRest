@@ -14,13 +14,13 @@ using NpgsqlRest.UploadHandlers.Handlers;
 using NpgsqlTypes;
 using static System.Net.Mime.MediaTypeNames;
 using static NpgsqlRest.ParameterParser;
+using static NpgsqlRest.NpgsqlRestOptions;
 
 namespace NpgsqlRest;
 
 public class NpgsqlRestEndpoint(
     NpgsqlRestMetadataEntry entry,
-    NpgsqlRestOptions options, 
-    FrozenDictionary<string, NpgsqlRestMetadataEntry> overloads,  
+    FrozenDictionary<string, NpgsqlRestMetadataEntry> overloads,
     ILogger? logger)
 {
     public async Task InvokeAsync(HttpContext context, IServiceProvider serviceProvider, CancellationToken cancellationToken = default)
@@ -32,7 +32,7 @@ public class NpgsqlRestEndpoint(
         string? headers = null;
         if (endpoint.RequestHeadersMode == RequestHeadersMode.Context)
         {
-            SearializeHeader(options, context, ref headers);
+            SearializeHeader(Options, context, ref headers);
         }
 
         if (endpoint.Login is false)
@@ -49,7 +49,7 @@ public class NpgsqlRestEndpoint(
                 bool ok = false;
                 foreach (var claim in context.User?.Claims ?? [])
                 {
-                    if (string.Equals(claim.Type, options.AuthenticationOptions.DefaultRoleClaimType, StringComparison.Ordinal))
+                    if (string.Equals(claim.Type, Options.AuthenticationOptions.DefaultRoleClaimType, StringComparison.Ordinal))
                     {
                         if (endpoint.AuthorizeRoles.Contains(claim.Value) is true)
                         {
@@ -79,7 +79,7 @@ public class NpgsqlRestEndpoint(
         {
             if (endpoint.ConnectionName is not null)
             {
-                if (options.ConnectionStrings?.TryGetValue(endpoint.ConnectionName, out var connectionString) is true)
+                if (Options.ConnectionStrings?.TryGetValue(endpoint.ConnectionName, out var connectionString) is true)
                 {
                     connection = new(connectionString);
                 }
@@ -89,14 +89,14 @@ public class NpgsqlRestEndpoint(
                     return;
                 }
             }
-            else if (options.ServiceProviderMode != ServiceProviderObject.None)
+            else if (Options.ServiceProviderMode != ServiceProviderObject.None)
             {
-                if (options.ServiceProviderMode == ServiceProviderObject.NpgsqlDataSource)
+                if (Options.ServiceProviderMode == ServiceProviderObject.NpgsqlDataSource)
                 {
                     connection = serviceProvider.GetRequiredService<NpgsqlDataSource>().CreateConnection();
-                    await connection.OpenRetryAsync(options.ConnectionRetryOptions, logger, cancellationToken);
+                    await connection.OpenRetryAsync(Options.ConnectionRetryOptions, logger, cancellationToken);
                 }
-                else if (options.ServiceProviderMode == ServiceProviderObject.NpgsqlConnection)
+                else if (Options.ServiceProviderMode == ServiceProviderObject.NpgsqlConnection)
                 {
                     shouldDispose = false;
                     connection = serviceProvider.GetRequiredService<NpgsqlConnection>();
@@ -104,13 +104,13 @@ public class NpgsqlRestEndpoint(
             }
             else
             {
-                if (options.DataSource is not null)
+                if (Options.DataSource is not null)
                 {
-                    connection = options.DataSource.CreateConnection();
+                    connection = Options.DataSource.CreateConnection();
                 }
                 else
                 {
-                    connection = new(options.ConnectionString);
+                    connection = new(Options.ConnectionString);
                 }
             }
 
@@ -120,30 +120,31 @@ public class NpgsqlRestEndpoint(
                 return;
             }
 
-            if ( (options.LogConnectionNoticeEvents && logger != null) || endpoint.InfoEventsStreamingPath is not null)
+            if ( (Options.LogConnectionNoticeEvents && logger != null) || endpoint.InfoEventsStreamingPath is not null)
             {
+                var currentEndpoint = endpoint;
                 connection.Notice += (sender, args) =>
                 {
-                    if (options.LogConnectionNoticeEvents && logger != null)
+                    if (Options.LogConnectionNoticeEvents && logger != null)
                     {
-                        NpgsqlRestLogger.LogConnectionNotice(logger, args.Notice, options.LogConnectionNoticeEventsMode);
+                        NpgsqlRestLogger.LogConnectionNotice(logger, args.Notice, Options.LogConnectionNoticeEventsMode);
                     }
                     if (args.Notice.IsInfo())
                     {
                         NpgsqlRestNoticeEventSource
                             .Broadcaster
-                            .Broadcast(new NoticeEvent(args.Notice, endpoint, context.Request.Headers[options.ExecutionIdHeaderName].FirstOrDefault()));
+                            .Broadcast(new NoticeEvent(args.Notice, currentEndpoint, context.Request.Headers[Options.ExecutionIdHeaderName].FirstOrDefault()));
                     }
                 };
             }
             
-            if (options.AuthenticationOptions.BasicAuth.Enabled is true || endpoint.BasicAuth?.Enabled is true)
+            if (Options.AuthenticationOptions.BasicAuth.Enabled is true || endpoint.BasicAuth?.Enabled is true)
             {
-                if (options.AuthenticationOptions.BasicAuth.ChallengeCommand is not null || endpoint.BasicAuth?.ChallengeCommand is not null)
+                if (Options.AuthenticationOptions.BasicAuth.ChallengeCommand is not null || endpoint.BasicAuth?.ChallengeCommand is not null)
                 {
                     await OpenConnectionAsync(connection, context, endpoint);
                 }
-                await BasicAuthHandler.HandleAsync(context, endpoint, options, connection, logger);
+                await BasicAuthHandler.HandleAsync(context, endpoint, connection, logger);
                 if (context.Response.HasStarted is true)
                 {
                     return;
@@ -152,7 +153,7 @@ public class NpgsqlRestEndpoint(
             
             await using var command = NpgsqlRestCommand.Create(connection);
 
-            var shouldLog = options.LogCommands && logger != null;
+            var shouldLog = Options.LogCommands && logger != null;
             StringBuilder? cmdLog = shouldLog ?
                 new(string.Concat("-- ", context.Request.Method, " ", context.Request.GetDisplayUrl(), Environment.NewLine)) :
                 null;
@@ -170,7 +171,7 @@ public class NpgsqlRestEndpoint(
             string? body = null;
             Dictionary<string, StringValues>? queryDict = null;
             StringBuilder? cacheKeys = null;
-            uploadHandler = endpoint.Upload is true ? options.CreateUploadHandler(endpoint, logger) : null;
+            uploadHandler = endpoint.Upload is true ? endpoint.CreateUploadHandler(logger) : null;
             int uploadMetaParamIndex = -1;
             Dictionary<string, object>? claimsDict = null;
             
@@ -256,21 +257,21 @@ public class NpgsqlRestEndpoint(
                         }
                         else
                         {
-                            parameter.Value = options.AuthenticationOptions.PasswordHasher?.HashPassword(hashValueQueryDict) as object ?? DBNull.Value;
+                            parameter.Value = Options.AuthenticationOptions.PasswordHasher?.HashPassword(hashValueQueryDict) as object ?? DBNull.Value;
                         }
                     }
                     if (endpoint.UseUserParameters is true)
                     {
                         if (parameter.IsFromUserClaims is true && claimsDict is null)
                         {
-                            claimsDict = context.User.BuildClaimsDictionary(options.AuthenticationOptions);
+                            claimsDict = context.User.BuildClaimsDictionary(Options.AuthenticationOptions);
                         }
                         
                         if (parameter.IsIpAddress is true)
                         {
                             parameter.Value = context.Request.GetClientIpAddressDbParam();
                         }
-                        else if (context.User?.Identity?.IsAuthenticated is true && options.AuthenticationOptions.ParameterNameClaimsMapping.TryGetValue(parameter.ActualName, out var claimType))
+                        else if (context.User?.Identity?.IsAuthenticated is true && Options.AuthenticationOptions.ParameterNameClaimsMapping.TryGetValue(parameter.ActualName, out var claimType))
                         {
                             parameter.Value = claimsDict!.GetClaimDbParam(claimType);
                         }
@@ -300,9 +301,9 @@ public class NpgsqlRestEndpoint(
                             parameter.Value = DBNull.Value;
                             hasNulls = true;
 
-                            if (options.ValidateParameters is not null)
+                            if (Options.ValidateParameters is not null)
                             {
-                                options.ValidateParameters(new ParameterValidationValues(
+                                Options.ValidateParameters(new ParameterValidationValues(
                                     context,
                                     routine,
                                     parameter));
@@ -311,9 +312,9 @@ public class NpgsqlRestEndpoint(
                                     return;
                                 }
                             }
-                            if (options.ValidateParametersAsync is not null)
+                            if (Options.ValidateParametersAsync is not null)
                             {
-                                await options.ValidateParametersAsync(new ParameterValidationValues(
+                                await Options.ValidateParametersAsync(new ParameterValidationValues(
                                     context,
                                     routine,
                                     parameter));
@@ -354,10 +355,10 @@ public class NpgsqlRestEndpoint(
                                 }
                             }
                             paramIndex++;
-                            if (shouldLog && options.LogCommandParameters)
+                            if (shouldLog && Options.LogCommandParameters)
                             {
                                 object value = parameter.NpgsqlValue!;
-                                var p = options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
+                                var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
                                     "***" :
                                     FormatParam(value, parameter.TypeDescriptor);
                                 cmdLog!.AppendLine(string.Concat(
@@ -376,9 +377,9 @@ public class NpgsqlRestEndpoint(
                                 parameter.ParamType = ParamType.BodyParam;
                                 hasNulls = false;
 
-                                if (options.ValidateParameters is not null)
+                                if (Options.ValidateParameters is not null)
                                 {
-                                    options.ValidateParameters(new ParameterValidationValues(
+                                    Options.ValidateParameters(new ParameterValidationValues(
                                         context,
                                         routine,
                                         parameter));
@@ -387,9 +388,9 @@ public class NpgsqlRestEndpoint(
                                         return;
                                     }
                                 }
-                                if (options.ValidateParametersAsync is not null)
+                                if (Options.ValidateParametersAsync is not null)
                                 {
-                                    await options.ValidateParametersAsync(new ParameterValidationValues(
+                                    await Options.ValidateParametersAsync(new ParameterValidationValues(
                                         context,
                                         routine,
                                         parameter));
@@ -429,10 +430,10 @@ public class NpgsqlRestEndpoint(
                                     }
                                 }
                                 paramIndex++;
-                                if (shouldLog && options.LogCommandParameters)
+                                if (shouldLog && Options.LogCommandParameters)
                                 {
                                     object value = parameter.NpgsqlValue!;
-                                    var p = options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
+                                    var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
                                         "***" :
                                         FormatParam(value, parameter.TypeDescriptor);
                                     cmdLog!.AppendLine(string.Concat(
@@ -461,14 +462,14 @@ public class NpgsqlRestEndpoint(
                         {
                             if (headers is null)
                             {
-                                SearializeHeader(options, context, ref headers);
+                                SearializeHeader(Options, context, ref headers);
                             }
                             parameter.ParamType = ParamType.HeaderParam;
                             parameter.Value = headers;
 
-                            if (options.ValidateParameters is not null)
+                            if (Options.ValidateParameters is not null)
                             {
-                                options.ValidateParameters(new ParameterValidationValues(
+                                Options.ValidateParameters(new ParameterValidationValues(
                                     context,
                                     routine,
                                     parameter));
@@ -477,9 +478,9 @@ public class NpgsqlRestEndpoint(
                                     return;
                                 }
                             }
-                            if (options.ValidateParametersAsync is not null)
+                            if (Options.ValidateParametersAsync is not null)
                             {
-                                await options.ValidateParametersAsync(new ParameterValidationValues(
+                                await Options.ValidateParametersAsync(new ParameterValidationValues(
                                     context,
                                     routine,
                                     parameter));
@@ -520,10 +521,10 @@ public class NpgsqlRestEndpoint(
                                 }
                             }
                             paramIndex++;
-                            if (shouldLog && options.LogCommandParameters)
+                            if (shouldLog && Options.LogCommandParameters)
                             {
                                 object value = parameter.NpgsqlValue!;
-                                var p = options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
+                                var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
                                     "***" :
                                     FormatParam(value, parameter.TypeDescriptor);
                                 cmdLog!.AppendLine(string.Concat(
@@ -542,9 +543,9 @@ public class NpgsqlRestEndpoint(
                     {
                         if (parameter.Value is null)
                         {
-                            if (options.ValidateParameters is not null)
+                            if (Options.ValidateParameters is not null)
                             {
-                                options.ValidateParameters(new ParameterValidationValues(
+                                Options.ValidateParameters(new ParameterValidationValues(
                                     context,
                                     routine,
                                     parameter));
@@ -553,9 +554,9 @@ public class NpgsqlRestEndpoint(
                                     return;
                                 }
                             }
-                            if (options.ValidateParametersAsync is not null)
+                            if (Options.ValidateParametersAsync is not null)
                             {
-                                await options.ValidateParametersAsync(new ParameterValidationValues(
+                                await Options.ValidateParametersAsync(new ParameterValidationValues(
                                     context,
                                     routine,
                                     parameter));
@@ -594,9 +595,9 @@ public class NpgsqlRestEndpoint(
 
                     parameter.ParamType = ParamType.QueryString;
                     parameter.QueryStringValues = qsValue;
-                    if (options.ValidateParameters is not null)
+                    if (Options.ValidateParameters is not null)
                     {
-                        options.ValidateParameters(new ParameterValidationValues(
+                        Options.ValidateParameters(new ParameterValidationValues(
                             context,
                             routine,
                             parameter));
@@ -605,9 +606,9 @@ public class NpgsqlRestEndpoint(
                             return;
                         }
                     }
-                    if (options.ValidateParametersAsync is not null)
+                    if (Options.ValidateParametersAsync is not null)
                     {
-                        await options.ValidateParametersAsync(new ParameterValidationValues(
+                        await Options.ValidateParametersAsync(new ParameterValidationValues(
                             context,
                             routine,
                             parameter));
@@ -649,10 +650,10 @@ public class NpgsqlRestEndpoint(
                         }
                     }
                     paramIndex++;
-                    if (shouldLog && options.LogCommandParameters)
+                    if (shouldLog && Options.LogCommandParameters)
                     {
                         object value = parameter.NpgsqlValue!;
-                        var p = options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
+                        var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
                             "***" :
                             FormatParam(value, parameter.TypeDescriptor);
                         cmdLog!.AppendLine(string.Concat(
@@ -711,20 +712,20 @@ public class NpgsqlRestEndpoint(
                         }
                         else
                         {
-                            parameter.Value = options.AuthenticationOptions.PasswordHasher?.HashPassword(hashValueBodyDict) as object ?? DBNull.Value;
+                            parameter.Value = Options.AuthenticationOptions.PasswordHasher?.HashPassword(hashValueBodyDict) as object ?? DBNull.Value;
                         }
                     }
                     if (endpoint.UseUserParameters is true)
                     {
                         if (parameter.IsFromUserClaims is true && claimsDict is null)
                         {
-                            claimsDict = context.User.BuildClaimsDictionary(options.AuthenticationOptions);
+                            claimsDict = context.User.BuildClaimsDictionary(Options.AuthenticationOptions);
                         }
                         if (parameter.IsIpAddress is true)
                         {
                             parameter.Value = context.Request.GetClientIpAddressDbParam();
                         }
-                        else if (context.User?.Identity?.IsAuthenticated is true && options.AuthenticationOptions.ParameterNameClaimsMapping.TryGetValue(parameter.ActualName, out var claimType))
+                        else if (context.User?.Identity?.IsAuthenticated is true && Options.AuthenticationOptions.ParameterNameClaimsMapping.TryGetValue(parameter.ActualName, out var claimType))
                         {
                             parameter.Value = claimsDict!.GetClaimDbParam(claimType);
                         }
@@ -753,14 +754,14 @@ public class NpgsqlRestEndpoint(
                         {
                             if (headers is null)
                             {
-                                SearializeHeader(options, context, ref headers);
+                                SearializeHeader(Options, context, ref headers);
                             }
                             parameter.ParamType = ParamType.HeaderParam;
                             parameter.Value = headers;
 
-                            if (options.ValidateParameters is not null)
+                            if (Options.ValidateParameters is not null)
                             {
-                                options.ValidateParameters(new ParameterValidationValues(
+                                Options.ValidateParameters(new ParameterValidationValues(
                                     context,
                                     routine,
                                     parameter));
@@ -769,9 +770,9 @@ public class NpgsqlRestEndpoint(
                                     return;
                                 }
                             }
-                            if (options.ValidateParametersAsync is not null)
+                            if (Options.ValidateParametersAsync is not null)
                             {
-                                await options.ValidateParametersAsync(new ParameterValidationValues(
+                                await Options.ValidateParametersAsync(new ParameterValidationValues(
                                     context,
                                     routine,
                                     parameter));
@@ -813,10 +814,10 @@ public class NpgsqlRestEndpoint(
                                 }
                             }
                             paramIndex++;
-                            if (shouldLog && options.LogCommandParameters)
+                            if (shouldLog && Options.LogCommandParameters)
                             {
                                 object pvalue = parameter.NpgsqlValue!;
-                                var p = options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
+                                var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
                                     "***" :
                                     FormatParam(pvalue, parameter.TypeDescriptor);
                                 cmdLog!.AppendLine(string.Concat(
@@ -835,9 +836,9 @@ public class NpgsqlRestEndpoint(
                     {
                         if (parameter.Value is null)
                         {
-                            if (options.ValidateParameters is not null)
+                            if (Options.ValidateParameters is not null)
                             {
-                                options.ValidateParameters(new ParameterValidationValues(
+                                Options.ValidateParameters(new ParameterValidationValues(
                                     context,
                                     routine,
                                     parameter));
@@ -846,9 +847,9 @@ public class NpgsqlRestEndpoint(
                                     return;
                                 }
                             }
-                            if (options.ValidateParametersAsync is not null)
+                            if (Options.ValidateParametersAsync is not null)
                             {
-                                await options.ValidateParametersAsync(new ParameterValidationValues(
+                                await Options.ValidateParametersAsync(new ParameterValidationValues(
                                     context,
                                     routine,
                                     parameter));
@@ -885,9 +886,9 @@ public class NpgsqlRestEndpoint(
                     }
                     parameter.ParamType = ParamType.BodyJson;
                     parameter.JsonBodyNode = value;
-                    if (options.ValidateParameters is not null)
+                    if (Options.ValidateParameters is not null)
                     {
-                        options.ValidateParameters(new ParameterValidationValues(
+                        Options.ValidateParameters(new ParameterValidationValues(
                             context,
                             routine,
                             parameter));
@@ -896,9 +897,9 @@ public class NpgsqlRestEndpoint(
                             return;
                         }
                     }
-                    if (options.ValidateParametersAsync is not null)
+                    if (Options.ValidateParametersAsync is not null)
                     {
-                        await options.ValidateParametersAsync(new ParameterValidationValues(
+                        await Options.ValidateParametersAsync(new ParameterValidationValues(
                             context,
                             routine,
                             parameter));
@@ -940,10 +941,10 @@ public class NpgsqlRestEndpoint(
                         }
                     }
                     paramIndex++;
-                    if (shouldLog && options.LogCommandParameters)
+                    if (shouldLog && Options.LogCommandParameters)
                     {
                         object pvalue = parameter.NpgsqlValue!;
-                        var p = options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
+                        var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
                             "***" :
                             FormatParam(pvalue, parameter.TypeDescriptor);
                         cmdLog!.AppendLine(string.Concat(
@@ -1081,11 +1082,11 @@ public class NpgsqlRestEndpoint(
             {
                 if (connection.State != ConnectionState.Open)
                 {
-                    if (options.BeforeConnectionOpen is not null)
+                    if (Options.BeforeConnectionOpen is not null)
                     {
-                        options.BeforeConnectionOpen(connection, endpoint, context);
+                        Options.BeforeConnectionOpen(connection, endpoint, context);
                     }
-                    await connection.OpenRetryAsync(options.ConnectionRetryOptions, logger, cancellationToken);
+                    await connection.OpenRetryAsync(Options.ConnectionRetryOptions, logger, cancellationToken);
                 }
                 if (uploadHandler.RequiresTransaction is true)
                 {
@@ -1100,16 +1101,16 @@ public class NpgsqlRestEndpoint(
             }
 
             if (
-                (endpoint.RequestHeadersMode == RequestHeadersMode.Context && headers is not null && options.RequestHeadersContextKey is not null) 
+                (endpoint.RequestHeadersMode == RequestHeadersMode.Context && headers is not null && Options.RequestHeadersContextKey is not null) 
                 ||
-                (endpoint.UserContext is true && options.AuthenticationOptions.IpAddressContextKey is not null)
+                (endpoint.UserContext is true && Options.AuthenticationOptions.IpAddressContextKey is not null)
                 ||
                 (endpoint.UserContext is true && context.User?.Identity?.IsAuthenticated is true &&
-                    (options.AuthenticationOptions.ClaimsJsonContextKey is not null || options.AuthenticationOptions.ContextKeyClaimsMapping.Count > 0)
+                    (Options.AuthenticationOptions.ClaimsJsonContextKey is not null || Options.AuthenticationOptions.ContextKeyClaimsMapping.Count > 0)
                     )
                 ||
-                (options.UploadOptions.UseDefaultUploadMetadataContextKey && 
-                    options.UploadOptions.DefaultUploadMetadataContextKey is not null && 
+                (Options.UploadOptions.UseDefaultUploadMetadataContextKey && 
+                    Options.UploadOptions.DefaultUploadMetadataContextKey is not null && 
                     endpoint.Upload is true && 
                     uploadHandler is not null && 
                     uploadMetadata is not null)
@@ -1117,43 +1118,43 @@ public class NpgsqlRestEndpoint(
             {
                 if (connection.State != ConnectionState.Open)
                 {
-                    if (options.BeforeConnectionOpen is not null)
+                    if (Options.BeforeConnectionOpen is not null)
                     {
-                        options.BeforeConnectionOpen(connection, endpoint, context);
+                        Options.BeforeConnectionOpen(connection, endpoint, context);
                     }
-                    await connection.OpenRetryAsync(options.ConnectionRetryOptions, logger, cancellationToken);
+                    await connection.OpenRetryAsync(Options.ConnectionRetryOptions, logger, cancellationToken);
                 }
                 await using var batch = NpgsqlRestBatch.Create(connection);
 
-                if (endpoint.RequestHeadersMode == RequestHeadersMode.Context && headers is not null && options.RequestHeadersContextKey is not null)
+                if (endpoint.RequestHeadersMode == RequestHeadersMode.Context && headers is not null && Options.RequestHeadersContextKey is not null)
                 {
                     var cmd = new NpgsqlBatchCommand(Consts.SetContext);
-                    cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(options.RequestHeadersContextKey));
+                    cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(Options.RequestHeadersContextKey));
                     cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(headers));
                     batch.BatchCommands.Add(cmd);
                 }
 
                 if (endpoint.UserContext is true)
                 {
-                    claimsDict ??= context.User.BuildClaimsDictionary(options.AuthenticationOptions);
+                    claimsDict ??= context.User.BuildClaimsDictionary(Options.AuthenticationOptions);
 
-                    if (options.AuthenticationOptions.IpAddressContextKey is not null)
+                    if (Options.AuthenticationOptions.IpAddressContextKey is not null)
                     {
                         var cmd = new NpgsqlBatchCommand(Consts.SetContext);
-                        cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(options.AuthenticationOptions.IpAddressContextKey));
+                        cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(Options.AuthenticationOptions.IpAddressContextKey));
                         cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(context.Request.GetClientIpAddressDbParam()));
                         batch.BatchCommands.Add(cmd);
                     }
-                    if (context.User?.Identity?.IsAuthenticated is true && options.AuthenticationOptions.ClaimsJsonContextKey is not null)
+                    if (context.User?.Identity?.IsAuthenticated is true && Options.AuthenticationOptions.ClaimsJsonContextKey is not null)
                     {
                         var cmd = new NpgsqlBatchCommand(Consts.SetContext);
-                        cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(options.AuthenticationOptions.ClaimsJsonContextKey));
+                        cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(Options.AuthenticationOptions.ClaimsJsonContextKey));
                         cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(context.User!.GetUserClaimsDbParam(claimsDict!)));
                         batch.BatchCommands.Add(cmd);
                     }
                     if (context.User?.Identity?.IsAuthenticated is true)
                     {
-                        foreach (var mapping in options.AuthenticationOptions.ContextKeyClaimsMapping)
+                        foreach (var mapping in Options.AuthenticationOptions.ContextKeyClaimsMapping)
                         {
                             var cmd = new NpgsqlBatchCommand(Consts.SetContext);
                             cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(mapping.Key));
@@ -1163,14 +1164,14 @@ public class NpgsqlRestEndpoint(
                     }
                 }
 
-                if (options.UploadOptions.UseDefaultUploadMetadataContextKey &&
-                    options.UploadOptions.DefaultUploadMetadataContextKey is not null &&
+                if (Options.UploadOptions.UseDefaultUploadMetadataContextKey &&
+                    Options.UploadOptions.DefaultUploadMetadataContextKey is not null &&
                     endpoint.Upload is true &&
                     uploadHandler is not null &&
                     uploadMetadata is not null)
                 {
                     var cmd = new NpgsqlBatchCommand(Consts.SetContext);
-                    cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(options.UploadOptions.DefaultUploadMetadataContextKey));
+                    cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(Options.UploadOptions.DefaultUploadMetadataContextKey));
                     cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(uploadMetadata));
                     batch.BatchCommands.Add(cmd);
                 }
@@ -1190,7 +1191,6 @@ public class NpgsqlRestEndpoint(
                 await LoginHandler.HandleAsync(
                     command,
                     context,
-                    options,
                     endpoint.RetryStrategy,
                     logger,
                     tracePath: context.Request.Path.ToString(),
@@ -1198,7 +1198,7 @@ public class NpgsqlRestEndpoint(
                     assignUserPrincipalToContext: false);
                 
                 if (context.Response.HasStarted is true ||
-                    options.AuthenticationOptions.SerializeAuthEndpointsResponse is false)
+                    Options.AuthenticationOptions.SerializeAuthEndpointsResponse is false)
                 {
                     return;
                 }
@@ -1239,9 +1239,9 @@ public class NpgsqlRestEndpoint(
                     TypeDescriptor descriptor = routine.ColumnsTypeDescriptor[0];
 
                     object? valueResult;
-                    if (options.CacheOptions.DefaultRoutineCache is not null && endpoint.Cached is true)
+                    if (Options.CacheOptions.DefaultRoutineCache is not null && endpoint.Cached is true)
                     {
-                        if (options.CacheOptions.DefaultRoutineCache.Get(endpoint, cacheKeys?.ToString()!, out valueResult) is false)
+                        if (Options.CacheOptions.DefaultRoutineCache.Get(endpoint, cacheKeys?.ToString()!, out valueResult) is false)
                         {
                             if (await PrepareCommand(connection, command, commandText, context, endpoint, true) is false)
                             {
@@ -1260,7 +1260,7 @@ public class NpgsqlRestEndpoint(
                             if (await reader.ReadAsync())
                             {
                                 valueResult = descriptor.IsBinary ? reader.GetFieldValue<byte[]>(0) : reader.GetValue(0) as string;
-                                options.CacheOptions.DefaultRoutineCache.AddOrUpdate(endpoint, cacheKeys?.ToString()!, valueResult);
+                                Options.CacheOptions.DefaultRoutineCache.AddOrUpdate(endpoint, cacheKeys?.ToString()!, valueResult);
                             }
                             else
                             {
@@ -1422,7 +1422,7 @@ public class NpgsqlRestEndpoint(
                         row.Append(columns);
                     }
 
-                    var bufferRows = endpoint.BufferRows ?? options.BufferRows;
+                    var bufferRows = endpoint.BufferRows ?? Options.BufferRows;
                     while (await reader.ReadAsync())
                     {
                         rowCount++;
@@ -1595,11 +1595,11 @@ public class NpgsqlRestEndpoint(
             {
                 string? sqlState = npgsqlEx.SqlState;
 
-                if (options.PostgreSqlErrorCodeToHttpStatusCodeMapping.TryGetValue(sqlState ?? "", out var code))
+                if (Options.PostgreSqlErrorCodeToHttpStatusCodeMapping.TryGetValue(sqlState ?? "", out var code))
                 {
                     context.Response.StatusCode = code;
                 }
-                if (options.ReturnNpgsqlExceptionMessage && context.Response.HasStarted is false)
+                if (Options.ReturnNpgsqlExceptionMessage && context.Response.HasStarted is false)
                 {
                     if (context.Response.StatusCode == 200)
                     {
@@ -1674,9 +1674,9 @@ public class NpgsqlRestEndpoint(
             command.CommandTimeout = endpoint.CommandTimeout.Value;
         }
 
-        if (options.CommandCallbackAsync is not null)
+        if (Options.CommandCallbackAsync is not null)
         {
-            await options.CommandCallbackAsync(endpoint, command, context);
+            await Options.CommandCallbackAsync(endpoint, command, context);
             if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
             {
                 return false;
@@ -1704,19 +1704,19 @@ public class NpgsqlRestEndpoint(
     {
         if (connection.State != ConnectionState.Open)
         {
-            if (options.BeforeConnectionOpen is not null)
+            if (Options.BeforeConnectionOpen is not null)
             {
-                options.BeforeConnectionOpen(connection, endpoint, context);
+                Options.BeforeConnectionOpen(connection, endpoint, context);
             }
-            await connection.OpenRetryAsync(options.ConnectionRetryOptions, logger, context.RequestAborted);
+            await connection.OpenRetryAsync(Options.ConnectionRetryOptions, logger, context.RequestAborted);
         }
     }
 
     private static void SearializeHeader(NpgsqlRestOptions options, HttpContext context, ref string? headers)
     {
-        if (options.CustomRequestHeaders.Count > 0)
+        if (Options.CustomRequestHeaders.Count > 0)
         {
-            foreach (var header in options.CustomRequestHeaders)
+            foreach (var header in Options.CustomRequestHeaders)
             {
                 context.Request.Headers.Add(header);
             }

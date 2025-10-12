@@ -4,6 +4,7 @@ using System.Security.Claims;
 using System.Text;
 using Npgsql;
 using NpgsqlTypes;
+using static NpgsqlRest.NpgsqlRestOptions;
 
 namespace NpgsqlRest.Auth;
 
@@ -12,28 +13,28 @@ public static class BasicAuthHandler
     public static async Task HandleAsync(
         HttpContext context, 
         RoutineEndpoint endpoint,
-        NpgsqlRestOptions options, 
+         
         NpgsqlConnection connection,
         ILogger? logger)
     {
         var realm =
             string.IsNullOrEmpty(endpoint.BasicAuth?.Realm) ? 
-                string.IsNullOrEmpty(options.AuthenticationOptions.BasicAuth.Realm) ? BasicAuthOptions.DefaultRealm : options.AuthenticationOptions.BasicAuth.Realm : 
+                string.IsNullOrEmpty(Options.AuthenticationOptions.BasicAuth.Realm) ? BasicAuthOptions.DefaultRealm : Options.AuthenticationOptions.BasicAuth.Realm : 
                 endpoint.BasicAuth.Realm;
         
         if (context.Request.IsSsl() is false)
         {
-            if (options.AuthenticationOptions.BasicAuth.SslRequirement == SslRequirement.Required)
+            if (Options.AuthenticationOptions.BasicAuth.SslRequirement == SslRequirement.Required)
             {
                 logger?.LogError("Basic authentication with SslRequirement 'Required' cannot be used when SSL is disabled.");
                 await Challenge(context, realm);
                 return;
             }
-            if (options.AuthenticationOptions.BasicAuth.SslRequirement == SslRequirement.Warning)
+            if (Options.AuthenticationOptions.BasicAuth.SslRequirement == SslRequirement.Warning)
             {
                 logger?.LogWarning("Using Basic Authentication when SSL is disabled.");
             }
-            else if (options.AuthenticationOptions.BasicAuth.SslRequirement == SslRequirement.Ignore)
+            else if (Options.AuthenticationOptions.BasicAuth.SslRequirement == SslRequirement.Ignore)
             {
                 logger?.LogDebug("WARNING: Using Basic Authentication when SSL is disabled.");
             }
@@ -99,19 +100,19 @@ public static class BasicAuthHandler
         {
             basicAuthPassword = endpoint.BasicAuth.Users[username];
         }
-        else if (options.AuthenticationOptions.BasicAuth?.Users.ContainsKey(username) is true)
+        else if (Options.AuthenticationOptions.BasicAuth?.Users.ContainsKey(username) is true)
         {
-            basicAuthPassword = options.AuthenticationOptions.BasicAuth.Users[username];
+            basicAuthPassword = Options.AuthenticationOptions.BasicAuth.Users[username];
         }
         
         bool? passwordValid = null;
-        string? challengeCommand = endpoint.BasicAuth?.ChallengeCommand ?? options.AuthenticationOptions.BasicAuth?.ChallengeCommand;
+        string? challengeCommand = endpoint.BasicAuth?.ChallengeCommand ?? Options.AuthenticationOptions.BasicAuth?.ChallengeCommand;
         
         if (basicAuthPassword is not null)
         {
-            if (options.AuthenticationOptions.BasicAuth?.UseDefaultPasswordHasher is true)
+            if (Options.AuthenticationOptions.BasicAuth?.UseDefaultPasswordHasher is true)
             {
-                if (options.AuthenticationOptions.PasswordHasher is null)
+                if (Options.AuthenticationOptions.PasswordHasher is null)
                 {
                     logger?.LogError("PasswordHasher not configured for Basic Authentication Realm {realm}. Request: {Path}",
                         realm,
@@ -120,7 +121,7 @@ public static class BasicAuthHandler
                     return;
                 }
                 passwordValid =
-                    options.AuthenticationOptions.PasswordHasher?.VerifyHashedPassword(basicAuthPassword, password);
+                    Options.AuthenticationOptions.PasswordHasher?.VerifyHashedPassword(basicAuthPassword, password);
             }
             else
             {
@@ -174,7 +175,6 @@ public static class BasicAuthHandler
             await LoginHandler.HandleAsync(
                 command, 
                 context, 
-                options, 
                 endpoint.RetryStrategy,
                 logger, 
                 tracePath: string.Concat(endpoint.Method.ToString(), " ", endpoint.Path),
@@ -198,11 +198,11 @@ public static class BasicAuthHandler
         {
             var principal = new ClaimsPrincipal(new ClaimsIdentity(
                 [
-                    new Claim(options.AuthenticationOptions.DefaultNameClaimType, username)
+                    new Claim(Options.AuthenticationOptions.DefaultNameClaimType, username)
                 ],
-                options.AuthenticationOptions.DefaultAuthenticationType,
-                nameType: options.AuthenticationOptions.DefaultNameClaimType,
-                roleType: options.AuthenticationOptions.DefaultRoleClaimType));
+                Options.AuthenticationOptions.DefaultAuthenticationType,
+                nameType: Options.AuthenticationOptions.DefaultNameClaimType,
+                roleType: Options.AuthenticationOptions.DefaultRoleClaimType));
             context.User = principal;
         }
         else

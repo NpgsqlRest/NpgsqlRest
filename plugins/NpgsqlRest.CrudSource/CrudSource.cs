@@ -1,6 +1,6 @@
-﻿using System.Text;
-using Npgsql;
+﻿using Npgsql;
 using NpgsqlTypes;
+using static NpgsqlRest.NpgsqlRestOptions;
 
 namespace NpgsqlRest.CrudSource;
 
@@ -193,24 +193,20 @@ public class CrudSource(
     private bool Delete { get => (CrudTypes & CrudCommandType.Delete) == CrudCommandType.Delete; }
     private bool DeleteReturning { get => (CrudTypes & CrudCommandType.DeleteReturning) == CrudCommandType.DeleteReturning; }
 
-    public IEnumerable<(Routine, IRoutineSourceParameterFormatter)> Read(
-        NpgsqlRestOptions options, 
-        IServiceProvider? serviceProvider, 
-        RetryStrategy? retryStrategy, 
-        ILogger? logger)
+    public IEnumerable<(Routine, IRoutineSourceParameterFormatter)> Read(IServiceProvider? serviceProvider, RetryStrategy? retryStrategy, ILogger? logger)
     {
         NpgsqlConnection? connection = null;
         bool shouldDispose = true;
         try
         {
-            options.CreateAndOpenSourceConnection(serviceProvider, logger, ref connection, ref shouldDispose);
+            Options.CreateAndOpenSourceConnection(serviceProvider, logger, ref connection, ref shouldDispose);
             
             if (connection is null)
             {
                 yield break;
             }
 
-            foreach (var (routine, formatter, type) in ReadInternal(options, connection, retryStrategy, logger))
+            foreach (var (routine, formatter, type) in ReadInternal(Options, connection, retryStrategy, logger))
             {
                 if (Created is not null && !Created(routine, type))
                 {
@@ -333,7 +329,6 @@ public class CrudSource(
                         //    TypeDescriptor = descriptor
                         //};
                         parameters[i] = new NpgsqlRestParameter(
-                            options,
                             ordinal: i,
                             convertedName: convertedColumnNames[i],
                             actualName: columnNames[i],
@@ -373,7 +368,7 @@ public class CrudSource(
                     EndpointHandler = null,
                     Metadata = null
                 };
-            };
+            }
 
             if (Select)
             {
@@ -458,12 +453,11 @@ public class CrudSource(
                     CrudCommandType.UpdateReturning);
             }
 
-            string deleteExp = default!, deleteDef = default!, deleteSimple = default!;
+            string deleteExp = default!, deleteDef = default!;
             if (Delete || DeleteReturning)
             {
                 deleteExp = string.Concat("delete from ", schema, ".", name, NL, "{0}");
                 deleteDef = string.Concat("delete from ", schema, ".", name);
-                deleteSimple = string.Concat("delete from ", schema, ".", name);
             }
 
             if (Delete)
@@ -508,7 +502,7 @@ public class CrudSource(
             var insertDef = string.Format(insertExp,
                 string.Join(", ", columnNames),
                 "",
-                string.Join(", ", columnNames.Select(c => "?")));
+                string.Join(", ", columnNames.Select(_ => "?")));
             var insertSimple = string.Concat("insert into ", schema, ".", name);
 
             var hasDefaults = reader.Get<bool[]>(9);//"has_defaults");
@@ -629,8 +623,6 @@ public class CrudSource(
                     CrudCommandType.InsertOnConflictDoUpdateReturning);
             }
         }
-
-        yield break;
     }
 
     private static void AddParameter(NpgsqlCommand command, object? value, bool isArray = false)

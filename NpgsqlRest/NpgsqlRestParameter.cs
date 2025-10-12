@@ -1,6 +1,7 @@
 ﻿using System.Text.Json.Nodes;
 using Microsoft.Extensions.Primitives;
 using Npgsql;
+using static NpgsqlRest.NpgsqlRestOptions;
 
 namespace NpgsqlRest;
 
@@ -24,7 +25,7 @@ public class NpgsqlRestParameter : NpgsqlParameter
     public bool IsFromUserClaims => UserClaim is not null || IsUserClaims is true;
 
     public NpgsqlRestParameter(
-        NpgsqlRestOptions options, 
+         
         int ordinal, 
         string convertedName, 
         string actualName, 
@@ -37,26 +38,26 @@ public class NpgsqlRestParameter : NpgsqlParameter
         NpgsqlDbType = typeDescriptor.ActualDbType;
 
         if (actualName is not null && 
-            options.AuthenticationOptions.ParameterNameClaimsMapping.TryGetValue(actualName, out var claimName))
+            Options.AuthenticationOptions.ParameterNameClaimsMapping.TryGetValue(actualName, out var claimName))
         {
             UserClaim = claimName;
         }
 
         if (actualName is not null && 
-            string.Equals(options.AuthenticationOptions.IpAddressParameterName, actualName, StringComparison.OrdinalIgnoreCase))
+            string.Equals(Options.AuthenticationOptions.IpAddressParameterName, actualName, StringComparison.OrdinalIgnoreCase))
         {
             IsIpAddress = true;
         }
 
         if (actualName is not null && 
-            string.Equals(options.AuthenticationOptions.ClaimsJsonParameterName, actualName, StringComparison.OrdinalIgnoreCase))
+            string.Equals(Options.AuthenticationOptions.ClaimsJsonParameterName, actualName, StringComparison.OrdinalIgnoreCase))
         {
             IsUserClaims = true;
         }
 
-        if (options.UploadOptions.UseDefaultUploadMetadataParameter is true)
+        if (Options.UploadOptions.UseDefaultUploadMetadataParameter is true)
         {
-            if (string.Equals(options.UploadOptions.DefaultUploadMetadataParameterName, actualName, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(Options.UploadOptions.DefaultUploadMetadataParameterName, actualName, StringComparison.OrdinalIgnoreCase))
             {
                 IsUploadMetadata = true;
             }
@@ -83,7 +84,7 @@ public class NpgsqlRestParameter : NpgsqlParameter
 #pragma warning restore CS8603 // Possible null reference return.
 #pragma warning restore CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring as nullable.
 
-    private static readonly NpgsqlRestParameter _textParam = new()
+    private static readonly NpgsqlRestParameter TextParam = new()
     {
         NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text,
         Value = DBNull.Value,
@@ -91,14 +92,14 @@ public class NpgsqlRestParameter : NpgsqlParameter
 
     public static NpgsqlParameter CreateParamWithType(NpgsqlTypes.NpgsqlDbType type)
     {
-        var result = _textParam.NpgsqlRestParameterMemberwiseClone();
+        var result = TextParam.NpgsqlRestParameterMemberwiseClone();
         result.NpgsqlDbType = type;
         return result;
     }
 
     public static NpgsqlParameter CreateTextParam(object? value)
     {
-        var result = _textParam.NpgsqlRestParameterMemberwiseClone();
+        var result = TextParam.NpgsqlRestParameterMemberwiseClone();
         if (value is null)
         {
             return result;

@@ -1,5 +1,6 @@
 ﻿using System.Text.RegularExpressions;
 using Microsoft.Extensions.Primitives;
+using static NpgsqlRest.NpgsqlRestOptions;
 
 namespace NpgsqlRest.Defaults;
 
@@ -210,10 +211,10 @@ internal static class DefaultCommentParser
     public static RoutineEndpoint? Parse(
         Routine routine,
         RoutineEndpoint routineEndpoint,
-        NpgsqlRestOptions options,
+        
         ILogger? logger)
     {
-        if (options.CommentsMode == CommentsMode.Ignore)
+        if (Options.CommentsMode == CommentsMode.Ignore)
         {
             return routineEndpoint;
         }
@@ -227,7 +228,7 @@ internal static class DefaultCommentParser
         bool haveTag = true;
         if (string.IsNullOrEmpty(comment))
         {
-            if (options.CommentsMode == CommentsMode.OnlyWithHttpTag)
+            if (Options.CommentsMode == CommentsMode.OnlyWithHttpTag)
             {
                 return null;
             }
@@ -283,8 +284,8 @@ internal static class DefaultCommentParser
                     {
                         routineEndpoint.CustomParamsNeedParsing = true;
                     }
-                    SetCustomParameter(routineEndpoint, customParamName, customParamValue, logger, options);
-                    if (options.LogAnnotationSetInfo)
+                    SetCustomParameter(routineEndpoint, customParamName, customParamValue, logger);
+                    if (Options.LogAnnotationSetInfo)
                     {
                         logger?.CommentSetCustomParemeter(description, customParamName, customParamValue);
                     }
@@ -302,7 +303,7 @@ internal static class DefaultCommentParser
                     {
                         if (!string.Equals(routineEndpoint.ResponseContentType, headerValue))
                         {
-                            if (options.LogAnnotationSetInfo)
+                            if (Options.LogAnnotationSetInfo)
                             {
                                 logger?.CommentSetContentType(description, headerValue);
                             }
@@ -331,7 +332,7 @@ internal static class DefaultCommentParser
                         }
                         if (!string.Equals(routineEndpoint.ResponseContentType, headerValue))
                         {
-                            if (options.LogAnnotationSetInfo)
+                            if (Options.LogAnnotationSetInfo)
                             {
                                 logger?.CommentSetHeader(description, headerName, headerValue);
                             }
@@ -427,7 +428,7 @@ internal static class DefaultCommentParser
                     }
                     if (routineEndpoint.Method != originalMethod || !string.Equals(routineEndpoint.Path, originalUrl))
                     {
-                        if (options.LogAnnotationSetInfo)
+                        if (Options.LogAnnotationSetInfo)
                         {
                             logger?.CommentSetHttp(description, routineEndpoint.Method, routineEndpoint.Path);
                         }
@@ -454,7 +455,7 @@ internal static class DefaultCommentParser
                                 routineEndpoint.Path = string.Concat("/", routineEndpoint.Path);
                             }
 
-                            if (options.LogAnnotationSetInfo)
+                            if (Options.LogAnnotationSetInfo)
                             {
                                 logger?.CommentSetHttp(description, routineEndpoint.Method, routineEndpoint.Path);
                             }
@@ -483,7 +484,7 @@ internal static class DefaultCommentParser
 
                     if (originalParamType != routineEndpoint.RequestParamType)
                     {
-                        if (options.LogAnnotationSetInfo)
+                        if (Options.LogAnnotationSetInfo)
                         {
                             logger?.CommentSetParameterType(description, routineEndpoint.RequestParamType);
                         }
@@ -500,14 +501,14 @@ internal static class DefaultCommentParser
                     if (wordsLower.Length > 1)
                     {
                         routineEndpoint.AuthorizeRoles = [.. wordsLower[1..]];
-                        if (options.LogAnnotationSetInfo)
+                        if (Options.LogAnnotationSetInfo)
                         {
                             logger?.CommentSetAuthRoles(description, routineEndpoint.AuthorizeRoles);
                         }
                     }
                     else
                     {
-                        if (options.LogAnnotationSetInfo)
+                        if (Options.LogAnnotationSetInfo)
                         {
                             logger?.CommentSetAuth(description);
                         }
@@ -521,7 +522,7 @@ internal static class DefaultCommentParser
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], AllowAnonymousKey))
                 {
                     routineEndpoint.RequiresAuthorization = false;
-                    if (options.LogAnnotationSetInfo)
+                    if (Options.LogAnnotationSetInfo)
                     {
                         logger?.CommentSetAnon(description);
                     }
@@ -535,7 +536,7 @@ internal static class DefaultCommentParser
                     {
                         if (routineEndpoint.CommandTimeout != parsedTimeout)
                         {
-                            if (options.LogAnnotationSetInfo)
+                            if (Options.LogAnnotationSetInfo)
                             {
                                 logger?.CommentSetTimeout(description, wordsLower[1]);
                             }
@@ -568,9 +569,9 @@ internal static class DefaultCommentParser
                     {
                         logger?.InvalidRequestHeadersModeComment(wordsLower[1], description, routineEndpoint.RequestHeadersMode);
                     }
-                    if (routineEndpoint.RequestHeadersMode != options.RequestHeadersMode)
+                    if (routineEndpoint.RequestHeadersMode != Options.RequestHeadersMode)
                     {
-                        if (options.LogAnnotationSetInfo)
+                        if (Options.LogAnnotationSetInfo)
                         {
                             logger?.CommentSetRequestHeadersMode(description, wordsLower[1]);
                         }
@@ -585,7 +586,7 @@ internal static class DefaultCommentParser
                     {
                         if (!string.Equals(routineEndpoint.RequestHeadersParameterName, wordsLower[1]))
                         {
-                            if (options.LogAnnotationSetInfo)
+                            if (Options.LogAnnotationSetInfo)
                             {
                                 logger?.CommentSetRequestHeadersParamName(description, wordsLower[1]);
                             }
@@ -602,7 +603,7 @@ internal static class DefaultCommentParser
                     {
                         if (!string.Equals(routineEndpoint.BodyParameterName, wordsLower[1]))
                         {
-                            if (options.LogAnnotationSetInfo)
+                            if (Options.LogAnnotationSetInfo)
                             {
                                 logger?.CommentSetBodyParamName(description, wordsLower[1]);
                             }
@@ -631,9 +632,9 @@ internal static class DefaultCommentParser
                     {
                         logger?.InvalidResponseNullHandlingModeComment(wordsLower[1], description, routineEndpoint.TextResponseNullHandling);
                     }
-                    if (routineEndpoint.TextResponseNullHandling != options.TextResponseNullHandling)
+                    if (routineEndpoint.TextResponseNullHandling != Options.TextResponseNullHandling)
                     {
-                        if (options.LogAnnotationSetInfo)
+                        if (Options.LogAnnotationSetInfo)
                         {
                             logger?.CommentSetTextResponseNullHandling(description, wordsLower[1]);
                         }
@@ -662,9 +663,9 @@ internal static class DefaultCommentParser
                     {
                         logger?.InvalidQueryStringNullHandlingComment(wordsLower[1], description, routineEndpoint.QueryStringNullHandling);
                     }
-                    if (routineEndpoint.TextResponseNullHandling != options.TextResponseNullHandling)
+                    if (routineEndpoint.TextResponseNullHandling != Options.TextResponseNullHandling)
                     {
-                        if (options.LogAnnotationSetInfo)
+                        if (Options.LogAnnotationSetInfo)
                         {
                             logger?.CommentSetQueryStringNullHandling(description, routineEndpoint.QueryStringNullHandling);
                         }
@@ -676,7 +677,7 @@ internal static class DefaultCommentParser
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], LoginKey))
                 {
                     routineEndpoint.Login = true;
-                    if (options.LogAnnotationSetInfo)
+                    if (Options.LogAnnotationSetInfo)
                     {
                         logger?.CommentSetLogin(description);
                     }
@@ -687,7 +688,7 @@ internal static class DefaultCommentParser
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], LogoutKey))
                 {
                     routineEndpoint.Logout = true;
-                    if (options.LogAnnotationSetInfo)
+                    if (Options.LogAnnotationSetInfo)
                     {
                         logger?.CommentSetLogout(description);
                     }
@@ -701,7 +702,7 @@ internal static class DefaultCommentParser
                     {
                         if (routineEndpoint.BufferRows != parsedBuffer)
                         {
-                            if (options.LogAnnotationSetInfo)
+                            if (Options.LogAnnotationSetInfo)
                             {
                                 logger?.CommentBufferRows(description, wordsLower[1]);
                             }
@@ -710,7 +711,7 @@ internal static class DefaultCommentParser
                     }
                     else
                     {
-                        logger?.InvalidBufferRows(wordsLower[1], description, options.BufferRows);
+                        logger?.InvalidBufferRows(wordsLower[1], description, Options.BufferRows);
                     }
                 }
 
@@ -749,7 +750,7 @@ internal static class DefaultCommentParser
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], ColumnNamesKey))
                 {
                     routineEndpoint.RawColumnNames = true;
-                    if (options.LogAnnotationSetInfo)
+                    if (Options.LogAnnotationSetInfo)
                     {
                         logger?.CommentRawSetColumnNames(description);
                     }
@@ -760,7 +761,7 @@ internal static class DefaultCommentParser
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], SecuritySensitiveKey))
                 {
                     routineEndpoint.SecuritySensitive = true;
-                    if (options.LogAnnotationSetInfo)
+                    if (Options.LogAnnotationSetInfo)
                     {
                         logger?.CommentSecuritySensitive(description);
                     }
@@ -770,7 +771,7 @@ internal static class DefaultCommentParser
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], UserContextKey))
                 {
                     routineEndpoint.UserContext = true;
-                    if (options.LogAnnotationSetInfo)
+                    if (Options.LogAnnotationSetInfo)
                     {
                         logger?.CommentUserContext(description);
                     }
@@ -781,7 +782,7 @@ internal static class DefaultCommentParser
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], UserParemetersKey))
                 {
                     routineEndpoint.UseUserParameters = true;
-                    if (options.LogAnnotationSetInfo)
+                    if (Options.LogAnnotationSetInfo)
                     {
                         logger?.CommentUserParameters(description);
                     }
@@ -815,7 +816,7 @@ internal static class DefaultCommentParser
                         routineEndpoint.CachedParams = result;
                     }
 
-                    if (options.LogAnnotationSetInfo)
+                    if (Options.LogAnnotationSetInfo)
                     {
                         logger?.CommentCached(description, routineEndpoint.CachedParams ?? []);
                     }
@@ -829,7 +830,7 @@ internal static class DefaultCommentParser
                     if (value is not null)
                     {
                         routineEndpoint.CacheExpiresIn = value.Value;
-                        if (options.LogAnnotationSetInfo)
+                        if (Options.LogAnnotationSetInfo)
                         {
                             logger?.CommentCacheExpiresIn(description, value.Value);
                         }
@@ -847,12 +848,12 @@ internal static class DefaultCommentParser
                     var name = string.Join(Consts.Space, wordsLower[1..]);
                     if (string.IsNullOrEmpty(name) is false)
                     {
-                        if (options.ConnectionStrings is null || options.ConnectionStrings.ContainsKey(name) is false)
+                        if (Options.ConnectionStrings is null || Options.ConnectionStrings.ContainsKey(name) is false)
                         {
                             logger?.CommentInvalidConnectionName(description, name);
                         }
                         routineEndpoint.ConnectionName = name;
-                        if (options.LogAnnotationSetInfo)
+                        if (Options.LogAnnotationSetInfo)
                         {
                             logger?.CommentConnectionName(description, name);
                         }
@@ -868,7 +869,7 @@ internal static class DefaultCommentParser
                 // upload param_name as metadata
                 else if (haveTag is true && StrEquals(wordsLower[0], UploadKey))
                 {
-                    if (options.UploadOptions.UploadHandlers is null || options.UploadOptions.UploadHandlers.Count == 0)
+                    if (Options.UploadOptions.UploadHandlers is null || Options.UploadOptions.UploadHandlers.Count == 0)
                     {
                         logger?.CommentUploadNoHandlers(description);
                     }
@@ -877,7 +878,7 @@ internal static class DefaultCommentParser
                         if (routineEndpoint.Upload is false)
                         {
                             routineEndpoint.Upload = true;
-                            if (options.LogAnnotationSetInfo)
+                            if (Options.LogAnnotationSetInfo)
                             {
                                 logger?.CommentUpload(description);
                             }
@@ -892,7 +893,7 @@ internal static class DefaultCommentParser
                         }
                         if (len >= 3 && StrEquals(wordsLower[1], "for"))
                         {
-                            HashSet<string> existingHandlers = options.UploadOptions.UploadHandlers?.Keys.ToHashSet() ?? [];
+                            HashSet<string> existingHandlers = Options.UploadOptions.UploadHandlers?.Keys.ToHashSet() ?? [];
                             var handlers = wordsLower[2..]
                                 .Select(w =>
                                 {
@@ -910,11 +911,11 @@ internal static class DefaultCommentParser
                                 .ToArray();
 
                             routineEndpoint.UploadHandlers = handlers;
-                            if (options.LogAnnotationSetInfo)
+                            if (Options.LogAnnotationSetInfo)
                             {
                                 if (handlers.Length == 0)
                                 {
-                                    var first = options.UploadOptions.UploadHandlers?.Keys.FirstOrDefault();
+                                    var first = Options.UploadOptions.UploadHandlers?.Keys.FirstOrDefault();
                                     logger?.CommentUploadFirstAvaialbleHandler(description, first);
                                 }
                                 if (handlers.Length == 1)
@@ -941,7 +942,7 @@ internal static class DefaultCommentParser
                             else
                             {
                                 param.IsUploadMetadata = true;
-                                if (options.LogAnnotationSetInfo)
+                                if (Options.LogAnnotationSetInfo)
                                 {
                                     logger?.CommentUploadMetadataParam(description, paramName);
                                 }
@@ -994,7 +995,7 @@ internal static class DefaultCommentParser
                                 }
                                 else
                                 {
-                                    if (options.LogAnnotationSetInfo)
+                                    if (Options.LogAnnotationSetInfo)
                                     {
                                         logger?.CommentParamIsHashOf(description, paramName1, paramName2);
                                     }
@@ -1015,7 +1016,7 @@ internal static class DefaultCommentParser
                         if (routineEndpoint.Upload is false)
                         {
                             routineEndpoint.Upload = true;
-                            if (options.LogAnnotationSetInfo)
+                            if (Options.LogAnnotationSetInfo)
                             {
                                 logger?.CommentUpload(description);
                             }
@@ -1040,7 +1041,7 @@ internal static class DefaultCommentParser
                         else
                         {
                             param.IsUploadMetadata = true;
-                            if (options.LogAnnotationSetInfo)
+                            if (Options.LogAnnotationSetInfo)
                             {
                                 logger?.CommentUploadMetadataParam(description, paramName);
                             }
@@ -1159,7 +1160,7 @@ internal static class DefaultCommentParser
                 else if (haveTag is true && len >= 2 && StrEqualsToArray(wordsLower[0], RetryStrategyKey))
                 {
                     var name = string.Join(Consts.Space, words[1..]);
-                    if (options.CommandRetryOptions.Strategies.TryGetValue(name, out var strategy))
+                    if (Options.CommandRetryOptions.Strategies.TryGetValue(name, out var strategy))
                     {
                         routineEndpoint.RetryStrategy = strategy;
                         logger?.RetryStrategySet(description, name);
@@ -1182,13 +1183,13 @@ internal static class DefaultCommentParser
             }
             if (disabled)
             {
-                if (options.LogAnnotationSetInfo)
+                if (Options.LogAnnotationSetInfo)
                 {
                     logger?.CommentDisabled(description);
                 }
                 return null;
             }
-            if (options.CommentsMode == CommentsMode.OnlyWithHttpTag && !hasHttpTag)
+            if (Options.CommentsMode == CommentsMode.OnlyWithHttpTag && !hasHttpTag)
             {
                 return null;
             }
@@ -1197,7 +1198,7 @@ internal static class DefaultCommentParser
         return routineEndpoint;
     }
 
-    public static void SetCustomParameter(RoutineEndpoint endpoint, string name, string value, ILogger? logger, NpgsqlRestOptions options)
+    public static void SetCustomParameter(RoutineEndpoint endpoint, string name, string value, ILogger? logger)
     {
         value = Regex.Unescape(value);
 
@@ -1232,7 +1233,7 @@ internal static class DefaultCommentParser
         }
         else if (StrEqualsToArray(name, ConnectionNameKey))
         {
-            //if (options.ConnectionStrings is not null && options.ConnectionStrings.ContainsKey(value) is true)
+            //if (Options.ConnectionStrings is not null && options.ConnectionStrings.ContainsKey(value) is true)
             //{
             //    endpoint.ConnectionName = value;
             //}
@@ -1332,7 +1333,7 @@ internal static class DefaultCommentParser
         
         else if (StrEqualsToArray(name, RetryStrategyKey))
         {
-            if (options.CommandRetryOptions.Strategies.TryGetValue(value, out var strategy))
+            if (Options.CommandRetryOptions.Strategies.TryGetValue(value, out var strategy))
             {
                 endpoint.RetryStrategy = strategy;
             }

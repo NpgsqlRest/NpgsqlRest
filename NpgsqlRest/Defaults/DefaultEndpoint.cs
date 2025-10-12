@@ -1,13 +1,15 @@
-﻿namespace NpgsqlRest.Defaults;
+﻿using static NpgsqlRest.NpgsqlRestOptions;
+
+namespace NpgsqlRest.Defaults;
 
 internal static class DefaultEndpoint
 {
     internal static RoutineEndpoint? Create(
         Routine routine,
-        NpgsqlRestOptions options,
+        
         ILogger? logger)
     {
-        var url = options.UrlPathBuilder(routine, options);
+        var url = Options.UrlPathBuilder(routine, Options);
         if (routine.FormatUrlPattern is not null)
         {
             url = string.Format(routine.FormatUrlPattern, url);
@@ -30,19 +32,19 @@ internal static class DefaultEndpoint
                 path: url,
                 method: method,
                 requestParamType: requestParamType,
-                requiresAuthorization: options.RequiresAuthorization,
-                commandTimeout: options.CommandTimeout,
+                requiresAuthorization: Options.RequiresAuthorization,
+                commandTimeout: Options.CommandTimeout,
                 responseContentType: null,
                 responseHeaders: [],
-                requestHeadersMode: options.RequestHeadersMode,
-                requestHeadersParameterName: options.RequestHeadersParameterName,
+                requestHeadersMode: Options.RequestHeadersMode,
+                requestHeadersParameterName: Options.RequestHeadersParameterName,
                 bodyParameterName: null,
-                textResponseNullHandling: options.TextResponseNullHandling,
-                queryStringNullHandling: options.QueryStringNullHandling,
-                userContext: options.AuthenticationOptions.UseUserContext,
-                userParameters: options.AuthenticationOptions.UseUserParameters);
+                textResponseNullHandling: Options.TextResponseNullHandling,
+                queryStringNullHandling: Options.QueryStringNullHandling,
+                userContext: Options.AuthenticationOptions.UseUserContext,
+                userParameters: Options.AuthenticationOptions.UseUserParameters);
 
-        if (options.LogCommands && logger != null)
+        if (Options.LogCommands && logger != null)
         {
             routineEndpoint.LogCallback = LoggerMessage.Define<string, string>(LogLevel.Debug,
                 new EventId(5, nameof(routineEndpoint.LogCallback)),
@@ -56,19 +58,11 @@ internal static class DefaultEndpoint
 
         if (routine.EndpointHandler is not null)
         {
-            var parsed = DefaultCommentParser.Parse(
-                routine,
-                routineEndpoint,
-                options,
-                logger);
+            var parsed = DefaultCommentParser.Parse(routine, routineEndpoint, logger);
 
             return routine.EndpointHandler(parsed);
         }
 
-        return DefaultCommentParser.Parse(
-            routine,
-            routineEndpoint,
-            options, 
-            logger);
+        return DefaultCommentParser.Parse(routine, routineEndpoint, logger);
     }
 }

@@ -10,12 +10,11 @@ public interface IRoutineSource
     /// <summary>
     /// Yield all routines with the formatters from the current source.
     /// </summary>
-    /// <param name="options">Current options</param>
     /// <param name="serviceProvider">Service provider</param>
     /// <param name="retryStrategy"></param>
     /// <param name="logger"></param>
     /// <returns></returns>
-    IEnumerable<(Routine, IRoutineSourceParameterFormatter)> Read(NpgsqlRestOptions options, IServiceProvider? serviceProvider, RetryStrategy? retryStrategy, ILogger? logger);
+    IEnumerable<(Routine, IRoutineSourceParameterFormatter)> Read( IServiceProvider? serviceProvider, RetryStrategy? retryStrategy, ILogger? logger);
 
     /// <summary>
     /// SQL Query that returns data source.

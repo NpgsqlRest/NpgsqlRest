@@ -100,7 +100,7 @@ public class ExcelUploadHandler(
         if (options.LogUploadParameters is true)
         {
             logger?.LogDebug("Upload for Excel: includedMimeTypePatterns={includedMimeTypePatterns}, excludedMimeTypePatterns={excludedMimeTypePatterns}, targetSheetName={targetSheetName}, allSheets={allSheets}, timeFormat={timeFormat}, dateFormat={dateFormat}, dateTimeFormat={dateTimeFormat}, rowCommand={rowCommand}",
-                _includedMimeTypePatterns, _excludedMimeTypePatterns, targetSheetName, allSheets, _timeFormat, _dateFormat, _dateTimeFormat, rowCommand);
+                IncludedMimeTypePatterns, ExcludedMimeTypePatterns, targetSheetName, allSheets, _timeFormat, _dateFormat, _dateTimeFormat, rowCommand);
         }
 
         using var command = new NpgsqlCommand(rowCommand, connection);
@@ -129,10 +129,10 @@ public class ExcelUploadHandler(
             IFormFile formFile = context.Request.Form.Files[i];
 
             StringBuilder fileJson = new(100);
-            if (_type is not null)
+            if (Type is not null)
             {
                 fileJson.Append("{\"type\":");
-                fileJson.Append(PgConverters.SerializeString(_type));
+                fileJson.Append(PgConverters.SerializeString(Type));
                 fileJson.Append(",\"fileName\":");
             }
             else
@@ -146,7 +146,7 @@ public class ExcelUploadHandler(
             fileJson.Append(formFile.Length);
 
             UploadFileStatus status = UploadFileStatus.Ok;
-            if (_stopAfterFirstSuccess is true && _skipFileNames.Contains(formFile.FileName, StringComparer.OrdinalIgnoreCase))
+            if (StopAfterFirstSuccess is true && SkipFileNames.Contains(formFile.FileName, StringComparer.OrdinalIgnoreCase))
             {
                 status = UploadFileStatus.Ignored;
             }
@@ -160,14 +160,14 @@ public class ExcelUploadHandler(
                 fileJson.Append(",\"success\":false,\"status\":");
                 fileJson.Append(PgConverters.SerializeString(status.ToString()));
                 fileJson.Append('}');
-                logger?.FileUploadFailed(_type, formFile.FileName, formFile.ContentType, formFile.Length, status);
+                logger?.FileUploadFailed(Type, formFile.FileName, formFile.ContentType, formFile.Length, status);
                 result.Append(fileJson);
                 if (i < context.Request.Form.Files.Count - 1) result.Append(',');
                 continue;
             }
-            if (_stopAfterFirstSuccess is true)
+            if (StopAfterFirstSuccess is true)
             {
-                _skipFileNames.Add(formFile.FileName);
+                SkipFileNames.Add(formFile.FileName);
             }
 
             try

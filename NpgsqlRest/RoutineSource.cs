@@ -1,6 +1,7 @@
 ﻿using System.Text;
 using Npgsql;
 using NpgsqlTypes;
+using static NpgsqlRest.NpgsqlRestOptions;
 
 namespace NpgsqlRest;
 
@@ -33,17 +34,13 @@ public class RoutineSource(
     public string[]? IncludeLanguages { get; set; } = includeLanguages;
     public string[]? ExcludeLanguages { get; set; } = excludeLanguages;
 
-    public IEnumerable<(Routine, IRoutineSourceParameterFormatter)> Read(
-        NpgsqlRestOptions options, 
-        IServiceProvider? serviceProvider, 
-        RetryStrategy? retryStrategy, 
-        ILogger? logger)
+    public IEnumerable<(Routine, IRoutineSourceParameterFormatter)> Read(IServiceProvider? serviceProvider, RetryStrategy? retryStrategy, ILogger? logger)
     {
         bool shouldDispose = true;
         NpgsqlConnection? connection = null;
         try
         {
-            options.CreateAndOpenSourceConnection(serviceProvider, logger, ref connection, ref shouldDispose);
+            Options.CreateAndOpenSourceConnection(serviceProvider, logger, ref connection, ref shouldDispose);
 
             if (connection is null)
             {
@@ -61,14 +58,14 @@ public class RoutineSource(
                 command.CommandText = Query;
             }
 
-            AddParameter(command, SchemaSimilarTo ?? options.SchemaSimilarTo); // $1
-            AddParameter(command, SchemaNotSimilarTo ?? options.SchemaNotSimilarTo); // $2
-            AddParameter(command, IncludeSchemas ?? options.IncludeSchemas, true); // $3
-            AddParameter(command, ExcludeSchemas ?? options.ExcludeSchemas, true); // $4
-            AddParameter(command, NameSimilarTo ?? options.NameSimilarTo); // $5
-            AddParameter(command, NameNotSimilarTo ?? options.NameNotSimilarTo); // $6
-            AddParameter(command, IncludeNames ?? options.IncludeNames, true); // $7
-            AddParameter(command, ExcludeNames ?? options.ExcludeNames, true); // $8
+            AddParameter(command, SchemaSimilarTo ?? Options.SchemaSimilarTo); // $1
+            AddParameter(command, SchemaNotSimilarTo ?? Options.SchemaNotSimilarTo); // $2
+            AddParameter(command, IncludeSchemas ?? Options.IncludeSchemas, true); // $3
+            AddParameter(command, ExcludeSchemas ?? Options.ExcludeSchemas, true); // $4
+            AddParameter(command, NameSimilarTo ?? Options.NameSimilarTo); // $5
+            AddParameter(command, NameNotSimilarTo ?? Options.NameNotSimilarTo); // $6
+            AddParameter(command, IncludeNames ?? Options.IncludeNames, true); // $7
+            AddParameter(command, ExcludeNames ?? Options.ExcludeNames, true); // $8
             AddParameter(command, IncludeLanguages, true); // $9
             AddParameter(command, ExcludeLanguages is null ? ["c", "internal"] : ExcludeLanguages, true); // $10
 
@@ -99,7 +96,7 @@ public class RoutineSource(
                 string[] convertedRecordNames = new string[returnRecordNames.Length];
                 for (int i = 0; i < returnRecordNames.Length; i++)
                 {
-                    convertedRecordNames[i] = options.NameConverter(returnRecordNames[i]) ?? returnRecordNames[i];
+                    convertedRecordNames[i] = Options.NameConverter(returnRecordNames[i]) ?? returnRecordNames[i];
                 }
 
                 var returnRecordTypes = reader.Get<string[]>(10);//"return_record_types");
@@ -115,7 +112,7 @@ public class RoutineSource(
                         if (customName is not null)
                         {
                             expNames[i] = string.Concat("(", returnRecordNames[i], "::", returnRecordTypes[i], ").", customName);
-                            convertedRecordNames[i] = options.NameConverter(customName) ?? customName;
+                            convertedRecordNames[i] = Options.NameConverter(customName) ?? customName;
                             returnRecordTypes[i] = customRecTypeTypes[i] ?? returnRecordTypes[i];
                         }
                         else
@@ -250,7 +247,7 @@ public class RoutineSource(
                         simpleDefinition
                             .AppendLine(string.Concat("    ", paramName, " ", fullParamType, i == paramCount - 1 ? "" : ","));
 
-                        var convertedName = options.NameConverter(paramName);
+                        var convertedName = Options.NameConverter(paramName);
                         if (string.IsNullOrEmpty(convertedName))
                         {
                             convertedName = $"${i + 1}";
@@ -272,7 +269,6 @@ public class RoutineSource(
                         //    TypeDescriptor = descriptor
                         //};
                         parameters[i] = new NpgsqlRestParameter(
-                            options,
                             ordinal: i,
                             convertedName: convertedName,
                             actualName: originalParameterName,

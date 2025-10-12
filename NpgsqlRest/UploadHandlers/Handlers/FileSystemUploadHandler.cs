@@ -1,10 +1,11 @@
 ﻿using System.Text;
 using Npgsql;
 using static NpgsqlRest.PgConverters;
+using static NpgsqlRest.NpgsqlRestOptions;
 
 namespace NpgsqlRest.UploadHandlers.Handlers;
 
-public class FileSystemUploadHandler(NpgsqlRestUploadOptions options, ILogger? logger) : BaseUploadHandler, IUploadHandler
+public class FileSystemUploadHandler(ILogger? logger) : BaseUploadHandler, IUploadHandler
 {
     private string[]? _uploadedFiles = null;
 
@@ -31,16 +32,16 @@ public class FileSystemUploadHandler(NpgsqlRestUploadOptions options, ILogger? l
 
     public async Task<string> UploadAsync(NpgsqlConnection connection, HttpContext context, Dictionary<string, string>? parameters)
     {
-        var basePath = options.DefaultUploadHandlerOptions.FileSystemPath;
-        var useUniqueFileName = options.DefaultUploadHandlerOptions.FileSystemUseUniqueFileName;
+        var basePath = Options.UploadOptions.DefaultUploadHandlerOptions.FileSystemPath;
+        var useUniqueFileName = Options.UploadOptions.DefaultUploadHandlerOptions.FileSystemUseUniqueFileName;
         string? newFileName = null;
-        bool createPathIfNotExists = options.DefaultUploadHandlerOptions.FileSystemCreatePathIfNotExists;
-        bool checkText = options.DefaultUploadHandlerOptions.FileSystemCheckText;
-        bool checkImage = options.DefaultUploadHandlerOptions.FileSystemCheckImage;
-        int testBufferSize = options.DefaultUploadHandlerOptions.TextTestBufferSize;
-        int nonPrintableThreshold = options.DefaultUploadHandlerOptions.TextNonPrintableThreshold;
+        bool createPathIfNotExists = Options.UploadOptions.DefaultUploadHandlerOptions.FileSystemCreatePathIfNotExists;
+        bool checkText = Options.UploadOptions.DefaultUploadHandlerOptions.FileSystemCheckText;
+        bool checkImage = Options.UploadOptions.DefaultUploadHandlerOptions.FileSystemCheckImage;
+        int testBufferSize = Options.UploadOptions.DefaultUploadHandlerOptions.TextTestBufferSize;
+        int nonPrintableThreshold = Options.UploadOptions.DefaultUploadHandlerOptions.TextNonPrintableThreshold;
 
-        AllowedImageTypes allowedImage = options.DefaultUploadHandlerOptions.AllowedImageTypes;
+        AllowedImageTypes allowedImage = Options.UploadOptions.DefaultUploadHandlerOptions.AllowedImageTypes;
 
         if (parameters is not null)
         {
@@ -76,7 +77,7 @@ public class FileSystemUploadHandler(NpgsqlRestUploadOptions options, ILogger? l
                 else
                 {
                     checkImage = true;
-                    allowedImage = checkImageParamStr.ParseImageTypes(logger) ?? options.DefaultUploadHandlerOptions.AllowedImageTypes;
+                    allowedImage = checkImageParamStr.ParseImageTypes(logger) ?? Options.UploadOptions.DefaultUploadHandlerOptions.AllowedImageTypes;
                 }
             }
             if (TryGetParam(parameters, FileCheckExtensions.TestBufferSizeParam, out var testBufferSizeStr) && int.TryParse(testBufferSizeStr, out var testBufferSizeParsed))
@@ -89,10 +90,10 @@ public class FileSystemUploadHandler(NpgsqlRestUploadOptions options, ILogger? l
             }
         }
 
-        if (options.LogUploadParameters is true)
+        if (Options.UploadOptions.LogUploadParameters is true)
         {
             logger?.LogDebug("Upload for {_type}: includedMimeTypePatterns={includedMimeTypePatterns}, excludedMimeTypePatterns={excludedMimeTypePatterns}, bufferSize={bufferSize}, basePath={basePath}, useUniqueFileName={useUniqueFileName}, newFileName={newFileName}, createPathIfNotExists={createPathIfNotExists}, checkText={checkText}, checkImage={checkImage}, allowedImage={allowedImage}, testBufferSize={testBufferSize}, nonPrintableThreshold={nonPrintableThreshold}",
-                _type, _includedMimeTypePatterns, _excludedMimeTypePatterns, _bufferSize, basePath, useUniqueFileName, newFileName, createPathIfNotExists, checkText, checkImage, allowedImage, testBufferSize, nonPrintableThreshold);
+                Type, IncludedMimeTypePatterns, ExcludedMimeTypePatterns, BufferSize, basePath, useUniqueFileName, newFileName, createPathIfNotExists, checkText, checkImage, allowedImage, testBufferSize, nonPrintableThreshold);
         }
 
         if (createPathIfNotExists is true && Directory.Exists(basePath) is false)
@@ -123,10 +124,10 @@ public class FileSystemUploadHandler(NpgsqlRestUploadOptions options, ILogger? l
             var currentFilePath = Path.Combine(basePath, fileName);
 
             // Build the result JSON
-            if (_type is not null)
+            if (Type is not null)
             {
                 result.Append("{\"type\":");
-                result.Append(SerializeString(_type));
+                result.Append(SerializeString(Type));
                 result.Append(",\"fileName\":");
             }
             else
@@ -143,7 +144,7 @@ public class FileSystemUploadHandler(NpgsqlRestUploadOptions options, ILogger? l
             result.Append(SerializeString(currentFilePath));
 
             UploadFileStatus status = UploadFileStatus.Ok;
-            if (_stopAfterFirstSuccess is true && _skipFileNames.Contains(formFile.FileName, StringComparer.OrdinalIgnoreCase))
+            if (StopAfterFirstSuccess is true && SkipFileNames.Contains(formFile.FileName, StringComparer.OrdinalIgnoreCase))
             {
                 status = UploadFileStatus.Ignored;
             }
@@ -172,18 +173,18 @@ public class FileSystemUploadHandler(NpgsqlRestUploadOptions options, ILogger? l
             result.Append('}');
             if (status != UploadFileStatus.Ok)
             {
-                logger?.FileUploadFailed(_type, formFile.FileName, formFile.ContentType, formFile.Length, status);
+                logger?.FileUploadFailed(Type, formFile.FileName, formFile.ContentType, formFile.Length, status);
                 fileId++;
                 continue;
             }
-            if (_stopAfterFirstSuccess is true)
+            if (StopAfterFirstSuccess is true)
             {
-                _skipFileNames.Add(formFile.FileName);
+                SkipFileNames.Add(formFile.FileName);
             }
 
             using (var fileStream = new FileStream(currentFilePath, FileMode.Create))
             {
-                byte[] buffer = new byte[_bufferSize];
+                byte[] buffer = new byte[BufferSize];
                 int bytesRead;
                 using var sourceStream = formFile.OpenReadStream();
 
@@ -194,7 +195,7 @@ public class FileSystemUploadHandler(NpgsqlRestUploadOptions options, ILogger? l
             }
             _uploadedFiles[i] = currentFilePath;
 
-            if (options.LogUploadEvent)
+            if (Options.UploadOptions.LogUploadEvent)
             {
                 logger?.UploadedFileToFileSystem(formFile.FileName, formFile.ContentType, formFile.Length, currentFilePath);
             }

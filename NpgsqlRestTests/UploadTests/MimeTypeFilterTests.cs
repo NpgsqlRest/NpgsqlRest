@@ -11,8 +11,8 @@ public class UploadHandler : BaseUploadHandler
     
     public bool CheckMimeTypes(string contentType, string[]? includedMimeTypePatterns, string[]? excludedMimeTypePatterns)
     {
-        _includedMimeTypePatterns = includedMimeTypePatterns;
-        _excludedMimeTypePatterns = excludedMimeTypePatterns;
+        IncludedMimeTypePatterns = includedMimeTypePatterns;
+        ExcludedMimeTypePatterns = excludedMimeTypePatterns;
         return CheckMimeTypes(contentType);
     }
 }

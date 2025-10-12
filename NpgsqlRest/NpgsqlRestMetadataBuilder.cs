@@ -1,8 +1,8 @@
-﻿using System.Threading.Channels;
-using Npgsql;
+﻿using Npgsql;
 using NpgsqlRest.Defaults;
-using NpgsqlRest.UploadHandlers;
 using System.Collections.Frozen;
+using NpgsqlRest.UploadHandlers;
+using static NpgsqlRest.NpgsqlRestOptions;
 
 namespace NpgsqlRest;
 
@@ -13,63 +13,117 @@ using Metadata = (
 
 public static class NpgsqlRestMetadataBuilder
 {
+    public static IApplicationBuilder UseNpgsqlRest(this WebApplication builder, NpgsqlRestOptions options)
+    {
+        if (options.ConnectionString is null && options.DataSource is null && options.ServiceProviderMode == ServiceProviderObject.None)
+        {
+            throw new ArgumentException("ConnectionString and DataSource are null and ServiceProviderMode is set to None. You must specify connection with connection string, DataSource object or with ServiceProvider");
+        }
+
+        if (options.ConnectionString is not null && options.DataSource is not null && options.ServiceProviderMode == ServiceProviderObject.None)
+        {
+            throw new ArgumentException("Both ConnectionString and DataSource are provided. Please specify only one.");
+        }
+
+        // Set the static instance
+        Options = options;
+
+        var factory = builder.Services.GetRequiredService<ILoggerFactory>();
+        ILogger? logger = factory.CreateLogger(options.LoggerName ?? typeof(NpgsqlRestMetadataBuilder).Namespace ?? "NpgsqlRest");
+
+        var (entries,overloads, hasStreamingEvents) =
+            NpgsqlRestMetadataBuilder.Build(logger, builder);
+        if (entries.Count == 0)
+        {
+            return builder;
+        }
+        
+        if (hasStreamingEvents is true)
+        {
+            builder.UseMiddleware<NpgsqlRestNoticeEventSource>();
+        }
+        
+        foreach (var entry in entries)
+        {
+            var handler = new NpgsqlRestEndpoint(entry, overloads, logger);
+            var routeBuilder = builder.MapMethods(entry.Endpoint.Path, [entry.Endpoint.Method.ToString()], handler.InvokeAsync);
+            
+            if (options.RouteHandlerCreated is not null)
+            {
+                options.RouteHandlerCreated(routeBuilder, entry.Endpoint);
+            }
+            
+            if (options.LogEndpointCreatedInfo)
+            {
+                var urlInfo = string.Concat(entry.Endpoint.Method, " ", entry.Endpoint.Path);
+                logger?.EndpointCreated(urlInfo);
+                if (entry.Endpoint.InfoEventsStreamingPath is not null)
+                {
+                    logger?.EndpointInfoStreamingPath(urlInfo, entry.Endpoint.InfoEventsStreamingPath);
+                }
+            }
+        }
+        
+        return builder;
+    }
+    
     private const int MaxPathLength = 2048;
 
-    public static Metadata Build(NpgsqlRestOptions options, ILogger? logger, IApplicationBuilder? builder)
+    private static Metadata Build(ILogger? logger, IApplicationBuilder? builder)
     {
         Dictionary<string, NpgsqlRestMetadataEntry> lookup = [];
         Dictionary<string, NpgsqlRestMetadataEntry> overloads = [];
 
         // Create default upload handlers from upload handler options
-        options.UploadOptions.UploadHandlers ??= options.UploadOptions.CreateUploadHandlers();
+        Options.UploadOptions.UploadHandlers ??= Options.UploadOptions.CreateUploadHandlers();
 
         var hasLogin = false;
         if (builder is not null)
         {
-            foreach (var handler in options.EndpointCreateHandlers)
+            foreach (var handler in Options.EndpointCreateHandlers)
             {
-                handler.Setup(builder, logger, options);
+                handler.Setup(builder, logger, Options);
             }
         }
 
-        options.SourcesCreated(options.RoutineSources);
+        Options.SourcesCreated(Options.RoutineSources);
         var hasCachedRoutine = false;
-        CommentsMode optionsCommentsMode = options.CommentsMode;
+        CommentsMode optionsCommentsMode = Options.CommentsMode;
         bool hasStreamingEvents = false;
-        foreach (var source in options.RoutineSources)
+        foreach (var source in Options.RoutineSources)
         {
             if (source.CommentsMode.HasValue)
             {
-                options.CommentsMode = source.CommentsMode.Value;
+                Options.CommentsMode = source.CommentsMode.Value;
             }
             else
             {
-                options.CommentsMode = optionsCommentsMode;
+                Options.CommentsMode = optionsCommentsMode;
             }
             
             RetryStrategy? defaultStrategy = null;
-            if (options.CommandRetryOptions.Enabled is true && string.IsNullOrEmpty(options.CommandRetryOptions.DefaultStrategy) is false)
+            if (Options.CommandRetryOptions.Enabled is true && string.IsNullOrEmpty(Options.CommandRetryOptions.DefaultStrategy) is false)
             {
-                if (options.CommandRetryOptions.Strategies
-                        .TryGetValue(options.CommandRetryOptions.DefaultStrategy, out defaultStrategy) is false)
+                if (Options.CommandRetryOptions.Strategies
+                        .TryGetValue(Options.CommandRetryOptions.DefaultStrategy, out defaultStrategy) is false)
                 {
                     logger?.LogWarning("Default retry strategy {defaultStrategy} not found in the list of strategies, command retry strategy will be ignored.",
-                        options.CommandRetryOptions.DefaultStrategy);
+                        Options.CommandRetryOptions.DefaultStrategy);
                 }
             }
             
-            foreach (var (routine, formatter) in source.Read(options, builder?.ApplicationServices, defaultStrategy, logger))
+            foreach (var (routine, formatter) in source.Read(builder?.ApplicationServices, defaultStrategy, logger))
             {
-                RoutineEndpoint endpoint = DefaultEndpoint.Create(routine, options, logger)!;
+                RoutineEndpoint endpoint = DefaultEndpoint.Create(routine, logger)!;
 
                 if (endpoint is null)
                 {
                     continue;
                 }
                 
-                if (options.EndpointCreated is not null)
+                if (Options.EndpointCreated is not null)
                 {
-                    options.EndpointCreated(endpoint);
+                    Options.EndpointCreated(endpoint);
                 }
 
                 if (endpoint is null)
@@ -140,7 +194,7 @@ public static class NpgsqlRestMetadataBuilder
 
                 if (builder is not null)
                 {
-                    foreach (var handler in options.EndpointCreateHandlers)
+                    foreach (var handler in Options.EndpointCreateHandlers)
                     {
                         handler.Handle(endpoint!);
                     }
@@ -184,17 +238,17 @@ public static class NpgsqlRestMetadataBuilder
 
         if (hasLogin is true)
         {
-            if (options.AuthenticationOptions.DefaultAuthenticationType is null)
+            if (Options.AuthenticationOptions.DefaultAuthenticationType is null)
             {
-                string db = new NpgsqlConnectionStringBuilder(options.ConnectionString).Database ?? "NpgsqlRest";
-                options.AuthenticationOptions.DefaultAuthenticationType = db;
+                string db = new NpgsqlConnectionStringBuilder(Options.ConnectionString).Database ?? "NpgsqlRest";
+                Options.AuthenticationOptions.DefaultAuthenticationType = db;
                 logger?.SetDefaultAuthenticationType(db);
             }
         }
 
-        if (hasCachedRoutine is true && options.CacheOptions.DefaultRoutineCache is RoutineCache)
+        if (hasCachedRoutine is true && Options.CacheOptions.DefaultRoutineCache is RoutineCache)
         {
-            RoutineCache.Start(options);
+            RoutineCache.Start(Options);
             if (builder is WebApplication app)
             {
                 app.Lifetime.ApplicationStopping.Register(() =>
@@ -204,21 +258,22 @@ public static class NpgsqlRestMetadataBuilder
             }
         }
 
-        if (options.UploadOptions.UploadHandlers is not null && options.UploadOptions.UploadHandlers.ContainsKey(options.UploadOptions.DefaultUploadHandler) is false)
+        if (Options.UploadOptions.UploadHandlers is not null && Options.UploadOptions.UploadHandlers.ContainsKey(Options.UploadOptions.DefaultUploadHandler) is false)
         {
-            logger?.LogError("Default upload handler {defaultUploadHandler} not found in the list of upload handlers. Using upload endpoint with default handler may cause an error.", options.UploadOptions.DefaultUploadHandler);
+            logger?.LogError("Default upload handler {defaultUploadHandler} not found in the list of upload handlers. Using upload endpoint with default handler may cause an error.", 
+                Options.UploadOptions.DefaultUploadHandler);
         }
 
         var entries = lookup.Values.ToList();
-        if (options.EndpointsCreated is not null)
+        if (Options.EndpointsCreated is not null)
         {
-            options.EndpointsCreated([.. entries.Select(x => x.Endpoint)]);
+            Options.EndpointsCreated([.. entries.Select(x => x.Endpoint)]);
         }
 
         if (builder is not null)
         {
             RoutineEndpoint[]? array = null;
-            foreach (var handler in options.EndpointCreateHandlers)
+            foreach (var handler in Options.EndpointCreateHandlers)
             {
                 array ??= [.. entries.Select(x => x.Endpoint)];
                 handler.Cleanup(array);

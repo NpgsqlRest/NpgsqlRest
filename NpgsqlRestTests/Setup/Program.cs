@@ -136,7 +136,6 @@ public class Program
                 { "conn1", Database.CreateAdditional("conn1") },
                 { "conn2", Database.CreateAdditional("conn2") }
             },
-            Logger = new EmptyLogger(),
             CommandCallbackAsync = async (endpoint, command, context) =>
             {
                 if (string.Equals(endpoint.Routine.Name , "get_csv_data"))

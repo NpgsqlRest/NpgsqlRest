@@ -2,18 +2,18 @@
 
 public abstract class BaseUploadHandler
 {
-    protected HashSet<string> _skipFileNames = new(StringComparer.OrdinalIgnoreCase);
+    protected HashSet<string> SkipFileNames = new(StringComparer.OrdinalIgnoreCase);
 
-    protected string? _type = default;
+    protected string? Type = null;
     protected bool CheckMimeTypes(string contentType)
     {
         // File must match AT LEAST ONE included pattern
-        if (_includedMimeTypePatterns is not null && _includedMimeTypePatterns.Length > 0)
+        if (IncludedMimeTypePatterns is not null && IncludedMimeTypePatterns.Length > 0)
         {
             bool matchesAny = false;
-            for (int j = 0; j < _includedMimeTypePatterns.Length; j++)
+            for (int j = 0; j < IncludedMimeTypePatterns.Length; j++)
             {
-                if (Parser.IsPatternMatch(contentType, _includedMimeTypePatterns[j]))
+                if (Parser.IsPatternMatch(contentType, IncludedMimeTypePatterns[j]))
                 {
                     matchesAny = true;
                     break;
@@ -27,11 +27,11 @@ public abstract class BaseUploadHandler
         }
 
         // File must NOT match ANY excluded patterns
-        if (_excludedMimeTypePatterns is not null)
+        if (ExcludedMimeTypePatterns is not null)
         {
-            for (int j = 0; j < _excludedMimeTypePatterns.Length; j++)
+            for (int j = 0; j < ExcludedMimeTypePatterns.Length; j++)
             {
-                if (Parser.IsPatternMatch(contentType, _excludedMimeTypePatterns[j]))
+                if (Parser.IsPatternMatch(contentType, ExcludedMimeTypePatterns[j]))
                 {
                     return false;
                 }
@@ -48,7 +48,7 @@ public abstract class BaseUploadHandler
             value = val;
             return true;
         }
-        if (parameters.TryGetValue(string.Concat(_type, "_", key), out val))
+        if (parameters.TryGetValue(string.Concat(Type, "_", key), out val))
         {
             value = val;
             return true;
@@ -59,42 +59,42 @@ public abstract class BaseUploadHandler
 
     protected abstract IEnumerable<string> GetParameters();
 
-    protected string[]? _includedMimeTypePatterns = default;
-    protected string[]? _excludedMimeTypePatterns = default;
-    protected int _bufferSize = default;
-    protected bool _stopAfterFirstSuccess = default;
+    protected string[]? IncludedMimeTypePatterns = null;
+    protected string[]? ExcludedMimeTypePatterns = null;
+    protected int BufferSize = 0;
+    protected bool StopAfterFirstSuccess = false;
 
     public void ParseSharedParameters(NpgsqlRestUploadOptions options, Dictionary<string, string>? parameters)
     {
-        _includedMimeTypePatterns = options.DefaultUploadHandlerOptions.IncludedMimeTypePatterns;
-        _excludedMimeTypePatterns = options.DefaultUploadHandlerOptions.ExcludedMimeTypePatterns;
-        _bufferSize = options.DefaultUploadHandlerOptions.BufferSize;
-        _stopAfterFirstSuccess = options.DefaultUploadHandlerOptions.StopAfterFirstSuccess;
+        IncludedMimeTypePatterns = options.DefaultUploadHandlerOptions.IncludedMimeTypePatterns;
+        ExcludedMimeTypePatterns = options.DefaultUploadHandlerOptions.ExcludedMimeTypePatterns;
+        BufferSize = options.DefaultUploadHandlerOptions.BufferSize;
+        StopAfterFirstSuccess = options.DefaultUploadHandlerOptions.StopAfterFirstSuccess;
 
         if (parameters is not null)
         {
             if (TryGetParam(parameters, IncludedMimeTypeParam, out var includedMimeTypeStr) && includedMimeTypeStr is not null)
             {
-                _includedMimeTypePatterns = includedMimeTypeStr.SplitParameter();
+                IncludedMimeTypePatterns = includedMimeTypeStr.SplitParameter();
             }
             if (TryGetParam(parameters, ExcludedMimeTypeParam, out var excludedMimeTypeStr) && excludedMimeTypeStr is not null)
             {
-                _excludedMimeTypePatterns = excludedMimeTypeStr.SplitParameter();
+                ExcludedMimeTypePatterns = excludedMimeTypeStr.SplitParameter();
             }
             if (TryGetParam(parameters, BufferSizeParam, out var bufferSizeStr) && int.TryParse(bufferSizeStr, out var bufferSizeParsed))
             {
-                _bufferSize = bufferSizeParsed;
+                BufferSize = bufferSizeParsed;
             }
             if (TryGetParam(parameters, StopAfterFirstParam, out var stopAfterFirstSuccessStr) && bool.TryParse(stopAfterFirstSuccessStr, out var stopAfterFirstSuccessParsed))
             {
-                _stopAfterFirstSuccess = stopAfterFirstSuccessParsed;
+                StopAfterFirstSuccess = stopAfterFirstSuccessParsed;
             }
         }
     }
 
     public IUploadHandler SetType(string type)
     {
-        _type = type;
+        Type = type;
         return (this as IUploadHandler)!;
     }
 
@@ -109,7 +109,7 @@ public abstract class BaseUploadHandler
             }
             foreach (var param in GetParameters())
             {
-                yield return string.Concat(_type, "_", param);
+                yield return string.Concat(Type, "_", param);
             }
         }
     }
@@ -119,12 +119,12 @@ public abstract class BaseUploadHandler
     public const string ExcludedMimeTypeParam = "excluded_mime_types";
     public const string BufferSizeParam = "buffer_size";
 
-    public bool StopAfterFirst => _stopAfterFirstSuccess;
+    public bool StopAfterFirst => StopAfterFirstSuccess;
     
     public void SetSkipFileNames(HashSet<string> skipFileNames)
     {
-        _skipFileNames = skipFileNames;
+        SkipFileNames = skipFileNames;
     }
 
-    public HashSet<string> GetSkipFileNames => _skipFileNames;
+    public HashSet<string> GetSkipFileNames => SkipFileNames;
 }

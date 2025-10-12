@@ -1,4 +1,5 @@
 ﻿using NpgsqlRest.UploadHandlers.Handlers;
+using static NpgsqlRest.NpgsqlRestOptions;
 
 namespace NpgsqlRest.UploadHandlers;
 
@@ -23,39 +24,39 @@ public static class UploadExtensions
         var result = new Dictionary<string, Func<RetryStrategy?, ILogger?, IUploadHandler>>();
         if (options.DefaultUploadHandlerOptions.LargeObjectEnabled)
         {
-            result.Add(options.DefaultUploadHandlerOptions.LargeObjectKey, (strategy, logger) => new LargeObjectUploadHandler(options, strategy, logger));
+            result.Add(options.DefaultUploadHandlerOptions.LargeObjectKey, (strategy, logger) => new LargeObjectUploadHandler(strategy, logger));
         }
         if (options.DefaultUploadHandlerOptions.FileSystemEnabled)
         {
-            result.Add(options.DefaultUploadHandlerOptions.FileSystemKey, (strategy, logger) => new FileSystemUploadHandler(options, logger));
+            result.Add(options.DefaultUploadHandlerOptions.FileSystemKey, (strategy, logger) => new FileSystemUploadHandler(logger));
         }
         if (options.DefaultUploadHandlerOptions.CsvUploadEnabled)
         {
-            result.Add(options.DefaultUploadHandlerOptions.CsvUploadKey, (strategy, logger) => new CsvUploadHandler(options, strategy, logger));
+            result.Add(options.DefaultUploadHandlerOptions.CsvUploadKey, (strategy, logger) => new CsvUploadHandler(strategy, logger));
         }
         return result;
     }
 
-    public static IUploadHandler? CreateUploadHandler(this NpgsqlRestOptions options, RoutineEndpoint endpoint, ILogger? logger)
+    public static IUploadHandler? CreateUploadHandler(this RoutineEndpoint endpoint, ILogger? logger)
     {
         if (endpoint.UploadHandlers is null || endpoint.UploadHandlers.Length == 0)
         {
-            if (options.UploadOptions.UploadHandlers is not null && 
-                options.UploadOptions.UploadHandlers.TryGetValue(options.UploadOptions.DefaultUploadHandler, out var handler))
+            if (Options.UploadOptions.UploadHandlers is not null && 
+                Options.UploadOptions.UploadHandlers.TryGetValue(Options.UploadOptions.DefaultUploadHandler, out var handler))
             {
-                return new DefaultUploadHandler(options.UploadOptions, [handler(endpoint.RetryStrategy, logger).SetType(options.UploadOptions.DefaultUploadHandler)]);
+                return new DefaultUploadHandler(Options.UploadOptions, [handler(endpoint.RetryStrategy, logger).SetType(Options.UploadOptions.DefaultUploadHandler)]);
             }
 
-            throw new Exception($"Default upload handler '{options.UploadOptions.DefaultUploadHandler}' not found.");
+            throw new Exception($"Default upload handler '{Options.UploadOptions.DefaultUploadHandler}' not found.");
         }
 
         if (endpoint.UploadHandlers.Length == 1)
         { 
             var handlerName = endpoint.UploadHandlers[0];
-            if (options.UploadOptions.UploadHandlers is not null && 
-                options.UploadOptions.UploadHandlers.TryGetValue(handlerName, out var handler))
+            if (Options.UploadOptions.UploadHandlers is not null && 
+                Options.UploadOptions.UploadHandlers.TryGetValue(handlerName, out var handler))
             {
-                return new DefaultUploadHandler(options.UploadOptions, [handler(endpoint.RetryStrategy, logger).SetType(handlerName)]);
+                return new DefaultUploadHandler(Options.UploadOptions, [handler(endpoint.RetryStrategy, logger).SetType(handlerName)]);
             }
 
             throw new Exception($"Upload handler '{handlerName}' not found.");
@@ -65,8 +66,8 @@ public static class UploadExtensions
         List<IUploadHandler> handlers = new(endpoint.UploadHandlers.Length);
         foreach (var handlerName in endpoint.UploadHandlers)
         {
-            if (options.UploadOptions.UploadHandlers is not null && 
-                options.UploadOptions.UploadHandlers.TryGetValue(handlerName, out var handler))
+            if (Options.UploadOptions.UploadHandlers is not null && 
+                Options.UploadOptions.UploadHandlers.TryGetValue(handlerName, out var handler))
             {
                 handlers.Add(handler(endpoint.RetryStrategy, logger).SetType(handlerName));
             }
@@ -75,7 +76,7 @@ public static class UploadExtensions
                 throw new Exception($"Upload handler '{handlerName}' not found.");
             }
         }
-        return new DefaultUploadHandler(options.UploadOptions, [.. handlers]);
+        return new DefaultUploadHandler(Options.UploadOptions, [.. handlers]);
     }
 
     public static string[]? SplitParameter(this string? type)

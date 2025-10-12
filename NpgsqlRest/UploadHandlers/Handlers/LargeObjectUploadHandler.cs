@@ -2,13 +2,11 @@
 using Npgsql;
 using NpgsqlTypes;
 using static NpgsqlRest.PgConverters;
+using static NpgsqlRest.NpgsqlRestOptions;
 
 namespace NpgsqlRest.UploadHandlers.Handlers;
 
-public class LargeObjectUploadHandler(
-    NpgsqlRestUploadOptions options, 
-    RetryStrategy? retryStrategy,
-    ILogger? logger) : BaseUploadHandler, IUploadHandler
+public class LargeObjectUploadHandler(RetryStrategy? retryStrategy, ILogger? logger) : BaseUploadHandler, IUploadHandler
 {
     private const string OidParam = "oid";
     protected override IEnumerable<string> GetParameters()
@@ -28,11 +26,11 @@ public class LargeObjectUploadHandler(
     public async Task<string> UploadAsync(NpgsqlConnection connection, HttpContext context, Dictionary<string, string>? parameters)
     {
         long? oid = null;
-        bool checkText = options.DefaultUploadHandlerOptions.LargeObjectCheckText;
-        bool checkImage = options.DefaultUploadHandlerOptions.LargeObjectCheckImage;
-        int testBufferSize = options.DefaultUploadHandlerOptions.TextTestBufferSize;
-        int nonPrintableThreshold = options.DefaultUploadHandlerOptions.TextNonPrintableThreshold;
-        AllowedImageTypes allowedImage = options.DefaultUploadHandlerOptions.AllowedImageTypes;
+        bool checkText = Options.UploadOptions.DefaultUploadHandlerOptions.LargeObjectCheckText;
+        bool checkImage = Options.UploadOptions.DefaultUploadHandlerOptions.LargeObjectCheckImage;
+        int testBufferSize = Options.UploadOptions.DefaultUploadHandlerOptions.TextTestBufferSize;
+        int nonPrintableThreshold = Options.UploadOptions.DefaultUploadHandlerOptions.TextNonPrintableThreshold;
+        AllowedImageTypes allowedImage = Options.UploadOptions.DefaultUploadHandlerOptions.AllowedImageTypes;
 
         if (parameters is not null)
         {
@@ -54,7 +52,7 @@ public class LargeObjectUploadHandler(
                 else
                 {
                     checkImage = true;
-                    allowedImage = checkImageParamStr.ParseImageTypes(logger) ?? options.DefaultUploadHandlerOptions.AllowedImageTypes;
+                    allowedImage = checkImageParamStr.ParseImageTypes(logger) ?? Options.UploadOptions.DefaultUploadHandlerOptions.AllowedImageTypes;
                 }
             }
             if (TryGetParam(parameters, FileCheckExtensions.TestBufferSizeParam, out var testBufferSizeStr) && int.TryParse(testBufferSizeStr, out var testBufferSizeParsed))
@@ -67,10 +65,10 @@ public class LargeObjectUploadHandler(
             }
         }
 
-        if (options.LogUploadParameters is true)
+        if (Options.UploadOptions.LogUploadParameters is true)
         {
             logger?.LogDebug("Upload for {_type}: includedMimeTypePatterns={includedMimeTypePatterns}, excludedMimeTypePatterns={excludedMimeTypePatterns}, bufferSize={bufferSize}, oid={oid}, checkText={checkText}, checkImage={checkImage}, allowedImage={allowedImage}, testBufferSize={testBufferSize}, nonPrintableThreshold={nonPrintableThreshold}", 
-                _type, _includedMimeTypePatterns, _excludedMimeTypePatterns, _bufferSize, oid, checkText, checkImage, allowedImage, testBufferSize, nonPrintableThreshold);
+                Type, IncludedMimeTypePatterns, ExcludedMimeTypePatterns, BufferSize, oid, checkText, checkImage, allowedImage, testBufferSize, nonPrintableThreshold);
         }
 
         StringBuilder result = new(context.Request.Form.Files.Count*100);
@@ -84,10 +82,10 @@ public class LargeObjectUploadHandler(
                 result.Append(',');
             }
 
-            if (_type is not null)
+            if (Type is not null)
             {
                 result.Append("{\"type\":");
-                result.Append(SerializeString(_type));
+                result.Append(SerializeString(Type));
                 result.Append(",\"fileName\":");
             }
             else
@@ -101,7 +99,7 @@ public class LargeObjectUploadHandler(
             result.Append(formFile.Length);
 
             UploadFileStatus status = UploadFileStatus.Ok;
-            if (_stopAfterFirstSuccess is true && _skipFileNames.Contains(formFile.FileName, StringComparer.OrdinalIgnoreCase))
+            if (StopAfterFirstSuccess is true && SkipFileNames.Contains(formFile.FileName, StringComparer.OrdinalIgnoreCase))
             {
                 status = UploadFileStatus.Ignored;
             }
@@ -129,14 +127,14 @@ public class LargeObjectUploadHandler(
             result.Append(SerializeString(status.ToString()));
             if (status != UploadFileStatus.Ok)
             {
-                logger?.FileUploadFailed(_type, formFile.FileName, formFile.ContentType, formFile.Length, status);
+                logger?.FileUploadFailed(Type, formFile.FileName, formFile.ContentType, formFile.Length, status);
                 result.Append(",\"oid\":null}");
                 fileId++;
                 continue;
             }
-            if (_stopAfterFirstSuccess is true)
+            if (StopAfterFirstSuccess is true)
             {
-                _skipFileNames.Add(formFile.FileName);
+                SkipFileNames.Add(formFile.FileName);
             }
 
             result.Append(",\"oid\":");
@@ -153,7 +151,7 @@ public class LargeObjectUploadHandler(
             command.Parameters.Add(NpgsqlRestParameter.CreateParamWithType(NpgsqlDbType.Bytea));
 
             using var fileStream = formFile.OpenReadStream();
-            byte[] buffer = new byte[_bufferSize];
+            byte[] buffer = new byte[BufferSize];
             int bytesRead;
             long offset = 0;
             while ((bytesRead = await fileStream.ReadAsync(buffer)) > 0)
@@ -163,7 +161,7 @@ public class LargeObjectUploadHandler(
                 await command.ExecuteNonQueryWithRetryAsync(retryStrategy, logger);
                 offset += bytesRead;
             }
-            if (options.LogUploadEvent)
+            if (Options.UploadOptions.LogUploadEvent)
             {
                 logger?.UploadedFileToLargeObject(formFile.FileName, formFile.ContentType, formFile.Length, resultOid);
             }

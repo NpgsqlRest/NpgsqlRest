@@ -11,6 +11,11 @@ namespace NpgsqlRest;
 public class NpgsqlRestOptions
 {
     /// <summary>
+    /// Gets the current instance of NpgsqlRestOptions. This is set automatically by the UseNpgsqlRest middleware.
+    /// </summary>
+    public static NpgsqlRestOptions Options { get; internal set; } = null!;
+
+    /// <summary>
     /// Options for the NpgsqlRest middleware with default values.
     /// </summary>
     public NpgsqlRestOptions()
@@ -146,12 +151,7 @@ public class NpgsqlRestOptions
     /// When set to true, it will force all created endpoints to require authorization. Authorization requirements for individual endpoints can be changed with the `EndpointCreated` function callback, or by using comment annotations.
     /// </summary>
     public bool RequiresAuthorization { get; set; }
-
-    /// <summary>
-    /// Set this option to provide a custom logger implementation. The default `null` value will cause middleware to create a default logger named `NpgsqlRest` from the logger factory in the service collection.
-    /// </summary>
-    public ILogger? Logger { get; set; }
-
+    
     /// <summary>
     ///  Change the logger name with this option. 
     /// </summary>

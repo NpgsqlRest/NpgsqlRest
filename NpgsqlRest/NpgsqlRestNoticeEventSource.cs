@@ -9,19 +9,11 @@ public readonly record struct NoticeEvent(
     RoutineEndpoint? Endpoint,
     string? ExecutionId);
 
-public class NpgsqlRestNoticeEventSource(RequestDelegate next)
+public class NpgsqlRestNoticeEventSource(RequestDelegate next, ILogger? logger)
 {
     public static readonly HashSet<string> Paths = [];
     public static readonly Broadcaster<NoticeEvent> Broadcaster = new();
-
-    private static ILogger? logger = default!;
-    private static NpgsqlRestOptions options = default!;
-    internal static void SetOptions(NpgsqlRestOptions options, ILogger? logger)
-    {
-        NpgsqlRestNoticeEventSource.logger = logger;
-        NpgsqlRestNoticeEventSource.options = options;
-    }
-
+    
     public async Task InvokeAsync(HttpContext context)
     {
         if (Paths.Contains(context.Request.Path) is false)
@@ -37,9 +29,9 @@ public class NpgsqlRestNoticeEventSource(RequestDelegate next)
         context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate, max-age=0";
         context.Response.Headers.Connection = "keep-alive";
 
-        if (options.CustomServerSentEventsResponseHeaders.Count > 0)
+        if (NpgsqlRestOptions.Options.CustomServerSentEventsResponseHeaders.Count > 0)
         {
-            foreach (var header in options.CustomServerSentEventsResponseHeaders)
+            foreach (var header in NpgsqlRestOptions.Options.CustomServerSentEventsResponseHeaders)
             {
                 if (context.Response.Headers.ContainsKey(header.Key))
                 {
@@ -109,7 +101,7 @@ public class NpgsqlRestNoticeEventSource(RequestDelegate next)
                         bool ok = false;
                         foreach (var claim in context.User?.Claims ?? [])
                         {
-                            if (string.Equals(claim.Type, options.AuthenticationOptions.DefaultRoleClaimType, StringComparison.Ordinal))
+                            if (string.Equals(claim.Type, NpgsqlRestOptions.Options.AuthenticationOptions.DefaultRoleClaimType, StringComparison.Ordinal))
                             {
                                 if (endpoint?.AuthorizeRoles.Contains(claim.Value) is true)
                                 {
@@ -139,9 +131,9 @@ public class NpgsqlRestNoticeEventSource(RequestDelegate next)
                             foreach (var claim in context.User?.Claims!)
                             {
                                 if (
-                                    string.Equals(claim.Type, options.AuthenticationOptions.DefaultUserIdClaimType, StringComparison.Ordinal) ||
-                                    string.Equals(claim.Type, options.AuthenticationOptions.DefaultNameClaimType, StringComparison.Ordinal) ||
-                                    string.Equals(claim.Type, options.AuthenticationOptions.DefaultRoleClaimType, StringComparison.Ordinal)
+                                    string.Equals(claim.Type, NpgsqlRestOptions.Options.AuthenticationOptions.DefaultUserIdClaimType, StringComparison.Ordinal) ||
+                                    string.Equals(claim.Type, NpgsqlRestOptions.Options.AuthenticationOptions.DefaultNameClaimType, StringComparison.Ordinal) ||
+                                    string.Equals(claim.Type, NpgsqlRestOptions.Options.AuthenticationOptions.DefaultRoleClaimType, StringComparison.Ordinal)
                                     )
                                 {
                                     if (infoEventsRoles.Contains(claim.Value) is true)
