@@ -11,7 +11,7 @@ using Metadata = (
     FrozenDictionary<string, NpgsqlRestMetadataEntry> overloads,
     bool hasStreamingEvents);
 
-public static class NpgsqlRestMetadataBuilder
+public static class NpgsqlRestBuilder
 {
     public static IApplicationBuilder UseNpgsqlRest(this WebApplication builder, NpgsqlRestOptions options)
     {
@@ -29,10 +29,10 @@ public static class NpgsqlRestMetadataBuilder
         Options = options;
 
         var factory = builder.Services.GetRequiredService<ILoggerFactory>();
-        ILogger? logger = factory.CreateLogger(options.LoggerName ?? typeof(NpgsqlRestMetadataBuilder).Namespace ?? "NpgsqlRest");
+        ILogger? logger = factory.CreateLogger(options.LoggerName ?? typeof(NpgsqlRestBuilder).Namespace ?? "NpgsqlRest");
 
         var (entries,overloads, hasStreamingEvents) =
-            NpgsqlRestMetadataBuilder.Build(logger, builder);
+            NpgsqlRestBuilder.Build(logger, builder);
         if (entries.Count == 0)
         {
             return builder;
