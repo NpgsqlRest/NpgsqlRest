@@ -1,6 +1,6 @@
-﻿using Microsoft.AspNetCore.Routing;
-using Npgsql;
+﻿using Npgsql;
 using NpgsqlRest.Defaults;
+using static NpgsqlRest.NpgsqlRestOptions;
 
 namespace NpgsqlRest;
 
@@ -29,9 +29,9 @@ public class NpgsqlRestNoticeEventSource(RequestDelegate next, ILogger? logger)
         context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate, max-age=0";
         context.Response.Headers.Connection = "keep-alive";
 
-        if (NpgsqlRestOptions.Options.CustomServerSentEventsResponseHeaders.Count > 0)
+        if (Options.CustomServerSentEventsResponseHeaders.Count > 0)
         {
-            foreach (var header in NpgsqlRestOptions.Options.CustomServerSentEventsResponseHeaders)
+            foreach (var header in Options.CustomServerSentEventsResponseHeaders)
             {
                 if (context.Response.Headers.ContainsKey(header.Key))
                 {
@@ -101,7 +101,7 @@ public class NpgsqlRestNoticeEventSource(RequestDelegate next, ILogger? logger)
                         bool ok = false;
                         foreach (var claim in context.User?.Claims ?? [])
                         {
-                            if (string.Equals(claim.Type, NpgsqlRestOptions.Options.AuthenticationOptions.DefaultRoleClaimType, StringComparison.Ordinal))
+                            if (string.Equals(claim.Type, Options.AuthenticationOptions.DefaultRoleClaimType, StringComparison.Ordinal))
                             {
                                 if (endpoint?.AuthorizeRoles.Contains(claim.Value) is true)
                                 {
@@ -131,9 +131,9 @@ public class NpgsqlRestNoticeEventSource(RequestDelegate next, ILogger? logger)
                             foreach (var claim in context.User?.Claims!)
                             {
                                 if (
-                                    string.Equals(claim.Type, NpgsqlRestOptions.Options.AuthenticationOptions.DefaultUserIdClaimType, StringComparison.Ordinal) ||
-                                    string.Equals(claim.Type, NpgsqlRestOptions.Options.AuthenticationOptions.DefaultNameClaimType, StringComparison.Ordinal) ||
-                                    string.Equals(claim.Type, NpgsqlRestOptions.Options.AuthenticationOptions.DefaultRoleClaimType, StringComparison.Ordinal)
+                                    string.Equals(claim.Type, Options.AuthenticationOptions.DefaultUserIdClaimType, StringComparison.Ordinal) ||
+                                    string.Equals(claim.Type, Options.AuthenticationOptions.DefaultNameClaimType, StringComparison.Ordinal) ||
+                                    string.Equals(claim.Type, Options.AuthenticationOptions.DefaultRoleClaimType, StringComparison.Ordinal)
                                     )
                                 {
                                     if (infoEventsRoles.Contains(claim.Value) is true)
