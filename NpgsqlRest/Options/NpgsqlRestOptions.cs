@@ -343,7 +343,8 @@ public class NpgsqlRestOptions
     public Dictionary<string, StringValues> CustomServerSentEventsResponseHeaders { get; set; } = [];
     
     /// <summary>
-    /// Rate Limiter Options
+    /// Default rate limiting policy for all requests. Policy must be configured within application rate limiting options.
+    /// This can be overridden by comment annotations in the database or setting policy for specific endpoints.
     /// </summary>
-    public RateLimiterOptions RateLimiterOptions { get; set; } = new();
+    public string? DefaultRateLimitingPolicy { get; set; } = null;
 }

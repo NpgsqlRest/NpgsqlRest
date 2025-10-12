@@ -64,7 +64,15 @@ public static class NpgsqlRestBuilder
             var handler = new NpgsqlRestEndpoint(entry, overloads, logger);
             var endpoint = entry.Endpoint;
             var methodStr = endpoint.Method.ToString();
+            var urlInfo = string.Concat(methodStr, " ", endpoint.Path);
             var routeBuilder = builder.MapMethods(endpoint.Path, [methodStr], handler.InvokeAsync);
+            
+            if (endpoint.RateLimiterPolicy is not null || options.DefaultRateLimitingPolicy is not null)
+            {
+                var policy = endpoint.RateLimiterPolicy ?? options.DefaultRateLimitingPolicy!;
+                routeBuilder.RequireRateLimiting(policy);
+                logger?.EndpointEnabledRateLimiterPolicy(urlInfo, policy);
+            }
 
             if (options.RouteHandlerCreated is not null)
             {
@@ -73,7 +81,6 @@ public static class NpgsqlRestBuilder
 
             if (options.LogEndpointCreatedInfo)
             {
-                var urlInfo = string.Concat(methodStr, " ", endpoint.Path);
                 logger?.EndpointCreated(urlInfo);
                 if (endpoint.InfoEventsStreamingPath is not null)
                 {

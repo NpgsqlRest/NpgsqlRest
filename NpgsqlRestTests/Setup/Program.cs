@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.DependencyInjection;
 using NpgsqlRest.Auth;
 using NpgsqlRest.CrudSource;
@@ -68,25 +69,21 @@ public class Program
 
         var builder = WebApplication.CreateBuilder([]);
 
-        // builder.Services.AddRateLimiter(options =>
-        // {
-        //     options.AddFixedWindowLimiter("max 2 per second", config =>
-        //     {
-        //         config.PermitLimit = 2;
-        //         config.Window = TimeSpan.FromSeconds(1);
-        //         config.AutoReplenishment = true;
-        //     });
-        //     
-        //     //var fixedWindowRateLimiterOptions = new FixedWindowRateLimiterOptions();
-        //     //var policyName = "max 2 per second (from AddPolicy)";
-        //     // options.AddPolicy(policyName, context =>
-        //     // {
-        //     //     return fixedWindowRateLimiterOptions;
-        //     // });
-        // });
+        builder.Services.AddRateLimiter(options =>
+        {
+            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            options.OnRejected = async (context, cancellationToken) =>
+            {
+                await context.HttpContext.Response.WriteAsync("Rate limit exceeded. Please try again later.", cancellationToken);
+            };
+            options.AddFixedWindowLimiter("max 2 per second", config =>
+            {
+                config.PermitLimit = 2;
+                config.Window = TimeSpan.FromSeconds(1);
+                config.AutoReplenishment = true;
+            });
+        });
         
-        //var fixedWindowRateLimiterOptions = new FixedWindowRateLimiterOptions();
- 
         builder
             .Services
             .AddAuthentication()
@@ -94,7 +91,7 @@ public class Program
             .AddCookie();
 
         var app = builder.Build();
-        //app.UseRateLimiter();
+        app.UseRateLimiter();
 
         var authOptions = new NpgsqlRestAuthenticationOptions
         {
@@ -196,8 +193,6 @@ public class Program
                 UseDefaultUploadMetadataContextKey = true,
                 //DefaultUploadMetadataContextKey = "request.upload_metadata",
             },
-            
-            //RateLimiterOptions = new RateLimiterOptions { Enabled = true }
         });
         app.Run();
     }

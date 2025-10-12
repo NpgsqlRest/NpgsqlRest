@@ -16,7 +16,6 @@ using NpgsqlRest;
 using Serilog;
 using Serilog.Extensions.Logging;
 using Serilog.Sinks.OpenTelemetry;
-using RateLimiterOptions = NpgsqlRest.RateLimiterOptions;
 
 namespace NpgsqlRestClient;
 
@@ -933,29 +932,31 @@ public class Builder
     
     public enum RateLimiterType { FixedWindow, SlidingWindow, TokenBucket, Concurrency }
 
-    public RateLimiterOptions? BuildRateLimiter()
+    public (string? defaultPolicy, bool enabled) BuildRateLimiter()
     {
         var rateLimiterCfg = _config.Cfg.GetSection("RateLimiterOptions");
         if (_config.Exists(rateLimiterCfg) is false || _config.GetConfigBool("Enabled", rateLimiterCfg) is false)
         {
-            return null;
+            return (null, false);
         }
         var policiesCfg = rateLimiterCfg.GetSection("Policies");
         if (_config.Exists(policiesCfg) is false)
         {
-            return null;
+            return (null, false);
         }
-        
-        var result = new RateLimiterOptions
-        {
-            Enabled = true,
-            DefaultPolicy = _config.GetConfigStr("DefaultPolicy", rateLimiterCfg),
-            StatusCode = _config.GetConfigInt("StatusCode", rateLimiterCfg) ?? 429,
-            Message = _config.GetConfigStr("Message", rateLimiterCfg) ?? "Too many requests. Please try again later."
-        };
-        
+
+        var defaultPolicy = _config.GetConfigStr("DefaultPolicy", rateLimiterCfg);
+        var message = _config.GetConfigStr("Message", rateLimiterCfg);
         Instance.Services.AddRateLimiter(options =>
         {
+            options.RejectionStatusCode = _config.GetConfigInt("StatusCode", rateLimiterCfg) ?? 429;
+            if (string.IsNullOrEmpty(message) is false)
+            {
+                options.OnRejected = async (context, cancellationToken) =>
+                {
+                    await context.HttpContext.Response.WriteAsync(message, cancellationToken);
+                };
+            }
             foreach (var sectionCfg in policiesCfg.GetChildren())
             {
                 var type = _config.GetConfigEnum<RateLimiterType?>("Type", sectionCfg);
@@ -1038,6 +1039,6 @@ public class Builder
             }
         });
 
-        return result;
+        return (defaultPolicy, true);
     }
 }
