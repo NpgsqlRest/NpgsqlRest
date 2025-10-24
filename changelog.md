@@ -4,6 +4,73 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+- TODO rename info_* annotations to streaming_* or SSE_* or events_*
+/*
+private static readonly string[] InfoEventsStreamingPathKey = [
+    "info_path",
+    "info_events_path",
+    "info_streaming_path"
+];
+
+private static readonly string[] InfoEventsStreamingScopeKey = [
+    "info_scope",
+    "info_events_scope",
+    "info_streaming_scope",
+];
+*/
+
+- TODO Command ErrorCodes to ResponseCode mapping per endpoint
+
+- TODO fix TsClient, when returning setof or table and one of the columns is json, it should be "any" or "unknown" not "string"
+
+- TODO fix claims to parameters or user context mapping - if empty string is passed, use null (make it optional with default true)
+
+- TODO fix array parameter logging: e.g. -- $6 text[] = 'System.Collections.Generic.List`1[System.String]'
+
+- TODO request timeout policies: https://learn.microsoft.com/en-us/aspnet/core/performance/timeouts?view=aspnetcore-9.0
+
+- TODO Problem Details
+// Standardized error responses
+// Map PostgreSQL errors to HTTP properly
+
+- TODO OpenAPI JSON automatic generation (just for the client)
+/*
+{
+"openapi": "3.0.1",
+"info": {
+"title": "My API",
+"version": "1.0.0"
+},
+"paths": {
+"/api/users": {
+"get": {
+"operationId": "get_all_users",
+"summary": "Get all users",
+"responses": {
+"200": {
+"description": "Success"
+}
+}
+}
+}
+}
+}
+*/
+
+## Version [3.0.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.0.0) (date is TBD)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/2.36.0...2.36.1)
+
+- Major refactoring: generated endpoints moved from custom middleware to minimal APIs. This allows better integration with ASP.NET Core ecosystem (rate limiter, request timeout, etc).
+- Breaking change caused by the above: API invocation to existing paths with wrong HTTP method will return 405 Method Not Allowed instead of 404 Not Found.
+- More testing (concurrency).
+- Fix: fixed excessive logging when retrying failed commands.
+- Fix: missing command logging on void routines.
+- Refactoring: static options instead of passing options around. Less testability, cleaner code. Tests are full stack anyhow.
+- Refactoring: moved some files around to better structure the project.
+- Metadata query improvements: TODO document the changes.
+- Rate limiter: TODO document the changes.
+
 ## Version [2.36.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/2.36.1) (2025-09-29)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/2.36.0...2.36.1)

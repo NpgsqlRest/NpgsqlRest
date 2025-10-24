@@ -2,6 +2,7 @@
 using System.Text;
 using Npgsql;
 using NpgsqlRest.Auth;
+using static NpgsqlRest.NpgsqlRestOptions;
 
 namespace NpgsqlRest;
 
@@ -51,7 +52,8 @@ public static class Ext
                 logger?.LogDebug("Using named connection string '{name}' for metadata queries.",
                     options.MetadataQueryConnectionName);
             }
-            connection.Open();
+            
+            connection.OpenRetry(Options.ConnectionRetryOptions, logger);
             return;
         }
 
@@ -87,7 +89,7 @@ public static class Ext
 
                 if (connection.State != System.Data.ConnectionState.Open)
                 {
-                    connection.Open();
+                    connection.OpenRetry(Options.ConnectionRetryOptions, logger);
                 }
 
                 if (options.MetadataQuerySchema is not null && HasSearchPathInConnectionString(connection.ConnectionString, options.MetadataQuerySchema) is false)
@@ -109,7 +111,7 @@ public static class Ext
         {
             connection = options.DataSource.CreateConnection();
             shouldDispose = true;
-            connection.Open();
+            connection.OpenRetry(Options.ConnectionRetryOptions, logger);
 
             if (options.MetadataQuerySchema is not null && HasSearchPathInConnectionString(connection.ConnectionString, options.MetadataQuerySchema) is false)
             {
@@ -145,7 +147,7 @@ public static class Ext
                 connection = new NpgsqlConnection(options.ConnectionString);
             }
             shouldDispose = true;
-            connection.Open();
+            connection.OpenRetry(Options.ConnectionRetryOptions, logger);
             logger?.LogDebug("Using default connection string with schema '{schema}' for metadata queries.",
                 options.MetadataQuerySchema);
         }
@@ -153,7 +155,7 @@ public static class Ext
         {
             connection = new NpgsqlConnection(options.ConnectionString);
             shouldDispose = true;
-            connection.Open();
+            connection.OpenRetry(Options.ConnectionRetryOptions, logger);
             logger?.LogDebug("Using default connection string for metadata queries.");
         }
     }

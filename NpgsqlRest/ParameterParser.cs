@@ -416,6 +416,7 @@ internal static class ParameterParser
         {
             return Consts.Null;
         }
+        // TODO fix this: fix array parameter logging: e.g. -- $6 text[] = 'System.Collections.Generic.List`1[System.String]'
         if (descriptor.IsArray && value is IList<object> list)
         {
             var d = descriptor;
