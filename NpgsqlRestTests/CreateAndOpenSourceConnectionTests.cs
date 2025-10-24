@@ -12,6 +12,11 @@ public class CreateAndOpenSourceConnectionTests : IDisposable
     private const string TestSchema = "test_schema";
     private readonly List<NpgsqlConnection> _connectionsToDispose = [];
 
+    public CreateAndOpenSourceConnectionTests()
+    {
+        NpgsqlRestOptions.Options = new NpgsqlRestOptions();
+    }
+
     public void Dispose()
     {
         foreach (var connection in _connectionsToDispose)
