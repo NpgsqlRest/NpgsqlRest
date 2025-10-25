@@ -1,6 +1,5 @@
 ﻿using Npgsql;
 using NpgsqlRest.Defaults;
-using static NpgsqlRest.NpgsqlRestOptions;
 
 namespace NpgsqlRest;
 
@@ -9,7 +8,7 @@ public readonly record struct NoticeEvent(
     RoutineEndpoint? Endpoint,
     string? ExecutionId);
 
-public class NpgsqlRestNoticeEventSource(RequestDelegate next, ILogger? logger)
+public class NpgsqlRestNoticeEventSource(RequestDelegate next)
 {
     public static readonly HashSet<string> Paths = [];
     public static readonly Broadcaster<NoticeEvent> Broadcaster = new();
@@ -76,7 +75,7 @@ public class NpgsqlRestNoticeEventSource(RequestDelegate next, ILogger? logger)
                     }
                     else
                     {
-                        logger?.LogError("Could not recognize valid value for parameter key {key}. Valid values are: {values}. Provided value is {provided}.",
+                        Logger?.LogError("Could not recognize valid value for parameter key {key}. Valid values are: {values}. Provided value is {provided}.",
                             words?[0], string.Join(", ", Enum.GetNames<InfoEventsScope>()), hint);
                     }
                 }
@@ -162,7 +161,7 @@ public class NpgsqlRestNoticeEventSource(RequestDelegate next, ILogger? logger)
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogError(ex, "Failed to write notice event to response at path {path} (ExecutionId={executionId})", context.Request.Path, executionId);
+                    Logger?.LogError(ex, "Failed to write notice event to response at path {path} (ExecutionId={executionId})", context.Request.Path, executionId);
                 }
             }
         }

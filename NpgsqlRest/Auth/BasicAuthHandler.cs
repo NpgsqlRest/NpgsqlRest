@@ -4,7 +4,6 @@ using System.Security.Claims;
 using System.Text;
 using Npgsql;
 using NpgsqlTypes;
-using static NpgsqlRest.NpgsqlRestOptions;
 
 namespace NpgsqlRest.Auth;
 
@@ -13,9 +12,7 @@ public static class BasicAuthHandler
     public static async Task HandleAsync(
         HttpContext context, 
         RoutineEndpoint endpoint,
-         
-        NpgsqlConnection connection,
-        ILogger? logger)
+        NpgsqlConnection connection)
     {
         var realm =
             string.IsNullOrEmpty(endpoint.BasicAuth?.Realm) ? 
@@ -26,23 +23,23 @@ public static class BasicAuthHandler
         {
             if (Options.AuthenticationOptions.BasicAuth.SslRequirement == SslRequirement.Required)
             {
-                logger?.LogError("Basic authentication with SslRequirement 'Required' cannot be used when SSL is disabled.");
+                Logger?.LogError("Basic authentication with SslRequirement 'Required' cannot be used when SSL is disabled.");
                 await Challenge(context, realm);
                 return;
             }
             if (Options.AuthenticationOptions.BasicAuth.SslRequirement == SslRequirement.Warning)
             {
-                logger?.LogWarning("Using Basic Authentication when SSL is disabled.");
+                Logger?.LogWarning("Using Basic Authentication when SSL is disabled.");
             }
             else if (Options.AuthenticationOptions.BasicAuth.SslRequirement == SslRequirement.Ignore)
             {
-                logger?.LogDebug("WARNING: Using Basic Authentication when SSL is disabled.");
+                Logger?.LogDebug("WARNING: Using Basic Authentication when SSL is disabled.");
             }
         }
         
         if (context.Request.Headers.TryGetValue("Authorization", out var authHeader) is false)
         {
-            logger?.LogWarning("No Authorization header found in request with Basic Authentication Realm {realm}. Request: {Path}",
+            Logger?.LogWarning("No Authorization header found in request with Basic Authentication Realm {realm}. Request: {Path}",
                 realm,
                 string.Concat(endpoint.Method.ToString(), endpoint.Path));
             await Challenge(context, realm);
@@ -52,7 +49,7 @@ public static class BasicAuthHandler
         var authValue = authHeader.FirstOrDefault();
         if (string.IsNullOrEmpty(authValue) || !authValue.StartsWith("Basic "))
         {
-            logger?.LogWarning("Authorization header value missing or malformed found in request with Basic Authentication Realm {realm}. Request: {Path}",
+            Logger?.LogWarning("Authorization header value missing or malformed found in request with Basic Authentication Realm {realm}. Request: {Path}",
                 realm,
                 string.Concat(endpoint.Method.ToString(), endpoint.Path));
             await Challenge(context, realm);
@@ -67,7 +64,7 @@ public static class BasicAuthHandler
         }
         catch (Exception ex)
         {
-            logger?.LogError(ex, "Failed to decode Basic Authentication credentials in request with Basic Authentication Realm {realm}. Request: {Path}",
+            Logger?.LogError(ex, "Failed to decode Basic Authentication credentials in request with Basic Authentication Realm {realm}. Request: {Path}",
                 realm,
                 string.Concat(endpoint.Method.ToString(), endpoint.Path));
             await Challenge(context, realm);
@@ -77,7 +74,7 @@ public static class BasicAuthHandler
         var colonIndex = decodedCredentials.IndexOf(':');
         if (colonIndex == -1)
         {
-            logger?.LogWarning("Authorization header value malformed found in request with Basic Authentication Realm {realm}. Request: {Path}",
+            Logger?.LogWarning("Authorization header value malformed found in request with Basic Authentication Realm {realm}. Request: {Path}",
                 realm,
                 string.Concat(endpoint.Method.ToString(), endpoint.Path));
             await Challenge(context, realm);
@@ -88,7 +85,7 @@ public static class BasicAuthHandler
         
         if (string.IsNullOrEmpty(username) is true || string.IsNullOrEmpty(password) is true)
         {
-            logger?.LogWarning("Username or password missing in request with Basic Authentication Realm {realm}. Request: {Path}",
+            Logger?.LogWarning("Username or password missing in request with Basic Authentication Realm {realm}. Request: {Path}",
                 realm,
                 string.Concat(endpoint.Method.ToString(), endpoint.Path));
             await Challenge(context, realm);
@@ -114,7 +111,7 @@ public static class BasicAuthHandler
             {
                 if (Options.AuthenticationOptions.PasswordHasher is null)
                 {
-                    logger?.LogError("PasswordHasher not configured for Basic Authentication Realm {realm}. Request: {Path}",
+                    Logger?.LogError("PasswordHasher not configured for Basic Authentication Realm {realm}. Request: {Path}",
                         realm,
                         string.Concat(endpoint.Method.ToString(), endpoint.Path));
                     await Challenge(context, realm);
@@ -133,7 +130,7 @@ public static class BasicAuthHandler
             if (string.IsNullOrEmpty(challengeCommand) is true)
             {
                 // misconfigured: no user with password configured and no challenge command
-                logger?.LogError("No Basic Authentication user configured for user {username} in request with Basic Authentication Realm {realm}. Request: {Path}",
+                Logger?.LogError("No Basic Authentication user configured for user {username} in request with Basic Authentication Realm {realm}. Request: {Path}",
                     username,
                     realm,
                     string.Concat(endpoint.Method.ToString(), endpoint.Path));
@@ -176,7 +173,6 @@ public static class BasicAuthHandler
                 command, 
                 context, 
                 endpoint.RetryStrategy,
-                logger, 
                 tracePath: string.Concat(endpoint.Method.ToString(), " ", endpoint.Path),
                 performHashVerification: false, 
                 assignUserPrincipalToContext: true);
@@ -186,7 +182,7 @@ public static class BasicAuthHandler
                 return;
             }
 
-            logger?.LogError("ChallengeCommand denied user {username} in request with Basic Authentication Realm {realm}. Request: {Path}",
+            Logger?.LogError("ChallengeCommand denied user {username} in request with Basic Authentication Realm {realm}. Request: {Path}",
                 username,
                 realm,
                 string.Concat(endpoint.Method.ToString(), endpoint.Path));
@@ -207,7 +203,7 @@ public static class BasicAuthHandler
         }
         else
         {
-            logger?.LogWarning("Invalid password for user {username} in request with Basic Authentication Realm {realm}. Request: {Path}",
+            Logger?.LogWarning("Invalid password for user {username} in request with Basic Authentication Realm {realm}. Request: {Path}",
                 username,
                 realm,
                 string.Concat(endpoint.Method.ToString(), endpoint.Path));

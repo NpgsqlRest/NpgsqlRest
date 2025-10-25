@@ -2,7 +2,6 @@
 using NpgsqlRest.Defaults;
 using System.Collections.Frozen;
 using NpgsqlRest.UploadHandlers;
-using static NpgsqlRest.NpgsqlRestOptions;
 
 namespace NpgsqlRest;
 
@@ -37,18 +36,16 @@ public static class NpgsqlRestBuilder
         {
             throw new ArgumentException("Both ConnectionString and DataSource are provided. Please specify only one.");
         }
-
-        // Set the static instance
+        
         Options = options;
-
         var factory = builder.Services.GetRequiredService<ILoggerFactory>();
-        ILogger? logger = factory.CreateLogger(options.LoggerName ?? typeof(NpgsqlRestBuilder).Namespace ?? "NpgsqlRest");
+        Logger = factory.CreateLogger(options.LoggerName ?? typeof(NpgsqlRestBuilder).Namespace ?? "NpgsqlRest");
 
         var (
             entries,
             overloads, 
             hasStreamingEvents
-            ) = Build(logger, builder);
+            ) = Build(builder);
         if (entries.Count == 0)
         {
             return builder;
@@ -61,7 +58,7 @@ public static class NpgsqlRestBuilder
         
         foreach (var entry in entries)
         {
-            var handler = new NpgsqlRestEndpoint(entry, overloads, logger);
+            var handler = new NpgsqlRestEndpoint(entry, overloads);
             var endpoint = entry.Endpoint;
             var methodStr = endpoint.Method.ToString();
             var urlInfo = string.Concat(methodStr, " ", endpoint.Path);
@@ -71,7 +68,7 @@ public static class NpgsqlRestBuilder
             {
                 var policy = endpoint.RateLimiterPolicy ?? options.DefaultRateLimitingPolicy!;
                 routeBuilder.RequireRateLimiting(policy);
-                logger?.EndpointEnabledRateLimiterPolicy(urlInfo, policy);
+                Logger?.EndpointEnabledRateLimiterPolicy(urlInfo, policy);
             }
 
             if (options.RouteHandlerCreated is not null)
@@ -81,10 +78,10 @@ public static class NpgsqlRestBuilder
 
             if (options.LogEndpointCreatedInfo)
             {
-                logger?.EndpointCreated(urlInfo);
+                Logger?.EndpointCreated(urlInfo);
                 if (endpoint.InfoEventsStreamingPath is not null)
                 {
-                    logger?.EndpointInfoStreamingPath(urlInfo, endpoint.InfoEventsStreamingPath);
+                    Logger?.EndpointInfoStreamingPath(urlInfo, endpoint.InfoEventsStreamingPath);
                 }
             }
         }
@@ -94,7 +91,7 @@ public static class NpgsqlRestBuilder
     
     private const int MaxPathLength = 2048;
 
-    private static Metadata Build(ILogger? logger, IApplicationBuilder? builder)
+    private static Metadata Build(IApplicationBuilder? builder)
     {
         // Pre-size dictionaries with reasonable capacity to reduce allocations
         Dictionary<string, NpgsqlRestMetadataEntry> lookup = new(capacity: 128);
@@ -108,7 +105,7 @@ public static class NpgsqlRestBuilder
         {
             foreach (var handler in Options.EndpointCreateHandlers)
             {
-                handler.Setup(builder, logger, Options);
+                handler.Setup(builder, Options);
             }
         }
 
@@ -133,14 +130,14 @@ public static class NpgsqlRestBuilder
                 if (Options.CommandRetryOptions.Strategies
                         .TryGetValue(Options.CommandRetryOptions.DefaultStrategy, out defaultStrategy) is false)
                 {
-                    logger?.LogWarning("Default retry strategy {defaultStrategy} not found in the list of strategies, command retry strategy will be ignored.",
+                    Logger?.LogWarning("Default retry strategy {defaultStrategy} not found in the list of strategies, command retry strategy will be ignored.",
                         Options.CommandRetryOptions.DefaultStrategy);
                 }
             }
             
-            foreach (var (routine, formatter) in source.Read(builder?.ApplicationServices, defaultStrategy, logger))
+            foreach (var (routine, formatter) in source.Read(builder?.ApplicationServices, defaultStrategy))
             {
-                RoutineEndpoint? endpoint = DefaultEndpoint.Create(routine, logger);
+                RoutineEndpoint? endpoint = DefaultEndpoint.Create(routine);
 
                 if (endpoint is null)
                 {
@@ -176,20 +173,20 @@ public static class NpgsqlRestBuilder
                 if (endpoint.HasBodyParameter is true && endpoint.RequestParamType == RequestParamType.BodyJson)
                 {
                     endpoint.RequestParamType = RequestParamType.QueryString;
-                    logger?.EndpointTypeChangedBodyParam(method, endpoint.Path, endpoint.BodyParameterName ?? "");
+                    Logger?.EndpointTypeChangedBodyParam(method, endpoint.Path, endpoint.BodyParameterName ?? "");
                 }
                 if (endpoint.Upload is true)
                 {
                     if (endpoint.Method != Method.POST)
                     {
-                        logger?.EndpointMethodChangedUpload(method, endpoint.Path, Method.POST.ToString());
+                        Logger?.EndpointMethodChangedUpload(method, endpoint.Path, Method.POST.ToString());
                         endpoint.Method = Method.POST;
                         method = "POST"; // Update cached string
                     }
                     if (endpoint.RequestParamType == RequestParamType.BodyJson)
                     {
                         endpoint.RequestParamType = RequestParamType.QueryString;
-                        logger?.EndpointTypeChangedUpload(method, endpoint.Path);
+                        Logger?.EndpointTypeChangedUpload(method, endpoint.Path);
                     }
                 }
 
@@ -265,7 +262,7 @@ public static class NpgsqlRestBuilder
             {
                 string db = new NpgsqlConnectionStringBuilder(Options.ConnectionString).Database ?? "NpgsqlRest";
                 Options.AuthenticationOptions.DefaultAuthenticationType = db;
-                logger?.SetDefaultAuthenticationType(db);
+                Logger?.SetDefaultAuthenticationType(db);
             }
         }
 
@@ -283,7 +280,7 @@ public static class NpgsqlRestBuilder
 
         if (Options.UploadOptions.UploadHandlers is not null && Options.UploadOptions.UploadHandlers.ContainsKey(Options.UploadOptions.DefaultUploadHandler) is false)
         {
-            logger?.LogError("Default upload handler {defaultUploadHandler} not found in the list of upload handlers. Using upload endpoint with default handler may cause an error.", 
+            Logger?.LogError("Default upload handler {defaultUploadHandler} not found in the list of upload handlers. Using upload endpoint with default handler may cause an error.", 
                 Options.UploadOptions.DefaultUploadHandler);
         }
 

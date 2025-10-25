@@ -525,7 +525,7 @@ public class App
 
             result?.UploadHandlers?.Add(
                 _config.GetConfigStr("ExcelKey", uploadHandlersCfg) ?? "excel", 
-                (strategy, logger) => new ExcelUploadHandler(result, strategy, logger));
+                strategy => new ExcelUploadHandler(result, strategy));
         }
 
         if (result?.UploadHandlers is not null && result.UploadHandlers.Count > 1)
@@ -534,7 +534,7 @@ public class App
             foreach (var uploadHandler in result.UploadHandlers)
             {
                 _builder.Logger?.LogDebug("Upload handler {Key} has following parameters: {Parameters}", 
-                    uploadHandler.Key, uploadHandler.Value(null!, null!).SetType(uploadHandler.Key).Parameters);
+                    uploadHandler.Key, uploadHandler.Value(null!).SetType(uploadHandler.Key).Parameters);
             }
         }
         return result!;

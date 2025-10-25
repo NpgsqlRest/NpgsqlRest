@@ -1,12 +1,12 @@
 ﻿using System.Text;
 using System.Text.RegularExpressions;
+using static NpgsqlRest.NpgsqlRestOptions;
 
 namespace NpgsqlRest.TsClient;
 
 public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
 {
     private IApplicationBuilder _builder = default!;
-    private ILogger? _logger;
     private NpgsqlRestOptions? _npgsqlRestoptions;
 
     private const string Module = "tsclient";
@@ -15,26 +15,10 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
     private const string IncludeParseRequest = "tsclient_parse_request";
     private const string IncludeStatusCode = "tsclient_status_code";
     
-    public void Setup(IApplicationBuilder builder, ILogger? logger, NpgsqlRestOptions options)
+    public void Setup(IApplicationBuilder builder, NpgsqlRestOptions npgsqlRestoptions)
     {
-        if (builder is WebApplication app)
-        {
-            var factory = app.Services.GetRequiredService<ILoggerFactory>();
-            if (factory is not null)
-            {
-                _logger = factory.CreateLogger(options.LoggerName ?? typeof(TsClient).Namespace ?? "NpgsqlRest.TsClient");
-            }
-            else
-            {
-                _logger = app.Logger;
-            }
-        }
-        else
-        {
-            _logger = logger;
-        }
         _builder = builder;
-        _npgsqlRestoptions = options;
+        _npgsqlRestoptions = npgsqlRestoptions;
     }
 
     public void Cleanup(RoutineEndpoint[] endpoints)
@@ -52,7 +36,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
         {
             if (options.FilePath.Contains("{0}") is false)
             {
-                _logger?.LogError("TsClient Option FilePath doesn't contain {{0}} formatter and BySchema options is true. Some files may be overwritten! Existing...");
+                Logger?.LogError("TsClient Option FilePath doesn't contain {{0}} formatter and BySchema options is true. Some files may be overwritten! Existing...");
                 return;
             }
 
@@ -182,11 +166,11 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                     try
                     {
                         File.Delete(fileName);
-                        _logger?.LogDebug("Deleted file: {fileName}", fileName);
+                        Logger?.LogDebug("Deleted file: {fileName}", fileName);
                     }
                     catch (Exception ex)
                     {
-                        _logger?.LogError(ex, "Failed to delete file: {fileName}", fileName);
+                        Logger?.LogError(ex, "Failed to delete file: {fileName}", fileName);
 
                         try
                         {
@@ -194,7 +178,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                         }
                         catch (Exception ex2)
                         {
-                            _logger?.LogError(ex2, "Failed to empty file: {fileName}", fileName);
+                            Logger?.LogError(ex2, "Failed to empty file: {fileName}", fileName);
                         }
                     }
                 }
@@ -224,7 +208,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 }
                 AddHeader(interfaces);
                 File.WriteAllText(fileName, interfaces.ToString());
-                _logger?.LogDebug("Created Typescript file: {fileName}", fileName);
+                Logger?.LogDebug("Created Typescript file: {fileName}", fileName);
             }
         }
         else
@@ -234,7 +218,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 var typeFile = fileName.Replace(".ts", "Types.d.ts");
                 AddHeader(interfaces);
                 File.WriteAllText(typeFile, interfaces.ToString());
-                _logger?.LogDebug("Created Typescript type file: {typeFile}", typeFile);
+                Logger?.LogDebug("Created Typescript type file: {typeFile}", typeFile);
             }
 
             if (contentHeader.Length > 0)
@@ -245,11 +229,11 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             File.WriteAllText(fileName, content.ToString());
             if (options.SkipTypes is false)
             {
-                _logger?.LogDebug("Created Typescript file: {fileName}", fileName);
+                Logger?.LogDebug("Created Typescript file: {fileName}", fileName);
             }
             else
             {
-                _logger?.LogDebug("Created Javascript file: {fileName}", fileName);
+                Logger?.LogDebug("Created Javascript file: {fileName}", fileName);
             }
         }
         return;

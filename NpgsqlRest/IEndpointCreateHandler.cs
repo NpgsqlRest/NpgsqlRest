@@ -6,9 +6,8 @@ namespace NpgsqlRest
         /// Before creating endpoints.
         /// </summary>
         /// <param name="builder">current application builder</param>
-        /// <param name="logger">configured application logger</param>
         /// <param name="options">current NpgsqlRest options</param>
-        void Setup(IApplicationBuilder builder, ILogger? logger, NpgsqlRestOptions options) {  }
+        void Setup(IApplicationBuilder builder, NpgsqlRestOptions options) {  }
 
         /// <summary>
         /// After successful endpoint creation.

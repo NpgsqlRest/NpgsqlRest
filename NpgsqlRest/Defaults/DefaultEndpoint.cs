@@ -1,13 +1,8 @@
-﻿using static NpgsqlRest.NpgsqlRestOptions;
-
-namespace NpgsqlRest.Defaults;
+﻿namespace NpgsqlRest.Defaults;
 
 internal static class DefaultEndpoint
 {
-    internal static RoutineEndpoint? Create(
-        Routine routine,
-        
-        ILogger? logger)
+    internal static RoutineEndpoint? Create(Routine routine)
     {
         var url = Options.UrlPathBuilder(routine, Options);
         if (routine.FormatUrlPattern is not null)
@@ -44,7 +39,7 @@ internal static class DefaultEndpoint
                 userContext: Options.AuthenticationOptions.UseUserContext,
                 userParameters: Options.AuthenticationOptions.UseUserParameters);
 
-        if (Options.LogCommands && logger != null)
+        if (Options.LogCommands && Logger != null)
         {
             routineEndpoint.LogCallback = LoggerMessage.Define<string, string>(LogLevel.Debug,
                 new EventId(5, nameof(routineEndpoint.LogCallback)),
@@ -58,11 +53,11 @@ internal static class DefaultEndpoint
 
         if (routine.EndpointHandler is not null)
         {
-            var parsed = DefaultCommentParser.Parse(routine, routineEndpoint, logger);
+            var parsed = DefaultCommentParser.Parse(routine, routineEndpoint);
 
             return routine.EndpointHandler(parsed);
         }
 
-        return DefaultCommentParser.Parse(routine, routineEndpoint, logger);
+        return DefaultCommentParser.Parse(routine, routineEndpoint);
     }
 }

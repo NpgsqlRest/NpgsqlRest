@@ -17,44 +17,44 @@ public static class NpgsqlRestLogger
     private static readonly Action<ILogger, string?, string, Exception?> __LogTraceCallback =
         LoggerMessage.Define<string?, string>(LogLevel.Trace, 4, LogPattern, LogDefineOptions);
 
-    private static void LogInformation(ILogger? logger, string? where, string message)
+    private static void LogInformation(string? where, string message)
     {
-        if (logger?.IsEnabled(LogLevel.Information) is true)
+        if (Logger?.IsEnabled(LogLevel.Information) is true)
         {
-            __LogInformationCallback(logger, where, message, null);
+            __LogInformationCallback(Logger, where, message, null);
         }
     }
 
-    private static void LogWarning(ILogger? logger, string? where, string message)
+    private static void LogWarning(string? where, string message)
     {
-        if (logger?.IsEnabled(LogLevel.Warning) is true)
+        if (Logger?.IsEnabled(LogLevel.Warning) is true)
         {
-            __LogWarningCallback(logger, where, message, null);
+            __LogWarningCallback(Logger, where, message, null);
         }
     }
 
-    private static void LogTrace(ILogger? logger, string? where, string message)
+    private static void LogTrace(string? where, string message)
     {
-        if (logger?.IsEnabled(LogLevel.Trace) is true)
+        if (Logger?.IsEnabled(LogLevel.Trace) is true)
         {
-            __LogTraceCallback(logger, where, message, null);
+            __LogTraceCallback(Logger, where, message, null);
         }
     }
 
-    public static void LogEndpoint(ILogger? logger, RoutineEndpoint endpoint, string parameters, string command)
+    public static void LogEndpoint(RoutineEndpoint endpoint, string parameters, string command)
     {
-        if (logger?.IsEnabled(LogLevel.Debug) is true && endpoint.LogCallback is not null)
+        if (Logger?.IsEnabled(LogLevel.Debug) is true && endpoint.LogCallback is not null)
         {
-            endpoint.LogCallback(logger, parameters, command, null);
+            endpoint.LogCallback(Logger, parameters, command, null);
         }
     }
 
 #pragma warning disable IDE0079 // Remove unnecessary suppression
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "CA2254:Template should be a static expression", Justification = "<Pending>")]
 #pragma warning restore IDE0079 // Remove unnecessary suppression
-    public static void LogConnectionNotice(ILogger? logger, PostgresNotice notice, PostgresConnectionNoticeLoggingMode mode)
+    public static void LogConnectionNotice(PostgresNotice notice, PostgresConnectionNoticeLoggingMode mode)
     {
-        if (logger is null)
+        if (Logger is null)
         {
             return;
         }
@@ -62,45 +62,45 @@ public static class NpgsqlRestLogger
         {
             if (mode == PostgresConnectionNoticeLoggingMode.MessageOnly)
             {
-                logger.LogInformation(notice.MessageText);
+                Logger.LogInformation(notice.MessageText);
             }
             else if (mode == PostgresConnectionNoticeLoggingMode.FirstStackFrameAndMessage)
             {
-                LogInformation(logger, notice?.Where?.Split('\n').LastOrDefault() ?? "", notice?.MessageText!);
+                LogInformation(notice?.Where?.Split('\n').LastOrDefault() ?? "", notice?.MessageText!);
             }
             else if (mode == PostgresConnectionNoticeLoggingMode.FullStackAndMessage)
             {
-                LogInformation(logger, notice?.Where, notice?.MessageText!);
+                LogInformation(notice?.Where, notice?.MessageText!);
             }
         }
         else if (notice.IsWarning())
         {
             if (mode == PostgresConnectionNoticeLoggingMode.MessageOnly)
             {
-                logger.LogWarning(notice.MessageText);
+                Logger.LogWarning(notice.MessageText);
             }
             else if (mode == PostgresConnectionNoticeLoggingMode.FirstStackFrameAndMessage)
             {
-                LogWarning(logger, notice?.Where?.Split('\n').Last() ?? "", notice?.MessageText!);
+                LogWarning(notice?.Where?.Split('\n').Last() ?? "", notice?.MessageText!);
             }
             else if (mode == PostgresConnectionNoticeLoggingMode.FullStackAndMessage)
             {
-                LogWarning(logger, notice?.Where, notice?.MessageText!);
+                LogWarning(notice?.Where, notice?.MessageText!);
             }
         }
         else
         {
             if (mode == PostgresConnectionNoticeLoggingMode.MessageOnly)
             {
-                logger.LogTrace(notice.MessageText);
+                Logger.LogTrace(notice.MessageText);
             }
             else if (mode == PostgresConnectionNoticeLoggingMode.FirstStackFrameAndMessage)
             {
-                LogTrace(logger, notice?.Where?.Split('\n').Last() ?? "", notice?.MessageText!);
+                LogTrace(notice?.Where?.Split('\n').Last() ?? "", notice?.MessageText!);
             }
             else if (mode == PostgresConnectionNoticeLoggingMode.FullStackAndMessage)
             {
-                LogTrace(logger, notice?.Where, notice?.MessageText!);
+                LogTrace(notice?.Where, notice?.MessageText!);
             }
         }
     }

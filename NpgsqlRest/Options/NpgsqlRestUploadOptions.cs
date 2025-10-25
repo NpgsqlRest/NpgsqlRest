@@ -42,7 +42,7 @@ public class NpgsqlRestUploadOptions
     /// Set this option to empty dictionary to disable upload handlers.
     /// Set this option to a dictionary with one or more upload handlers to enable your own custom upload handlers.
     /// </summary>
-    public Dictionary<string, Func<RetryStrategy?, ILogger?, IUploadHandler>>? UploadHandlers { get; set; } = null;
+    public Dictionary<string, Func<RetryStrategy?, IUploadHandler>>? UploadHandlers { get; set; } = null;
 
     /// <summary>
     /// Gets or sets a value indicating whether the default upload metadata parameter should be used.

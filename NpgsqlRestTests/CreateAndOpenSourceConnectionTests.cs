@@ -48,7 +48,7 @@ public class CreateAndOpenSourceConnectionTests : IDisposable
         bool shouldDispose = false;
 
         // Act
-        options.CreateAndOpenSourceConnection(null, null, ref connection, ref shouldDispose);
+        options.CreateAndOpenSourceConnection(null, ref connection, ref shouldDispose);
 
         // Assert
         connection.Should().NotBeNull();
@@ -75,7 +75,7 @@ public class CreateAndOpenSourceConnectionTests : IDisposable
         bool shouldDispose = false;
 
         // Act
-        options.CreateAndOpenSourceConnection(null, null, ref connection, ref shouldDispose);
+        options.CreateAndOpenSourceConnection(null, ref connection, ref shouldDispose);
 
         // Assert
         connection.Should().NotBeNull();
@@ -101,7 +101,7 @@ public class CreateAndOpenSourceConnectionTests : IDisposable
         bool shouldDispose = false;
 
         // Act & Assert
-        var act = () => options.CreateAndOpenSourceConnection(null, null, ref connection, ref shouldDispose);
+        var act = () => options.CreateAndOpenSourceConnection(null, ref connection, ref shouldDispose);
         act.Should().Throw<ArgumentException>()
             .WithMessage("*'nonexistent' not found*");
     }
@@ -118,7 +118,7 @@ public class CreateAndOpenSourceConnectionTests : IDisposable
         bool shouldDispose = false;
 
         // Act & Assert
-        var act = () => options.CreateAndOpenSourceConnection(null, null, ref connection, ref shouldDispose);
+        var act = () => options.CreateAndOpenSourceConnection(null, ref connection, ref shouldDispose);
         act.Should().Throw<ArgumentException>()
             .WithMessage("*ConnectionStrings must be provided*");
     }
@@ -136,7 +136,7 @@ public class CreateAndOpenSourceConnectionTests : IDisposable
         bool shouldDispose = false;
 
         // Act & Assert
-        var act = () => options.CreateAndOpenSourceConnection(null, null, ref connection, ref shouldDispose);
+        var act = () => options.CreateAndOpenSourceConnection(null, ref connection, ref shouldDispose);
         act.Should().Throw<ArgumentException>()
             .WithMessage("*ServiceProvider must be provided*");
     }
@@ -154,7 +154,7 @@ public class CreateAndOpenSourceConnectionTests : IDisposable
         bool shouldDispose = false;
 
         // Act
-        options.CreateAndOpenSourceConnection(null, null, ref connection, ref shouldDispose);
+        options.CreateAndOpenSourceConnection(null, ref connection, ref shouldDispose);
 
         // Assert
         connection.Should().NotBeNull();
@@ -177,7 +177,7 @@ public class CreateAndOpenSourceConnectionTests : IDisposable
         bool shouldDispose = false;
 
         // Act
-        options.CreateAndOpenSourceConnection(null, null, ref connection, ref shouldDispose);
+        options.CreateAndOpenSourceConnection(null, ref connection, ref shouldDispose);
 
         // Assert
         connection.Should().NotBeNull();
@@ -196,7 +196,7 @@ public class CreateAndOpenSourceConnectionTests : IDisposable
         bool shouldDispose = false;
 
         // Act & Assert
-        var act = () => options.CreateAndOpenSourceConnection(null, null, ref connection, ref shouldDispose);
+        var act = () => options.CreateAndOpenSourceConnection(null, ref connection, ref shouldDispose);
         act.Should().Throw<ArgumentException>()
             .WithMessage("*ConnectionString must be provided*");
     }
@@ -215,7 +215,7 @@ public class CreateAndOpenSourceConnectionTests : IDisposable
         bool shouldDispose = false;
 
         // Act
-        options.CreateAndOpenSourceConnection(null, null, ref connection, ref shouldDispose);
+        options.CreateAndOpenSourceConnection(null, ref connection, ref shouldDispose);
 
         // Assert
         connection.Should().NotBeNull();
@@ -247,7 +247,7 @@ public class CreateAndOpenSourceConnectionTests : IDisposable
         bool shouldDispose = false;
 
         // Act
-        options.CreateAndOpenSourceConnection(null, null, ref connection, ref shouldDispose);
+        options.CreateAndOpenSourceConnection(null, ref connection, ref shouldDispose);
 
         // Assert
         connection.Should().NotBeNull();

@@ -2,12 +2,10 @@
 using Microsoft.VisualBasic.FileIO;
 using Npgsql;
 using NpgsqlTypes;
-using static NpgsqlRest.PgConverters;
-using static NpgsqlRest.NpgsqlRestOptions;
 
 namespace NpgsqlRest.UploadHandlers.Handlers;
 
-public class CsvUploadHandler(RetryStrategy? retryStrategy, ILogger? logger) : BaseUploadHandler, IUploadHandler
+public class CsvUploadHandler(RetryStrategy? retryStrategy) : BaseUploadHandler, IUploadHandler
 {
     private const string CheckFileParam = "check_format";
     private const string DelimitersParam = "delimiters";
@@ -74,7 +72,7 @@ public class CsvUploadHandler(RetryStrategy? retryStrategy, ILogger? logger) : B
 
         if (Options.UploadOptions.LogUploadParameters is true)
         {
-            logger?.LogDebug("Upload for {_type}: includedMimeTypePatterns={includedMimeTypePatterns}, excludedMimeTypePatterns={excludedMimeTypePatterns}, checkFileStatus={checkFileStatus}, testBufferSize={testBufferSize}, nonPrintableThreshold={nonPrintableThreshold}, delimiters={delimiters}, hasFieldsEnclosedInQuotes={hasFieldsEnclosedInQuotes}, setWhiteSpaceToNull={setWhiteSpaceToNull}, rowCommand={rowCommand}",
+            Logger?.LogDebug("Upload for {_type}: includedMimeTypePatterns={includedMimeTypePatterns}, excludedMimeTypePatterns={excludedMimeTypePatterns}, checkFileStatus={checkFileStatus}, testBufferSize={testBufferSize}, nonPrintableThreshold={nonPrintableThreshold}, delimiters={delimiters}, hasFieldsEnclosedInQuotes={hasFieldsEnclosedInQuotes}, setWhiteSpaceToNull={setWhiteSpaceToNull}, rowCommand={rowCommand}",
                 Type, IncludedMimeTypePatterns, ExcludedMimeTypePatterns, checkFileStatus, testBufferSize, nonPrintableThreshold, delimiters, hasFieldsEnclosedInQuotes, setWhiteSpaceToNull, rowCommand);
         }
 
@@ -134,7 +132,7 @@ public class CsvUploadHandler(RetryStrategy? retryStrategy, ILogger? logger) : B
             fileJson.Append('}');
             if (status != UploadFileStatus.Ok)
             {
-                logger?.FileUploadFailed(Type, formFile.FileName, formFile.ContentType, formFile.Length, status);
+                Logger?.FileUploadFailed(Type, formFile.FileName, formFile.ContentType, formFile.Length, status);
                 result.Append(fileJson);
                 fileId++;
                 continue;
@@ -174,7 +172,7 @@ public class CsvUploadHandler(RetryStrategy? retryStrategy, ILogger? logger) : B
                 {
                     command.Parameters[3].Value = fileJson.ToString();
                 }
-                commandResult = await command.ExecuteScalarWithRetryAsync(retryStrategy, logger);
+                commandResult = await command.ExecuteScalarWithRetryAsync(retryStrategy);
 
                 rowIndex++;
             }
@@ -185,7 +183,7 @@ public class CsvUploadHandler(RetryStrategy? retryStrategy, ILogger? logger) : B
 
             if (Options.UploadOptions.LogUploadEvent)
             {
-                logger?.UploadedCsvFile(formFile.FileName, formFile.ContentType, formFile.Length, rowCommand);
+                Logger?.UploadedCsvFile(formFile.FileName, formFile.ContentType, formFile.Length, rowCommand);
             }
             result.Append(fileJson);
             fileId++;

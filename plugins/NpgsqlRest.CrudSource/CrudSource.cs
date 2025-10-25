@@ -193,20 +193,20 @@ public class CrudSource(
     private bool Delete { get => (CrudTypes & CrudCommandType.Delete) == CrudCommandType.Delete; }
     private bool DeleteReturning { get => (CrudTypes & CrudCommandType.DeleteReturning) == CrudCommandType.DeleteReturning; }
 
-    public IEnumerable<(Routine, IRoutineSourceParameterFormatter)> Read(IServiceProvider? serviceProvider, RetryStrategy? retryStrategy, ILogger? logger)
+    public IEnumerable<(Routine, IRoutineSourceParameterFormatter)> Read(IServiceProvider? serviceProvider, RetryStrategy? retryStrategy)
     {
         NpgsqlConnection? connection = null;
         bool shouldDispose = true;
         try
         {
-            Options.CreateAndOpenSourceConnection(serviceProvider, logger, ref connection, ref shouldDispose);
+            Options.CreateAndOpenSourceConnection(serviceProvider, ref connection, ref shouldDispose);
             
             if (connection is null)
             {
                 yield break;
             }
 
-            foreach (var (routine, formatter, type) in ReadInternal(Options, connection, retryStrategy, logger))
+            foreach (var (routine, formatter, type) in ReadInternal(Options, connection, retryStrategy))
             {
                 if (Created is not null && !Created(routine, type))
                 {
@@ -227,8 +227,7 @@ public class CrudSource(
     private IEnumerable<(Routine routine, IRoutineSourceParameterFormatter formatter, CrudCommandType type)> ReadInternal(
         NpgsqlRestOptions options,
         NpgsqlConnection connection, 
-        RetryStrategy? retryStrategy, 
-        ILogger? logger)
+        RetryStrategy? retryStrategy)
     {
         using var command = connection.CreateCommand();
         Query ??= CrudSourceQuery.Query;
@@ -250,8 +249,8 @@ public class CrudSource(
         AddParameter(command, IncludeNames ?? options.IncludeNames, true); // $7
         AddParameter(command, ExcludeNames ?? options.ExcludeNames, true); // $8
         
-        logger.TraceCommand(command, nameof(CrudCommandType));
-        using NpgsqlDataReader reader = command.ExecuteReaderWithRetry(retryStrategy, logger);
+        command.TraceCommand(nameof(CrudCommandType));
+        using NpgsqlDataReader reader = command.ExecuteReaderWithRetry(retryStrategy);
         while (reader.Read())
         {
             var type = reader.Get<string>(0) switch //"type") switch

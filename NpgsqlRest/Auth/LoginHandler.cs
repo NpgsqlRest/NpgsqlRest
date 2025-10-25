@@ -4,7 +4,6 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Npgsql;
 using NpgsqlTypes;
-using static NpgsqlRest.NpgsqlRestOptions;
 
 namespace NpgsqlRest.Auth;
 
@@ -13,9 +12,7 @@ public static class LoginHandler
     public static async Task HandleAsync(
         NpgsqlCommand command,
         HttpContext context,
-        
         RetryStrategy? retryStrategy,
-        ILogger? logger,
         string tracePath = "HandleLoginAsync",
         bool performHashVerification = true,
         bool assignUserPrincipalToContext = false)
@@ -29,8 +26,8 @@ public static class LoginHandler
         var verificationPerformed = false;
         var verificationFailed = false;
         
-        logger?.TraceCommand(command, tracePath);
-        await using (NpgsqlDataReader reader = await command.ExecuteReaderWithRetryAsync(retryStrategy, logger))
+        command.TraceCommand(tracePath);
+        await using (NpgsqlDataReader reader = await command.ExecuteReaderWithRetryAsync(retryStrategy))
         {
             if (await reader.ReadAsync() is false)
             {
@@ -72,7 +69,7 @@ public static class LoginHandler
                         }
                         else
                         {
-                            logger?.WrongStatusType(command.CommandText);
+                            Logger?.WrongStatusType(command.CommandText);
                             context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
                             await context.Response.CompleteAsync();
                             return;
@@ -141,7 +138,7 @@ public static class LoginHandler
                                                 verificationPerformed = true;
                                                 if (Options.AuthenticationOptions.PasswordHasher?.VerifyHashedPassword(hash, pass) is false)
                                                 {
-                                                    logger?.VerifyPasswordFailed(tracePath, userId, userName);
+                                                    Logger?.VerifyPasswordFailed(tracePath, userId, userName);
                                                     context.Response.StatusCode = (int)HttpStatusCode.NotFound;
                                                     await context.Response.CompleteAsync();
                                                     verificationFailed = true;
@@ -152,7 +149,7 @@ public static class LoginHandler
                                     }
                                     if (foundPasswordParameter is false)
                                     {
-                                        logger?.CantFindPasswordParameter(tracePath,
+                                        Logger?.CantFindPasswordParameter(tracePath,
                                             command.Parameters.Select(p => (p as NpgsqlRestParameter)?.ActualName)?.ToArray(),
                                             Options.AuthenticationOptions.PasswordParameterNameContains);
                                     }
@@ -187,8 +184,8 @@ public static class LoginHandler
                         {
                             failedCommand.Parameters.Add(NpgsqlRestParameter.CreateTextParam(userName));
                         }
-                        logger?.TraceCommand(failedCommand, tracePath);
-                        await failedCommand.ExecuteNonQueryWithRetryAsync(retryStrategy, logger);
+                        failedCommand.TraceCommand(tracePath);
+                        await failedCommand.ExecuteNonQueryWithRetryAsync(retryStrategy);
                     }
                 }
                 return;
@@ -215,8 +212,8 @@ public static class LoginHandler
                         {
                             succeededCommand.Parameters.Add(NpgsqlRestParameter.CreateTextParam(userName));
                         }
-                        logger?.TraceCommand(succeededCommand, tracePath);
-                        await succeededCommand.ExecuteNonQueryWithRetryAsync(retryStrategy, logger);
+                        succeededCommand.TraceCommand(tracePath);
+                        await succeededCommand.ExecuteNonQueryWithRetryAsync(retryStrategy);
                     }
                 }
             }
@@ -234,7 +231,7 @@ public static class LoginHandler
             {
                 if (Results.SignIn(principal: principal, authenticationScheme: scheme) is not SignInHttpResult result)
                 {
-                    logger?.LogError("Failed in constructing user identity for authentication.");
+                    Logger?.LogError("Failed in constructing user identity for authentication.");
                     context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
                     return;
                 }

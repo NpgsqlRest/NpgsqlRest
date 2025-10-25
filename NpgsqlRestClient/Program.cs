@@ -258,10 +258,9 @@ if (builder.ExternalAuthConfig?.Enabled is true)
 {
     new ExternalAuth(
         builder.ExternalAuthConfig, 
-        connectionString, 
-        builder.Logger, 
-        app, 
-        options, 
+        connectionString,
+        app,
+        options,
         cmdRetryStrategy,
         logConnectionNoticeEventsMode);
 }

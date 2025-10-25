@@ -5,9 +5,7 @@ namespace NpgsqlRest;
 
 public static class NpgsqlConnectionRetryExtensions
 {
-    public static void OpenRetry(this NpgsqlConnection connection, 
-        ConnectionRetryOptions settings, 
-        ILogger? logger = null)
+    public static void OpenRetry(this NpgsqlConnection connection, ConnectionRetryOptions settings, ILogger? logger = null)
     {
         if (connection.State != System.Data.ConnectionState.Closed)
         {
@@ -39,24 +37,24 @@ public static class NpgsqlConnectionRetryExtensions
                     if (delaySec > 0)
                     {
                         var delay = TimeSpan.FromSeconds(delaySec);
-                        logger?.FailedToOpenConnectionRetry(attempt + 1, delay.TotalMilliseconds, message);
+                        (Logger ?? logger)?.FailedToOpenConnectionRetry(attempt + 1, delay.TotalMilliseconds, message);
                         Thread.Sleep(delay);
                     }
                     else
                     {
-                        logger?.FailedToOpenConnectionRetry(attempt + 1, 0, message);
+                        (Logger ?? logger)?.FailedToOpenConnectionRetry(attempt + 1, 0, message);
                     }
                 }
                 else
                 {
-                    logger?.FailedToOpenConnectionAfter(ex, attempt + 1);
+                    (Logger ?? logger)?.FailedToOpenConnectionAfter(ex, attempt + 1);
                     ThrowRetryExhaustedException(exceptionsEncountered);
                 }
             }
             catch (Exception ex)
             {
                 // Non-retryable exception
-                logger?.FailedToOpenNonRetryableConnection(ex, ex.Message);
+                (Logger ?? logger)?.FailedToOpenNonRetryableConnection(ex, ex.Message);
                 throw;
             }
         }
@@ -65,8 +63,8 @@ public static class NpgsqlConnectionRetryExtensions
     public static async Task OpenRetryAsync(
         this NpgsqlConnection connection,
         ConnectionRetryOptions settings,
-        ILogger? logger = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        ILogger? logger = null)
     {
         if (connection.State != System.Data.ConnectionState.Closed)
         {
@@ -100,17 +98,17 @@ public static class NpgsqlConnectionRetryExtensions
                     if (delaySec > 0)
                     {
                         var delay = TimeSpan.FromSeconds(delaySec);
-                        logger?.FailedToOpenConnectionRetry(attempt + 1, delay.TotalMilliseconds, message);
+                        (Logger ?? logger)?.FailedToOpenConnectionRetry(attempt + 1, delay.TotalMilliseconds, message);
                         await Task.Delay(delay, cancellationToken);
                     }
                     else
                     {
-                        logger?.FailedToOpenConnectionRetry(attempt + 1, 0, message);
+                        (Logger ?? logger)?.FailedToOpenConnectionRetry(attempt + 1, 0, message);
                     }
                 }
                 else
                 {
-                    logger?.FailedToOpenConnectionAfter(ex, attempt + 1);
+                    (Logger ?? logger)?.FailedToOpenConnectionAfter(ex, attempt + 1);
                     ThrowRetryExhaustedException(exceptionsEncountered);
                 }
             }
@@ -120,7 +118,7 @@ public static class NpgsqlConnectionRetryExtensions
                 {
                     throw;
                 }
-                logger?.FailedToOpenNonRetryableConnection(ex, ex.Message);
+                (Logger ?? logger)?.FailedToOpenNonRetryableConnection(ex, ex.Message);
                 throw;
             }
         }

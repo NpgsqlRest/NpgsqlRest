@@ -10,8 +10,8 @@ public static class NpgsqlRetryExtensions
 {
     public static void ExecuteNonQueryWithRetry(
         this NpgsqlCommand command, 
-        RetryStrategy? strategy, 
-        ILogger? logger)
+        RetryStrategy? strategy,
+        ILogger? logger = null)
     {
         if (strategy == null || strategy.RetrySequenceSeconds.Length == 0)
         {
@@ -43,13 +43,13 @@ public static class NpgsqlRetryExtensions
                 }
                 else
                 {
-                    logger?.FailedToExecuteCommandAfter(command.CommandText, attempt + 1);
+                    (Logger ?? logger)?.FailedToExecuteCommandAfter(command.CommandText, attempt + 1);
                     ThrowRetryExhaustedException(exceptionsEncountered);
                 }
             }
             catch (Exception)
             {
-                logger?.FailedToExecuteNonRetryableCommand(command.CommandText);
+                (Logger ?? logger)?.FailedToExecuteNonRetryableCommand(command.CommandText);
                 throw;
             }
         }
@@ -57,9 +57,9 @@ public static class NpgsqlRetryExtensions
 
     public static async Task ExecuteNonQueryWithRetryAsync(
         this NpgsqlCommand command, 
-        RetryStrategy? strategy, 
-        ILogger? logger, 
-        CancellationToken cancellationToken = default)
+        RetryStrategy? strategy,
+        CancellationToken cancellationToken = default,
+        ILogger? logger = null)
     {
         if (strategy == null || strategy.RetrySequenceSeconds.Length == 0)
         {
@@ -90,7 +90,7 @@ public static class NpgsqlRetryExtensions
                 }
                 else
                 {
-                    logger?.FailedToExecuteCommandAfter(command.CommandText, attempt + 1);
+                    (Logger ?? logger)?.FailedToExecuteCommandAfter(command.CommandText, attempt + 1);
                     ThrowRetryExhaustedException(exceptionsEncountered);
                 }
             }
@@ -100,7 +100,7 @@ public static class NpgsqlRetryExtensions
                 {
                     throw;
                 }
-                logger?.FailedToExecuteNonRetryableCommand(command.CommandText);
+                (Logger ?? logger)?.FailedToExecuteNonRetryableCommand(command.CommandText);
                 throw;
             }
         }
@@ -108,8 +108,8 @@ public static class NpgsqlRetryExtensions
     
     public static NpgsqlDataReader ExecuteReaderWithRetry(
         this NpgsqlCommand command, 
-        RetryStrategy? strategy, 
-        ILogger? logger)
+        RetryStrategy? strategy,
+        ILogger? logger = null)
     {
         if (strategy == null || strategy.RetrySequenceSeconds.Length == 0)
         {
@@ -134,23 +134,23 @@ public static class NpgsqlRetryExtensions
                     if (delaySec > 0)
                     {
                         var delay = TimeSpan.FromSeconds(delaySec);
-                        logger?.FailedToExecuteCommandRetry(attempt + 1, delay.TotalMilliseconds, message);
+                        (Logger ?? logger)?.FailedToExecuteCommandRetry(attempt + 1, delay.TotalMilliseconds, message);
                         Thread.Sleep(delay);
                     }
                     else
                     {
-                        logger?.FailedToExecuteCommandRetry(attempt + 1, 0, message);
+                        (Logger ?? logger)?.FailedToExecuteCommandRetry(attempt + 1, 0, message);
                     }
                 }
                 else
                 {
-                    logger?.FailedToExecuteCommandAfter(command.CommandText, attempt + 1);
+                    (Logger ?? logger)?.FailedToExecuteCommandAfter(command.CommandText, attempt + 1);
                     ThrowRetryExhaustedException(exceptionsEncountered);
                 }
             }
             catch (Exception)
             {
-                logger?.FailedToExecuteNonRetryableCommand(command.CommandText);
+                (Logger ?? logger)?.FailedToExecuteNonRetryableCommand(command.CommandText);
                 throw;
             }
         }
@@ -159,8 +159,9 @@ public static class NpgsqlRetryExtensions
     
     public static async Task<NpgsqlDataReader> ExecuteReaderWithRetryAsync(
         this NpgsqlCommand command, 
-        RetryStrategy? strategy, ILogger? logger, 
-        CancellationToken cancellationToken = default)
+        RetryStrategy? strategy, 
+        CancellationToken cancellationToken = default,
+        ILogger? logger = null)
     {
         if (strategy == null || strategy.RetrySequenceSeconds.Length == 0)
         {
@@ -189,7 +190,7 @@ public static class NpgsqlRetryExtensions
                 }
                 else
                 {
-                    logger?.FailedToExecuteCommandAfter(command.CommandText, attempt + 1);
+                    (Logger ?? logger)?.FailedToExecuteCommandAfter(command.CommandText, attempt + 1);
                     ThrowRetryExhaustedException(exceptionsEncountered);
                 }
             }
@@ -199,7 +200,7 @@ public static class NpgsqlRetryExtensions
                 {
                     throw;
                 }
-                logger?.FailedToExecuteNonRetryableCommand(command.CommandText);
+                (Logger ?? logger)?.FailedToExecuteNonRetryableCommand(command.CommandText);
                 throw;
             }
         }
@@ -210,8 +211,8 @@ public static class NpgsqlRetryExtensions
         this NpgsqlCommand command,
         CommandBehavior behavior, 
         RetryStrategy? strategy, 
-        ILogger? logger, 
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        ILogger? logger = null)
     {
         if (strategy == null || strategy.RetrySequenceSeconds.Length == 0)
         {
@@ -243,7 +244,7 @@ public static class NpgsqlRetryExtensions
                 }
                 else
                 {
-                    logger?.FailedToExecuteCommandAfter(command.CommandText, attempt + 1);
+                    (Logger ?? logger)?.FailedToExecuteCommandAfter(command.CommandText, attempt + 1);
                     ThrowRetryExhaustedException(exceptionsEncountered);
                 }
             }
@@ -253,7 +254,7 @@ public static class NpgsqlRetryExtensions
                 {
                     throw;
                 }
-                logger?.FailedToExecuteNonRetryableCommand(command.CommandText);
+                (Logger ?? logger)?.FailedToExecuteNonRetryableCommand(command.CommandText);
                 throw;
             }
         }
@@ -264,8 +265,8 @@ public static class NpgsqlRetryExtensions
     public static async Task<object?> ExecuteScalarWithRetryAsync(
         this NpgsqlCommand command, 
         RetryStrategy? strategy, 
-        ILogger? logger, 
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        ILogger? logger = null)
     {
         if (strategy == null || strategy.RetrySequenceSeconds.Length == 0)
         {
@@ -294,7 +295,7 @@ public static class NpgsqlRetryExtensions
                 }
                 else
                 {
-                    logger?.FailedToExecuteCommandAfter(command.CommandText, attempt + 1);
+                    (Logger ?? logger)?.FailedToExecuteCommandAfter(command.CommandText, attempt + 1);
                     ThrowRetryExhaustedException(exceptionsEncountered);
                 }
             }
@@ -304,7 +305,7 @@ public static class NpgsqlRetryExtensions
                 {
                     throw;
                 }
-                logger?.FailedToExecuteNonRetryableCommand(command.CommandText);
+                (Logger ?? logger)?.FailedToExecuteNonRetryableCommand(command.CommandText);
                 throw;
             }
         }
@@ -315,8 +316,8 @@ public static class NpgsqlRetryExtensions
     public static async Task ExecuteBatchWithRetryAsync(
         this NpgsqlBatch batch, 
         RetryStrategy? strategy, 
-        ILogger? logger, 
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        ILogger? logger = null)
     {
         if (strategy == null || strategy.RetrySequenceSeconds.Length == 0)
         {
@@ -352,7 +353,7 @@ public static class NpgsqlRetryExtensions
                     {
                         cmdTexts.AppendLine(string.Concat(command.CommandText, ";") );
                     }
-                    logger?.FailedToExecuteCommandAfter(cmdTexts.ToString(), attempt + 1);
+                    (Logger ?? logger)?.FailedToExecuteCommandAfter(cmdTexts.ToString(), attempt + 1);
                     ThrowRetryExhaustedException(exceptionsEncountered);
                 }
             }
@@ -367,7 +368,7 @@ public static class NpgsqlRetryExtensions
                 {
                     cmdTexts.AppendLine(string.Concat(command.CommandText, ";") );
                 }
-                logger?.FailedToExecuteNonRetryableCommand(cmdTexts.ToString());
+                (Logger ?? logger)?.FailedToExecuteNonRetryableCommand(cmdTexts.ToString());
                 throw;
             }
         }

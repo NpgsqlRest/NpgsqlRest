@@ -67,7 +67,7 @@ public class TestSource : IRoutineSource
     public string[]? ExcludeNames { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
     public CommentsMode? CommentsMode { get => null; set => throw new NotImplementedException(); }
 
-    public IEnumerable<(Routine, IRoutineSourceParameterFormatter)> Read(IServiceProvider? serviceProvider, RetryStrategy? retryStrategy, ILogger? logger)
+    public IEnumerable<(Routine, IRoutineSourceParameterFormatter)> Read(IServiceProvider? serviceProvider, RetryStrategy? retryStrategy)
     {
         yield return (
             CreateRoutine(

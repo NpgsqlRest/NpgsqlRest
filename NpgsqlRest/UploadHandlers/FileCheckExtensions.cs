@@ -96,7 +96,7 @@ public static class FileCheckExtensions
                 (allowedTypes.HasFlag(AllowedImageTypes.Webp) && IsWebp(buffer, bytesRead));
     }
 
-    public static AllowedImageTypes? ParseImageTypes(this string csvInput, ILogger? logger)
+    public static AllowedImageTypes? ParseImageTypes(this string csvInput, ILogger? logger = null)
     {
         if (string.IsNullOrWhiteSpace(csvInput))
         {
@@ -127,7 +127,7 @@ public static class FileCheckExtensions
                     result |= AllowedImageTypes.Webp;
                     break;
                 default:
-                    logger?.LogWarning("Unknown image type: {Type}", type);
+                    (Logger ?? logger)?.LogWarning("Unknown image type: {Type}", type);
                     break;
             }
         }

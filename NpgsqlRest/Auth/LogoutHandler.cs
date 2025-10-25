@@ -1,20 +1,13 @@
-﻿using System;
-using System.Net;
-using System.Security.Claims;
-using System.Text;
-using Microsoft.AspNetCore.Http.HttpResults;
-using Microsoft.AspNetCore.DataProtection;
-using Npgsql;
-using NpgsqlTypes;
+﻿using Npgsql;
 
 namespace NpgsqlRest.Auth;
 
 public static class LogoutHandler
 {
-    public static async Task HandleAsync(NpgsqlCommand command, RoutineEndpoint endpoint, HttpContext context, ILogger? logger)
+    public static async Task HandleAsync(NpgsqlCommand command, RoutineEndpoint endpoint, HttpContext context)
     {
         var path = string.Concat(endpoint.Method.ToString(), " ", endpoint.Path);
-        logger?.TraceCommand(command, path);
+        command.TraceCommand(path);
         
         if (endpoint.Routine.IsVoid)
         {

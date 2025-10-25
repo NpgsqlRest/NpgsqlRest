@@ -1,11 +1,9 @@
 ﻿using System.Text;
 using Npgsql;
-using static NpgsqlRest.PgConverters;
-using static NpgsqlRest.NpgsqlRestOptions;
 
 namespace NpgsqlRest.UploadHandlers.Handlers;
 
-public class FileSystemUploadHandler(ILogger? logger) : BaseUploadHandler, IUploadHandler
+public class FileSystemUploadHandler() : BaseUploadHandler, IUploadHandler
 {
     private string[]? _uploadedFiles = null;
 
@@ -77,7 +75,7 @@ public class FileSystemUploadHandler(ILogger? logger) : BaseUploadHandler, IUplo
                 else
                 {
                     checkImage = true;
-                    allowedImage = checkImageParamStr.ParseImageTypes(logger) ?? Options.UploadOptions.DefaultUploadHandlerOptions.AllowedImageTypes;
+                    allowedImage = checkImageParamStr.ParseImageTypes() ?? Options.UploadOptions.DefaultUploadHandlerOptions.AllowedImageTypes;
                 }
             }
             if (TryGetParam(parameters, FileCheckExtensions.TestBufferSizeParam, out var testBufferSizeStr) && int.TryParse(testBufferSizeStr, out var testBufferSizeParsed))
@@ -92,7 +90,7 @@ public class FileSystemUploadHandler(ILogger? logger) : BaseUploadHandler, IUplo
 
         if (Options.UploadOptions.LogUploadParameters is true)
         {
-            logger?.LogDebug("Upload for {_type}: includedMimeTypePatterns={includedMimeTypePatterns}, excludedMimeTypePatterns={excludedMimeTypePatterns}, bufferSize={bufferSize}, basePath={basePath}, useUniqueFileName={useUniqueFileName}, newFileName={newFileName}, createPathIfNotExists={createPathIfNotExists}, checkText={checkText}, checkImage={checkImage}, allowedImage={allowedImage}, testBufferSize={testBufferSize}, nonPrintableThreshold={nonPrintableThreshold}",
+            Logger?.LogDebug("Upload for {_type}: includedMimeTypePatterns={includedMimeTypePatterns}, excludedMimeTypePatterns={excludedMimeTypePatterns}, bufferSize={bufferSize}, basePath={basePath}, useUniqueFileName={useUniqueFileName}, newFileName={newFileName}, createPathIfNotExists={createPathIfNotExists}, checkText={checkText}, checkImage={checkImage}, allowedImage={allowedImage}, testBufferSize={testBufferSize}, nonPrintableThreshold={nonPrintableThreshold}",
                 Type, IncludedMimeTypePatterns, ExcludedMimeTypePatterns, BufferSize, basePath, useUniqueFileName, newFileName, createPathIfNotExists, checkText, checkImage, allowedImage, testBufferSize, nonPrintableThreshold);
         }
 
@@ -173,7 +171,7 @@ public class FileSystemUploadHandler(ILogger? logger) : BaseUploadHandler, IUplo
             result.Append('}');
             if (status != UploadFileStatus.Ok)
             {
-                logger?.FileUploadFailed(Type, formFile.FileName, formFile.ContentType, formFile.Length, status);
+                Logger?.FileUploadFailed(Type, formFile.FileName, formFile.ContentType, formFile.Length, status);
                 fileId++;
                 continue;
             }
@@ -197,7 +195,7 @@ public class FileSystemUploadHandler(ILogger? logger) : BaseUploadHandler, IUplo
 
             if (Options.UploadOptions.LogUploadEvent)
             {
-                logger?.UploadedFileToFileSystem(formFile.FileName, formFile.ContentType, formFile.Length, currentFilePath);
+                Logger?.UploadedFileToFileSystem(formFile.FileName, formFile.ContentType, formFile.Length, currentFilePath);
             }
             fileId++;
         }

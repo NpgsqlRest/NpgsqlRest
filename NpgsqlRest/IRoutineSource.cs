@@ -12,9 +12,8 @@ public interface IRoutineSource
     /// </summary>
     /// <param name="serviceProvider">Service provider</param>
     /// <param name="retryStrategy"></param>
-    /// <param name="logger"></param>
     /// <returns></returns>
-    IEnumerable<(Routine, IRoutineSourceParameterFormatter)> Read( IServiceProvider? serviceProvider, RetryStrategy? retryStrategy, ILogger? logger);
+    IEnumerable<(Routine, IRoutineSourceParameterFormatter)> Read( IServiceProvider? serviceProvider, RetryStrategy? retryStrategy);
 
     /// <summary>
     /// SQL Query that returns data source.

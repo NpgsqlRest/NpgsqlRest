@@ -1,12 +1,10 @@
 ﻿using System.Text;
 using Npgsql;
 using NpgsqlTypes;
-using static NpgsqlRest.PgConverters;
-using static NpgsqlRest.NpgsqlRestOptions;
 
 namespace NpgsqlRest.UploadHandlers.Handlers;
 
-public class LargeObjectUploadHandler(RetryStrategy? retryStrategy, ILogger? logger) : BaseUploadHandler, IUploadHandler
+public class LargeObjectUploadHandler(RetryStrategy? retryStrategy) : BaseUploadHandler, IUploadHandler
 {
     private const string OidParam = "oid";
     protected override IEnumerable<string> GetParameters()
@@ -52,7 +50,7 @@ public class LargeObjectUploadHandler(RetryStrategy? retryStrategy, ILogger? log
                 else
                 {
                     checkImage = true;
-                    allowedImage = checkImageParamStr.ParseImageTypes(logger) ?? Options.UploadOptions.DefaultUploadHandlerOptions.AllowedImageTypes;
+                    allowedImage = checkImageParamStr.ParseImageTypes() ?? Options.UploadOptions.DefaultUploadHandlerOptions.AllowedImageTypes;
                 }
             }
             if (TryGetParam(parameters, FileCheckExtensions.TestBufferSizeParam, out var testBufferSizeStr) && int.TryParse(testBufferSizeStr, out var testBufferSizeParsed))
@@ -67,7 +65,7 @@ public class LargeObjectUploadHandler(RetryStrategy? retryStrategy, ILogger? log
 
         if (Options.UploadOptions.LogUploadParameters is true)
         {
-            logger?.LogDebug("Upload for {_type}: includedMimeTypePatterns={includedMimeTypePatterns}, excludedMimeTypePatterns={excludedMimeTypePatterns}, bufferSize={bufferSize}, oid={oid}, checkText={checkText}, checkImage={checkImage}, allowedImage={allowedImage}, testBufferSize={testBufferSize}, nonPrintableThreshold={nonPrintableThreshold}", 
+            Logger?.LogDebug("Upload for {_type}: includedMimeTypePatterns={includedMimeTypePatterns}, excludedMimeTypePatterns={excludedMimeTypePatterns}, bufferSize={bufferSize}, oid={oid}, checkText={checkText}, checkImage={checkImage}, allowedImage={allowedImage}, testBufferSize={testBufferSize}, nonPrintableThreshold={nonPrintableThreshold}", 
                 Type, IncludedMimeTypePatterns, ExcludedMimeTypePatterns, BufferSize, oid, checkText, checkImage, allowedImage, testBufferSize, nonPrintableThreshold);
         }
 
@@ -127,7 +125,7 @@ public class LargeObjectUploadHandler(RetryStrategy? retryStrategy, ILogger? log
             result.Append(SerializeString(status.ToString()));
             if (status != UploadFileStatus.Ok)
             {
-                logger?.FileUploadFailed(Type, formFile.FileName, formFile.ContentType, formFile.Length, status);
+                Logger?.FileUploadFailed(Type, formFile.FileName, formFile.ContentType, formFile.Length, status);
                 result.Append(",\"oid\":null}");
                 fileId++;
                 continue;
@@ -139,7 +137,7 @@ public class LargeObjectUploadHandler(RetryStrategy? retryStrategy, ILogger? log
 
             result.Append(",\"oid\":");
             using var command = new NpgsqlCommand(oid is null ? "select lo_create(0)" : string.Concat("select lo_create(", oid.ToString(), ")"), connection);
-            var resultOid = await command.ExecuteScalarWithRetryAsync(retryStrategy, logger);
+            var resultOid = await command.ExecuteScalarWithRetryAsync(retryStrategy);
             
             result.Append(resultOid);
             result.Append('}');
@@ -158,12 +156,12 @@ public class LargeObjectUploadHandler(RetryStrategy? retryStrategy, ILogger? log
             {
                 command.Parameters[1].Value = offset;
                 command.Parameters[2].Value = buffer.Take(bytesRead).ToArray();
-                await command.ExecuteNonQueryWithRetryAsync(retryStrategy, logger);
+                await command.ExecuteNonQueryWithRetryAsync(retryStrategy);
                 offset += bytesRead;
             }
             if (Options.UploadOptions.LogUploadEvent)
             {
-                logger?.UploadedFileToLargeObject(formFile.FileName, formFile.ContentType, formFile.Length, resultOid);
+                Logger?.UploadedFileToLargeObject(formFile.FileName, formFile.ContentType, formFile.Length, resultOid);
             }
             fileId++;
         }

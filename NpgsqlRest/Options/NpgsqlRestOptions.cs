@@ -14,6 +14,11 @@ public class NpgsqlRestOptions
     /// Gets the current instance of NpgsqlRestOptions. This is set automatically by the UseNpgsqlRest middleware.
     /// </summary>
     public static NpgsqlRestOptions Options { get; internal set; } = null!;
+    
+    /// <summary>
+    /// Static Logger instance. This is set automatically by the UseNpgsqlRest middleware.
+    /// </summary>
+    public static ILogger? Logger { get; internal set; } = null!;
 
     /// <summary>
     /// Options for the NpgsqlRest middleware with default values.

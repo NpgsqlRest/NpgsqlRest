@@ -1,7 +1,6 @@
 ﻿using System.Text;
 using Npgsql;
 using NpgsqlTypes;
-using static NpgsqlRest.NpgsqlRestOptions;
 
 namespace NpgsqlRest;
 
@@ -34,13 +33,13 @@ public class RoutineSource(
     public string[]? IncludeLanguages { get; set; } = includeLanguages;
     public string[]? ExcludeLanguages { get; set; } = excludeLanguages;
 
-    public IEnumerable<(Routine, IRoutineSourceParameterFormatter)> Read(IServiceProvider? serviceProvider, RetryStrategy? retryStrategy, ILogger? logger)
+    public IEnumerable<(Routine, IRoutineSourceParameterFormatter)> Read(IServiceProvider? serviceProvider, RetryStrategy? retryStrategy)
     {
         bool shouldDispose = true;
         NpgsqlConnection? connection = null;
         try
         {
-            Options.CreateAndOpenSourceConnection(serviceProvider, logger, ref connection, ref shouldDispose);
+            Options.CreateAndOpenSourceConnection(serviceProvider, ref connection, ref shouldDispose);
 
             if (connection is null)
             {
@@ -69,8 +68,8 @@ public class RoutineSource(
             AddParameter(command, IncludeLanguages, true); // $9
             AddParameter(command, ExcludeLanguages is null ? ["c", "internal"] : ExcludeLanguages, true); // $10
 
-            logger.TraceCommand(command, nameof(RoutineSource));
-            using NpgsqlDataReader reader = command.ExecuteReaderWithRetry(retryStrategy, logger);
+            command.TraceCommand(nameof(RoutineSource));
+            using NpgsqlDataReader reader = command.ExecuteReaderWithRetry(retryStrategy);
             while (reader.Read())
             {
                 var type = reader.Get<string>(0);//"type");

@@ -1,13 +1,11 @@
 ﻿using System.Net;
 using System.Net.Http.Headers;
-using System.Security.Claims;
 using System.Text;
 using System.Text.Json.Nodes;
-using Microsoft.AspNetCore.Http.HttpResults;
 using Npgsql;
 using NpgsqlRest;
 using NpgsqlRest.Auth;
-using Serilog.Events;
+using static NpgsqlRest.NpgsqlRestOptions;
 using static System.Net.Mime.MediaTypeNames;
 
 namespace NpgsqlRestClient;
@@ -149,7 +147,6 @@ public class ExternalAuth
     public ExternalAuth(
         ExternalAuthConfig? externalAuthConfig, 
         string connectionString, 
-        ILogger? logger,
         WebApplication app, 
         NpgsqlRestOptions options, 
         RetryStrategy? retryStrategy,
@@ -201,7 +198,6 @@ public class ExternalAuth
                         options, 
                         connectionString,
                         retryStrategy,
-                        logger, 
                         externalAuthConfig, 
                         loggingMode);
                     return;
@@ -211,7 +207,7 @@ public class ExternalAuth
                     context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
                     await context.Response.WriteAsync(string.Format("Error talking to {0}", config.ExternalType));
                     await context.Response.CompleteAsync();
-                    logger?.LogError(e, "Failed to parse external provider response: {ExternalType}", config.ExternalType);
+                    Logger?.LogError(e, "Failed to parse external provider response: {ExternalType}", config.ExternalType);
                     return;
                 }
             }
@@ -242,7 +238,6 @@ public class ExternalAuth
         NpgsqlRestOptions options,
         string connectionString,
         RetryStrategy? retryStrategy,
-        ILogger? logger,
         ExternalAuthConfig externalAuthConfig,
         PostgresConnectionNoticeLoggingMode loggingMode)
     {
@@ -365,11 +360,11 @@ public class ExternalAuth
         {
             connection.Notice += (sender, args) =>
             {
-                NpgsqlRestLogger.LogConnectionNotice(logger, args.Notice, loggingMode);
+                NpgsqlRestLogger.LogConnectionNotice(args.Notice, loggingMode);
             };
         }
 
-        await connection.OpenRetryAsync(options.ConnectionRetryOptions, logger, context.RequestAborted);
+        await connection.OpenRetryAsync(options.ConnectionRetryOptions, context.RequestAborted);
 
         await using var command = connection.CreateCommand();
         command.CommandText = externalAuthConfig!.LoginCommand;
@@ -420,7 +415,6 @@ public class ExternalAuth
             command, 
             context, 
             retryStrategy,
-            logger, 
             tracePath: "ExternalAuth.ProcessAsync",
             performHashVerification: false, 
             assignUserPrincipalToContext: false);

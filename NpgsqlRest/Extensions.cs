@@ -2,7 +2,6 @@
 using System.Text;
 using Npgsql;
 using NpgsqlRest.Auth;
-using static NpgsqlRest.NpgsqlRestOptions;
 
 namespace NpgsqlRest;
 
@@ -10,7 +9,6 @@ public static class Ext
 {
     public static void CreateAndOpenSourceConnection(this NpgsqlRestOptions options,
         IServiceProvider? serviceProvider,
-        ILogger? logger,
         ref NpgsqlConnection? connection,
         ref bool shouldDispose)
     {
@@ -41,7 +39,7 @@ public static class Ext
                     connection = new NpgsqlConnection(connectionString);
                 }
                 shouldDispose = true;
-                logger?.LogDebug("Using named connection string '{name}' with schema '{schema}' for metadata queries.",
+                Logger?.LogDebug("Using named connection string '{name}' with schema '{schema}' for metadata queries.",
                     options.MetadataQueryConnectionName,
                     options.MetadataQuerySchema);
             }
@@ -49,11 +47,11 @@ public static class Ext
             {
                 connection = new NpgsqlConnection(connectionString);
                 shouldDispose = true;
-                logger?.LogDebug("Using named connection string '{name}' for metadata queries.",
+                Logger?.LogDebug("Using named connection string '{name}' for metadata queries.",
                     options.MetadataQueryConnectionName);
             }
             
-            connection.OpenRetry(Options.ConnectionRetryOptions, logger);
+            connection.OpenRetry(Options.ConnectionRetryOptions);
             return;
         }
 
@@ -74,12 +72,12 @@ public static class Ext
                 if (options.MetadataQuerySchema is not null && HasSearchPathInConnectionString(connection.ConnectionString, options.MetadataQuerySchema) is false)
                 {
                     SetSearchPath(connection, options.MetadataQuerySchema);
-                    logger?.LogDebug("Using NpgsqlDataSource from service provider with schema '{schema}' for metadata queries.",
+                    Logger?.LogDebug("Using NpgsqlDataSource from service provider with schema '{schema}' for metadata queries.",
                         options.MetadataQuerySchema);
                 }
                 else
                 {
-                    logger?.LogDebug("Using NpgsqlDataSource from service provider for metadata queries.");
+                    Logger?.LogDebug("Using NpgsqlDataSource from service provider for metadata queries.");
                 }
             }
             else if (options.ServiceProviderMode == ServiceProviderObject.NpgsqlConnection)
@@ -89,18 +87,18 @@ public static class Ext
 
                 if (connection.State != System.Data.ConnectionState.Open)
                 {
-                    connection.OpenRetry(Options.ConnectionRetryOptions, logger);
+                    connection.OpenRetry(Options.ConnectionRetryOptions);
                 }
 
                 if (options.MetadataQuerySchema is not null && HasSearchPathInConnectionString(connection.ConnectionString, options.MetadataQuerySchema) is false)
                 {
                     SetSearchPath(connection, options.MetadataQuerySchema);
-                    logger?.LogDebug("Using NpgsqlConnection from service provider with schema '{schema}' for metadata queries.",
+                    Logger?.LogDebug("Using NpgsqlConnection from service provider with schema '{schema}' for metadata queries.",
                         options.MetadataQuerySchema);
                 }
                 else
                 {
-                    logger?.LogDebug("Using NpgsqlConnection from service provider for metadata queries.");
+                    Logger?.LogDebug("Using NpgsqlConnection from service provider for metadata queries.");
                 }
             }
             return;
@@ -111,17 +109,17 @@ public static class Ext
         {
             connection = options.DataSource.CreateConnection();
             shouldDispose = true;
-            connection.OpenRetry(Options.ConnectionRetryOptions, logger);
+            connection.OpenRetry(Options.ConnectionRetryOptions);
 
             if (options.MetadataQuerySchema is not null && HasSearchPathInConnectionString(connection.ConnectionString, options.MetadataQuerySchema) is false)
             {
                 SetSearchPath(connection, options.MetadataQuerySchema);
-                logger?.LogDebug("Using DataSource with schema '{schema}' for metadata queries.",
+                Logger?.LogDebug("Using DataSource with schema '{schema}' for metadata queries.",
                     options.MetadataQuerySchema);
             }
             else
             {
-                logger?.LogDebug("Using DataSource for metadata queries.");
+                Logger?.LogDebug("Using DataSource for metadata queries.");
             }
             return;
         }
@@ -147,16 +145,16 @@ public static class Ext
                 connection = new NpgsqlConnection(options.ConnectionString);
             }
             shouldDispose = true;
-            connection.OpenRetry(Options.ConnectionRetryOptions, logger);
-            logger?.LogDebug("Using default connection string with schema '{schema}' for metadata queries.",
+            connection.OpenRetry(Options.ConnectionRetryOptions);
+            Logger?.LogDebug("Using default connection string with schema '{schema}' for metadata queries.",
                 options.MetadataQuerySchema);
         }
         else
         {
             connection = new NpgsqlConnection(options.ConnectionString);
             shouldDispose = true;
-            connection.OpenRetry(Options.ConnectionRetryOptions, logger);
-            logger?.LogDebug("Using default connection string for metadata queries.");
+            connection.OpenRetry(Options.ConnectionRetryOptions);
+            Logger?.LogDebug("Using default connection string for metadata queries.");
         }
     }
 
@@ -454,9 +452,9 @@ public static class Ext
         return null;
     }
     
-    public static void TraceCommand(this ILogger? logger, NpgsqlCommand command, string name)
+    public static void TraceCommand(this NpgsqlCommand command, string name)
     {
-        if (logger?.IsEnabled(LogLevel.Trace) is true && logger is not null)
+        if (Logger?.IsEnabled(LogLevel.Trace) is true && Logger is not null)
         {
             StringBuilder sb = new();
             for (int i = 0; i < command.Parameters.Count; i++)
@@ -469,7 +467,7 @@ public static class Ext
             }
 
             sb.Append(command.CommandText);
-            logger?.LogTrace("{name}:\n{query}", name, sb.ToString());
+            Logger?.LogTrace("{name}:\n{query}", name, sb.ToString());
         }
     }
 

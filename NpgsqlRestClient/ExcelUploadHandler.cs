@@ -5,6 +5,7 @@ using NpgsqlRest;
 using NpgsqlRest.UploadHandlers;
 using NpgsqlRest.UploadHandlers.Handlers;
 using NpgsqlTypes;
+using static NpgsqlRest.NpgsqlRestOptions;
 
 namespace NpgsqlRestClient;
 
@@ -24,8 +25,7 @@ public class ExcelUploadOptions
 
 public class ExcelUploadHandler(
     NpgsqlRestUploadOptions options, 
-    RetryStrategy? cmdRetryStrategy,
-    ILogger? logger) : BaseUploadHandler, IUploadHandler
+    RetryStrategy? cmdRetryStrategy) : BaseUploadHandler, IUploadHandler
 {
     private const string SheetNameParam = "sheet_name";
     private const string AllSheetsParam = "all_sheets";
@@ -99,7 +99,7 @@ public class ExcelUploadHandler(
 
         if (options.LogUploadParameters is true)
         {
-            logger?.LogDebug("Upload for Excel: includedMimeTypePatterns={includedMimeTypePatterns}, excludedMimeTypePatterns={excludedMimeTypePatterns}, targetSheetName={targetSheetName}, allSheets={allSheets}, timeFormat={timeFormat}, dateFormat={dateFormat}, dateTimeFormat={dateTimeFormat}, rowCommand={rowCommand}",
+            Logger?.LogDebug("Upload for Excel: includedMimeTypePatterns={includedMimeTypePatterns}, excludedMimeTypePatterns={excludedMimeTypePatterns}, targetSheetName={targetSheetName}, allSheets={allSheets}, timeFormat={timeFormat}, dateFormat={dateFormat}, dateTimeFormat={dateTimeFormat}, rowCommand={rowCommand}",
                 IncludedMimeTypePatterns, ExcludedMimeTypePatterns, targetSheetName, allSheets, _timeFormat, _dateFormat, _dateTimeFormat, rowCommand);
         }
 
@@ -160,7 +160,7 @@ public class ExcelUploadHandler(
                 fileJson.Append(",\"success\":false,\"status\":");
                 fileJson.Append(PgConverters.SerializeString(status.ToString()));
                 fileJson.Append('}');
-                logger?.FileUploadFailed(Type, formFile.FileName, formFile.ContentType, formFile.Length, status);
+                Logger?.FileUploadFailed(Type, formFile.FileName, formFile.ContentType, formFile.Length, status);
                 result.Append(fileJson);
                 if (i < context.Request.Form.Files.Count - 1) result.Append(',');
                 continue;
@@ -227,7 +227,7 @@ public class ExcelUploadHandler(
                             command.Parameters[3].Value = string.Concat(rowMeta, ",\"rowIndex\":", excelRowIndex, '}');
                         }
 
-                        commandResult = await command.ExecuteScalarWithRetryAsync(cmdRetryStrategy, logger);
+                        commandResult = await command.ExecuteScalarWithRetryAsync(cmdRetryStrategy);
                     }
 
                     var finalJson = string.Concat(rowMeta,
@@ -250,7 +250,7 @@ public class ExcelUploadHandler(
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "Error processing Excel file {fileName}", formFile.FileName);
+                Logger?.LogError(ex, "Error processing Excel file {fileName}", formFile.FileName);
                 fileJson.Append(",\"success\":false,\"status\":");
                 fileJson.Append(PgConverters.SerializeString(UploadFileStatus.InvalidFormat.ToString()));
                 fileJson.Append('}');

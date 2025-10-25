@@ -1,7 +1,6 @@
 ﻿using System.Text.Json.Nodes;
 using Microsoft.Extensions.Primitives;
 using Npgsql;
-using static NpgsqlRest.NpgsqlRestOptions;
 
 namespace NpgsqlRest;
 

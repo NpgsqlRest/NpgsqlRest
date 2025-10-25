@@ -1,5 +1,6 @@
 ﻿using System.Text;
 using Npgsql;
+using static NpgsqlRest.NpgsqlRestOptions;
 
 namespace NpgsqlRest.HttpFiles;
 
@@ -14,26 +15,9 @@ public class HttpFile(HttpFileOptions httpFileOptions) : IEndpointCreateHandler
     private bool _file = false;
 
     private IApplicationBuilder _builder = default!;
-    private ILogger? _logger;
-    
-    public void Setup(IApplicationBuilder builder, ILogger? logger, NpgsqlRestOptions options)
+
+    public void Setup(IApplicationBuilder builder, NpgsqlRestOptions options)
     {
-        if (builder is WebApplication app)
-        {
-            var factory = app.Services.GetRequiredService<ILoggerFactory>();
-            if (factory is not null)
-            {
-                _logger = factory.CreateLogger(options.LoggerName ?? typeof(HttpFile).Namespace ?? "NpgsqlRest.HttpFiles");
-            }
-            else
-            {
-                _logger = app.Logger;
-            }
-        }
-        else
-        {
-            _logger = logger;
-        }
         _builder = builder;
     }
 
@@ -200,7 +184,7 @@ public class HttpFile(HttpFileOptions httpFileOptions) : IEndpointCreateHandler
                     await context.Response.WriteAsync(content.ToString());
                 });
                 var host = GetHost();
-                _logger?.LogDebug("Exposed HTTP file content on URL: {host}{path}", host, path);
+                Logger?.LogDebug("Exposed HTTP file content on URL: {host}{path}", host, path);
             }
         }
 
@@ -219,7 +203,7 @@ public class HttpFile(HttpFileOptions httpFileOptions) : IEndpointCreateHandler
                     Directory.CreateDirectory(dir);
                 }
                 File.WriteAllText(fullFileName, content.ToString());
-                _logger?.LogDebug("Created HTTP file: {fileName}", fileName);
+                Logger?.LogDebug("Created HTTP file: {fileName}", fileName);
             }
         }
     }

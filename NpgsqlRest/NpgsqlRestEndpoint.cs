@@ -14,14 +14,12 @@ using NpgsqlRest.UploadHandlers.Handlers;
 using NpgsqlTypes;
 using static System.Net.Mime.MediaTypeNames;
 using static NpgsqlRest.ParameterParser;
-using static NpgsqlRest.NpgsqlRestOptions;
 
 namespace NpgsqlRest;
 
 public class NpgsqlRestEndpoint(
     NpgsqlRestMetadataEntry entry,
-    FrozenDictionary<string, NpgsqlRestMetadataEntry> overloads,
-    ILogger? logger)
+    FrozenDictionary<string, NpgsqlRestMetadataEntry> overloads)
 {
     public async Task InvokeAsync(HttpContext context, IServiceProvider serviceProvider, CancellationToken cancellationToken = default)
     {
@@ -94,7 +92,7 @@ public class NpgsqlRestEndpoint(
                 if (Options.ServiceProviderMode == ServiceProviderObject.NpgsqlDataSource)
                 {
                     connection = serviceProvider.GetRequiredService<NpgsqlDataSource>().CreateConnection();
-                    await connection.OpenRetryAsync(Options.ConnectionRetryOptions, logger, cancellationToken);
+                    await connection.OpenRetryAsync(Options.ConnectionRetryOptions, cancellationToken);
                 }
                 else if (Options.ServiceProviderMode == ServiceProviderObject.NpgsqlConnection)
                 {
@@ -120,14 +118,14 @@ public class NpgsqlRestEndpoint(
                 return;
             }
 
-            if ( (Options.LogConnectionNoticeEvents && logger != null) || endpoint.InfoEventsStreamingPath is not null)
+            if ( (Options.LogConnectionNoticeEvents && Logger != null) || endpoint.InfoEventsStreamingPath is not null)
             {
                 var currentEndpoint = endpoint;
                 connection.Notice += (sender, args) =>
                 {
-                    if (Options.LogConnectionNoticeEvents && logger != null)
+                    if (Options.LogConnectionNoticeEvents && Logger != null)
                     {
-                        NpgsqlRestLogger.LogConnectionNotice(logger, args.Notice, Options.LogConnectionNoticeEventsMode);
+                        NpgsqlRestLogger.LogConnectionNotice(args.Notice, Options.LogConnectionNoticeEventsMode);
                     }
                     if (args.Notice.IsInfo())
                     {
@@ -144,7 +142,7 @@ public class NpgsqlRestEndpoint(
                 {
                     await OpenConnectionAsync(connection, context, endpoint);
                 }
-                await BasicAuthHandler.HandleAsync(context, endpoint, connection, logger);
+                await BasicAuthHandler.HandleAsync(context, endpoint, connection);
                 if (context.Response.HasStarted is true)
                 {
                     return;
@@ -153,7 +151,7 @@ public class NpgsqlRestEndpoint(
             
             await using var command = NpgsqlRestCommand.Create(connection);
 
-            var shouldLog = Options.LogCommands && logger != null;
+            var shouldLog = Options.LogCommands && Logger != null;
             StringBuilder? cmdLog = shouldLog ?
                 new(string.Concat("-- ", context.Request.Method, " ", context.Request.GetDisplayUrl(), Environment.NewLine)) :
                 null;
@@ -171,7 +169,7 @@ public class NpgsqlRestEndpoint(
             string? body = null;
             Dictionary<string, StringValues>? queryDict = null;
             StringBuilder? cacheKeys = null;
-            uploadHandler = endpoint.Upload is true ? endpoint.CreateUploadHandler(logger) : null;
+            uploadHandler = endpoint.Upload is true ? endpoint.CreateUploadHandler() : null;
             int uploadMetaParamIndex = -1;
             Dictionary<string, object>? claimsDict = null;
             
@@ -203,7 +201,7 @@ public class NpgsqlRestEndpoint(
                     }
                     catch (JsonException e)
                     {
-                        logger?.CouldNotParseJson(body, context.Request.Path, e.Message);
+                        Logger?.CouldNotParseJson(body, context.Request.Path, e.Message);
                         node = null;
                     }
                     if (node is not null)
@@ -215,7 +213,7 @@ public class NpgsqlRestEndpoint(
                         }
                         catch (Exception e)
                         {
-                            logger?.CouldNotParseJson(body, context.Request.Path, e.Message);
+                            Logger?.CouldNotParseJson(body, context.Request.Path, e.Message);
                             bodyDict = null;
                         }
                     }
@@ -1086,7 +1084,7 @@ public class NpgsqlRestEndpoint(
                     {
                         Options.BeforeConnectionOpen(connection, endpoint, context);
                     }
-                    await connection.OpenRetryAsync(Options.ConnectionRetryOptions, logger, cancellationToken);
+                    await connection.OpenRetryAsync(Options.ConnectionRetryOptions, cancellationToken);
                 }
                 if (uploadHandler.RequiresTransaction is true)
                 {
@@ -1122,7 +1120,7 @@ public class NpgsqlRestEndpoint(
                     {
                         Options.BeforeConnectionOpen(connection, endpoint, context);
                     }
-                    await connection.OpenRetryAsync(Options.ConnectionRetryOptions, logger, cancellationToken);
+                    await connection.OpenRetryAsync(Options.ConnectionRetryOptions, cancellationToken);
                 }
                 await using var batch = NpgsqlRestBatch.Create(connection);
 
@@ -1175,7 +1173,7 @@ public class NpgsqlRestEndpoint(
                     cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(uploadMetadata));
                     batch.BatchCommands.Add(cmd);
                 }
-                await batch.ExecuteBatchWithRetryAsync(endpoint.RetryStrategy, logger, cancellationToken);
+                await batch.ExecuteBatchWithRetryAsync(endpoint.RetryStrategy, cancellationToken);
             }
             
             if (endpoint.Login is true)
@@ -1186,13 +1184,12 @@ public class NpgsqlRestEndpoint(
                 }
                 if (shouldLog)
                 {
-                    NpgsqlRestLogger.LogEndpoint(logger, endpoint, cmdLog?.ToString() ?? "", command.CommandText);
+                    NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", command.CommandText);
                 }
                 await LoginHandler.HandleAsync(
                     command,
                     context,
                     endpoint.RetryStrategy,
-                    logger,
                     tracePath: context.Request.Path.ToString(),
                     performHashVerification: true,
                     assignUserPrincipalToContext: false);
@@ -1212,9 +1209,9 @@ public class NpgsqlRestEndpoint(
                 }
                 if (shouldLog)
                 {
-                    NpgsqlRestLogger.LogEndpoint(logger, endpoint, cmdLog?.ToString() ?? "", command.CommandText);
+                    NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", command.CommandText);
                 }
-                await LogoutHandler.HandleAsync(command, endpoint, context, logger);
+                await LogoutHandler.HandleAsync(command, endpoint, context);
                 return;
             }
             
@@ -1226,9 +1223,9 @@ public class NpgsqlRestEndpoint(
                 }
                 if (shouldLog)
                 {
-                    NpgsqlRestLogger.LogEndpoint(logger, endpoint, cmdLog?.ToString() ?? "", command.CommandText);
+                    NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", command.CommandText);
                 }
-                await command.ExecuteNonQueryWithRetryAsync(endpoint.RetryStrategy, logger, cancellationToken);
+                await command.ExecuteNonQueryWithRetryAsync(endpoint.RetryStrategy, cancellationToken);
                 context.Response.StatusCode = (int)HttpStatusCode.NoContent;
                 return;
             }
@@ -1251,11 +1248,10 @@ public class NpgsqlRestEndpoint(
                             await using var reader = await command.ExecuteReaderWithRetryAsync(
                                 CommandBehavior.SequentialAccess,
                                 endpoint.RetryStrategy,
-                                logger,
                                 cancellationToken);
                             if (shouldLog)
                             {
-                                NpgsqlRestLogger.LogEndpoint(logger, endpoint, cmdLog?.ToString() ?? "", command.CommandText);
+                                NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", command.CommandText);
                             }
                             if (await reader.ReadAsync())
                             {
@@ -1264,7 +1260,7 @@ public class NpgsqlRestEndpoint(
                             }
                             else
                             {
-                                logger?.CouldNotReadCommand(command.CommandText, context.Request.Method, context.Request.Path);
+                                Logger?.CouldNotReadCommand(command.CommandText, context.Request.Method, context.Request.Path);
                                 context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
                                 return;
                             }
@@ -1274,7 +1270,7 @@ public class NpgsqlRestEndpoint(
                             if (shouldLog)
                             {
                                 cmdLog?.AppendLine("/* from cache */");
-                                NpgsqlRestLogger.LogEndpoint(logger, endpoint, cmdLog?.ToString() ?? "", commandText);
+                                NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", commandText);
                             }
                         }
                     }
@@ -1287,11 +1283,10 @@ public class NpgsqlRestEndpoint(
                         await using var reader = await command.ExecuteReaderWithRetryAsync(
                             CommandBehavior.SequentialAccess,
                             endpoint.RetryStrategy,
-                            logger,
                             cancellationToken);
                         if (shouldLog)
                         {
-                            NpgsqlRestLogger.LogEndpoint(logger, endpoint, cmdLog?.ToString() ?? "", command.CommandText);
+                            NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", command.CommandText);
                         }
                         if (await reader.ReadAsync())
                         {
@@ -1299,7 +1294,7 @@ public class NpgsqlRestEndpoint(
                         }
                         else
                         {
-                            logger?.CouldNotReadCommand(command.CommandText, context.Request.Method, context.Request.Path);
+                            Logger?.CouldNotReadCommand(command.CommandText, context.Request.Method, context.Request.Path);
                             context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
                             return;
                         }
@@ -1375,11 +1370,10 @@ public class NpgsqlRestEndpoint(
                     await using var reader = await command.ExecuteReaderWithRetryAsync(
                         CommandBehavior.SequentialAccess,
                         endpoint.RetryStrategy,
-                        logger,
                         cancellationToken);
                     if (shouldLog)
                     {
-                        NpgsqlRestLogger.LogEndpoint(logger, endpoint, cmdLog?.ToString() ?? "", command.CommandText);
+                        NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", command.CommandText);
                     }
                     if (context.Response.ContentType is null)
                     {
@@ -1634,7 +1628,7 @@ public class NpgsqlRestEndpoint(
 
             if (context.Response.StatusCode != 200 && context.Response.StatusCode != 205 && context.Response.StatusCode != 400)
             {
-                logger?.LogError(exception, "Error executing command: {commandText} mapped to endpoint: {Url}", commandText, endpoint.Path);
+                Logger?.LogError(exception, "Error executing command: {commandText} mapped to endpoint: {Url}", commandText, endpoint.Path);
             }
         }
         finally
@@ -1708,7 +1702,7 @@ public class NpgsqlRestEndpoint(
             {
                 Options.BeforeConnectionOpen(connection, endpoint, context);
             }
-            await connection.OpenRetryAsync(Options.ConnectionRetryOptions, logger, context.RequestAborted);
+            await connection.OpenRetryAsync(Options.ConnectionRetryOptions, context.RequestAborted);
         }
     }
 
@@ -1757,7 +1751,7 @@ public class NpgsqlRestEndpoint(
     {
         if (log)
         {
-            logger?.LogError("{message}", message);
+            Logger?.LogError("{message}", message);
         }
         context.Response.StatusCode = statusCode;
         context.Response.ContentType = Text.Plain;
