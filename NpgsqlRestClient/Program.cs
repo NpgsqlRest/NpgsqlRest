@@ -114,8 +114,8 @@ if (cmdRetryOpts.Enabled && string.IsNullOrEmpty(cmdRetryOpts.DefaultStrategy))
 
 builder.BuildInstance();
 builder.Instance.Services.AddRouting();
-
 builder.BuildLogger(cmdRetryStrategy);
+var errorHandlingOptions = builder.BuildErrorHandlingOptions();
 var (rateLimiterDefaultPolicy, rateLimiterEnabled) = builder.BuildRateLimiter();
 
 var (connectionString, retryOpts) = builder.BuildConnectionString();
@@ -204,7 +204,7 @@ NpgsqlRestOptions options = new()
     ConnectionStrings = connectionStrings,
     ConnectionRetryOptions = retryOpts,
     MetadataQueryConnectionName = config.GetConfigStr("MetadataQueryConnectionName", config.ConnectionSettingsCfg),
-    MetadataQuerySchema = config.GetConfigStr("MetadataQuerySchema", config.ConnectionSettingsCfg),
+    MetadataQuerySchema = config.GetConfigStr("MetadataQuerySchema", config.ConnectionSettingsCfg) ?? "public",
     SchemaSimilarTo = config.GetConfigStr("SchemaSimilarTo", config.NpgsqlRestCfg),
     SchemaNotSimilarTo = config.GetConfigStr("SchemaNotSimilarTo", config.NpgsqlRestCfg),
     IncludeSchemas = config.GetConfigEnumerable("IncludeSchemas", config.NpgsqlRestCfg)?.ToArray(),
@@ -236,8 +236,7 @@ NpgsqlRestOptions options = new()
 
     EndpointCreated = appInstance.CreateEndpointCreatedHandler(authCfg),
     ValidateParameters = null,
-    ReturnNpgsqlExceptionMessage = config.GetConfigBool("ReturnNpgsqlExceptionMessage", config.NpgsqlRestCfg, true),
-    PostgreSqlErrorCodeToHttpStatusCodeMapping = appInstance.CreatePostgreSqlErrorCodeToHttpStatusCodeMapping(),
+    ErrorHandlingOptions = errorHandlingOptions,
     BeforeConnectionOpen = appInstance.BeforeConnectionOpen(connectionString, authenticationOptions),
     AuthenticationOptions = authenticationOptions,
     EndpointCreateHandlers = appInstance.CreateCodeGenHandlers(connectionString),

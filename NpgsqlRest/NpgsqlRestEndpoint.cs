@@ -1225,7 +1225,10 @@ public class NpgsqlRestEndpoint(
                 {
                     NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", command.CommandText);
                 }
-                await command.ExecuteNonQueryWithRetryAsync(endpoint.RetryStrategy, cancellationToken);
+                await command.ExecuteNonQueryWithRetryAsync(
+                    endpoint.RetryStrategy, 
+                    cancellationToken, 
+                    errorCodePolicy: endpoint.ErrorCodePolicy ?? Options.ErrorHandlingOptions.DefaultErrorCodePolicy);
                 context.Response.StatusCode = (int)HttpStatusCode.NoContent;
                 return;
             }
@@ -1248,7 +1251,8 @@ public class NpgsqlRestEndpoint(
                             await using var reader = await command.ExecuteReaderWithRetryAsync(
                                 CommandBehavior.SequentialAccess,
                                 endpoint.RetryStrategy,
-                                cancellationToken);
+                                cancellationToken,
+                                errorCodePolicy: endpoint.ErrorCodePolicy ?? Options.ErrorHandlingOptions.DefaultErrorCodePolicy);
                             if (shouldLog)
                             {
                                 NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", command.CommandText);
@@ -1283,7 +1287,8 @@ public class NpgsqlRestEndpoint(
                         await using var reader = await command.ExecuteReaderWithRetryAsync(
                             CommandBehavior.SequentialAccess,
                             endpoint.RetryStrategy,
-                            cancellationToken);
+                            cancellationToken,
+                            errorCodePolicy: endpoint.ErrorCodePolicy ?? Options.ErrorHandlingOptions.DefaultErrorCodePolicy);
                         if (shouldLog)
                         {
                             NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", command.CommandText);
@@ -1353,7 +1358,7 @@ public class NpgsqlRestEndpoint(
                         else
                         {
                             var span = (descriptor.IsArray && valueResult is not null) ?
-                                PgConverters.PgArrayToJsonArray((valueResult as string).AsSpan(), descriptor) : (valueResult as string).AsSpan();
+                                PgArrayToJsonArray((valueResult as string).AsSpan(), descriptor) : (valueResult as string).AsSpan();
                             writer.Advance(Encoding.UTF8.GetBytes(span, writer.GetSpan(Encoding.UTF8.GetMaxByteCount(span.Length))));
                         }
                     }
@@ -1370,7 +1375,8 @@ public class NpgsqlRestEndpoint(
                     await using var reader = await command.ExecuteReaderWithRetryAsync(
                         CommandBehavior.SequentialAccess,
                         endpoint.RetryStrategy,
-                        cancellationToken);
+                        cancellationToken,
+                        errorCodePolicy: endpoint.ErrorCodePolicy ?? Options.ErrorHandlingOptions.DefaultErrorCodePolicy);
                     if (shouldLog)
                     {
                         NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", command.CommandText);
@@ -1407,7 +1413,7 @@ public class NpgsqlRestEndpoint(
                             {
                                 columns.Append(endpoint.RawValueSeparator);
                             }
-                            columns.Append(PgConverters.QuoteText(reader.GetName(i).AsSpan()));
+                            columns.Append(QuoteText(reader.GetName(i).AsSpan()));
                         }
                         if (endpoint.RawNewLineSeparator is not null)
                         {
@@ -1460,7 +1466,7 @@ public class NpgsqlRestEndpoint(
                                         var descriptor = routine.ColumnsTypeDescriptor[i];
                                         if (descriptor.IsText || descriptor.IsDate || descriptor.IsDateTime)
                                         {
-                                            row.Append(PgConverters.QuoteText(raw));
+                                            row.Append(QuoteText(raw));
                                         }
                                         else
                                         {
@@ -1496,7 +1502,7 @@ public class NpgsqlRestEndpoint(
                                     }
                                     else if (descriptor.IsArray && value is not null)
                                     {
-                                        row.Append(PgConverters.PgArrayToJsonArray(raw, descriptor));
+                                        row.Append(PgArrayToJsonArray(raw, descriptor));
                                     }
                                     else if ((descriptor.IsNumeric || descriptor.IsBoolean || descriptor.IsJson) && value is not null)
                                     {
@@ -1525,21 +1531,21 @@ public class NpgsqlRestEndpoint(
                                     {
                                         if (descriptor.ActualDbType == NpgsqlDbType.Unknown)
                                         {
-                                            row.Append(PgConverters.PgUnknownToJsonArray(ref raw));
+                                            row.Append(PgUnknownToJsonArray(ref raw));
                                         }
                                         else if (descriptor.NeedsEscape)
                                         {
-                                            row.Append(PgConverters.SerializeString(ref raw));
+                                            row.Append(SerializeString(ref raw));
                                         }
                                         else
                                         {
                                             if (descriptor.IsDateTime)
                                             {
-                                                row.Append(PgConverters.QuoteDateTime(ref raw));
+                                                row.Append(QuoteDateTime(ref raw));
                                             }
                                             else
                                             {
-                                                row.Append(PgConverters.Quote(ref raw));
+                                                row.Append(Quote(ref raw));
                                             }
                                         }
                                     }
@@ -1585,40 +1591,50 @@ public class NpgsqlRestEndpoint(
         }
         catch (Exception exception)
         {
-            if (exception is NpgsqlException npgsqlEx)
+            if (exception is NpgsqlToHttpException npgsqlToHttpException)
             {
-                string? sqlState = npgsqlEx.SqlState;
-
-                if (Options.PostgreSqlErrorCodeToHttpStatusCodeMapping.TryGetValue(sqlState ?? "", out var code))
+                if (context.Response.HasStarted is false)
                 {
-                    context.Response.StatusCode = code;
+                    await Results.Problem(
+                        type: npgsqlToHttpException.Mapping.Type,
+                        statusCode: npgsqlToHttpException.Mapping.StatusCode,
+                        title: npgsqlToHttpException.Mapping.Title ?? exception.Message,
+                        detail: npgsqlToHttpException.SqlState).ExecuteAsync(context);
                 }
-                if (Options.ReturnNpgsqlExceptionMessage && context.Response.HasStarted is false)
+                else
                 {
-                    if (context.Response.StatusCode == 200)
-                    {
-                        context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
-                    }
-                    if (context.Response.StatusCode != 205) // 205 forbids writing
-                    {
-                        ReadOnlySpan<char> msg;
-                        if (context.Response.StatusCode == 400)
-                        {
-                            msg = exception.Message.Replace(string.Concat(sqlState, ": "), "").AsSpan();
-                        }
-                        else
-                        {
-                            msg = exception.Message.AsSpan();
-                        }
-                        writer.Advance(Encoding.UTF8.GetBytes(msg, writer.GetSpan(Encoding.UTF8.GetMaxByteCount(msg.Length))));
-                    }
+                    context.Response.StatusCode = npgsqlToHttpException.Mapping.StatusCode;
+                }
+            }
+            else if (exception is NpgsqlException npgsqlEx)
+            {
+                if (context.Response.HasStarted is false)
+                {
+                    await Results.Problem(
+                        type: null,
+                        statusCode: 500,
+                        title: npgsqlEx.Message,
+                        detail: npgsqlEx.SqlState).ExecuteAsync(context);
+                }
+                else
+                {
+                    context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
                 }
             }
             else
             {
-                context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
-                var msg = string.Format("Error in while processing NpgsqlRest request. Please check error logs for more details. Here is what we know: {0}", exception.Message);
-                writer.Advance(Encoding.UTF8.GetBytes(msg, writer.GetSpan(Encoding.UTF8.GetMaxByteCount(msg.Length))));
+                if (context.Response.HasStarted is false)
+                {
+                    await Results.Problem(
+                        type: null, // remove RFC URL
+                        statusCode: 500,
+                        title: "Internal Server Error",
+                        detail: exception.Message).ExecuteAsync(context);
+                }
+                else
+                {
+                    context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
+                }
             }
 
             if (endpoint.Upload is true)
@@ -1726,9 +1742,9 @@ public class NpgsqlRestEndpoint(
             {
                 sb.Append(',');
             }
-            sb.Append(PgConverters.SerializeString(header.Key));
+            sb.Append(SerializeString(header.Key));
             sb.Append(':');
-            sb.Append(PgConverters.SerializeString(header.Value.ToString()));
+            sb.Append(SerializeString(header.Value.ToString()));
         }
         sb.Append('}');
         headers = sb.ToString();

@@ -18,7 +18,7 @@ public static partial class Database
         select current_user;
         $$;
         
-        comment on function get_rate_limited1() is 'rate max 2 per second';
+        comment on function get_rate_limited1() is 'rate_limiter max 2 per second';
 """);
     }
 }

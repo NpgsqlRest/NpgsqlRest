@@ -241,4 +241,7 @@ public static partial class Log
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "Endpoint {urlInfo} enabled rate limiter policy: {policyName}")]
     public static partial void EndpointEnabledRateLimiterPolicy(this ILogger logger, string urlInfo, string policyName);
+    
+    [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has set ERROR CODE POLICY NAME to {name} by the comment annotation.")]
+    public static partial void ErrorCodePolicySet(this ILogger logger, string description, string name);
 }

@@ -89,6 +89,18 @@ public class Program
             .AddAuthentication()
             //.AddBearerToken();
             .AddCookie();
+        
+        builder.Services.AddProblemDetails(options =>
+        {
+            options.CustomizeProblemDetails = ctx =>
+            {
+                // Remove the type field completely
+                ctx.ProblemDetails.Type = null;
+                
+                // Remove the traceId extension
+                ctx.ProblemDetails.Extensions.Remove("traceId");
+            };
+        });
 
         var app = builder.Build();
         app.UseRateLimiter();
@@ -120,6 +132,13 @@ public class Program
                 new Claim(authOptions.DefaultRoleClaimType, "role3"),
             },
             authenticationType: CookieAuthenticationDefaults.AuthenticationScheme))));
+
+
+        var errorHandlingOptions = new ErrorHandlingOptions();
+        errorHandlingOptions.ErrorCodePolicies.Add("test_err_policy", new Dictionary<string, ErrorCodeMappingOptions>()
+        {
+            ["22012"] = new() { StatusCode = 409, Title = "Conflict - Custom Policy" }
+        });
 
         app.UseNpgsqlRest(new(connectionString)
         {
@@ -193,6 +212,9 @@ public class Program
                 UseDefaultUploadMetadataContextKey = true,
                 //DefaultUploadMetadataContextKey = "request.upload_metadata",
             },
+            
+            ErrorHandlingOptions = errorHandlingOptions
+            
         });
         app.Run();
     }

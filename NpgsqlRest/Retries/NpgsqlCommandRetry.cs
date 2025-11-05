@@ -1,6 +1,5 @@
 ﻿using System.Data;
 using System.Net.Sockets;
-using System.Linq;
 using System.Text;
 using Npgsql;
 
@@ -59,7 +58,8 @@ public static class NpgsqlRetryExtensions
         this NpgsqlCommand command, 
         RetryStrategy? strategy,
         CancellationToken cancellationToken = default,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        string? errorCodePolicy = null)
     {
         if (strategy == null || strategy.RetrySequenceSeconds.Length == 0)
         {
@@ -75,6 +75,10 @@ public static class NpgsqlRetryExtensions
             {
                 await command.ExecuteNonQueryAsync(cancellationToken);
                 return;
+            }
+            catch (PostgresException ex) when (errorCodePolicy is not null && errorCodePolicy.TryGetErrorCodeMapping(ex.SqlState, out var statusCodeMapping))
+            {
+                throw new NpgsqlToHttpException(statusCodeMapping, ex);
             }
             catch (Exception ex) when (ShouldRetryOn(ex, strategy) && !cancellationToken.IsCancellationRequested)
             {
@@ -212,7 +216,8 @@ public static class NpgsqlRetryExtensions
         CommandBehavior behavior, 
         RetryStrategy? strategy, 
         CancellationToken cancellationToken = default,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        string? errorCodePolicy = null)
     {
         if (strategy == null || strategy.RetrySequenceSeconds.Length == 0)
         {
@@ -228,6 +233,10 @@ public static class NpgsqlRetryExtensions
             try
             {
                 return await command.ExecuteReaderAsync(behavior, cancellationToken);
+            }
+            catch (PostgresException ex) when (errorCodePolicy is not null && errorCodePolicy.TryGetErrorCodeMapping(ex.SqlState, out var statusCodeMapping))
+            {
+                throw new NpgsqlToHttpException(statusCodeMapping, ex);
             }
             catch (Exception ex) when (ShouldRetryOn(ex, strategy) && !cancellationToken.IsCancellationRequested)
             {

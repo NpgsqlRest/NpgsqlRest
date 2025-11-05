@@ -92,4 +92,5 @@ public class RoutineEndpoint(
     public Auth.EndpointBasicAuthOptions? BasicAuth { get; set; } = null;
     public RetryStrategy? RetryStrategy { get; set; } = null;
     public string? RateLimiterPolicy { get; set; } = null;
+    public string? ErrorCodePolicy { get; set; } = null;
 }

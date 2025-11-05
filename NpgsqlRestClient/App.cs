@@ -236,39 +236,7 @@ public class App
             }
         };
     }
-
-    public Dictionary<string, int> CreatePostgreSqlErrorCodeToHttpStatusCodeMapping()
-    {
-        if (_config.Exists(_config.NpgsqlRestCfg) is false)
-        {
-            return new()
-            {
-                { "57014", 205 }, //query_canceled -> 205 Reset Content
-                { "P0001", 400 }, // raise_exception -> 400 Bad Request
-                { "P0004", 400 }, // assert_failure -> 400 Bad Request
-            };
-        }
-        var config = _config.NpgsqlRestCfg.GetSection("PostgreSqlErrorCodeToHttpStatusCodeMapping");
-        if (config.Exists() is false)
-        {
-            return new()
-            {
-                { "57014", 205 }, //query_canceled -> 205 Reset Content
-                { "P0001", 400 }, // raise_exception -> 400 Bad Request
-                { "P0004", 400 }, // assert_failure -> 400 Bad Request
-            };
-        }
-        var result = new Dictionary<string, int>();
-        foreach (var section in config.GetChildren())
-        {
-            if (int.TryParse(section.Value, out var value))
-            {
-                result.TryAdd(section.Key, value);
-            }
-        }
-        return result;
-    }
-
+    
     public Action<NpgsqlConnection, RoutineEndpoint, HttpContext>? BeforeConnectionOpen(string connectionString, NpgsqlRestAuthenticationOptions options)
     {
         if (_config.UseConnectionApplicationNameWithUsername is false)

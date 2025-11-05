@@ -204,7 +204,12 @@ internal static class DefaultCommentParser
         "rate_limiter_policy_name",
         "rate_limiter_policy",
         "rate_limiter",
-        "rate",
+    ];
+    
+    private static readonly string[] ErrorCodePolicyKey = [
+        "error_code_policy_name",
+        "error_code_policy",
+        "error_code",
     ];
 
     public static RoutineEndpoint? Parse(
@@ -1170,11 +1175,19 @@ internal static class DefaultCommentParser
                 // rate_limiter_policy_name [ name ]
                 // rate_limiter_policy [ name ]
                 // rate_limiter [ name ]
-                // rate [ name ]
                 else if (haveTag is true && len >= 2 && StrEqualsToArray(wordsLower[0], RateLimiterPolicyKey))
                 {
                     routineEndpoint.RateLimiterPolicy = string.Join(Consts.Space, words[1..]);
                     Logger?.RateLimiterPolicySet(description, routineEndpoint.RateLimiterPolicy);
+                }
+                
+                // error_code_policy_name [ name ]
+                // error_code_policy [ name ]
+                // error_code [ name ]
+                else if (haveTag is true && len >= 2 && StrEqualsToArray(wordsLower[0], ErrorCodePolicyKey))
+                {
+                    routineEndpoint.ErrorCodePolicy = string.Join(Consts.Space, words[1..]);
+                    Logger?.ErrorCodePolicySet(description, routineEndpoint.ErrorCodePolicy);
                 }
             }
             if (disabled)
@@ -1339,7 +1352,12 @@ internal static class DefaultCommentParser
         {
             endpoint.RateLimiterPolicy = value;
         }
-
+        
+        else if (StrEqualsToArray(name, ErrorCodePolicyKey))
+        {
+            endpoint.ErrorCodePolicy = value;
+        }
+        
         else
         {
             if (endpoint.CustomParameters is null)

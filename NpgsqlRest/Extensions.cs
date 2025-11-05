@@ -483,4 +483,23 @@ public static class Ext
         }
         return false;
     }
+    
+    public static bool TryGetErrorCodeMapping(this string policyName, string sqlState, out ErrorCodeMappingOptions mappingOptions)
+    {
+        mappingOptions = default!;
+        if (Options==null! || Options.ErrorHandlingOptions==null!)
+        {
+            return false;
+        }
+        if (!Options.ErrorHandlingOptions.ErrorCodePolicies.TryGetValue(policyName, out var policyMappings))
+        {
+            return false;
+        }
+        if (policyMappings.TryGetValue(sqlState, out var mapping))
+        {
+            mappingOptions = mapping;
+            return true;
+        }
+        return false;
+    }
 }

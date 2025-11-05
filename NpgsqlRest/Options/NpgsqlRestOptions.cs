@@ -75,7 +75,7 @@ public class NpgsqlRestOptions
     /// <summary>
     /// Set the search path to this schema that contains the metadata query function. Default is `public`.
     /// </summary>
-    public string? MetadataQuerySchema { get; set; } = null;
+    public string? MetadataQuerySchema { get; set; } = "public";
 
     /// <summary>
     /// Retry options for the connection opening.
@@ -294,23 +294,12 @@ public class NpgsqlRestOptions
     /// Default Authentication Options
     /// </summary>
     public NpgsqlRestAuthenticationOptions AuthenticationOptions { get; set; } = new();
-
-    /// <summary>
-    /// Set to true to return message from NpgsqlException on response body. Default is true.
-    /// </summary>
-    public bool ReturnNpgsqlExceptionMessage { get; set; } = true;
-
+    
     /// <summary>
     /// Map PostgreSql Error Codes (see https://www.postgresql.org/docs/current/errcodes-appendix.html) to HTTP Status Codes
-    /// Default is 57014 query_canceled to 205 Reset Content.
     /// </summary>
-    public Dictionary<string, int> PostgreSqlErrorCodeToHttpStatusCodeMapping { get; set; } = new()
-    {
-        { "57014", 205 }, //query_canceled -> 205 Reset Content
-        { "P0001", 400 }, // raise_exception -> 400 Bad Request
-        { "P0004", 400 }, // assert_failure -> 400 Bad Request
-    };
-
+    public ErrorHandlingOptions ErrorHandlingOptions { get; set; } = new();
+    
     /// <summary>
     /// Callback executed immediately before connection is opened. Use this callback to adjust connection settings such as application name.
     /// </summary>

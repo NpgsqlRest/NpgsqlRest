@@ -282,6 +282,85 @@ public class Builder
         }
     }
 
+    public ErrorHandlingOptions BuildErrorHandlingOptions()
+    {
+        var errConfig = _config.Cfg.GetSection("ErrorHandling");
+        if (errConfig.Exists() is false)
+        {
+            return new();
+        }
+        
+        var removeTypeUrl = _config.GetConfigBool("RemoveTypeUrl", errConfig);
+        var removeTraceId = _config.GetConfigBool("RemoveTraceId", errConfig);
+        if (removeTypeUrl is true || removeTraceId is true)
+        {
+            Instance.Services.AddProblemDetails(options =>
+            {
+                options.CustomizeProblemDetails = ctx =>
+                {
+                    // Remove the type field completely
+                    if (removeTypeUrl is true)
+                    {
+                        ctx.ProblemDetails.Type = null;
+                    }
+
+                    // Remove the traceId extension
+                    if (removeTraceId is true)
+                    {
+                        ctx.ProblemDetails.Extensions.Remove("traceId");
+                    }
+                };
+            });
+        }
+
+        var result = new ErrorHandlingOptions();
+        result.DefaultErrorCodePolicy = _config.GetConfigStr("DefaultErrorCodePolicy", errConfig);
+        result.ErrorCodePolicies = new Dictionary<string, Dictionary<string, ErrorCodeMappingOptions>>();
+        
+        var policiesCfg = errConfig.GetSection("ErrorCodePolicies");
+        
+        foreach (var policySection in policiesCfg.GetChildren())
+        {
+            var policy = _config.GetConfigStr("Name", policySection); 
+            if (string.IsNullOrEmpty(policy))
+            {
+                continue;
+            }
+            
+            var mappingCfg = policySection.GetSection("ErrorCodes");
+            var mappingDict = new Dictionary<string, ErrorCodeMappingOptions>();
+            foreach (var mappingSection in mappingCfg.GetChildren())
+            {
+                var errorCode = mappingSection.Key;
+                if (string.IsNullOrEmpty(errorCode))
+                {
+                    continue;
+                }
+                var statusCode = _config.GetConfigInt("StatusCode", mappingSection);
+                if (statusCode is null)
+                {
+                    continue;
+                }
+                mappingDict.TryAdd(errorCode, new()
+                {
+                    StatusCode = statusCode.Value,
+                    Title = _config.GetConfigStr("Title", mappingSection),
+                    Details = _config.GetConfigStr("Details", mappingSection),
+                    Type = _config.GetConfigStr("Type", mappingSection),
+                });
+            }
+            if (mappingDict.Any())
+            {
+                result.ErrorCodePolicies.TryAdd(policy, mappingDict);
+                if (Logger is not null)
+                {
+                    Logger?.LogDebug("Created Error Code Policy {policy} with mapping: {result}", policy, mappingDict);
+                }
+            }
+        }
+        return result;
+    }
+    
     public enum DataProtectionStorage
     {
         Default,
