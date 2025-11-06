@@ -110,7 +110,8 @@ public class RoutineSource(
                         var customName = customRecTypeNames[i];
                         if (customName is not null)
                         {
-                            expNames[i] = string.Concat("(", returnRecordNames[i], "::", returnRecordTypes[i], ").", customName);
+                            //expNames[i] = string.Concat("(", returnRecordNames[i], "::", returnRecordTypes[i], ").", customName);
+                            expNames[i] = string.Concat("(", returnRecordNames[i], ").", customName);
                             convertedRecordNames[i] = Options.NameConverter(customName) ?? customName;
                             returnRecordTypes[i] = customRecTypeTypes[i] ?? returnRecordTypes[i];
                         }

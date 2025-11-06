@@ -6,6 +6,8 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 TODOs:
 
+- TODO add JIT version of Docker
+
 - TODO rename info_* annotations to streaming_* or SSE_* or events_*
 /*
 private static readonly string[] InfoEventsStreamingPathKey = [
@@ -29,7 +31,7 @@ private static readonly string[] InfoEventsStreamingScopeKey = [
 
 - TODO request timeout policies: https://learn.microsoft.com/en-us/aspnet/core/performance/timeouts?view=aspnetcore-9.0
 
-- TODO OpenAPI JSON automatic generation (just for the client)
+- DOING OpenAPI JSON automatic generation (just for the client)
 /*
 {
 "openapi": "3.0.1",
@@ -52,15 +54,6 @@ private static readonly string[] InfoEventsStreamingScopeKey = [
 }
 }
 */
-
-DOING:
-
-Generated query that selects type like this:
-select (response::mathmodule.math_expressions_response).math_id,(response::mathmodule.math_expressions_response).expr,(response::mathmodule.math_expressions_response).description,(response::mathmodule.math_expressions_response).created_by_name,(response::mathmodule.math_expressions_response).modified_by_name,(response::mathmodule.math_expressions_response).created_by_id,(response::mathmodule.math_expressions_response).modified_by_id,(response::mathmodule.math_expressions_response).created_at,(response::mathmodule.math_expressions_response).updated_at,count from mathmodule.search_math_expressions(_search=>$1,_only_my=>$2,_limit=>$3,_offset=>$4,_user_id=>$5)
-
-Doesn't actually need to include the typecast everywhere:
-select (response).math_id,(response).expr,(response).description,(response).created_by_name,(response).modified_by_name,(response).created_by_id,(response).modified_by_id,(response).created_at,(response).updated_at,count from mathmodule.search_math_expressions(_search=>$1,_only_my=>$2,_limit=>$3,_offset=>$4,_user_id=>$5)
-
 
 ## Version [3.0.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.0.0) (date is TBD)
 
@@ -356,6 +349,7 @@ rate_limiter [ name ]
 - Refactoring: static Logger instead of passing Logger parameter around.
 - NpgsqlRest core project library has set InternalsVisibleTo to NpgsqlRestTests for testability for tests using Options or Logger. 
 - Refactoring: moved some files around to better structure the project.
+- Removed unnecessary type casting when routine source returns set with embedded composite type.
 
 ## Version [2.36.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/2.36.1) (2025-09-29)
 
