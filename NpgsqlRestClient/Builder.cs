@@ -284,7 +284,7 @@ public class Builder
 
     public ErrorHandlingOptions BuildErrorHandlingOptions()
     {
-        var errConfig = _config.Cfg.GetSection("ErrorHandling");
+        var errConfig = _config.Cfg.GetSection("ErrorHandlingOptions");
         if (errConfig.Exists() is false)
         {
             return new();

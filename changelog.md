@@ -120,7 +120,7 @@ Old error handling options have been removed in favor of a more flexible and ext
 
 ```json
 {
-  "ErrorHandling": {
+  "ErrorHandlingOptions": {
     // Remove Type URL from error responses. Middleware automatically sets a default Type URL based on the HTTP status code that points to the RFC documentation.
     "RemoveTypeUrl": false,
     // Remove TraceId field from error responses. Useful in development and debugging scenarios to correlate logs with error responses.
