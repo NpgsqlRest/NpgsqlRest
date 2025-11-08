@@ -18,6 +18,7 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
     private JsonObject _document = default!;
     private JsonObject _paths = default!;
     private JsonObject _schemas = default!;
+    private JsonObject? _securitySchemes = null;
 
     public void Setup(IApplicationBuilder builder, NpgsqlRestOptions options)
     {
@@ -56,6 +57,16 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
         {
             ["schemas"] = _schemas
         };
+
+        // Initialize security schemes if configured
+        if (openApiOptions.SecuritySchemes != null && openApiOptions.SecuritySchemes.Length > 0)
+        {
+            _securitySchemes = BuildSecuritySchemes(openApiOptions.SecuritySchemes);
+            if (_securitySchemes != null && _securitySchemes.Count > 0)
+            {
+                _document["components"]!["securitySchemes"] = _securitySchemes;
+            }
+        }
     }
 
     public void Handle(RoutineEndpoint endpoint)
@@ -233,25 +244,43 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
         // Add security if required
         if (endpoint.RequiresAuthorization)
         {
-            operation["security"] = new JsonArray(
-                new JsonObject
-                {
-                    ["bearerAuth"] = new JsonArray()
-                }
-            );
-
-            // Add security scheme to components if not already there
-            if (!_document["components"]!.AsObject().ContainsKey("securitySchemes"))
+            // Add security requirements for this operation
+            if (_securitySchemes != null && _securitySchemes.Count > 0)
             {
-                _document["components"]!["securitySchemes"] = new JsonObject
+                // Add all configured security schemes as alternatives (OR relationship)
+                var securityArray = new JsonArray();
+                foreach (var schemeName in _securitySchemes.AsObject().Select(kv => kv.Key))
                 {
-                    ["bearerAuth"] = new JsonObject
+                    securityArray.Add(new JsonObject
                     {
-                        ["type"] = "http",
-                        ["scheme"] = "bearer",
-                        ["bearerFormat"] = "JWT"
+                        [schemeName] = new JsonArray()
+                    });
+                }
+                operation["security"] = securityArray;
+            }
+            else
+            {
+                // Add default bearer auth if no schemes configured
+                operation["security"] = new JsonArray(
+                    new JsonObject
+                    {
+                        ["bearerAuth"] = new JsonArray()
                     }
-                };
+                );
+
+                // Add default bearer scheme to components if not already there
+                if (!_document["components"]!.AsObject().ContainsKey("securitySchemes"))
+                {
+                    _document["components"]!["securitySchemes"] = new JsonObject
+                    {
+                        ["bearerAuth"] = new JsonObject
+                        {
+                            ["type"] = "http",
+                            ["scheme"] = "bearer",
+                            ["bearerFormat"] = "JWT"
+                        }
+                    };
+                }
             }
         }
 
@@ -542,5 +571,56 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
         }
 
         return serversArray.Count > 0 ? serversArray : null;
+    }
+
+    private JsonObject? BuildSecuritySchemes(OpenApiSecurityScheme[] schemes)
+    {
+        if (schemes == null || schemes.Length == 0)
+        {
+            return null;
+        }
+
+        var securitySchemes = new JsonObject();
+
+        foreach (var scheme in schemes)
+        {
+            var schemeObj = new JsonObject();
+
+            switch (scheme.Type)
+            {
+                case OpenApiSecuritySchemeType.Http:
+                    schemeObj["type"] = "http";
+                    if (scheme.Scheme.HasValue)
+                    {
+                        schemeObj["scheme"] = scheme.Scheme.Value.ToString().ToLowerInvariant();
+                    }
+                    if (!string.IsNullOrEmpty(scheme.BearerFormat))
+                    {
+                        schemeObj["bearerFormat"] = scheme.BearerFormat;
+                    }
+                    break;
+
+                case OpenApiSecuritySchemeType.ApiKey:
+                    schemeObj["type"] = "apiKey";
+                    if (!string.IsNullOrEmpty(scheme.In))
+                    {
+                        schemeObj["name"] = scheme.In;
+                    }
+                    if (scheme.ApiKeyLocation.HasValue)
+                    {
+                        schemeObj["in"] = scheme.ApiKeyLocation.Value.ToString().ToLowerInvariant();
+                    }
+                    break;
+            }
+
+            if (!string.IsNullOrEmpty(scheme.Description))
+            {
+                schemeObj["description"] = scheme.Description;
+            }
+
+            securitySchemes[scheme.Name] = schemeObj;
+        }
+
+        return securitySchemes.Count > 0 ? securitySchemes : null;
     }
 }

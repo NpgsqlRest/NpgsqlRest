@@ -31,29 +31,7 @@ private static readonly string[] InfoEventsStreamingScopeKey = [
 
 - TODO request timeout policies: https://learn.microsoft.com/en-us/aspnet/core/performance/timeouts?view=aspnetcore-9.0
 
-- DOING OpenAPI JSON automatic generation (just for the client)
-/*
-{
-"openapi": "3.0.1",
-"info": {
-"title": "My API",
-"version": "1.0.0"
-},
-"paths": {
-"/api/users": {
-"get": {
-"operationId": "get_all_users",
-"summary": "Get all users",
-"responses": {
-"200": {
-"description": "Success"
-}
-}
-}
-}
-}
-}
-*/
+- TODO login endpoint when returning json data from cookie login doesnt set correct json response type.
 
 ## Version [3.0.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.0.0) (date is TBD)
 

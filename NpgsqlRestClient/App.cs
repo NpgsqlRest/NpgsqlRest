@@ -323,6 +323,46 @@ public class App
                     openApi.Servers = servers.ToArray();
                 }
 
+                var securitySchemesCfg = openApiCfg.GetSection("SecuritySchemes");
+                var securitySchemes = new List<OpenApiSecurityScheme>(2);
+                foreach (var schemeSection in securitySchemesCfg.GetChildren())
+                {
+                    var name = _config.GetConfigStr("Name", schemeSection);
+                    var type = _config.GetConfigEnum<OpenApiSecuritySchemeType?>("Type", schemeSection);
+                    if (name is null || type is null)
+                    {
+                        continue;
+                    }
+
+                    var scheme = new OpenApiSecurityScheme
+                    {
+                        Name = name,
+                        Type = type.Value,
+                        Description = _config.GetConfigStr("Description", schemeSection)
+                    };
+
+                    // HTTP scheme configuration (Bearer/Basic)
+                    if (type == OpenApiSecuritySchemeType.Http)
+                    {
+                        scheme.Scheme = _config.GetConfigEnum<HttpAuthScheme?>("Scheme", schemeSection);
+                        scheme.BearerFormat = _config.GetConfigStr("BearerFormat", schemeSection);
+                    }
+
+                    // API Key configuration (Cookie/Header/Query)
+                    if (type == OpenApiSecuritySchemeType.ApiKey)
+                    {
+                        scheme.In = _config.GetConfigStr("In", schemeSection);
+                        scheme.ApiKeyLocation = _config.GetConfigEnum<ApiKeyLocation?>("ApiKeyLocation", schemeSection);
+                    }
+
+                    securitySchemes.Add(scheme);
+                }
+
+                if (securitySchemes.Count > 0)
+                {
+                    openApi.SecuritySchemes = securitySchemes.ToArray();
+                }
+
                 handlers.Add(new OpenApi(openApi));
                 _builder.Logger?.LogDebug("OpenAPI generation enabled. FileName={FileName}, UrlPath={UrlPath}",
                     openApi.FileName ?? "not set", openApi.UrlPath ?? "not set");

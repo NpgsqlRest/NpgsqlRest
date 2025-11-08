@@ -59,6 +59,12 @@ public class OpenApiOptions
     /// Default is true.
     /// </summary>
     public bool AddCurrentServer { get; set; } = true;
+
+    /// <summary>
+    /// Security schemes to include in the OpenAPI document.
+    /// If null or empty, a default Bearer authentication scheme will be added for endpoints requiring authorization.
+    /// </summary>
+    public OpenApiSecurityScheme[]? SecuritySchemes { get; set; } = null;
 }
 
 /// <summary>
@@ -77,4 +83,109 @@ public class OpenApiServer
     /// Example: "Production server" or "Development server"
     /// </summary>
     public string? Description { get; set; }
+}
+
+/// <summary>
+/// Represents the type of security scheme in OpenAPI.
+/// </summary>
+public enum OpenApiSecuritySchemeType
+{
+    /// <summary>
+    /// HTTP authentication including Basic and Bearer
+    /// </summary>
+    Http,
+    /// <summary>
+    /// API Key authentication (in header, query, or cookie)
+    /// </summary>
+    ApiKey
+}
+
+/// <summary>
+/// Represents an HTTP authentication scheme (for OpenApiSecuritySchemeType.Http)
+/// </summary>
+public enum HttpAuthScheme
+{
+    /// <summary>
+    /// HTTP Basic authentication
+    /// </summary>
+    Basic,
+    /// <summary>
+    /// HTTP Bearer token authentication (e.g., JWT)
+    /// </summary>
+    Bearer
+}
+
+/// <summary>
+/// Represents the location of an API key (for OpenApiSecuritySchemeType.ApiKey)
+/// </summary>
+public enum ApiKeyLocation
+{
+    /// <summary>
+    /// API key in header
+    /// </summary>
+    Header,
+    /// <summary>
+    /// API key in query string
+    /// </summary>
+    Query,
+    /// <summary>
+    /// API key in cookie
+    /// </summary>
+    Cookie
+}
+
+/// <summary>
+/// Represents a security scheme in the OpenAPI document.
+/// Maps to OpenAPI 3.0 Security Scheme Object.
+/// </summary>
+public class OpenApiSecurityScheme
+{
+    /// <summary>
+    /// The name of the security scheme (used as the key in securitySchemes).
+    /// Required.
+    /// Example: "bearerAuth", "cookieAuth"
+    /// </summary>
+    public required string Name { get; set; }
+
+    /// <summary>
+    /// The type of the security scheme.
+    /// Required.
+    /// </summary>
+    public required OpenApiSecuritySchemeType Type { get; set; }
+
+    /// <summary>
+    /// A short description for the security scheme.
+    /// </summary>
+    public string? Description { get; set; }
+
+    // --- For Http type ---
+
+    /// <summary>
+    /// The name of the HTTP Authorization scheme.
+    /// Required when Type is Http.
+    /// Example: HttpAuthScheme.Basic or HttpAuthScheme.Bearer
+    /// </summary>
+    public HttpAuthScheme? Scheme { get; set; }
+
+    /// <summary>
+    /// A hint to the client to identify how the bearer token is formatted.
+    /// Optional, used with Bearer scheme.
+    /// Example: "JWT"
+    /// </summary>
+    public string? BearerFormat { get; set; }
+
+    // --- For ApiKey type ---
+
+    /// <summary>
+    /// The name of the header, query or cookie parameter.
+    /// Required when Type is ApiKey.
+    /// Example: "X-API-Key", ".AspNetCore.Cookies"
+    /// </summary>
+    public string? In { get; set; }
+
+    /// <summary>
+    /// The location of the API key (header, query, or cookie).
+    /// Required when Type is ApiKey.
+    /// </summary>
+    public ApiKeyLocation? ApiKeyLocation { get; set; }
 }
