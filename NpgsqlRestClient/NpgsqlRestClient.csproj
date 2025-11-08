@@ -23,6 +23,7 @@
     <ProjectReference Include="..\NpgsqlRest\NpgsqlRest.csproj" />
     <ProjectReference Include="..\plugins\NpgsqlRest.CrudSource\NpgsqlRest.CrudSource.csproj" />
     <ProjectReference Include="..\plugins\NpgsqlRest.HttpFiles\NpgsqlRest.HttpFiles.csproj" />
+    <ProjectReference Include="..\plugins\NpgsqlRest.OpenApi\NpgsqlRest.OpenApi.csproj" />
     <ProjectReference Include="..\plugins\NpgsqlRest.TsClient\NpgsqlRest.TsClient.csproj" />
   </ItemGroup>
   

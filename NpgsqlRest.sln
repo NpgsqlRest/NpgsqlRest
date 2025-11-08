@@ -34,6 +34,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NpgsqlRestClient", "NpgsqlR
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tests", "Tests", "{D48B45A5-E086-4A0F-9E3B-F977EC551B9B}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NpgsqlRest.OpenApi", "plugins\NpgsqlRest.OpenApi\NpgsqlRest.OpenApi.csproj", "{E43845E8-55F3-49EB-80E8-BE35B939FF1C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -68,6 +70,10 @@ Global
 		{C47CABBE-0CF1-4A22-AF8D-720DCDF991D0}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C47CABBE-0CF1-4A22-AF8D-720DCDF991D0}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C47CABBE-0CF1-4A22-AF8D-720DCDF991D0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E43845E8-55F3-49EB-80E8-BE35B939FF1C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E43845E8-55F3-49EB-80E8-BE35B939FF1C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E43845E8-55F3-49EB-80E8-BE35B939FF1C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E43845E8-55F3-49EB-80E8-BE35B939FF1C}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -78,6 +84,7 @@ Global
 		{9D0D7807-9633-49A7-81D6-F2DD722DCC04} = {168D4570-4DD0-4E85-83E4-889B7495370A}
 		{94DF762B-9C25-4E27-95C6-DED177A2FDB0} = {168D4570-4DD0-4E85-83E4-889B7495370A}
 		{88607FEC-9FED-45D7-B629-92BBDBC682C7} = {168D4570-4DD0-4E85-83E4-889B7495370A}
+		{E43845E8-55F3-49EB-80E8-BE35B939FF1C} = {168D4570-4DD0-4E85-83E4-889B7495370A}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {C7C9B024-BFBB-414E-BD34-3CBF21C6C275}

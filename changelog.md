@@ -59,6 +59,62 @@ private static readonly string[] InfoEventsStreamingScopeKey = [
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/2.36.0...2.36.1)
 
+### OpenAPI 3.0 Support
+
+Added OpenAPI 3.0 support with the new `NpgsqlRest.OpenApi` plugin (available as a separate NuGet package as library plugin).
+
+Also, added new client configuration section `OpenApiOptions` to configure OpenAPI generation and serving. 
+
+New configuration:
+
+```json
+{
+  "NpgsqlRest": {
+    //
+    // Enable or disable the generation of OpenAPI files for NpgsqlRest endpoints.
+    //
+    "OpenApiOptions": {
+      "Enabled": false,
+      //
+      // File name for the generated OpenAPI file. Set to null to skip the file generation.
+      //
+      "FileName": "npgsqlrest_openapi.json",
+      //
+      // URL path for the OpenAPI endpoint. Set to null to skip the endpoint generation.
+      //
+      "UrlPath": "/openapi.json",
+      //
+      // Set to true to overwrite existing files.
+      //
+      "FileOverwrite": true,
+      //
+      // The title of the OpenAPI document. This appears in the "info" section of the OpenAPI specification.
+      // If not set, the database name from the ConnectionString will be used.
+      //
+      "DocumentTitle": null,
+      //
+      // The version of the OpenAPI document. This appears in the "info" section of the OpenAPI specification.
+      // When null, default is "1.0.0".
+      //
+      "DocumentVersion": "1.0.0",
+      //
+      // Optional description of the API. This appears in the "info" section of the OpenAPI specification.
+      //
+      "DocumentDescription": null,
+      //
+      // Include current server information in the "servers" section of the OpenAPI document.
+      //
+      "AddCurrentServer": true,
+      //
+      // Additional server entries to add to the "servers" section of the OpenAPI document.
+      // Each server entry must have "Url" property and optional "Description" property.
+      //
+      "Servers": [/*{"Url": "https://api.example.com", "Description": "Production server"}*/]
+    }
+  }
+}
+```
+
 ### Error Handling Improvements
 
 Added comprehensive error handling improvements with standardized error responses using Problem Details (RFC 7807) format.

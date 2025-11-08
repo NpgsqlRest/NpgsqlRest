@@ -61,6 +61,7 @@ if (args.Length >= 1 && (string.Equals(args[0], "-v", StringComparison.CurrentCu
         ("NpgsqlRest.HttpFiles", System.Reflection.Assembly.GetAssembly(typeof(HttpFileOptions))?.GetName().Version?.ToString() ?? "-"),
         ("NpgsqlRest.TsClient", System.Reflection.Assembly.GetAssembly(typeof(TsClientOptions))?.GetName().Version?.ToString() ?? "-"),
         ("NpgsqlRest.CrudSource", System.Reflection.Assembly.GetAssembly(typeof(CrudSource))?.GetName().Version?.ToString() ?? "-"),
+        ("NpgsqlRest.OpenApi", System.Reflection.Assembly.GetAssembly(typeof(NpgsqlRest.OpenAPI.OpenApiOptions))?.GetName().Version?.ToString() ?? "-"),
         (" ", " "),
         ("Npgsql", System.Reflection.Assembly.GetAssembly(typeof(NpgsqlConnection))?.GetName()?.Version?.ToString() ?? "-"),
         ("ExcelDataReader", System.Reflection.Assembly.GetAssembly(typeof(ExcelDataReader.IExcelDataReader))?.GetName().Version?.ToString() ?? "-"),

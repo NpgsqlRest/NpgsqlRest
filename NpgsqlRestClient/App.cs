@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.DataProtection;
 using NpgsqlRest.UploadHandlers;
 using NpgsqlRest.Auth;
+using NpgsqlRest.OpenAPI;
 
 namespace NpgsqlRestClient;
 
@@ -278,6 +279,54 @@ public class App
                 FileOverwrite = _config.GetConfigBool("FileOverwrite", httpFilecfg, true),
                 ConnectionString = connectionString
             }));
+            _builder.Logger?.LogDebug("HTTP file generation enabled. Name={Name}",
+                _config.GetConfigStr("Name", httpFilecfg) ?? "generated from connection string");
+        }
+        
+        var openApiCfg = _config.NpgsqlRestCfg.GetSection("OpenApiOptions");
+        if (openApiCfg is not null && _config.GetConfigBool("Enabled", openApiCfg) is true)
+        {
+            var openApi = new OpenApiOptions
+            {
+                FileName = _config.GetConfigStr("FileName", openApiCfg),
+                UrlPath = _config.GetConfigStr("UrlPath", openApiCfg),
+                FileOverwrite = _config.GetConfigBool("FileOverwrite", openApiCfg, false),
+                DocumentTitle = _config.GetConfigStr("DocumentTitle", openApiCfg),
+                DocumentVersion = _config.GetConfigStr("DocumentVersion", openApiCfg) ?? "1.0.0",
+                DocumentDescription = _config.GetConfigStr("DocumentDescription", openApiCfg),
+                ConnectionString = connectionString,
+                AddCurrentServer = _config.GetConfigBool("AddCurrentServer", openApiCfg, true),
+            };
+            if (openApi.UrlPath is null && openApi.FileName is null)
+            {
+                _builder.Logger?.LogWarning("OpenAPI generation is disabled because both FileName and UrlPath are not set.");
+            }
+            else
+            {
+                var serversCfg = openApiCfg.GetSection("Servers");
+                var servers = new List<OpenApiServer>(3);
+                foreach (var serverSection in serversCfg.GetChildren())
+                {
+                    var url = _config.GetConfigStr("Url", serverSection);
+                    if (url is null)
+                    {
+                        continue;
+                    }
+                    servers.Add(new OpenApiServer
+                    {
+                        Url = _config.GetConfigStr("Url", serverSection)!,
+                        Description = _config.GetConfigStr("Description", serverSection)
+                    });
+                }
+                if (servers.Count > 0)
+                {
+                    openApi.Servers = servers.ToArray();
+                }
+
+                handlers.Add(new OpenApi(openApi));
+                _builder.Logger?.LogDebug("OpenAPI generation enabled. FileName={FileName}, UrlPath={UrlPath}",
+                    openApi.FileName ?? "not set", openApi.UrlPath ?? "not set");
+            }
         }
 
         var tsClientCfg = _config.NpgsqlRestCfg.GetSection("ClientCodeGen");
@@ -351,6 +400,7 @@ public class App
             }
 
             handlers.Add(new TsClient(ts));
+            _builder.Logger?.LogDebug("TypeScript client code generation enabled. FilePath={FilePath}", ts.FilePath);
         }
 
         return handlers;
@@ -527,6 +577,8 @@ public class App
                 minCompletionPortThreads ??= minCompletionPortThreadsTmp;
             }
             ThreadPool.SetMinThreads(workerThreads: minWorkerThreads.Value, completionPortThreads: minCompletionPortThreads.Value);
+            _builder.Logger?.LogDebug("ThreadPool minimum worker threads to {MinWorkerThreads} and minimum completion port threads to {MinCompletionPortThreads}",
+                minWorkerThreads, minCompletionPortThreads);
         }
 
         var maxWorkerThreads = _config.GetConfigInt("MaxWorkerThreads", threadPoolCfg);
@@ -540,6 +592,8 @@ public class App
                 maxCompletionPortThreads ??= maxCompletionPortThreadsTmp;
             }
             ThreadPool.SetMaxThreads(workerThreads: maxWorkerThreads.Value, completionPortThreads: maxCompletionPortThreads.Value);
+            _builder.Logger?.LogDebug("ThreadPool maximum worker threads to {MaxWorkerThreads} and maximum completion port threads to {MaxCompletionPortThreads}",
+                maxWorkerThreads, maxCompletionPortThreads);
         }
     }
 }
