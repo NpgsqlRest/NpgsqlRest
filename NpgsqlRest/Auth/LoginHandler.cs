@@ -19,7 +19,7 @@ public static class LoginHandler
     {
         var connection = command.Connection;
         string? scheme = null;
-        string? message = null;
+        string? body = null;
         string? userId = null;
         string? userName = null;
         List<Claim> claims = new(10);
@@ -87,11 +87,11 @@ public static class LoginHandler
                     }
                 }
 
-                if (Options.AuthenticationOptions.MessageColumnName is not null)
+                if (Options.AuthenticationOptions.BodyColumnName is not null)
                 {
-                    if (string.Equals(colName, Options.AuthenticationOptions.MessageColumnName, StringComparison.OrdinalIgnoreCase))
+                    if (string.Equals(colName, Options.AuthenticationOptions.BodyColumnName, StringComparison.OrdinalIgnoreCase))
                     {
-                        message = reader?.GetValue(i).ToString();
+                        body = reader?.GetValue(i).ToString();
                         continue;
                     }
                 }
@@ -245,9 +245,10 @@ public static class LoginHandler
 
         if (assignUserPrincipalToContext is false)
         {
-            if (message is not null)
+            if (body is not null)
             {
-                await context.Response.WriteAsync(message);
+                context.Response.ContentType = Options.AuthenticationOptions?.ResponseTypeColumnName ?? "application/json";
+                await context.Response.WriteAsync(body);
             }
         }
     }
@@ -260,7 +261,7 @@ public static class LoginHandler
         string colName)
     {
         if (string.Equals(colName, Options.AuthenticationOptions.HashColumnName, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(colName, Options.AuthenticationOptions.MessageColumnName, StringComparison.OrdinalIgnoreCase))
+            string.Equals(colName, Options.AuthenticationOptions.BodyColumnName, StringComparison.OrdinalIgnoreCase))
         {
             return (null, null);
         }

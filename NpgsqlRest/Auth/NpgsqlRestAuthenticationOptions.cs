@@ -34,10 +34,15 @@ public class NpgsqlRestAuthenticationOptions
     public string? SchemeColumnName { get; set; } = "scheme";
 
     /// <summary>
-    /// The default column name in the data reader which will return a text message with the login status.
+    /// The default column name in the data reader which will return a response body message for the login operation where writing to body is possible.
     /// </summary>
-    public string? MessageColumnName { get; set; } = "message";
+    public string? BodyColumnName { get; set; } = "body";
 
+    /// <summary>
+    /// The default column name in the data reader which will set the response content type for the login operation where writing to body is possible.
+    /// </summary>
+    public string ResponseTypeColumnName { get; set; } = "application/json";
+    
     /// <summary>
     /// Default claim type for user id.
     /// </summary>
@@ -57,7 +62,7 @@ public class NpgsqlRestAuthenticationOptions
     /// If true, return any response from auth endpoints (login and logout) if response hasn't been written by auth handler.
     /// For cookie auth, this will return full record to response as returned by the routine.
     /// For bearer token auth, this will be ignored because bearer token auth writes it's own response (with tokens).
-    /// This option will also be ignored if message column is present (see MessageColumnName option).
+    /// This option will also be ignored if message column is present (see BodyColumnName option).
     /// Default is false.
     /// </summary>
     public bool SerializeAuthEndpointsResponse { get; set; } = false;

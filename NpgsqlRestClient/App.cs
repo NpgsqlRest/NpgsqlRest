@@ -172,7 +172,8 @@ public class App
 
             StatusColumnName = _config.GetConfigStr("StatusColumnName", authCfg) ?? "status",
             SchemeColumnName = _config.GetConfigStr("SchemeColumnName", authCfg) ?? "scheme",
-            MessageColumnName = _config.GetConfigStr("MessageColumnName", authCfg) ?? "message",
+            BodyColumnName = _config.GetConfigStr("BodyColumnName", authCfg) ?? "body",
+            ResponseTypeColumnName = _config.GetConfigStr("ResponseTypeColumnName", authCfg) ?? "application/json",
 
             DefaultUserIdClaimType = _config.GetConfigStr("DefaultUserIdClaimType", authCfg) ?? "user_id",
             DefaultNameClaimType = _config.GetConfigStr("DefaultNameClaimType", authCfg) ?? "user_name",
