@@ -8,7 +8,6 @@ public class RoutineEndpoint(
     Method method,
     RequestParamType requestParamType,
     bool requiresAuthorization,
-    int? commandTimeout,
     string? responseContentType,
     Dictionary<string, StringValues> responseHeaders,
     RequestHeadersMode requestHeadersMode,
@@ -50,7 +49,6 @@ public class RoutineEndpoint(
     public Method Method { get; set; } = method;
     public RequestParamType RequestParamType { get; set; } = requestParamType;
     public bool RequiresAuthorization { get; set; } = requiresAuthorization;
-    public int? CommandTimeout { get; set; } = commandTimeout;
     public string? ResponseContentType { get; set; } = responseContentType;
     public Dictionary<string, StringValues> ResponseHeaders { get; set; } = responseHeaders;
     public RequestHeadersMode RequestHeadersMode { get; set; } = requestHeadersMode;
@@ -93,4 +91,5 @@ public class RoutineEndpoint(
     public RetryStrategy? RetryStrategy { get; set; } = null;
     public string? RateLimiterPolicy { get; set; } = null;
     public string? ErrorCodePolicy { get; set; } = null;
+    public TimeSpan? CommandTimeout { get; set; } = null;
 }

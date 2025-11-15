@@ -204,6 +204,7 @@ NpgsqlRestOptions options = new()
     ServiceProviderMode = ServiceProviderObject.None,
     ConnectionStrings = connectionStrings,
     ConnectionRetryOptions = retryOpts,
+    CommandTimeout = Parser.ParsePostgresInterval(config.GetConfigStr("CommandTimeout", config.NpgsqlRestCfg)),
     MetadataQueryConnectionName = config.GetConfigStr("MetadataQueryConnectionName", config.ConnectionSettingsCfg),
     MetadataQuerySchema = config.GetConfigStr("MetadataQuerySchema", config.ConnectionSettingsCfg) ?? "public",
     SchemaSimilarTo = config.GetConfigStr("SchemaSimilarTo", config.NpgsqlRestCfg),
@@ -226,8 +227,7 @@ NpgsqlRestOptions options = new()
     LogCommands = config.GetConfigBool("LogCommands", config.NpgsqlRestCfg),
     LogCommandParameters = config.GetConfigBool("LogCommandParameters", config.NpgsqlRestCfg),
     LogConnectionNoticeEventsMode = logConnectionNoticeEventsMode,
-
-    CommandTimeout = config.GetConfigInt("CommandTimeout", config.NpgsqlRestCfg),
+    
     DefaultHttpMethod = config.GetConfigEnum<Method?>("DefaultHttpMethod", config.NpgsqlRestCfg),
     DefaultRequestParamType = config.GetConfigEnum<RequestParamType?>("DefaultRequestParamType", config.NpgsqlRestCfg),
     CommentsMode = config.GetConfigEnum<CommentsMode?>("CommentsMode", config.NpgsqlRestCfg) ?? CommentsMode.OnlyWithHttpTag,
@@ -249,7 +249,7 @@ NpgsqlRestOptions options = new()
     UploadOptions = appInstance.CreateUploadOptions(),
     
     CacheOptions = builder.BuildCacheOptions(app),
-    DefaultRateLimitingPolicy = rateLimiterDefaultPolicy
+    DefaultRateLimitingPolicy = rateLimiterDefaultPolicy,
 };
 
 app.UseNpgsqlRest(options);

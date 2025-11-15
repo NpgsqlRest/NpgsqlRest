@@ -1,6 +1,4 @@
-﻿using System.Text;
-
-namespace NpgsqlRest;
+﻿namespace NpgsqlRest;
 
 public class ErrorCodeMappingOptions
 {

@@ -28,7 +28,6 @@ internal static class DefaultEndpoint
                 method: method,
                 requestParamType: requestParamType,
                 requiresAuthorization: Options.RequiresAuthorization,
-                commandTimeout: Options.CommandTimeout,
                 responseContentType: null,
                 responseHeaders: [],
                 requestHeadersMode: Options.RequestHeadersMode,

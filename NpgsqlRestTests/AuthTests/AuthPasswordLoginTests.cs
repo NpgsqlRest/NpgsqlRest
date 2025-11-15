@@ -15,14 +15,14 @@ public static partial class Database
         returns table (
             name_identifier int,
             name text,
-            message text,
+            body text,
             hash text
         )
         language sql as $$
         select
             999 as name_identifier,
             'passwordprotected' as name, 
-            'passwordprotected is succesuful' as message,
+            'passwordprotected is succesuful' as body,
             _hashed
         $$;
         comment on function password_protected_login1(text,text) is 'login';
@@ -33,14 +33,14 @@ public static partial class Database
         returns table (
             name_identifier int,
             name text,
-            message text,
+            body text,
             hash text
         )
         language sql as $$
         select
             999 as name_identifier,
             'passwordprotected' as name, 
-            'passwordprotected is succesuful' as message,
+            'passwordprotected is succesuful' as body,
             'cM+KumWip708pxDiNQJHt/8rU4iECVbm4XeBRcjWP9R8k6UTVDfTAwN6wWT65rYn'
         $$;
         comment on function password_protected_login2(text) is 'login';

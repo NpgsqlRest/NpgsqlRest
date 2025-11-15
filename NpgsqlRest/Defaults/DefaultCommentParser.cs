@@ -529,25 +529,23 @@ internal static class DefaultCommentParser
                     }
                 }
 
-                // command_timeout seconds
-                // timeout seconds
+                // command_timeout interval
+                // timeout interval
                 else if (haveTag is true && len >= 2 && StrEqualsToArray(wordsLower[0], TimeoutKey))
                 {
-                    if (int.TryParse(wordsLower[1], out var parsedTimeout))
-                    {
-                        if (routineEndpoint.CommandTimeout != parsedTimeout)
-                        {
-                            if (Options.LogAnnotationSetInfo)
-                            {
-                                Logger?.CommentSetTimeout(description, wordsLower[1]);
-                            }
-                        }
-                        routineEndpoint.CommandTimeout = parsedTimeout;
-                    }
-                    else
+                    var parsedInterval = Parser.ParsePostgresInterval(wordsLower[1]);
+                    if (parsedInterval is null)
                     {
                         Logger?.InvalidTimeoutComment(wordsLower[1], description, routineEndpoint.CommandTimeout);
                     }
+                    else if (routineEndpoint.CommandTimeout != parsedInterval)
+                    {
+                        if (Options.LogAnnotationSetInfo)
+                        {
+                            Logger?.CommentSetTimeout(description, parsedInterval);
+                        }
+                    }
+                    routineEndpoint.CommandTimeout = parsedInterval;
                 }
 
                 // request_headers_mode [ ignore | context | parameter ]
@@ -1356,6 +1354,15 @@ internal static class DefaultCommentParser
         else if (StrEqualsToArray(name, ErrorCodePolicyKey))
         {
             endpoint.ErrorCodePolicy = value;
+        }
+        
+        else if (StrEqualsToArray(name, TimeoutKey))
+        {
+            var parsedInterval = Parser.ParsePostgresInterval(value);
+            if (parsedInterval is not null)
+            {
+                endpoint.CommandTimeout = parsedInterval;
+            }
         }
         
         else

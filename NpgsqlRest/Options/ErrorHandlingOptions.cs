@@ -1,19 +1,19 @@
-namespace NpgsqlRest
-{
-    public class ErrorHandlingOptions
-    {
-        public string? DefaultErrorCodePolicy { get; set; } = "Default";
+namespace NpgsqlRest;
 
-        public Dictionary<string, Dictionary<string, ErrorCodeMappingOptions>> ErrorCodePolicies { get; set; } = new()
+public class ErrorHandlingOptions
+{
+    public string? DefaultErrorCodePolicy { get; set; } = "Default";
+
+    public Dictionary<string, Dictionary<string, ErrorCodeMappingOptions>> ErrorCodePolicies { get; set; } = new()
+    {
+        ["Default"] = new()
         {
-            ["Default"] = new()
-            {
-                { "42501", new() { StatusCode = 403, Title = "Insufficient Privilege" } },
-                { "57014", new() { StatusCode = 205, Title = "Cancelled" } },
-                { "P0001", new() { StatusCode = 400 } },
-                { "P0004", new() { StatusCode = 400 } },
-                { "42883", new() { StatusCode = 404, Title = "Not Found" } },
-            }
-        };
-    }
+            { "42501", new() { StatusCode = 403, Title = "Insufficient Privilege" } },
+            { "57014", new() { StatusCode = 205, Title = "Cancelled" } },
+            { "P0001", new() { StatusCode = 400 } },
+            { "P0004", new() { StatusCode = 400 } },
+            { "42883", new() { StatusCode = 404, Title = "Not Found" } },
+            { "timeout", new() { StatusCode = 504, Title = "Command execution timed out" } },
+        }
+    };
 }

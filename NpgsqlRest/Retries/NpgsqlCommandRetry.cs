@@ -80,6 +80,13 @@ public static class NpgsqlRetryExtensions
             {
                 throw new NpgsqlToHttpException(statusCodeMapping, ex);
             }
+            catch (NpgsqlException ex) when (ex.InnerException is TimeoutException)
+            {
+                if (errorCodePolicy?.TryGetErrorCodeMapping("timeout", out var statusCodeMapping) is true)
+                {
+                    throw new NpgsqlToHttpException(statusCodeMapping, ex);
+                }
+            }
             catch (Exception ex) when (ShouldRetryOn(ex, strategy) && !cancellationToken.IsCancellationRequested)
             {
                 exceptionsEncountered.Add(ex);
@@ -237,6 +244,13 @@ public static class NpgsqlRetryExtensions
             catch (PostgresException ex) when (errorCodePolicy is not null && errorCodePolicy.TryGetErrorCodeMapping(ex.SqlState, out var statusCodeMapping))
             {
                 throw new NpgsqlToHttpException(statusCodeMapping, ex);
+            }
+            catch (NpgsqlException ex) when (ex.InnerException is TimeoutException)
+            {
+                if (errorCodePolicy?.TryGetErrorCodeMapping("timeout", out var statusCodeMapping) is true)
+                {
+                    throw new NpgsqlToHttpException(statusCodeMapping, ex);
+                }
             }
             catch (Exception ex) when (ShouldRetryOn(ex, strategy) && !cancellationToken.IsCancellationRequested)
             {
@@ -397,7 +411,7 @@ public static class NpgsqlRetryExtensions
             {
                 return true;
             }
-            if (strategy.ErrorCodes.Contains(npgsqlException.SqlState) == true)
+            if (strategy.ErrorCodes.Contains(npgsqlException.SqlState))
             {
                 return true;
             }
@@ -409,8 +423,6 @@ public static class NpgsqlRetryExtensions
             TimeoutException => true,
             SocketException => true,
             System.Net.NetworkInformation.NetworkInformationException => true,
-            TaskCanceledException => false,
-            OperationCanceledException => false,
             _ => false
         };
     }

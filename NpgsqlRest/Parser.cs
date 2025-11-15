@@ -5,10 +5,10 @@ namespace NpgsqlRest;
 
 public static partial class Parser
 {
-    [GeneratedRegex(@"^(\d*\.?\d+)\s*([a-z]+)$", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"^(\d*\.?\d+)\s*([a-z]*)$", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
     private static partial Regex IntervalRegex();
 
-    public static TimeSpan? ParsePostgresInterval(string interval)
+    public static TimeSpan? ParsePostgresInterval(string? interval)
     {
         if (string.IsNullOrWhiteSpace(interval))
         {
@@ -17,7 +17,7 @@ public static partial class Parser
 
         interval = interval.Trim().ToLowerInvariant();
 
-        // Match number (integer or decimal) followed by optional space and unit
+        // Match number (integer or decimal) followed by optional space and optional unit
         var match = IntervalRegex().Match(interval);
         if (!match.Success)
         {
@@ -33,13 +33,22 @@ public static partial class Parser
             return null;
         }
 
+        // If no unit provided, default to seconds
+        if (string.IsNullOrEmpty(unitPart))
+        {
+            return TimeSpan.FromSeconds(value);
+        }
+
         // Map PostgreSQL units to TimeSpan conversions
         return unitPart switch
         {
+            "us" or "usec" or "microsecond" or "microseconds" => TimeSpan.FromMicroseconds(value),
+            "ms" or "msec" or "millisecond" or "milliseconds" => TimeSpan.FromMilliseconds(value),
             "s" or "sec" or "second" or "seconds" => TimeSpan.FromSeconds(value),
             "m" or "min" or "minute" or "minutes" => TimeSpan.FromMinutes(value),
             "h" or "hour" or "hours" => TimeSpan.FromHours(value),
             "d" or "day" or "days" => TimeSpan.FromDays(value),
+            "w" or "week" or "weeks" => TimeSpan.FromDays(value * 7),
             _ => null
         };
     }

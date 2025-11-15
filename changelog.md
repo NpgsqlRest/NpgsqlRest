@@ -31,12 +31,20 @@ private static readonly string[] InfoEventsStreamingScopeKey = [
 
 - TODO fix array parameter logging: e.g. -- $6 text[] = 'System.Collections.Generic.List`1[System.String]'
 
-- TODO request timeout policies: https://learn.microsoft.com/en-us/aspnet/core/performance/timeouts?view=aspnetcore-9.0
-
+- TODO fix: when returning char(1) in JSON, value is not quoted!
 
 ## Version [3.0.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.0.0) (date is TBD)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/2.36.0...2.36.1)
+
+### Timeout Handling
+
+- Timeouts are not retried automatically by NpgsqlRest anymore. 
+- Timeout error policy can be set in `ErrorHandlingOptions` section of client configuration.
+- Special error code mapping in default error code policy for timeout errors: `"timeout": {"StatusCode": 504, "Title": "Command execution timed out", "Details": null, "Type": null} // special timeout case -> 504 Gateway Timeout`
+- Configuration option `CommandTimeout` is using PostgreSQL interval format (for example: '30 seconds' or '30s', '1 minute' or '1min', etc.) instead of integer seconds.
+- Comment annotation is also now using PostgreSQL interval format (for example: '30 seconds' or '30s', '1 minute' or '1min', etc.) instead of integer seconds.
+- Option `CommandTimeout` is now TimeSpan? instead of int.
 
 ### OpenAPI 3.0 Support
 

@@ -48,10 +48,10 @@ public static partial class Log
     public static partial void CommentSetAnon(this ILogger logger, string description);
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has set COMMAND TIMEOUT by the comment annotation to {parsedTimeout} seconds")]
-    public static partial void CommentSetTimeout(this ILogger logger, string description, string parsedTimeout);
+    public static partial void CommentSetTimeout(this ILogger logger, string description, TimeSpan? parsedTimeout);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Invalid command timeout '{timeout}' in comment for {description}. Using default command timeout '{defaultTimeout}'")]
-    public static partial void InvalidTimeoutComment(this ILogger logger, string timeout, string description, int? defaultTimeout);
+    public static partial void InvalidTimeoutComment(this ILogger logger, string timeout, string description, TimeSpan? defaultTimeout);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Invalid request headers mode '{mode}' in comment for {description} Allowed values are Ignore or Context or Parameter. Using default '{defaultRequestHeadersMode}'")]
     public static partial void InvalidRequestHeadersModeComment(this ILogger logger, string mode, string description, RequestHeadersMode defaultRequestHeadersMode);
@@ -241,7 +241,7 @@ public static partial class Log
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "Endpoint {urlInfo} enabled rate limiter policy: {policyName}")]
     public static partial void EndpointEnabledRateLimiterPolicy(this ILogger logger, string urlInfo, string policyName);
-    
+
     [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has set ERROR CODE POLICY NAME to {name} by the comment annotation.")]
     public static partial void ErrorCodePolicySet(this ILogger logger, string description, string name);
 }

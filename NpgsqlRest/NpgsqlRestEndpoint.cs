@@ -1681,7 +1681,7 @@ public class NpgsqlRestEndpoint(
         
         if (endpoint.CommandTimeout.HasValue)
         {
-            command.CommandTimeout = endpoint.CommandTimeout.Value;
+            command.CommandTimeout = endpoint.CommandTimeout.Value.Seconds;
         }
 
         if (Options.CommandCallbackAsync is not null)

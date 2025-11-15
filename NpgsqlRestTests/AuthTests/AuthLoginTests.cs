@@ -84,13 +84,13 @@ public static partial class Database
         returns table (
             name_identifier int,
             name text,
-            message text
+            body text
         )
         language sql as $$
         select
             123 as name_identifier,
             'username' as name,
-            'some message' as message
+            'some message' as body
         $$;
         comment on function custom_login6() is 'login';
         

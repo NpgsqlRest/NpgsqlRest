@@ -43,19 +43,19 @@ public static class NpgsqlRestBuilder
 
         var (
             entries,
-            overloads, 
+            overloads,
             hasStreamingEvents
             ) = Build(builder);
         if (entries.Count == 0)
         {
             return builder;
         }
-        
+
         if (hasStreamingEvents is true)
         {
             builder.UseMiddleware<NpgsqlRestNoticeEventSource>();
         }
-        
+
         foreach (var entry in entries)
         {
             var handler = new NpgsqlRestEndpoint(entry, overloads);
@@ -63,7 +63,12 @@ public static class NpgsqlRestBuilder
             var methodStr = endpoint.Method.ToString();
             var urlInfo = string.Concat(methodStr, " ", endpoint.Path);
             var routeBuilder = builder.MapMethods(endpoint.Path, [methodStr], handler.InvokeAsync);
-            
+
+            if (options.CommandTimeout is not null && endpoint.CommandTimeout is null)
+            {
+                endpoint.CommandTimeout = options.CommandTimeout;
+            }
+
             if (endpoint.RateLimiterPolicy is not null || options.DefaultRateLimitingPolicy is not null)
             {
                 var policy = endpoint.RateLimiterPolicy ?? options.DefaultRateLimitingPolicy!;

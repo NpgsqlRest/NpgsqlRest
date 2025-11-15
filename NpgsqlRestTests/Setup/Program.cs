@@ -213,8 +213,7 @@ public class Program
                 //DefaultUploadMetadataContextKey = "request.upload_metadata",
             },
             
-            ErrorHandlingOptions = errorHandlingOptions
-            
+            ErrorHandlingOptions = errorHandlingOptions,
         });
         app.Run();
     }
