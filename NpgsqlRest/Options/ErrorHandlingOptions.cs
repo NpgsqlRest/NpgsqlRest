@@ -3,6 +3,12 @@ namespace NpgsqlRest;
 public class ErrorHandlingOptions
 {
     public string? DefaultErrorCodePolicy { get; set; } = "Default";
+    
+    public ErrorCodeMappingOptions? TimeoutErrorMapping { get; set; } = new()
+    {
+        StatusCode = 504,
+        Title = "Command execution timed out"
+    };
 
     public Dictionary<string, Dictionary<string, ErrorCodeMappingOptions>> ErrorCodePolicies { get; set; } = new()
     {
@@ -13,7 +19,6 @@ public class ErrorHandlingOptions
             { "P0001", new() { StatusCode = 400 } },
             { "P0004", new() { StatusCode = 400 } },
             { "42883", new() { StatusCode = 404, Title = "Not Found" } },
-            { "timeout", new() { StatusCode = 504, Title = "Command execution timed out" } },
         }
     };
 }

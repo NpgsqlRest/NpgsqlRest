@@ -82,9 +82,9 @@ public static class NpgsqlRetryExtensions
             }
             catch (NpgsqlException ex) when (ex.InnerException is TimeoutException)
             {
-                if (errorCodePolicy?.TryGetErrorCodeMapping("timeout", out var statusCodeMapping) is true)
+                if (Options.ErrorHandlingOptions.TimeoutErrorMapping is not null)
                 {
-                    throw new NpgsqlToHttpException(statusCodeMapping, ex);
+                    throw new NpgsqlToHttpException(Options.ErrorHandlingOptions.TimeoutErrorMapping, ex);
                 }
             }
             catch (Exception ex) when (ShouldRetryOn(ex, strategy) && !cancellationToken.IsCancellationRequested)
@@ -172,7 +172,8 @@ public static class NpgsqlRetryExtensions
         this NpgsqlCommand command, 
         RetryStrategy? strategy, 
         CancellationToken cancellationToken = default,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        string? errorCodePolicy = null)
     {
         if (strategy == null || strategy.RetrySequenceSeconds.Length == 0)
         {
@@ -186,6 +187,17 @@ public static class NpgsqlRetryExtensions
             try
             {
                 return await command.ExecuteReaderAsync(cancellationToken);
+            }
+            catch (PostgresException ex) when (errorCodePolicy is not null && errorCodePolicy.TryGetErrorCodeMapping(ex.SqlState, out var statusCodeMapping))
+            {
+                throw new NpgsqlToHttpException(statusCodeMapping, ex);
+            }
+            catch (NpgsqlException ex) when (ex.InnerException is TimeoutException)
+            {
+                if (Options.ErrorHandlingOptions.TimeoutErrorMapping is not null)
+                {
+                    throw new NpgsqlToHttpException(Options.ErrorHandlingOptions.TimeoutErrorMapping, ex);
+                }
             }
             catch (Exception ex) when (ShouldRetryOn(ex, strategy) && !cancellationToken.IsCancellationRequested)
             {
@@ -247,9 +259,9 @@ public static class NpgsqlRetryExtensions
             }
             catch (NpgsqlException ex) when (ex.InnerException is TimeoutException)
             {
-                if (errorCodePolicy?.TryGetErrorCodeMapping("timeout", out var statusCodeMapping) is true)
+                if (Options.ErrorHandlingOptions.TimeoutErrorMapping is not null)
                 {
-                    throw new NpgsqlToHttpException(statusCodeMapping, ex);
+                    throw new NpgsqlToHttpException(Options.ErrorHandlingOptions.TimeoutErrorMapping, ex);
                 }
             }
             catch (Exception ex) when (ShouldRetryOn(ex, strategy) && !cancellationToken.IsCancellationRequested)
@@ -289,7 +301,8 @@ public static class NpgsqlRetryExtensions
         this NpgsqlCommand command, 
         RetryStrategy? strategy, 
         CancellationToken cancellationToken = default,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        string? errorCodePolicy = null)
     {
         if (strategy == null || strategy.RetrySequenceSeconds.Length == 0)
         {
@@ -303,6 +316,17 @@ public static class NpgsqlRetryExtensions
             try
             {
                 return await command.ExecuteScalarAsync(cancellationToken);
+            }
+            catch (PostgresException ex) when (errorCodePolicy is not null && errorCodePolicy.TryGetErrorCodeMapping(ex.SqlState, out var statusCodeMapping))
+            {
+                throw new NpgsqlToHttpException(statusCodeMapping, ex);
+            }
+            catch (NpgsqlException ex) when (ex.InnerException is TimeoutException)
+            {
+                if (Options.ErrorHandlingOptions.TimeoutErrorMapping is not null)
+                {
+                    throw new NpgsqlToHttpException(Options.ErrorHandlingOptions.TimeoutErrorMapping, ex);
+                }
             }
             catch (Exception ex) when (ShouldRetryOn(ex, strategy) && !cancellationToken.IsCancellationRequested)
             {
@@ -340,7 +364,8 @@ public static class NpgsqlRetryExtensions
         this NpgsqlBatch batch, 
         RetryStrategy? strategy, 
         CancellationToken cancellationToken = default,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        string? errorCodePolicy = null)
     {
         if (strategy == null || strategy.RetrySequenceSeconds.Length == 0)
         {
@@ -356,6 +381,17 @@ public static class NpgsqlRetryExtensions
             {
                 await batch.ExecuteNonQueryAsync(cancellationToken);
                 return;
+            }
+            catch (PostgresException ex) when (errorCodePolicy is not null && errorCodePolicy.TryGetErrorCodeMapping(ex.SqlState, out var statusCodeMapping))
+            {
+                throw new NpgsqlToHttpException(statusCodeMapping, ex);
+            }
+            catch (NpgsqlException ex) when (ex.InnerException is TimeoutException)
+            {
+                if (Options.ErrorHandlingOptions.TimeoutErrorMapping is not null)
+                {
+                    throw new NpgsqlToHttpException(Options.ErrorHandlingOptions.TimeoutErrorMapping, ex);
+                }
             }
             catch (Exception ex) when (ShouldRetryOn(ex, strategy) && !cancellationToken.IsCancellationRequested)
             {

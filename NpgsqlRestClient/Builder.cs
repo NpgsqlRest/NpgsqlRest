@@ -313,8 +313,26 @@ public class Builder
             });
         }
 
-        var result = new ErrorHandlingOptions();
-        result.DefaultErrorCodePolicy = _config.GetConfigStr("DefaultErrorCodePolicy", errConfig);
+        var result = new ErrorHandlingOptions
+        {
+            DefaultErrorCodePolicy = _config.GetConfigStr("DefaultErrorCodePolicy", errConfig)
+        };
+        var timeoutErrorMapping = errConfig.GetSection("TimeoutErrorMapping");
+        if (timeoutErrorMapping.Exists())
+        {
+            var statusCode = _config.GetConfigInt("StatusCode", timeoutErrorMapping);
+            if (statusCode is not null)
+            {
+                result.TimeoutErrorMapping = new()
+                {
+                    StatusCode = statusCode.Value,
+                    Title = _config.GetConfigStr("Title", timeoutErrorMapping),
+                    Details = _config.GetConfigStr("Details", timeoutErrorMapping),
+                    Type = _config.GetConfigStr("Type", timeoutErrorMapping),
+                };
+            }
+        }
+        
         result.ErrorCodePolicies = new Dictionary<string, Dictionary<string, ErrorCodeMappingOptions>>();
         
         var policiesCfg = errConfig.GetSection("ErrorCodePolicies");

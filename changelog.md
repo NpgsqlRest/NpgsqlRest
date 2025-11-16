@@ -41,7 +41,7 @@ private static readonly string[] InfoEventsStreamingScopeKey = [
 
 - Timeouts are not retried automatically by NpgsqlRest anymore. 
 - Timeout error policy can be set in `ErrorHandlingOptions` section of client configuration.
-- Special error code mapping in default error code policy for timeout errors: `"timeout": {"StatusCode": 504, "Title": "Command execution timed out", "Details": null, "Type": null} // special timeout case -> 504 Gateway Timeout`
+- Default mapping for timeout errors: `"TimeoutErrorMapping": {"StatusCode": 504, "Title": "Command execution timed out", "Details": null, "Type": null}`
 - Configuration option `CommandTimeout` is using PostgreSQL interval format (for example: '30 seconds' or '30s', '1 minute' or '1min', etc.) instead of integer seconds.
 - Comment annotation is also now using PostgreSQL interval format (for example: '30 seconds' or '30s', '1 minute' or '1min', etc.) instead of integer seconds.
 - Option `CommandTimeout` is now TimeSpan? instead of int.
@@ -194,10 +194,19 @@ Old error handling options have been removed in favor of a more flexible and ext
     // Remove TraceId field from error responses. Useful in development and debugging scenarios to correlate logs with error responses.
     "RemoveTraceId": true,
     //
+    // Default policy name to use from the ErrorCodePolicies section.
+    //
+    "DefaultErrorCodePolicy": "Default",
+    //
+    // Timeout error mapping when command timeout occurs (see NpgsqlRest CommandTimeout setting).
+    //
+    "TimeoutErrorMapping": {"StatusCode": 504, "Title": "Command execution timed out", "Details": null, "Type": null}, // timeout error case -> 504 Gateway Timeout
+    //
     // Named policies for mapping of PostgreSQL error codes to HTTP Status Codes.
     //
     // If routine raises these PostgreSQL error codes, endpoint will return these HTTP Status Codes.
     // See https://www.postgresql.org/docs/current/errcodes-appendix.html
+    // Exception is timeout, which is not a PostgreSQL error code, but a special case when command timeout occurs.
     //
     // - StatusCode: HTTP status code to return.
     // - Title: Optional title field in response JSON. When null, actual error message is used.
@@ -207,17 +216,13 @@ Old error handling options have been removed in favor of a more flexible and ext
     "ErrorCodePolicies": [{
       "Name": "Default",
       "ErrorCodes": {
-        "42501": {"StatusCode": 403, "Title": "Insufficient Privilege", "Details": null, "Type": null}, // query_canceled      -> 403 Forbidden
-        "57014": {"StatusCode": 205, "Title": "Cancelled", "Details": null, "Type": null},              // query_canceled      -> 205 Reset Content
-        "P0001": {"StatusCode": 400, "Title": null, "Details": null, "Type": null},                     // raise_exception     -> 400 Bad Request
-        "P0004": {"StatusCode": 400, "Title": null, "Details": null, "Type": null},                     // assert_failure      -> 400 Bad Request
-        "42883": {"StatusCode": 404, "Title": "Not Found", "Details": null, "Type": null}               // undefined_function  -> 404 Not Found
+        "42501": {"StatusCode": 403, "Title": "Insufficient Privilege", "Details": null, "Type": null},   // query_canceled      -> 403 Forbidden
+        "57014": {"StatusCode": 205, "Title": "Cancelled", "Details": null, "Type": null},                // query_canceled      -> 205 Reset Content
+        "P0001": {"StatusCode": 400, "Title": null, "Details": null, "Type": null},                       // raise_exception     -> 400 Bad Request
+        "P0004": {"StatusCode": 400, "Title": null, "Details": null, "Type": null},                       // assert_failure      -> 400 Bad Request
+        "42883": {"StatusCode": 404, "Title": "Not Found", "Details": null, "Type": null},                // undefined_function  -> 404 Not Found
       }
-    }],
-    //
-    // Default policy name to use from the ErrorCodePolicies section.
-    //
-    "DefaultErrorCodePolicy": "Default"
+    }]
   }
 }
 ```
@@ -231,22 +236,28 @@ Old error handling options have been removed in favor of a more flexible and ext
     public ErrorHandlingOptions ErrorHandlingOptions { get; set; } = new();
 ```
 ```csharp
-    public class ErrorHandlingOptions
+public class ErrorHandlingOptions
+{
+    public string? DefaultErrorCodePolicy { get; set; } = "Default";
+    
+    public ErrorCodeMappingOptions? TimeoutErrorMapping { get; set; } = new()
     {
-        public string? DefaultErrorCodePolicy { get; set; } = "Default";
+        StatusCode = 504,
+        Title = "Command execution timed out"
+    };
 
-        public Dictionary<string, Dictionary<string, ErrorCodeMappingOptions>> ErrorCodePolicies { get; set; } = new()
+    public Dictionary<string, Dictionary<string, ErrorCodeMappingOptions>> ErrorCodePolicies { get; set; } = new()
+    {
+        ["Default"] = new()
         {
-            ["Default"] = new()
-            {
-                { "42501", new() { StatusCode = 403, Title = "Insufficient Privilege" } },
-                { "57014", new() { StatusCode = 205, Title = "Cancelled" } },
-                { "P0001", new() { StatusCode = 400 } },
-                { "P0004", new() { StatusCode = 400 } },
-                { "42883", new() { StatusCode = 404, Title = "Not Found" } },
-            }
-        };
-    }
+            { "42501", new() { StatusCode = 403, Title = "Insufficient Privilege" } },
+            { "57014", new() { StatusCode = 205, Title = "Cancelled" } },
+            { "P0001", new() { StatusCode = 400 } },
+            { "P0004", new() { StatusCode = 400 } },
+            { "42883", new() { StatusCode = 404, Title = "Not Found" } },
+        }
+    };
+}
 ```
 
 - Added new comment annotations to set error code policy per endpoint:
