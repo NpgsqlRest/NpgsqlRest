@@ -29,8 +29,6 @@ private static readonly string[] InfoEventsStreamingScopeKey = [
 
 - TODO fix claims to parameters or user context mapping - if empty string is passed, use null (make it optional with default true)
 
-- TODO fix array parameter logging: e.g. -- $6 text[] = 'System.Collections.Generic.List`1[System.String]'
-
 ## Version [3.0.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.0.0) (date is TBD)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/2.36.0...2.36.1)
@@ -428,6 +426,7 @@ rate_limiter [ name ]
 - Refactoring: moved some files around to better structure the project.
 - Removed unnecessary type casting when routine source returns set with embedded composite type.
 - Fix: fixed incorrect handling of types with modifier (e.g. varchar(100), numeric(10,2), etc). This causes type with modifiers to be serialized as incorrect type.
+- Fix: fixed incorrect parameter logging when parameters were added from user claims as string array (roles, permissions, etc).
 
 #### Login Endpoint Changes
 

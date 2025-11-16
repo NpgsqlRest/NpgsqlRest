@@ -416,15 +416,28 @@ internal static class ParameterParser
         {
             return Consts.Null;
         }
-        // TODO fix this: fix array parameter logging: e.g. -- $6 text[] = 'System.Collections.Generic.List`1[System.String]'
-        if (descriptor.IsArray && value is IList<object> list)
+        if (descriptor.IsArray)
         {
-            var d = descriptor;
-            if (descriptor is { IsNumeric: false, IsBoolean: false })
+            if (value is IList<object> objectList)
             {
-                return string.Concat("{", string.Join(",", list.Select(x => string.Concat("'", Format(x, d), "'"))), "}");
+                var d = descriptor;
+                if (descriptor is { IsNumeric: false, IsBoolean: false })
+                {
+                    return string.Concat("{", string.Join(",", objectList.Select(x => string.Concat("'", Format(x, d), "'"))),
+                        "}");
+                }
+                return string.Concat("{", string.Join(",", objectList.Select(x => Format(x, d))), "}");
             }
-            return string.Concat("{", string.Join(",", list.Select(x => Format(x, d))), "}");
+            if (value is IList<string> stringList)
+            {
+                var d = descriptor;
+                if (descriptor is { IsNumeric: false, IsBoolean: false })
+                {
+                    return string.Concat("{", string.Join(",", stringList.Select(x => string.Concat("'", Format(x, d), "'"))),
+                        "}");
+                }
+                return string.Concat("{", string.Join(",", stringList.Select(x => Format(x, d))), "}");
+            }
         }
         if (descriptor is { IsNumeric: false, IsBoolean: false })
         {
