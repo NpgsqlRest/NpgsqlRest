@@ -333,9 +333,9 @@ public static class Ext
         return claimValues;
     }
 
-    public static object GetUserClaimsDbParam(this ClaimsPrincipal user, Dictionary<string, object> claimValues)
+    public static object GetUserClaimsDbParam(this ClaimsPrincipal user, Dictionary<string, object?> claimValues)
     {
-        if (user is null || claimValues is null || claimValues.Count == 0)
+        if (claimValues.Count == 0)
         {
             return "{}";
         }
@@ -354,7 +354,7 @@ public static class Ext
             }
             else
             {
-                estimatedCapacity += ((string)entry.Value).Length * 2 + 2;
+                estimatedCapacity += entry.Value is null ? 4 : ((string)entry.Value).Length * 2 + 2;
             }
         }
         StringBuilder sb = new(estimatedCapacity);

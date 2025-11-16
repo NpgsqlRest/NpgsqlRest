@@ -235,7 +235,7 @@ public class BasicAuthTests(TestFixture test)
         using var result = await test.Client.SendAsync(request);
         var response = await result.Content.ReadAsStringAsync();
         result.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Should().Be("{\"name_identifier\":\"1\",\"name\":\"xxx\",\"password\":\"yyy\",\"valid\":\"\",\"realm\":\"NpgsqlRest\",\"path\":\"/api/get-basic-auth-challenge-command\"}"); 
+        response.Should().Be("{\"name_identifier\":\"1\",\"name\":\"xxx\",\"password\":\"yyy\",\"valid\":null,\"realm\":\"NpgsqlRest\",\"path\":\"/api/get-basic-auth-challenge-command\"}"); 
     }
     
     [Fact]
