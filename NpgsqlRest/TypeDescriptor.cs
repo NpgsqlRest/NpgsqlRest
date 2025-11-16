@@ -168,7 +168,16 @@ public class TypeDescriptor
 
     private NpgsqlDbType GetDbType()
     {
-        var result = Type switch
+        // Strip type modifiers (length, precision, scale) before matching
+        // e.g., "character(1)" -> "character", "numeric(10,2)" -> "numeric"
+        var normalizedType = Type;
+        var parenIndex = Type.IndexOf('(');
+        if (parenIndex > 0)
+        {
+            normalizedType = Type.Substring(0, parenIndex);
+        }
+
+        var result = normalizedType switch
         {
             "smallint" => NpgsqlDbType.Smallint,
             "integer" => NpgsqlDbType.Integer,

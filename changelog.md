@@ -31,8 +31,6 @@ private static readonly string[] InfoEventsStreamingScopeKey = [
 
 - TODO fix array parameter logging: e.g. -- $6 text[] = 'System.Collections.Generic.List`1[System.String]'
 
-- TODO fix: when returning char(1) in JSON, value is not quoted!
-
 ## Version [3.0.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.0.0) (date is TBD)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/2.36.0...2.36.1)
@@ -429,6 +427,7 @@ rate_limiter [ name ]
 - NpgsqlRest core project library has set InternalsVisibleTo to NpgsqlRestTests for testability for tests using Options or Logger. 
 - Refactoring: moved some files around to better structure the project.
 - Removed unnecessary type casting when routine source returns set with embedded composite type.
+- Fix: fixed incorrect handling of types with modifier (e.g. varchar(100), numeric(10,2), etc). This causes type with modifiers to be serialized as incorrect type.
 
 #### Login Endpoint Changes
 
