@@ -1,5 +1,40 @@
 # Changelog Archive
 
+## Version [2.36.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/2.36.1) (2025-09-29)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/2.36.0...2.36.1)
+
+This minor version improves `TSClient` plugin only (`ClientCodeGen` configuration in client).
+
+Generated Typescript fetch modules are simplified:
+- Returned type is now `Promise<{status: number, response: IMyResponse[]}>` instead of previously `Promise<{status: number, response: IMyResponse[] | string}>`.
+- When failed, response cast string to any: `response: response.status == 200 ? await response.json() as IMyResponse[] : await response.text() as any`.
+
+This approach avoids casting to appropriate type on caller:
+
+```ts
+myCall({}).then(res => {
+    if (res.status === 200) {
+      // previously: 
+      //let myField = (res.response[0] as IMyResponse).field;
+
+      // now:
+      let myField = res.response[0].field;
+    }
+});
+```
+
+If status is different then 200, then we need to cast to string.
+
+Additionaly, new configuration option for `ClientCodeGen` configuration:
+
+```jsonc
+//
+// When true, include PostgreSQL schema name in the generated type names to avoid name collisions. Set to false to simplify type names when no name collisions are expected.
+// 
+"IncludeSchemaInNames": true
+```
+
 ## Version [2.36.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/2.36.0) (2025-09-29)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/2.35.0...2.36.0)

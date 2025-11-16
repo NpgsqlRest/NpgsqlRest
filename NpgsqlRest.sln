@@ -18,6 +18,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		options.md = options.md
 		README.md = README.md
 		docker\Dockerfile = docker\Dockerfile
+		changelog-old.md = changelog-old.md
 	EndProjectSection
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "BenchmarkTests", "BenchmarkTests\BenchmarkTests.csproj", "{2D8EAE94-E992-4CA0-BB86-91738ABB429B}"
