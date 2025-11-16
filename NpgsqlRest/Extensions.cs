@@ -284,10 +284,10 @@ public static class Ext
         return sb.ToString();
     }
     
-    public static Dictionary<string, object> BuildClaimsDictionary(this ClaimsPrincipal? user, NpgsqlRestAuthenticationOptions options)
+    public static Dictionary<string, object?> BuildClaimsDictionary(this ClaimsPrincipal? user, NpgsqlRestAuthenticationOptions options)
     {
-        Dictionary<string, object> claimValues = [];
-        if (user is null || user.Claims is null)
+        Dictionary<string, object?> claimValues = [];
+        if (user is null)
         {
             return claimValues;
         }
@@ -295,25 +295,38 @@ public static class Ext
         {
             if (claimValues.TryGetValue(claim.Type, out var existing))
             {
-                if (existing is List<string> list)
+                if (string.IsNullOrEmpty(claim.Value) is false)
                 {
-                    list.Add(claim.Value);
-                }
-                else
-                {
-                    var newList = new List<string>(4) { (string)existing, claim.Value };
-                    claimValues[claim.Type] = newList;
+                    if (existing is List<string> list)
+                    {
+                        list.Add(claim.Value);
+                    }
+                    else
+                    {
+                        var newList = new List<string>(4) { (string)existing, claim.Value };
+                        claimValues[claim.Type] = newList;
+                    }
                 }
             }
             else
             {
                 if (claim.IsTypeOf(options.DefaultRoleClaimType))
                 {
-                    claimValues[claim.Type] = new List<string> { claim.Value };
+                    if (string.IsNullOrEmpty(claim.Value) is false)
+                    {
+                        claimValues[claim.Type] = new List<string>(4) { claim.Value };
+                    }
                 }
                 else
                 {
-                    claimValues[claim.Type] = claim.Value;
+                    if (string.IsNullOrEmpty(claim.Value))
+                    {
+                        claimValues[claim.Type] = null;
+                    }
+                    else
+                    {
+                        claimValues[claim.Type] = claim.Value;
+                    }
                 }
             }
         }

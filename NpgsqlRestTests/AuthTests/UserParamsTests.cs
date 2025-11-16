@@ -77,6 +77,20 @@ public static partial class Database
         authorize
         user_params
         ';
+        
+        create function user_params_login_with_nulls() 
+        returns table (
+            name_identifier int,
+            name text, 
+            role text[]
+        )
+        language sql as $$
+        select
+            123 as name_identifier,
+            null::text as name,
+            null::text[] as role
+        $$;
+        comment on function user_params_login_with_nulls() is 'login';
         """);
     }
 }
@@ -125,5 +139,20 @@ public class UserParamsTests(TestFixture test)
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Be("[{\"nameIdentifier\":456,\"name\":\"notmyname\",\"role\":[]}]");
+    }
+    
+    [Fact]
+    public async Task Test_get_user_params_with_nulls1()
+    {
+        using var client = test.Application.CreateClient();
+        client.Timeout = TimeSpan.FromHours(1);
+
+        using var login = await client.PostAsync("/api/user-params-login-with-nulls/", null);
+        login.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var response = await client.GetAsync("/api/get-user-params/");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Be("[{\"nameIdentifier\":123,\"name\":null,\"role\":null}]");
     }
 }
