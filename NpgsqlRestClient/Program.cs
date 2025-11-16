@@ -221,8 +221,6 @@ NpgsqlRestOptions options = new()
     RequiresAuthorization = config.GetConfigBool("RequiresAuthorization", config.NpgsqlRestCfg, true),
 
     LoggerName = config.GetConfigStr("ApplicationName", config.Cfg),
-    LogEndpointCreatedInfo = config.GetConfigBool("LogEndpointCreatedInfo", config.NpgsqlRestCfg, true),
-    LogAnnotationSetInfo = config.GetConfigBool("LogEndpointCreatedInfo", config.NpgsqlRestCfg, true),
     LogConnectionNoticeEvents = config.GetConfigBool("LogConnectionNoticeEvents", config.NpgsqlRestCfg, true),
     LogCommands = config.GetConfigBool("LogCommands", config.NpgsqlRestCfg),
     LogCommandParameters = config.GetConfigBool("LogCommandParameters", config.NpgsqlRestCfg),

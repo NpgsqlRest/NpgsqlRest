@@ -81,13 +81,10 @@ public static class NpgsqlRestBuilder
                 options.RouteHandlerCreated(routeBuilder, endpoint);
             }
 
-            if (options.LogEndpointCreatedInfo)
+            Logger?.EndpointCreated(urlInfo);
+            if (endpoint.InfoEventsStreamingPath is not null)
             {
-                Logger?.EndpointCreated(urlInfo);
-                if (endpoint.InfoEventsStreamingPath is not null)
-                {
-                    Logger?.EndpointInfoStreamingPath(urlInfo, endpoint.InfoEventsStreamingPath);
-                }
+                Logger?.EndpointInfoStreamingPath(urlInfo, endpoint.InfoEventsStreamingPath);
             }
         }
         

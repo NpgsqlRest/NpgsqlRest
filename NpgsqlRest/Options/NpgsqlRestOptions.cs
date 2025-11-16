@@ -161,17 +161,7 @@ public class NpgsqlRestOptions
     ///  Change the logger name with this option. 
     /// </summary>
     public string? LoggerName { get; set; } = "NpgsqlRest";
-
-    /// <summary>
-    /// Log endpoint created events.
-    /// </summary>
-    public bool LogEndpointCreatedInfo { get; set; } = true;
-
-    /// <summary>
-    /// When this value is true, all changes in the endpoint properties that are set from the comment annotations will be logged as warnings.
-    /// </summary>
-    public bool LogAnnotationSetInfo { get; set; } = true;
-
+    
     /// <summary>
     /// When this value is true, all connection events are logged (depending on the level). This is usually triggered by the PostgreSQL [`RAISE` statements](https://www.postgresql.org/docs/current/plpgsql-errors-and-messages.html). Set to false to disable logging these events.
     /// </summary>

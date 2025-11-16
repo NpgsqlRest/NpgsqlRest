@@ -426,6 +426,7 @@ rate_limiter [ name ]
 - Fix: fixed incorrect handling of types with modifier (e.g. varchar(100), numeric(10,2), etc). This causes type with modifiers to be serialized as incorrect type.
 - Fix: fixed incorrect parameter logging when parameters were added from user claims as string array (roles, permissions, etc).
 - Fix: user claims mapping to parameters or context will now by default be NULL when claim is null or empty string. Previous behavior was to map empty string as empty string.
+- Remove two logging options: `LogEndpointCreatedInfo` and `LogAnnotationSetInfo`. By default, all command parameters and values are logged at Debug level. 
 
 #### Login Endpoint Changes
 
