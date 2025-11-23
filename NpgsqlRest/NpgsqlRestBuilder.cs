@@ -53,7 +53,7 @@ public static class NpgsqlRestBuilder
 
         if (hasStreamingEvents is true)
         {
-            builder.UseMiddleware<NpgsqlRestNoticeEventSource>();
+            builder.UseMiddleware<NpgsqlRestSseEventSource>();
         }
 
         foreach (var entry in entries)
@@ -82,9 +82,13 @@ public static class NpgsqlRestBuilder
             }
 
             Logger?.EndpointCreated(urlInfo);
-            if (endpoint.InfoEventsStreamingPath is not null)
+            if (endpoint.SseEventsPath is not null)
             {
-                Logger?.EndpointInfoStreamingPath(urlInfo, endpoint.InfoEventsStreamingPath);
+                if (endpoint.SseEventNoticeLevel is null)
+                {
+                    endpoint.SseEventNoticeLevel = Options.DefaultSseEventNoticeLevel;
+                }
+                Logger?.EndpointSsePath($"{endpoint.Method} {endpoint.Path}", endpoint.SseEventsPath, endpoint.SseEventNoticeLevel);
             }
         }
         
@@ -226,19 +230,19 @@ public static class NpgsqlRestBuilder
                     }
                 }
 
-                if (endpoint.InfoEventsStreamingPath is not null)
+                if (endpoint.SseEventsPath is not null)
                 {
-                    if (endpoint.InfoEventsStreamingPath.StartsWith(endpoint.Path) is false)
+                    if (endpoint.SseEventsPath.StartsWith(endpoint.Path) is false)
                     {
                         // Optimize path concatenation
                         var basePath = endpoint.Path.EndsWith('/') ? endpoint.Path[..^1] : endpoint.Path;
-                        var streamPath = endpoint.InfoEventsStreamingPath.StartsWith('/')
-                            ? endpoint.InfoEventsStreamingPath[1..]
-                            : endpoint.InfoEventsStreamingPath;
-                        endpoint.InfoEventsStreamingPath = string.Concat(basePath, "/", streamPath);
+                        var streamPath = endpoint.SseEventsPath.StartsWith('/')
+                            ? endpoint.SseEventsPath[1..]
+                            : endpoint.SseEventsPath;
+                        endpoint.SseEventsPath = string.Concat(basePath, "/", streamPath);
                     }
 
-                    NpgsqlRestNoticeEventSource.Paths.Add(endpoint.InfoEventsStreamingPath);
+                    NpgsqlRestSseEventSource.Paths.Add(endpoint.SseEventsPath);
                     hasStreamingEvents = true;
                 }
 

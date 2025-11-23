@@ -241,7 +241,8 @@ NpgsqlRestOptions options = new()
     EndpointCreateHandlers = appInstance.CreateCodeGenHandlers(connectionString),
     CustomRequestHeaders = builder.GetCustomHeaders(),
     ExecutionIdHeaderName = config.GetConfigStr("ExecutionIdHeaderName", config.NpgsqlRestCfg) ?? "X-NpgsqlRest-ID",
-    CustomServerSentEventsResponseHeaders = builder.GetCustomServerSentEventsResponseHeaders(),
+    DefaultSseEventNoticeLevel = config.GetConfigEnum<PostgresNoticeLevels?>("DefaultServerSentEventsEventNoticeLevel", config.NpgsqlRestCfg) ?? PostgresNoticeLevels.INFO,
+    SseResponseHeaders = builder.GetSseResponseHeaders(),
 
     RoutineSources = appInstance.CreateRoutineSources(),
     UploadOptions = appInstance.CreateUploadOptions(),

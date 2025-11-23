@@ -3,15 +3,15 @@ using NpgsqlRest.Defaults;
 
 namespace NpgsqlRest;
 
-public readonly record struct NoticeEvent(
+public readonly record struct SseEvent(
     PostgresNotice Notice,
     RoutineEndpoint? Endpoint,
     string? ExecutionId);
 
-public class NpgsqlRestNoticeEventSource(RequestDelegate next)
+public class NpgsqlRestSseEventSource(RequestDelegate next)
 {
     public static readonly HashSet<string> Paths = [];
-    public static readonly Broadcaster<NoticeEvent> Broadcaster = new();
+    public static readonly Broadcaster<SseEvent> Broadcaster = new();
     
     public async Task InvokeAsync(HttpContext context)
     {
@@ -28,9 +28,9 @@ public class NpgsqlRestNoticeEventSource(RequestDelegate next)
         context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate, max-age=0";
         context.Response.Headers.Connection = "keep-alive";
 
-        if (Options.CustomServerSentEventsResponseHeaders.Count > 0)
+        if (Options.SseResponseHeaders.Count > 0)
         {
-            foreach (var header in Options.CustomServerSentEventsResponseHeaders)
+            foreach (var header in Options.SseResponseHeaders)
             {
                 if (context.Response.Headers.ContainsKey(header.Key))
                 {
@@ -50,17 +50,17 @@ public class NpgsqlRestNoticeEventSource(RequestDelegate next)
             await foreach (var noticeEvent in reader.ReadAllAsync(cancellationToken))
             {
                 var endpoint = noticeEvent.Endpoint;
-                var scope = noticeEvent.Endpoint?.InfoEventsScope;
-                var infoEventsRoles = endpoint?.InfoEventsRoles;
+                var scope = noticeEvent.Endpoint?.SseEventsScope;
+                var infoEventsRoles = endpoint?.SseEventsRoles;
 
                 if (string.IsNullOrEmpty(noticeEvent.Notice.Hint) is false)
                 {
                     string hint = noticeEvent.Notice.Hint;
                     var words = hint.SplitWords();
-                    if (words is not null && words.Length > 0 && Enum.TryParse<InfoEventsScope>(words[0], true, out var parsedScope))
+                    if (words is not null && words.Length > 0 && Enum.TryParse<SseEventsScope>(words[0], true, out var parsedScope))
                     {
                         scope = parsedScope;
-                        if (scope == InfoEventsScope.Authorize && words.Length > 1)
+                        if (scope == SseEventsScope.Authorize && words.Length > 1)
                         {
                             // if info roles already exist, merge them with the new ones
                             infoEventsRoles ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -76,18 +76,18 @@ public class NpgsqlRestNoticeEventSource(RequestDelegate next)
                     else
                     {
                         Logger?.LogError("Could not recognize valid value for parameter key {key}. Valid values are: {values}. Provided value is {provided}.",
-                            words?[0], string.Join(", ", Enum.GetNames<InfoEventsScope>()), hint);
+                            words?[0], string.Join(", ", Enum.GetNames<SseEventsScope>()), hint);
                     }
                 }
 
-                if (scope == InfoEventsScope.Self)
+                if (scope == SseEventsScope.Self)
                 {
                     if (string.Equals(noticeEvent.ExecutionId, executionId, StringComparison.Ordinal) is false)
                     {
                         continue; // Skip events not matching the current execution ID
                     }
                 }
-                else if (scope == InfoEventsScope.Matching)
+                else if (scope == SseEventsScope.Matching)
                 {
                     if (context.User?.Identity?.IsAuthenticated is false && 
                         (endpoint?.RequiresAuthorization is true || endpoint?.AuthorizeRoles is not null))
@@ -115,7 +115,7 @@ public class NpgsqlRestNoticeEventSource(RequestDelegate next)
                         }
                     }
                 }
-                else if (scope == InfoEventsScope.Authorize)
+                else if (scope == SseEventsScope.Authorize)
                 {
                     if (context.User?.Identity?.IsAuthenticated is false)
                     {

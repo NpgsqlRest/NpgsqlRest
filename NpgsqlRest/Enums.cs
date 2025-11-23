@@ -9,6 +9,7 @@ public enum CommentHeader { None, Simple, Full }
 public enum TextResponseNullHandling { EmptyString, NullLiteral, NoContent }
 public enum QueryStringNullHandling { EmptyString, NullLiteral, Ignore }
 public enum SslRequirement { Ignore, Warning, Required }
+public enum PostgresNoticeLevels { INFO, NOTICE, WARNING }
 
 public enum ServiceProviderObject
 {
@@ -75,7 +76,7 @@ public enum PostgresConnectionNoticeLoggingMode
     FullStackAndMessage
 }
 
-public enum InfoEventsScope
+public enum SseEventsScope
 {
     /// <summary>
     /// Only the session that initiated the request receives the notification (default)

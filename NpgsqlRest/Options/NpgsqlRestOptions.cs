@@ -320,11 +320,16 @@ public class NpgsqlRestOptions
     /// Name of the request ID header that will be used to track requests. This is used to correlate requests with streaming connection ids.
     /// </summary>
     public string ExecutionIdHeaderName { get; set; } = "X-NpgsqlRest-ID";
+    
+    /// <summary>
+    /// Server-sent events notice levels that will be sent to connected clients. When SSE path is set, generate SSE events for PostgreSQL notice messages with this level or higher.
+    /// </summary>
+    public PostgresNoticeLevels DefaultSseEventNoticeLevel { get; set; } = PostgresNoticeLevels.INFO;
 
     /// <summary>
     /// Collection of custom server-sent events response headers that will be added to the response when connected to the endpoint that is configured to return server-sent events.
     /// </summary>
-    public Dictionary<string, StringValues> CustomServerSentEventsResponseHeaders { get; set; } = [];
+    public Dictionary<string, StringValues> SseResponseHeaders { get; set; } = [];
     
     /// <summary>
     /// Default rate limiting policy for all requests. Policy must be configured within application rate limiting options.

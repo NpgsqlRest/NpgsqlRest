@@ -8,21 +8,6 @@ TODOs:
 
 - TODO add JIT version of Docker
 
-- TODO rename info_* annotations to streaming_* or SSE_* or events_*
-/*
-private static readonly string[] InfoEventsStreamingPathKey = [
-    "info_path",
-    "info_events_path",
-    "info_streaming_path"
-];
-
-private static readonly string[] InfoEventsStreamingScopeKey = [
-    "info_scope",
-    "info_events_scope",
-    "info_streaming_scope",
-];
-*/
-
 - TODO add to TsClient diffent files based on parameters
 
 - TODO fix TsClient, when returning setof or table and one of the columns is json, it should be "any" or "unknown" not "string"
@@ -30,6 +15,58 @@ private static readonly string[] InfoEventsStreamingScopeKey = [
 ## Version [3.0.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.0.0) (date is TBD)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/2.36.0...2.36.1)
+
+### Info Events Streaming Changes (Server-Sent Events)
+
+#### Name refactor: changed all "Info Events" related names to "SSE" to better reflect their purpose.
+
+- Rename configuration key from `CustomServerSentEventsResponseHeaders` to `ServerSentEventsResponseHeaders`.
+- Option from `CustomServerSentEventsResponseHeaders` to `SseResponseHeaders`.
+- Comment annotations:
+  - from `info_path`, `info_events_path`, `info_streaming_path` to `sse`, `sse_path`, `sse_events_path`
+  - from `info_scope`, `info_events_scope`, `info_streaming_scope` to `sse_scope`, `sse_events_scope`
+
+#### New Feature: Support for custom notice level
+
+- New option and configuration:
+    - configuration: `DefaultServerSentEventsEventNoticeLevel`
+    - option: `public PostgresNoticeLevels DefaultSseEventNoticeLevel { get; set; } = PostgresNoticeLevels.INFO;`
+
+Set the default notice level for SSE events when not specified in comment annotation. When SSE path is set, generate SSE events for PostgreSQL notice messages with this level or higher.
+
+#### Other Comment Annotations Changes
+
+- Setting SSE path (and optionally notice level) via comment annotations:
+
+```
+sse [ path ] [ on info | notice | warning ] 
+sse_path [ path ] [ on info | notice | warning ]
+sse_events_path [ path ] [ on info | notice | warning ]
+```
+
+Without argument, just `sse` or `sse_path` or `sse_events_path`, will set the path to default, which depends on default level (`info` for INFO level, `notice` for NOTICE level, etc).
+
+Single argument is treated as path.
+
+If path is followed by `on info` or `on notice` or `on warning`, it will set the notice level accordingly.
+
+Note: you can also set sse path using parameter annotations syntax (`key = value`), for example `sse = /my_sse_path` or `sse_path = /my_sse_path`.
+
+- New comment annotations to set custom SSE event notice level per endpoint:
+
+```
+sse_level [ info | notice | warning ]
+sse_events_level [ info | notice | warning ]
+```
+
+Note: you can also set sse level using parameter annotations syntax (`key = value`), for example `sse_level = info`, etc.
+
+- Scope annotations changed name to match new SSE naming:
+
+```
+sse_scope [ [ self | matching | authorize | all ] | [ authorize [ role_or_user1, role_or_user1, role_or_user1 [, ...] ] ] ] 
+sse_events_scope [ [ self | matching | authorize | all ] | [ authorize [ role_or_user1, role_or_user1, role_or_user1 [, ...] ] ] ] 
+```
 
 ### Timeout Handling
 

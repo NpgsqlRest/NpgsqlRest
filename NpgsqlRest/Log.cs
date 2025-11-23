@@ -22,10 +22,7 @@ public static partial class Log
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "Created endpoint {urlInfo}")]
     public static partial void EndpointCreated(this ILogger logger, string urlInfo);
-
-    [LoggerMessage(Level = LogLevel.Debug, Message = "Endpoint {urlInfo} has INFO notification streaming at path {eventPath}")]
-    public static partial void EndpointInfoStreamingPath(this ILogger logger, string urlInfo, string eventPath);
-
+    
     [LoggerMessage(Level = LogLevel.Warning, Message = "Invalid URL path segment '{urlPathSegment}' in comment for {description}. Using default '{defaultUrl}'")]
     public static partial void InvalidUrlPathSegmentComment(this ILogger logger, string urlPathSegment, string description, string defaultUrl);
 
@@ -187,15 +184,24 @@ public static partial class Log
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has set USER PARAMETERS to TRUE by the comment annotation.")]
     public static partial void CommentUserParameters(this ILogger logger, string description);
+    
+    [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has set SSE EVENTS STREAMING PATH to {path} by the comment annotation.")]
+    public static partial void CommentSseStreamingPath(this ILogger logger, string description, string? path);
+    
+    [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has set SSE EVENTS STREAMING PATH to {path} ON NOTICE LEVEL {level} by the comment annotation.")]
+    public static partial void CommentSseStreamingPathAndLevel(this ILogger logger, string description, string? path, PostgresNoticeLevels level);
+    
+    [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has set SSE EVENTS NOTICE LEVEL ON {level} by the comment annotation.")]
+    public static partial void CommentSseStreamingLevel(this ILogger logger, string description, PostgresNoticeLevels level);
+    
+    [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has set SSE EVENTS STREAMING SCOPE to {scope} by the comment annotation.")]
+    public static partial void CommentSseStreamingScope(this ILogger logger, string description, SseEventsScope scope);
 
-    [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has set INFO EVENTS STREAMING PATH to {path} by the comment annotation.")]
-    public static partial void CommentInfoStreamingPath(this ILogger logger, string description, string? path);
-
-    [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has set INFO EVENTS STREAMING SCOPE to {scope} by the comment annotation.")]
-    public static partial void CommentInfoStreamingScope(this ILogger logger, string description, InfoEventsScope scope);
-
-    [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has set INFO EVENTS STREAMING SCOPE to AUTHENTICATED with roles {roles} by the comment annotation.")]
-    public static partial void CommentInfoStreamingScopeRoles(this ILogger logger, string description, HashSet<string> roles);
+    [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has set SSE EVENTS STREAMING SCOPE to AUTHENTICATED with roles {roles} by the comment annotation.")]
+    public static partial void CommentSseStreamingScopeRoles(this ILogger logger, string description, HashSet<string> roles);
+    
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Endpoint {urlInfo} has enabled SSE EVENTS PATH to {ssePath} ON NOTICE LEVEL {level}.")]
+    public static partial void EndpointSsePath(this ILogger logger, string urlInfo, string ssePath, PostgresNoticeLevels? level);
     
     [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has BASIC AUTH enabled by the comment annotation.")]
     public static partial void BasicAuthEnabled(this ILogger logger, string description);

@@ -902,10 +902,10 @@ public class Builder
         return result;
     }
 
-    public Dictionary<string, StringValues> GetCustomServerSentEventsResponseHeaders()
+    public Dictionary<string, StringValues> GetSseResponseHeaders()
     {
         var result = new Dictionary<string, StringValues>();
-        foreach (var section in _config.NpgsqlRestCfg.GetSection("CustomServerSentEventsResponseHeaders").GetChildren())
+        foreach (var section in _config.NpgsqlRestCfg.GetSection("ServerSentEventsResponseHeaders").GetChildren())
         {
             result.Add(section.Key, section.Value);
         }

@@ -33,9 +33,9 @@ public class RoutineEndpoint(
     Dictionary<string, string>? customParameters = null,
     bool userContext = false,
     bool userParameters = false,
-    string? infoEventsStreamingPath = null,
-    InfoEventsScope infoEventsScope = InfoEventsScope.Self,
-    HashSet<string>? infoEventsRoles = null)
+    string? sseEventsPath = null,
+    SseEventsScope sseEventsScope = SseEventsScope.Self,
+    HashSet<string>? sseEventsRoles = null)
 {
     private string? _bodyParameterName = bodyParameterName;
 
@@ -84,9 +84,10 @@ public class RoutineEndpoint(
     public Dictionary<string, string>? CustomParameters { get; set; } = customParameters;
     public bool UserContext { get; set; } = userContext;
     public bool UseUserParameters { get; set; } = userParameters;
-    public string? InfoEventsStreamingPath { get; set; } = infoEventsStreamingPath;
-    public InfoEventsScope InfoEventsScope { get; set; } = infoEventsScope;
-    public HashSet<string>? InfoEventsRoles { get; set; } = infoEventsRoles;
+    public PostgresNoticeLevels? SseEventNoticeLevel { get; set; } = null;
+    public string? SseEventsPath { get; set; } = sseEventsPath;
+    public SseEventsScope SseEventsScope { get; set; } = sseEventsScope;
+    public HashSet<string>? SseEventsRoles { get; set; } = sseEventsRoles;
     public Auth.EndpointBasicAuthOptions? BasicAuth { get; set; } = null;
     public RetryStrategy? RetryStrategy { get; set; } = null;
     public string? RateLimiterPolicy { get; set; } = null;

@@ -301,7 +301,7 @@ public static class Ext
                     {
                         list.Add(claim.Value);
                     }
-                    else
+                    else if (existing is not null)
                     {
                         var newList = new List<string>(4) { (string)existing, claim.Value };
                         claimValues[claim.Type] = newList;
@@ -383,7 +383,7 @@ public static class Ext
             }
             else
             {
-                sb.Append(PgConverters.SerializeString((string)entry.Value));
+                sb.Append(entry.Value is not null ? PgConverters.SerializeString((string)entry.Value) : "null");
             }
             i++;
         }
@@ -414,10 +414,10 @@ public static class Ext
         return request.GetClientIpAddress() as object ?? DBNull.Value;
     }
 
-    private const string Info = "INFO";
-    private const string Notice = "NOTICE";
-    private const string Warning = "WARNING";
-
+    private const string Info = nameof(PostgresNoticeLevels.INFO);
+    private const string Notice = nameof(PostgresNoticeLevels.NOTICE);
+    private const string Warning = nameof(PostgresNoticeLevels.WARNING);
+    
     public static bool IsInfo(this PostgresNotice notice)
     { 
         return string.Equals(notice.Severity, Info, StringComparison.OrdinalIgnoreCase);

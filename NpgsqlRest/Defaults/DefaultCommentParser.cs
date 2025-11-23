@@ -165,16 +165,20 @@ internal static class DefaultCommentParser
         "param",
     ];
 
-    private static readonly string[] InfoEventsStreamingPathKey = [
-        "info_path",
-        "info_events_path",
-        "info_streaming_path"
+    private static readonly string[] SseEventsStreamingPathKey = [
+        "sse",
+        "sse_path",
+        "sse_events_path",
+    ];
+    
+    private static readonly string[] SseEventsLevelKey = [
+        "sse_level",
+        "sse_events_level",
     ];
 
-    private static readonly string[] InfoEventsStreamingScopeKey = [
-        "info_scope",
-        "info_events_scope",
-        "info_streaming_scope",
+    private static readonly string[] SseEventsStreamingScopeKey = [
+        "sse_scope",
+        "sse_events_scope",
     ];
     
     private static readonly string[] BasicAuthKey = [
@@ -954,55 +958,85 @@ internal static class DefaultCommentParser
                         }
                     }
                 }
-
-                // info_path [ true | false | path ]
-                // info_events_path [ true | false | path ]
-                // info_streaming_path [ true |false | path ]
-                else if (haveTag is true && len >= 2 && StrEqualsToArray(wordsLower[0], InfoEventsStreamingPathKey))
+                
+                // sse path [ path ] [ on info | notice | warning ] 
+                // sse_path [ path ] [ on info | notice | warning ]
+                // sse_events_path [ path ] [ on info | notice | warning ]
+                else if (haveTag is true && StrEqualsToArray(wordsLower[0], SseEventsStreamingPathKey))
                 {
-                    if (bool.TryParse(wordsLower[1], out var parseredStreamingPath))
+                    if (len == 1)
                     {
-                        if (parseredStreamingPath is true)
-                        {
-                            routineEndpoint.InfoEventsStreamingPath = Consts.DefaultInfoPath;
-                        }
+                        routineEndpoint.SseEventsPath =
+                            (routineEndpoint.SseEventNoticeLevel ?? Options.DefaultSseEventNoticeLevel).ToString();
+                        Logger?.CommentSseStreamingPath(description, routineEndpoint.SseEventsPath);
                     }
                     else
                     {
-                        routineEndpoint.InfoEventsStreamingPath = wordsLower[1];
-                    }
-                    Logger?.CommentInfoStreamingPath(description, routineEndpoint.InfoEventsStreamingPath);
-                }
-
-                // info_scope [ [ self | matching | authorize | all ] | [ authorize [ role1, role2, role3 [, ...] ] ] ] 
-                // info_events_scope [ [ self | matching | authorize | all ] | [ authorize [ role1, role2, role3 [, ...] ] ] ] 
-                // info_streaming_scope [ [ self | matching | authorize | all ] | [ authorize [ role1, role2, role3 [, ...] ] ] ] 
-                else if (haveTag is true && len >= 2 && StrEqualsToArray(wordsLower[0], InfoEventsStreamingScopeKey))
-                {
-                    if (wordsLower.Length > 1 && Enum.TryParse<InfoEventsScope>(wordsLower[1], true, out var parsedScope))
-                    {
-                        routineEndpoint.InfoEventsScope = parsedScope;
-                        if (parsedScope == InfoEventsScope.Authorize && wordsLower.Length > 2)
+                        routineEndpoint.SseEventsPath = wordsLower[1];
+                        if (len >= 4 && StrEquals(wordsLower[2], "on"))
                         {
-                            routineEndpoint.InfoEventsRoles ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                            if (Enum.TryParse<PostgresNoticeLevels>(words[3], true, out var parsedLevel))
+                            {
+                                routineEndpoint.SseEventNoticeLevel = parsedLevel;
+                                Logger?.CommentSseStreamingPathAndLevel(description, routineEndpoint.SseEventsPath, routineEndpoint.SseEventNoticeLevel.Value);
+                            }
+                            else
+                            {
+                                Logger?.LogError("Could not recognize valid value for parameter key {key}. Valid values are: {values}. Provided value is {provided}.",
+                                    wordsLower[0], string.Join(", ", Enum.GetNames<PostgresNoticeLevels>()), line);
+                            }
+                        }
+                        else
+                        {
+                            Logger?.CommentSseStreamingPath(description, routineEndpoint.SseEventsPath);
+                        }
+                    }
+                }
+                
+                // sse_level [ info | notice | warning ]
+                // sse_events_level [ info | notice | warning ]
+                else if (haveTag is true && len >= 2 && StrEqualsToArray(wordsLower[0], SseEventsLevelKey))
+                {
+                    if (Enum.TryParse<PostgresNoticeLevels>(words[1], true, out var parsedLevel))
+                    {
+                        routineEndpoint.SseEventNoticeLevel = parsedLevel;
+                        Logger?.CommentSseStreamingLevel(description, routineEndpoint.SseEventNoticeLevel.Value);
+                    }
+                    else
+                    {
+                        Logger?.LogError("Could not recognize valid value for parameter key {key}. Valid values are: {values}. Provided value is {provided}.",
+                            wordsLower[0], string.Join(", ", Enum.GetNames<PostgresNoticeLevels>()), line);
+                    }
+                }
+                
+                // sse_scope [ [ self | matching | authorize | all ] | [ authorize [ role_or_user1, role_or_user1, role_or_user1 [, ...] ] ] ] 
+                // sse_events_scope [ [ self | matching | authorize | all ] | [ authorize [ role_or_user1, role_or_user1, role_or_user1 [, ...] ] ] ] 
+                else if (haveTag is true && len >= 2 && StrEqualsToArray(wordsLower[0], SseEventsStreamingScopeKey))
+                {
+                    if (wordsLower.Length > 1 && Enum.TryParse<SseEventsScope>(wordsLower[1], true, out var parsedScope))
+                    {
+                        routineEndpoint.SseEventsScope = parsedScope;
+                        if (parsedScope == SseEventsScope.Authorize && wordsLower.Length > 2)
+                        {
+                            routineEndpoint.SseEventsRoles ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                             foreach (var word in wordsLower[2..])
                             {
                                 if (string.IsNullOrWhiteSpace(word) is false)
                                 {
-                                    routineEndpoint.InfoEventsRoles.Add(word);
+                                    routineEndpoint.SseEventsRoles.Add(word);
                                 }
                             }
-                            Logger?.CommentInfoStreamingScopeRoles(description, routineEndpoint.InfoEventsRoles);
+                            Logger?.CommentSseStreamingScopeRoles(description, routineEndpoint.SseEventsRoles);
                         }
                         else
                         {
-                            Logger?.CommentInfoStreamingScope(description, routineEndpoint.InfoEventsScope);
+                            Logger?.CommentSseStreamingScope(description, routineEndpoint.SseEventsScope);
                         }
                     }
                     else
                     {
                         Logger?.LogError("Could not recognize valid value for parameter key {key}. Valid values are: {values}. Provided value is {provided}.",
-                            wordsLower[0], string.Join(", ", Enum.GetNames<InfoEventsScope>()), line);
+                            wordsLower[0], string.Join(", ", Enum.GetNames<SseEventsScope>()), line);
                     }
                 }
 
@@ -1165,35 +1199,40 @@ internal static class DefaultCommentParser
             }
         }
 
-        else if (StrEqualsToArray(name, InfoEventsStreamingPathKey))
+        else if (StrEqualsToArray(name, SseEventsStreamingPathKey))
         {
             if (bool.TryParse(value, out var parseredStreamingPath))
             {
-                if (parseredStreamingPath is true)
-                {
-                    endpoint.InfoEventsStreamingPath = Consts.DefaultInfoPath;
-                }
+                endpoint.SseEventsPath = parseredStreamingPath is true ? (endpoint.SseEventNoticeLevel ?? Options.DefaultSseEventNoticeLevel).ToString() : null;
             }
             else
             {
-                endpoint.InfoEventsStreamingPath = value;
+                endpoint.SseEventsPath = value;
             }
         }
 
-        else if (StrEqualsToArray(name, InfoEventsStreamingScopeKey))
+        else if (StrEqualsToArray(name, SseEventsLevelKey))
+        {
+            if (Enum.TryParse<PostgresNoticeLevels>(value, true, out var parsedLevel))
+            {
+                endpoint.SseEventNoticeLevel = parsedLevel;
+            }
+        }
+
+        else if (StrEqualsToArray(name, SseEventsStreamingScopeKey))
         {
             var words = value.SplitWords();
-            if (words.Length > 0 && Enum.TryParse<InfoEventsScope>(words[0], true, out var parsedScope))
+            if (words.Length > 0 && Enum.TryParse<SseEventsScope>(words[0], true, out var parsedScope))
             {
-                endpoint.InfoEventsScope = parsedScope;
-                if (parsedScope == InfoEventsScope.Authorize && words.Length > 1)
+                endpoint.SseEventsScope = parsedScope;
+                if (parsedScope == SseEventsScope.Authorize && words.Length > 1)
                 {
-                    endpoint.InfoEventsRoles ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    endpoint.SseEventsRoles ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     foreach (var word in words[1..])
                     {
                         if (string.IsNullOrWhiteSpace(word) is false)
                         {
-                            endpoint.InfoEventsRoles.Add(word);
+                            endpoint.SseEventsRoles.Add(word);
                         }
                     }
                 }
@@ -1202,7 +1241,7 @@ internal static class DefaultCommentParser
             else
             {
                 Logger?.LogError("Could not recognize valid value for parameter key {key}. Valid values are: {values}. Provided value is {provided}.", 
-                    name, string.Join(", ", Enum.GetNames<InfoEventsScope>()), value);
+                    name, string.Join(", ", Enum.GetNames<SseEventsScope>()), value);
             }
         }
         

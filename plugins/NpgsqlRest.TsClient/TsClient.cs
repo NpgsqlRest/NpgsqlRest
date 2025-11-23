@@ -10,7 +10,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
     private NpgsqlRestOptions? _npgsqlRestoptions;
 
     private const string Module = "tsclient";
-    private const string InfoEvents = "tsclient_events";
+    private const string SseEvents = "tsclient_events";
     private const string IncludeParseUrl = "tsclient_parse_url";
     private const string IncludeParseRequest = "tsclient_parse_request";
     private const string IncludeStatusCode = "tsclient_status_code";
@@ -254,8 +254,8 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
         bool Handle(RoutineEndpoint endpoint)
         {
             Routine routine = endpoint.Routine;
-            var eventsStreamingEnabled = endpoint.InfoEventsStreamingPath is not null;
-            if (endpoint.CustomParameters.ParameterEnabled(InfoEvents) is false)
+            var eventsStreamingEnabled = endpoint.SseEventsPath is not null;
+            if (endpoint.CustomParameters.ParameterEnabled(SseEvents) is false)
             {
                 eventsStreamingEnabled = false;
             }
@@ -614,11 +614,11 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 }
                 if (options.SkipTypes is false)
                 {
-                    parameters = string.Concat(parameters, "    info: (message: string) => void = msg => msg");
+                    parameters = string.Concat(parameters, "    onMessage: (message: string) => void = msg => msg");
                 }
                 else
                 {
-                    parameters = string.Concat(parameters, "    info = msg => msg");
+                    parameters = string.Concat(parameters, "    onMessage = msg => msg");
                 }
             }
             if (includeParseUrlParam is true)
@@ -705,7 +705,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                     options.ExportEventSources is true ? "export " : "", //0
                     createEventSourceFunc, //1
                     options.SkipTypes ? "(id = \"\")" : "(id: string = \"\")", //2
-                    endpoint.InfoEventsStreamingPath)); //3
+                    endpoint.SseEventsPath)); //3
             }
 
             if (body is null && bodyParameterName is not null)
@@ -759,7 +759,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                     """
                             const eventSource = {0}(executionId);
                             eventSource.onmessage = {1} => {{
-                                info(event.data);
+                                onMessage(event.data);
                             }};
                             try {{
                                 xhr.send(formData);
@@ -960,7 +960,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                     const executionId = window.crypto.randomUUID();
                     const eventSource = {0}(executionId);
                     eventSource.onmessage = {1} => {{
-                        info(event.data);
+                        onMessage(event.data);
                     }};
                     try {{
                         {2}await fetch({3}, {4}{{

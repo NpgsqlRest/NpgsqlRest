@@ -118,7 +118,7 @@ public class NpgsqlRestEndpoint(
                 return;
             }
 
-            if ( (Options.LogConnectionNoticeEvents && Logger != null) || endpoint.InfoEventsStreamingPath is not null)
+            if ( (Options.LogConnectionNoticeEvents && Logger != null) || endpoint.SseEventsPath is not null)
             {
                 var currentEndpoint = endpoint;
                 connection.Notice += (sender, args) =>
@@ -127,11 +127,13 @@ public class NpgsqlRestEndpoint(
                     {
                         NpgsqlRestLogger.LogConnectionNotice(args.Notice, Options.LogConnectionNoticeEventsMode);
                     }
-                    if (args.Notice.IsInfo())
+                    if (currentEndpoint.SseEventsPath is not null &&
+                        currentEndpoint.SseEventNoticeLevel is not null && 
+                        string.Equals(args.Notice.Severity, currentEndpoint.SseEventNoticeLevel.ToString(), StringComparison.OrdinalIgnoreCase))
                     {
-                        NpgsqlRestNoticeEventSource
+                        NpgsqlRestSseEventSource
                             .Broadcaster
-                            .Broadcast(new NoticeEvent(args.Notice, currentEndpoint, context.Request.Headers[Options.ExecutionIdHeaderName].FirstOrDefault()));
+                            .Broadcast(new SseEvent(args.Notice, currentEndpoint, context.Request.Headers[Options.ExecutionIdHeaderName].FirstOrDefault()));
                     }
                 };
             }
@@ -171,7 +173,7 @@ public class NpgsqlRestEndpoint(
             StringBuilder? cacheKeys = null;
             uploadHandler = endpoint.Upload is true ? endpoint.CreateUploadHandler() : null;
             int uploadMetaParamIndex = -1;
-            Dictionary<string, object>? claimsDict = null;
+            Dictionary<string, object?>? claimsDict = null;
             
             if (endpoint.Cached is true)
             {
