@@ -199,31 +199,52 @@ HTTP settings:
 - Change the HTTP path with the optional third argument.
 - Change the HTTP path with second argument if the second argument doesn't match any valid VERB (GET, POST, etc).
 
-## InfoEventsPath
+## SseEventsPath
 
 ```console
-info_path [path | true | false]
-info_events_path [path | true | false]
-info_streaming_path [path | true | false]
+sse
+sse [path]
+sse [path] on [info | notice | warning]
+sse_path
+sse_path [path]
+sse_path [path] on [info | notice | warning]
+sse_events_path
+sse_events_path [path]
+sse_events_path [path] on [info | notice | warning]
 ```
 
-Additional path appended as a subpath to the main endpoint path for info events streaming (null disables info events). If the endpoint path is `/path` and this value is set to `/info`, the streaming path will be `/path/info`.
+Additional path appended as a subpath to the main endpoint path for SSE (Server-Sent Events) streaming. If the endpoint path is `/path` and this value is set to `/info`, the streaming path will be `/path/info`.
 
-**Note:** This can also be boolean. When set to `true`, the info streaming path will be `/info` which will be added to the main path.
+**Usage:**
+- Without arguments (just `sse` or `sse_path` or `sse_events_path`): Sets the path to default, which depends on the default notice level (`info` for INFO level, `notice` for NOTICE level, `warning` for WARNING level).
+- Single argument: Treated as the path.
+- Path followed by `on info` or `on notice` or `on warning`: Sets both the path and the notice level.
 
-## InfoEventsScope
+**Note:** You can also set SSE path using parameter annotation syntax (`key = value`), for example `sse = /my_sse_path` or `sse_path = /my_sse_path`.
+
+## SseEventsLevel
 
 ```console
-info_scope [self | matching | authorize | all] | [authorize [role1, role2, role3 [, ...]]]
-info_events_scope [self | matching | authorize | all] | [authorize [role1, role2, role3 [, ...]]]
-info_streaming_scope [self | matching | authorize | all] | [authorize [role1, role2, role3 [, ...]]]
+sse_level [info | notice | warning]
+sse_events_level [info | notice | warning]
+```
+
+Sets the PostgreSQL notice level for SSE events. Determines which PostgreSQL notice messages will be streamed to the client.
+
+**Note:** You can also set SSE level using parameter annotation syntax (`key = value`), for example `sse_level = info`.
+
+## SseEventsScope
+
+```console
+sse_scope [self | matching | authorize | all] | [authorize [role1, role2, role3 [, ...]]]
+sse_events_scope [self | matching | authorize | all] | [authorize [role1, role2, role3 [, ...]]]
 ```
 
 Scope that determines to whom events are streamed:
 
 - **`self`** (default): Only the original endpoint initiator session, regardless of the security context.
 - **`matching`**: Sessions with matching security context of the endpoint initiator. If the endpoint initiator requires authorization, all authorized sessions will receive these messages. If the endpoint initiator requires authorization for certain roles, all sessions requiring the same roles will receive these messages.
-- **`authorize`**: Only authorized sessions will receive these messages. If the `InfoEventsRoles` property contains a list of roles, only sessions with those roles will receive messages.
+- **`authorize`**: Only authorized sessions will receive these messages. If the `SseEventsRoles` property contains a list of roles, only sessions with those roles will receive messages.
 - **`all`**: All sessions regardless of the security context will receive these messages.
 
 When using `authorize`, add an optional list of authorized roles.
@@ -259,6 +280,36 @@ This annotation will transform the routine into the endpoint that performs the l
 Login endpoint expects a PostgreSQL command that performs the logout or the sign-out operation. If the routine doesn't return any data, the default authorization scheme is signed out. 
 
 Any values returned will be interpreted as scheme names (converted to string) to sign out.
+
+## RateLimiterPolicy
+
+```console
+rate_limiter_policy_name [name]
+rate_limiter_policy [name]
+rate_limiter [name]
+```
+
+Set the rate limiter policy name for this endpoint. The policy name must be registered in the application configuration.
+
+## RetryStrategy
+
+```console
+retry_strategy_name [name]
+retry_strategy [name]
+retry [name]
+```
+
+Set the retry strategy name for this endpoint. The strategy name must be registered in the command retry options configuration.
+
+## ErrorCodePolicy
+
+```console
+error_code_policy_name [name]
+error_code_policy [name]
+error_code [name]
+```
+
+Set the error code policy name for this endpoint. The policy name must be registered in the application configuration.
 
 ## NewLine
 
@@ -638,37 +689,43 @@ To be a valid custom parameter name, name part must consist of alphanumerics or 
 - `excel_row_is_json = true|false`: JSON row processing for this Excel handler.
 - `excel_row_command = command`: Row processing command for this Excel handler.
 
-## InfoEventsPath Parameters
+## SseEventsPath Parameters
 
-Additional path appended as a subpath to the main endpoint path for info events streaming (null disables info events). If the endpoint path is `/path` and this value is set to `/info`, the streaming path will be `/path/info`.
+Additional path appended as a subpath to the main endpoint path for SSE events streaming (null disables SSE events). If the endpoint path is `/path` and this value is set to `/info`, the streaming path will be `/path/info`.
 
-**Note:** This can also be boolean. When set to `true`, the info streaming path will be `/info` which will be added to the main path.
+**Note:** This can also be boolean. When set to `true`, the SSE streaming path will be the notice level name which will be added to the main path.
 
-`info_path = [path | true | false]`
-`info_events_path = [path | true | false]`
-`info_streaming_path = [path | true | false]`
+- `sse = [path | true | false]`
+- `sse_path = [path | true | false]`
+- `sse_events_path = [path | true | false]`
 
-## InfoEventsScope Parameters
+## SseEventsLevel Parameters
+
+Sets the PostgreSQL notice level for SSE events. Determines which PostgreSQL notice messages will be streamed to the client.
+
+- `sse_level = [info | notice | warning]`
+- `sse_events_level = [info | notice | warning]`
+
+## SseEventsScope Parameters
 
 Scope that determines to whom events are streamed:
 
 - **`self`** (default): Only the original endpoint initiator session, regardless of the security context.
 - **`matching`**: Sessions with matching security context of the endpoint initiator. If the endpoint initiator requires authorization, all authorized sessions will receive these messages. If the endpoint initiator requires authorization for certain roles, all sessions requiring the same roles will receive these messages.
-- **`authorize`**: Only authorized sessions will receive these messages. If the `InfoEventsRoles` property contains a list of roles, only sessions with those roles will receive messages.
+- **`authorize`**: Only authorized sessions will receive these messages. If the `SseEventsRoles` property contains a list of roles, only sessions with those roles will receive messages.
 - **`all`**: All sessions regardless of the security context will receive these messages.
 
 When using `authorize`, add an optional list of authorized roles.
 
-`info_scope = [self | matching | authorize | all] | [authorize [role1, role2, role3 [, ...]]]`
-`info_events_scope = [self | matching | authorize | all] | [authorize [role1, role2, role3 [, ...]]]`
-`info_streaming_scope = [self | matching | authorize | all] | [authorize [role1, role2, role3 [, ...]]]`
+- `sse_scope = [self | matching | authorize | all] | [authorize [role1, role2, role3 [, ...]]]`
+- `sse_events_scope = [self | matching | authorize | all] | [authorize [role1, role2, role3 [, ...]]]`
 
 ## TsClient Parameters
 
 - `tsclient = [false | off | disabled | disable | 0]` - disable tsclient code generation for the endpoint.
-- `tsclient_events = [[false | off | disabled | disable | 0] | [true | on | enabled | enable | 1]]` - enable or disable info event parameter for endpoints with info events enabled.
-- `tsclient_parse_url = [[false | off | disabled | disable | 0] | [true | on | enabled | enable | 1]]` - enable or disable info event parameter URL parsing.
-- `tsclient_parse_request = [[false | off | disabled | disable | 0] | [true | on | enabled | enable | 1]]` - enable or disable info event parameter request parsing.
+- `tsclient_events = [[false | off | disabled | disable | 0] | [true | on | enabled | enable | 1]]` - enable or disable SSE events parameter for endpoints with SSE events enabled.
+- `tsclient_parse_url = [[false | off | disabled | disable | 0] | [true | on | enabled | enable | 1]]` - enable or disable SSE events parameter URL parsing.
+- `tsclient_parse_request = [[false | off | disabled | disable | 0] | [true | on | enabled | enable | 1]]` - enable or disable SSE events parameter request parsing.
 - `tsclient_status_code = [[false | off | disabled | disable | 0] | [true | on | enabled | enable | 1]]` - enable or disable status code in the return value.
 
 # Tags
