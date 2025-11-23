@@ -332,6 +332,7 @@ The following annotations can be used to set special parameter behaviors:
 
 ```console
 param param_name1 is hash of param_name2
+parameter param_name1 is hash of param_name2
 ```
 
 Hashes value of the `param_name1` with the value of `param_name2` parameter by using default hasher.
@@ -340,50 +341,16 @@ Hashes value of the `param_name1` with the value of `param_name2` parameter by u
 
 ```console
 param param_name is upload metadata
+parameter param_name is upload metadata
 upload param_name as metadata
 ```
 
 Set the upload metadata parameter name.
 
-### Parameter User ID
-
-```console
-param param_name is user_id
-```
-
-Marks a parameter to be populated with the current user's ID from authentication claims.
-
-### Parameter User Name
-
-```console
-param param_name is user_name
-```
-
-Marks a parameter to be populated with the current user's name from authentication claims.
-
-### Parameter User Roles
-
-```console
-param param_name is user_roles
-```
-
-Marks a parameter to be populated with the current user's roles from authentication claims.
-
-### Parameter IP Address
-
-```console
-param param_name is ip_address
-```
-
-Marks a parameter to be populated with the current client's IP address.
-
-### Parameter User Claims
-
-```console
-param param_name is user_claims
-```
-
-Marks a parameter to be populated with the current user's complete claims information from authentication.
+**Note:** Parameters can also be automatically mapped to user claims, IP addresses, and other runtime values through the `AuthenticationOptions` configuration (not through comment annotations). See the configuration documentation for:
+- `IpAddressParameterName` - for mapping IP address to a parameter
+- `ParameterNameClaimsMapping` - for mapping user claims to parameters
+- `ClaimsJsonParameterName` - for mapping all user claims as JSON to a parameter
 
 ## Path
 
