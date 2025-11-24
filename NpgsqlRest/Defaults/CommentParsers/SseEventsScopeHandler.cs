@@ -4,7 +4,7 @@ internal static partial class DefaultCommentParser
 {
     /// <summary>
     /// Annotation: sse_scope | sse_events_scope
-    /// Syntax: sse_scope [self | matching | authorize | all]
+    /// Syntax: sse_scope [matching | authorize | all]
     ///         sse_scope authorize [role_or_user1, role_or_user2, role_or_user3 [, ...]]
     ///
     /// Description: Set the scope of Server-Sent Events distribution.

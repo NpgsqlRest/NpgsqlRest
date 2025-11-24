@@ -524,6 +524,25 @@ Marks routines as Upload endpoint.
 
 Optionally, set handler name (or multiple handlers names) - or set the upload metadata parameter name.
 
+### Default Upload Handler Keys
+
+The following upload handler keys are available by default:
+
+**Core Library Handlers:**
+- **`large_object`**: Uploads files to PostgreSQL large objects using `lo_create` and `lo_put` functions. Stores binary data directly in the database.
+- **`file_system`**: Uploads files to the file system at a specified path. Useful for storing files outside the database.
+- **`csv`**: Processes CSV files and executes a row command for each CSV row. Default command: `call process_csv_row($1,$2,$3,$4)`.
+
+**Client Application Only:**
+- **`excel`**: Processes Excel files (.xlsx, .xls) and executes a row command for each row. Default command: `call process_excel_row($1,$2,$3,$4)`. Available only in NpgsqlRestClient application.
+
+Example usage:
+```sql
+comment on function my_upload_function() is '
+upload for large_object, file_system
+';
+```
+
 ## UserContext
 
 ```console
@@ -677,15 +696,14 @@ Sets the PostgreSQL notice level for SSE events. Determines which PostgreSQL not
 
 Scope that determines to whom events are streamed:
 
-- **`self`** (default): Only the original endpoint initiator session, regardless of the security context.
 - **`matching`**: Sessions with matching security context of the endpoint initiator. If the endpoint initiator requires authorization, all authorized sessions will receive these messages. If the endpoint initiator requires authorization for certain roles, all sessions requiring the same roles will receive these messages.
 - **`authorize`**: Only authorized sessions will receive these messages. If the `SseEventsRoles` property contains a list of roles, only sessions with those roles will receive messages.
 - **`all`**: All sessions regardless of the security context will receive these messages.
 
 When using `authorize`, add an optional list of authorized roles.
 
-- `sse_scope = [self | matching | authorize | all] | [authorize [role1, role2, role3 [, ...]]]`
-- `sse_events_scope = [self | matching | authorize | all] | [authorize [role1, role2, role3 [, ...]]]`
+- `sse_scope = [matching | authorize | all] | [authorize [role1, role2, role3 [, ...]]]`
+- `sse_events_scope = [matching | authorize | all] | [authorize [role1, role2, role3 [, ...]]]`
 
 ## TsClient Parameters
 

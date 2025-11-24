@@ -79,11 +79,6 @@ public enum PostgresConnectionNoticeLoggingMode
 public enum SseEventsScope
 {
     /// <summary>
-    /// Only the session that initiated the request receives the notification (default)
-    /// </summary>
-    Self,
-
-    /// <summary>
     /// All sessions with matching security context (RequiresAuthorization + AuthorizeRoles)
     /// </summary>
     Matching,

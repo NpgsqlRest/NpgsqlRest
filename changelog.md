@@ -4,17 +4,79 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
-TODOs:
-
-- TODO add JIT version of Docker
-
-- TODO add to TsClient diffent files based on parameters
-
-- TODO fix TsClient, when returning setof or table and one of the columns is json, it should be "any" or "unknown" not "string"
-
 ## Version [3.0.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.0.0) (date is TBD)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/2.36.0...2.36.1)
+
+
+### TsClient (Code Generation) Improvements
+
+1) When return value is JSON or JSONB, generated TypeScript type is `any` instead of `string`.
+2) New parameter annotation `tsclient_module`. Sets different module name for the generated TypeScript client file. For example: `tsclient_module = test` will create `test.ts` or `test.js` and add every and group endpoint to that module instead of the default..
+3) Fixed and improved generated JSDoc comments for better IntelliSense support in IDEs. JavaScript JSDoc invlude proper types and TypeScript JSDoc will not include types to avoid duplication. All parameters comment now include description.
+4) SSE generated parameters signature changed.
+
+Fetch for SSE enabled endpoint now looks like this:
+
+```typescript
+/**
+ * function test_sse()
+ * returns table(
+ *     id integer
+ * )
+ *
+ * @remarks
+ * comment on function test_sse is 'HTTP GET
+ * authorize
+ * upload for file_system
+ * sse
+ * tsclient_module = test';
+ *
+ * @param onMessage - Optional callback function to handle incoming SSE messages.
+ * @param id - Optional execution ID for SSE connection. When supplied, only EventSource object with this ID in query string will will receive events.
+ * @param closeAfterMs - Time in milliseconds to wait before closing the EventSource connection. Used only when onMessage callback is provided.
+ * @param awaitConnectionMs - Time in milliseconds to wait after opening the EventSource connection before sending the request. Used only when onMessage callback is provided.
+ * @returns {status: number, response: ITestSseResponse[]}
+ *
+ * @see FUNCTION test_sse
+ */
+export async function testSse(
+    onMessage?: (message: string) => void,
+    id: string | undefined = undefined,
+    closeAfterMs = 1000,
+    awaitConnectionMs: number | undefined = 0
+) : Promise<{status: number, response: ITestSseResponse[]}> {
+    const executionId = id ? id : window.crypto.randomUUID();
+    let eventSource: EventSource;
+    if (onMessage) {
+        eventSource = createTestSseEventSource(executionId);
+        eventSource.onmessage = (event: MessageEvent) => {
+            onMessage(event.data);
+        };
+        if (awaitConnectionMs !== undefined) {
+            await new Promise(resolve => setTimeout(resolve, awaitConnectionMs));
+        }
+    }
+    try {
+        const response = await fetch(baseUrl + "/api/test-sse", {
+            method: "GET",
+            headers: {
+                "Content-Type": "application/json",
+                "X-test-ID": executionId
+            },
+        });
+        return {
+            status: response.status,
+            response: response.status == 200 ? await response.json() as ITestSseResponse[] : await response.text() as any
+        };
+    }
+    finally {
+        if (onMessage) {
+            setTimeout(() => eventSource.close(), closeAfterMs);
+        }
+    }
+}
+```
 
 ### Info Events Streaming Changes (Server-Sent Events)
 
@@ -25,6 +87,11 @@ TODOs:
 - Comment annotations:
   - from `info_path`, `info_events_path`, `info_streaming_path` to `sse`, `sse_path`, `sse_events_path`
   - from `info_scope`, `info_events_scope`, `info_streaming_scope` to `sse_scope`, `sse_events_scope`
+
+#### Removed Self scope level
+
+- Removed `self` scope level for SSE events. Only `matching`, `authorize`, and `all` levels are supported now.
+- Event will always be skipped if executing id is supplied in request header and in event source query parameter, and they don't match.
 
 #### New Feature: Support for custom notice level
 
@@ -64,8 +131,8 @@ Note: you can also set sse level using parameter annotations syntax (`key = valu
 - Scope annotations changed name to match new SSE naming:
 
 ```
-sse_scope [ [ self | matching | authorize | all ] | [ authorize [ role_or_user1, role_or_user1, role_or_user1 [, ...] ] ] ] 
-sse_events_scope [ [ self | matching | authorize | all ] | [ authorize [ role_or_user1, role_or_user1, role_or_user1 [, ...] ] ] ] 
+sse_scope [ [ matching | authorize | all ] | [ authorize [ role_or_user1, role_or_user1, role_or_user1 [, ...] ] ] ] 
+sse_events_scope [ [ matching | authorize | all ] | [ authorize [ role_or_user1, role_or_user1, role_or_user1 [, ...] ] ] ] 
 ```
 
 ### Timeout Handling

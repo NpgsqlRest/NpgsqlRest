@@ -34,7 +34,7 @@ public class RoutineEndpoint(
     bool userContext = false,
     bool userParameters = false,
     string? sseEventsPath = null,
-    SseEventsScope sseEventsScope = SseEventsScope.Self,
+    SseEventsScope sseEventsScope = SseEventsScope.All,
     HashSet<string>? sseEventsRoles = null)
 {
     private string? _bodyParameterName = bodyParameterName;

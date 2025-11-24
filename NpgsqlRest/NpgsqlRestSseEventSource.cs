@@ -52,6 +52,14 @@ public class NpgsqlRestSseEventSource(RequestDelegate next)
                 var endpoint = noticeEvent.Endpoint;
                 var scope = noticeEvent.Endpoint?.SseEventsScope;
                 var infoEventsRoles = endpoint?.SseEventsRoles;
+                
+                if (string.IsNullOrEmpty(executionId) is false && string.IsNullOrEmpty(noticeEvent.ExecutionId) is false)
+                {
+                    if (string.Equals(executionId, noticeEvent.ExecutionId, StringComparison.Ordinal) is false)
+                    {
+                        continue; // Skip events not matching the current execution ID
+                    }
+                }
 
                 if (string.IsNullOrEmpty(noticeEvent.Notice.Hint) is false)
                 {
@@ -79,14 +87,7 @@ public class NpgsqlRestSseEventSource(RequestDelegate next)
                             words?[0], string.Join(", ", Enum.GetNames<SseEventsScope>()), hint);
                     }
                 }
-
-                if (scope == SseEventsScope.Self)
-                {
-                    if (string.Equals(noticeEvent.ExecutionId, executionId, StringComparison.Ordinal) is false)
-                    {
-                        continue; // Skip events not matching the current execution ID
-                    }
-                }
+                
                 else if (scope == SseEventsScope.Matching)
                 {
                     if (context.User?.Identity?.IsAuthenticated is false && 

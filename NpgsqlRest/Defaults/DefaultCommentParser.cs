@@ -298,8 +298,8 @@ internal static partial class DefaultCommentParser
                     HandleSseEventsLevel(routineEndpoint, wordsLower, words, line, description);
                 }
                 
-                // sse_scope [ [ self | matching | authorize | all ] | [ authorize [ role_or_user1, role_or_user1, role_or_user1 [, ...] ] ] ]
-                // sse_events_scope [ [ self | matching | authorize | all ] | [ authorize [ role_or_user1, role_or_user1, role_or_user1 [, ...] ] ] ]
+                // sse_scope [ [ matching | authorize | all ] | [ authorize [ role_or_user1, role_or_user1, role_or_user1 [, ...] ] ] ]
+                // sse_events_scope [ [ matching | authorize | all ] | [ authorize [ role_or_user1, role_or_user1, role_or_user1 [, ...] ] ] ]
                 else if (haveTag is true && len >= 2 && StrEqualsToArray(wordsLower[0], SseEventsStreamingScopeKey))
                 {
                     HandleSseEventsScope(routineEndpoint, wordsLower, line, description);
@@ -426,7 +426,9 @@ internal static partial class DefaultCommentParser
         {
             if (bool.TryParse(value, out var parseredStreamingPath))
             {
-                endpoint.SseEventsPath = parseredStreamingPath is true ? (endpoint.SseEventNoticeLevel ?? Options.DefaultSseEventNoticeLevel).ToString() : null;
+                endpoint.SseEventsPath = parseredStreamingPath is true ? 
+                    (endpoint.SseEventNoticeLevel ?? Options.DefaultSseEventNoticeLevel).ToString().ToLowerInvariant() : 
+                    null;
             }
             else
             {

@@ -129,7 +129,7 @@ public class TsClientOptions
     /// Export event sources create functions for streaming events.
     /// </summary>
     public bool ExportEventSources { get; set; } = true;
-
+    
     /// <summary>
     /// List if custom imports to add to the generated code. It adds line to a file. Use full expression like `import { MyType } from './my-type';`
     /// </summary>

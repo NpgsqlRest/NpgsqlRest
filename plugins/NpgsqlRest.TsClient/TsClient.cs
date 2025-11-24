@@ -9,7 +9,9 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
     private IApplicationBuilder _builder = default!;
     private NpgsqlRestOptions? _npgsqlRestoptions;
 
-    private const string Module = "tsclient";
+    private const string Enabled = "tsclient";
+    private const string Module = "tsclient_module";
+    
     private const string SseEvents = "tsclient_events";
     private const string IncludeParseUrl = "tsclient_parse_url";
     private const string IncludeParseRequest = "tsclient_parse_request";
@@ -27,17 +29,40 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
         {
             return;
         }
-
-        if (options.BySchema is false)
+        
+        var containsModuleParam = endpoints.Any(e => e.CustomParameters?.ContainsKey(Module) is true);
+        if (!options.BySchema && containsModuleParam)
         {
             Run(endpoints, options.FilePath);
         }
         else
         {
-            if (options.FilePath.Contains("{0}") is false)
+            if (!options.FilePath.Contains("{0}"))
             {
                 Logger?.LogError("TsClient Option FilePath doesn't contain {{0}} formatter and BySchema options is true. Some files may be overwritten! Existing...");
                 return;
+            }
+            
+            HashSet<string> processedModules = [];
+            if (containsModuleParam)
+            {
+                foreach (var group in endpoints.GroupBy(e => e.CustomParameters?.GetValueOrDefault(Module)))
+                {
+                    if (group.Key is null)
+                    {
+                        continue;
+                    }
+                    if (!processedModules.Contains(group.Key))
+                    {
+                        processedModules.Add(group.Key);
+                    }
+                    var filename = string.Format(options.FilePath, group.Key);
+                    if (options.SkipTypes && filename.EndsWith(".ts"))
+                    {
+                        filename = filename[..^3] + ".js";
+                    }
+                    Run([.. group], filename);
+                }
             }
 
             foreach (var group in endpoints.GroupBy(e => e.Routine.Schema))
@@ -47,19 +72,28 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 {
                     filename = filename[..^3] + ".js";
                 }
-                Run([.. group], filename);
+                RoutineEndpoint[] groupArray = [.. group.Where(g => 
+                    (g.CustomParameters?.ContainsKey(Module) is false) || 
+                    (g.CustomParameters?.GetValueOrDefault(Module) is null) ||
+                    (!processedModules.Contains(g.CustomParameters?.GetValueOrDefault(Module) ?? ""))
+                )];
+                if (groupArray.Length == 0)
+                {
+                    continue;
+                }
+                Run([.. groupArray], filename);
             }
         }
     }
 
-    private void Run(RoutineEndpoint[] endpoints, string fileName)
+    private void Run(RoutineEndpoint[] endpoints, string? fileName)
     {
         if (fileName is null)
         {
             return;
         }
 
-        RoutineEndpoint[] filtered = [.. endpoints.Where(e => e.CustomParameters.ParameterEnabled(Module) is not false)];
+        RoutineEndpoint[] filtered = [.. endpoints.Where(e => e.CustomParameters.ParameterEnabled(Enabled) is not false)];
 
         Dictionary<string, string> modelsDict = [];
         Dictionary<string, int> names = [];
@@ -67,7 +101,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
         StringBuilder content = new();
         StringBuilder interfaces = new();
 
-        foreach (var import in options.CustomImports ?? [])
+        foreach (var import in options.CustomImports)
         {
             contentHeader.AppendLine(import);
         }
@@ -83,9 +117,9 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 .Where(e => e.RequestParamType == RequestParamType.QueryString && e.Routine.ParamCount > 0)
                 .Any();
 
-            if (haveParseQuery is true)
+            if (haveParseQuery)
             {
-                if (options.SkipTypes is false)
+                if (!options.SkipTypes)
                 {
                     contentHeader.AppendLine(options.ImportParseQueryFrom is not null ?
                         string.Format(
@@ -128,7 +162,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                     string.Format("import {{ baseUrl }} from \"{0}\";", options.ImportBaseUrlFrom) :
                     string.Format("const baseUrl = \"{0}\";", GetHost()));
         }
-        if (options.ExportUrls is true)
+        if (options.ExportUrls)
         {
             contentHeader.AppendLine();
         }
@@ -140,26 +174,26 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             .ThenBy(e => e.Routine.Type)
             .ThenBy(e => e.Routine.Name))
         {
-            if (Handle(endpoint) && handled is false)
+            if (Handle(endpoint) && !handled)
             {
                 handled = true;
             }
         }
 
         foreach (var endpoint in filtered
-            .Where(e => (e.Routine.Type == RoutineType.Table || e.Routine.Type == RoutineType.View) is false)
+            .Where(e => !(e.Routine.Type == RoutineType.Table || e.Routine.Type == RoutineType.View))
             .OrderBy(e => e.Routine.Schema)
             .ThenBy(e => e.Routine.Name))
         {
-            if (Handle(endpoint) && handled is false)
+            if (Handle(endpoint) && !handled)
             {
                 handled = true;
             }
         }
 
-        if (handled is false)
+        if (!handled)
         {
-            if (filtered.Length == 0 && options.FileOverwrite is true)
+            if (filtered.Length == 0 && options.FileOverwrite)
             {
                 if (File.Exists(fileName))
                 {
@@ -192,13 +226,13 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
         }
 
         var dir = Path.GetDirectoryName(fileName);
-        if (dir is not null && Directory.Exists(dir) is false)
+        if (dir is not null && !Directory.Exists(dir))
         {
             Directory.CreateDirectory(dir);
         }
-        if (options.CreateSeparateTypeFile is false)
+        if (!options.CreateSeparateTypeFile)
         {
-            if (options.SkipTypes is false)
+            if (!options.SkipTypes)
             {
                 interfaces.AppendLine(content.ToString());
                 if (contentHeader.Length > 0)
@@ -213,7 +247,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
         }
         else
         {
-            if (options.SkipTypes is false)
+            if (!options.SkipTypes)
             {
                 var typeFile = fileName.Replace(".ts", "Types.d.ts");
                 AddHeader(interfaces);
@@ -227,7 +261,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             }
             AddHeader(content);
             File.WriteAllText(fileName, content.ToString());
-            if (options.SkipTypes is false)
+            if (!options.SkipTypes)
             {
                 Logger?.LogDebug("Created Typescript file: {fileName}", fileName);
             }
@@ -314,7 +348,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             var columnsTypeDescriptor = routine.ColumnsTypeDescriptor;
             var returnsUnnamedSet = routine.ReturnsUnnamedSet;
 
-            if (endpoint.Login is true)
+            if (endpoint.Login)
             {
                 isVoid = false;
                 returnsSet = false;
@@ -323,7 +357,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 columnsTypeDescriptor = [new TypeDescriptor("text")];
             }
 
-            if (endpoint.Logout is true)
+            if (endpoint.Logout)
             {
                 isVoid = true;
             }
@@ -368,27 +402,29 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                     bodyParameterName = paramNames[i];
                 }
             }
+            string requestDesc = "";
             if (paramCount > 0)
             {
                 StringBuilder req = new();
                 requestName = $"I{pascal}Request";
-
+                requestDesc = string.Concat(requestDesc, "{");
                 for (var i = 0; i < paramCount; i++)
                 {
                     var descriptor = routine.Parameters[i].TypeDescriptor;
                     var type = GetTsType(descriptor, false);
                     req.AppendLine($"    {paramNames[i]}: {type} | null;");
+                    requestDesc = string.Concat(requestDesc, $"{paramNames[i]}: {type} | null;");
                 }
-
+                requestDesc = string.Concat(requestDesc, "}");
                 if (modelsDict.TryGetValue(req.ToString(), out var newName))
                 {
                     requestName = newName;
                 }
                 else
                 {
-                    if (options.SkipTypes is false)
+                    if (!options.SkipTypes)
                     {
-                        if (options.UniqueModels is true)
+                        if (options.UniqueModels)
                         {
                             modelsDict.Add(req.ToString(), requestName);
                         }
@@ -421,9 +457,9 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 return string.Concat("return ", responseExp, ";");
             }
 
-            if (isVoid is false)
+            if (!isVoid)
             {
-                if (endpoint.Upload is true)
+                if (endpoint.Upload)
                 {
                     responseName = $"I{pascal}Response";
                     StringBuilder resp = new();
@@ -441,10 +477,10 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                     interfaces.Append(resp);
                     responseName = string.Concat(responseName, "[]");
                 }
-                else if (returnsSet == false && columnCount == 1 && returnsRecordType is false)
+                else if (returnsSet == false && columnCount == 1 && !returnsRecordType)
                 {
                     var descriptor = columnsTypeDescriptor[0];
-                    responseName = GetTsType(descriptor, true);
+                    responseName = descriptor.IsJson ? "any" : GetTsType(descriptor, true);
                     if (descriptor.IsArray)
                     {
                         json = true;
@@ -471,6 +507,10 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                         else if (descriptor.IsBoolean)
                         {
                             returnExp = GetReturnExp("await response.text() == \"t\"");
+                        }
+                        else if (descriptor.IsJson)
+                        {
+                            returnExp = GetReturnExp("await response.json()");
                         }
                         else
                         {
@@ -501,8 +541,14 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                         {
                             var descriptor = columnsTypeDescriptor[i];
                             var type = GetTsType(descriptor, false);
-
-                            resp.AppendLine($"    {routine.ColumnNames[i]}: {type} | null;");
+                            if (descriptor.IsJson)
+                            {
+                                resp.AppendLine($"    {routine.ColumnNames[i]}: any; // JSON");
+                            }
+                            else
+                            {
+                                resp.AppendLine($"    {routine.ColumnNames[i]}: {type} | null;");
+                            }
                         }
 
                         if (modelsDict.TryGetValue(resp.ToString(), out var newName))
@@ -511,9 +557,9 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                         }
                         else
                         {
-                            if (options.SkipTypes is false)
+                            if (!options.SkipTypes)
                             {
-                                if (options.UniqueModels is true)
+                                if (options.UniqueModels)
                                 {
                                     modelsDict.Add(resp.ToString(), responseName);
                                 }
@@ -528,7 +574,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                     {
                         responseName = string.Concat(responseName, "[]");
                     }
-                    if (options.SkipTypes is false)
+                    if (!options.SkipTypes)
                     {
                         returnExp = GetReturnExp($"await response.json() as {responseName}");
                     }
@@ -554,7 +600,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             {
                 headersDict.Add("Content-Type", "\"application/json\"");
             }
-            if (eventsStreamingEnabled is true && _npgsqlRestoptions?.ExecutionIdHeaderName is not null)
+            if (eventsStreamingEnabled && _npgsqlRestoptions?.ExecutionIdHeaderName is not null)
             {
                 headersDict.Add(_npgsqlRestoptions.ExecutionIdHeaderName, "executionId");
             }
@@ -582,10 +628,11 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 "";
 
             string? parameters = null;
+            List<(string name, string type, string desc)> paramComments = new();
 
             if (requestName is not null) 
             {
-                if (string.IsNullOrEmpty(parameters) is false)
+                if (!string.IsNullOrEmpty(parameters))
                 {
                     parameters = string.Concat(parameters, ",", Environment.NewLine);
                 }
@@ -593,7 +640,8 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 {
                     parameters = string.Concat(parameters, Environment.NewLine);
                 }
-                if (options.SkipTypes is false)
+                
+                if (!options.SkipTypes)
                 {
                     parameters = string.Concat(parameters, "    request: ", requestName);
                 }
@@ -601,10 +649,11 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 {
                     parameters = string.Concat(parameters, "    request");
                 }
+                paramComments.Add(("request", requestDesc, "Object containing request parameters."));
             }
             if (eventsStreamingEnabled)
             {
-                if (string.IsNullOrEmpty(parameters) is false)
+                if (!string.IsNullOrEmpty(parameters))
                 {
                     parameters = string.Concat(parameters, ",", Environment.NewLine);
                 }
@@ -612,18 +661,43 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 {
                     parameters = string.Concat(parameters, Environment.NewLine);
                 }
-                if (options.SkipTypes is false)
+                if (!options.SkipTypes)
                 {
-                    parameters = string.Concat(parameters, "    onMessage: (message: string) => void = msg => msg");
+                    parameters = string.Concat(parameters, "    onMessage?: (message: string) => void");
                 }
                 else
                 {
-                    parameters = string.Concat(parameters, "    onMessage = msg => msg");
+                    parameters = string.Concat(parameters, "    onMessage");
                 }
+                paramComments.Add(("onMessage", "(message: string) => void", "Optional callback function to handle incoming SSE messages."));
+                parameters = string.Concat(parameters, ",", Environment.NewLine);
+                if (!options.SkipTypes)
+                {
+                    parameters = string.Concat(parameters, "    id: string | undefined = undefined");
+                }
+                else
+                {
+                    parameters = string.Concat(parameters, "    id = undefined");
+                }
+                paramComments.Add(("id", "string | undefined", "Optional execution ID for SSE connection. When supplied, only EventSource object with this ID in query string will will receive events."));
+                
+                parameters = string.Concat(parameters, ",", Environment.NewLine);
+                parameters = string.Concat(parameters, "    closeAfterMs = 1000");
+                paramComments.Add(("closeAfterMs", "number", "Time in milliseconds to wait before closing the EventSource connection. Used only when onMessage callback is provided."));
+                parameters = string.Concat(parameters, ",", Environment.NewLine);
+                if (!options.SkipTypes)
+                {
+                    parameters = string.Concat(parameters, "    awaitConnectionMs: number | undefined = 0");
+                }
+                else
+                {
+                    parameters = string.Concat(parameters, "    awaitConnectionMs = 0");
+                }
+                paramComments.Add(("awaitConnectionMs", "number", "Time in milliseconds to wait after opening the EventSource connection before sending the request. Used only when onMessage callback is provided."));
             }
-            if (includeParseUrlParam is true)
+            if (includeParseUrlParam)
             {
-                if (string.IsNullOrEmpty(parameters) is false)
+                if (!string.IsNullOrEmpty(parameters))
                 {
                     parameters = string.Concat(parameters, ",", Environment.NewLine);
                 }
@@ -631,7 +705,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 {
                     parameters = string.Concat(parameters, Environment.NewLine);
                 }
-                if (options.SkipTypes is false)
+                if (!options.SkipTypes)
                 {
                     parameters = string.Concat(parameters, "    parseUrl: (url: string) => string = url => url");
                 }
@@ -639,10 +713,11 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 {
                     parameters = string.Concat(parameters, "    parseUrl = url => url");
                 }
+                paramComments.Add(("parseUrl", "(url: string) => string", "Optional function to parse constructed URL before making the request."));
             }
-            if (includeParseRequestParam is true)
+            if (includeParseRequestParam)
             {
-                if (string.IsNullOrEmpty(parameters) is false)
+                if (!string.IsNullOrEmpty(parameters))
                 {
                     parameters = string.Concat(parameters, ",", Environment.NewLine);
                 }
@@ -650,7 +725,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 {
                     parameters = string.Concat(parameters, Environment.NewLine);
                 }
-                if (options.SkipTypes is false)
+                if (!options.SkipTypes)
                 {
                     parameters = string.Concat(parameters, "    parseRequest: (request: RequestInit) => RequestInit = request => request");
                 }
@@ -658,26 +733,27 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 {
                     parameters = string.Concat(parameters, "    parseRequest = request => request");
                 }
+                paramComments.Add(("parseRequest", "(request: RequestInit) => RequestInit", "Optional function to parse constructed request before making the request."));
             }
-            if (string.IsNullOrEmpty(parameters) is false)
+            if (!string.IsNullOrEmpty(parameters))
             {
                 parameters = string.Concat(parameters, Environment.NewLine);
             }
 
             string url;
-            if (options.ExportUrls is false)
+            if (!options.ExportUrls)
             {
-                url = includeParseUrlParam is true ?
+                url = includeParseUrlParam ?
                     string.Format("parseUrl(baseUrl + \"{0}\"{1})", endpoint.Path, qs) :
                     string.Format("baseUrl + \"{0}\"{1}", endpoint.Path, qs);
             }
             else
             {
-                url = includeParseUrlParam is true ?
+                url = includeParseUrlParam ?
                     (requestName is not null && body is null ? string.Format("parseUrl({0}Url(request))", camel) : string.Format("parseUrl({0}Url())", camel)) :
                     (requestName is not null && body is null ? string.Format("{0}Url(request)", camel) : string.Format("{0}Url()", camel));
 
-                if (options.SkipTypes is false)
+                if (!options.SkipTypes)
                 {
                     contentHeader.AppendLine(string.Format(
                         "export const {0}Url = {1} => baseUrl + \"{2}\"{3};",
@@ -702,7 +778,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 createEventSourceFunc = string.Concat("create", pascal, "EventSource");
                 contentHeader.AppendLine(string.Format(
                     "{0}const {1} = {2} => new EventSource(baseUrl + \"{3}?\" + id);",
-                    options.ExportEventSources is true ? "export " : "", //0
+                    options.ExportEventSources ? "export " : "", //0
                     createEventSourceFunc, //1
                     options.SkipTypes ? "(id = \"\")" : "(id: string = \"\")", //2
                     endpoint.SseEventsPath)); //3
@@ -727,10 +803,10 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                     responseName;
             }
 
-            if (endpoint.Upload is true)
+            if (endpoint.Upload)
             {
                 string onloadExp;
-                if (isVoid is false)
+                if (!isVoid)
                 {
                     onloadExp =string.Format(
                         """
@@ -757,15 +833,23 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 {
                     sendExp = string.Format(
                     """
-                            const eventSource = {0}(executionId);
-                            eventSource.onmessage = {1} => {{
-                                onMessage(event.data);
-                            }};
+                            let eventSource: EventSource;
+                            if (onMessage) {{
+                                eventSource = {0}(executionId);
+                                eventSource.onmessage = {1} => {{
+                                    onMessage(event.data);
+                                }};
+                                if (awaitConnectionMs !== undefined) {{
+                                    await new Promise(resolve => setTimeout(resolve, awaitConnectionMs));
+                                }}
+                            }}
                             try {{
                                 xhr.send(formData);
                             }}
                             finally {{
-                                setTimeout(() => eventSource.close(), 1000);
+                                if (onMessage) {{
+                                    setTimeout(() => eventSource.close(), closeAfterMs);
+                                }}
                             }}
                     """,
                     createEventSourceFunc, // 0
@@ -783,9 +867,9 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 {
                     headers = string.Join("", headersDict.Select(h => NewLine($"xhr.setRequestHeader({Quote(h.Key)}, {h.Value});", 2)));
                 }
-                if (options.SkipTypes is false)
+                if (!options.SkipTypes)
                 {
-                    returnExp = $"{{status: this.status, response: JSON.parse(this.responseText) as {responseName}}}";
+                    //returnExp = $"{{status: this.status, response: JSON.parse(this.responseText) as {responseName}}}";
                     parameters = (parameters ?? "").Trim('\n', '\r').Replace("RequestInit", "XMLHttpRequest");
                     content.AppendLine(string.Format(
                     """
@@ -831,7 +915,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                         }});
                     }}
                     """,
-                        GetComment(routine, parameters, resultType),//0
+                        GetComment(routine, resultType, paramComments),//0
                         camel,//1
                         parameters,//2
                         options.XsrfTokenHeaderName is not null ?
@@ -847,7 +931,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                                     xhr.setRequestHeader("{0}", xsrfToken);
                                 }}
                         """, options.XsrfTokenHeaderName), 0) : "", //7
-                        includeParseRequestParam is true ? NewLine(
+                        includeParseRequestParam ? NewLine(
                         """
                                 if (parseRequest) {
                                     const modifiedXhr = parseRequest(xhr);
@@ -860,13 +944,13 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                         """, 0) : "", //8
                         NewLine(sendExp, 0), //9
                         headers, //10
-                        eventsStreamingEnabled ? NewLine("const executionId = window.crypto.randomUUID();", 2) : "" //11
+                        eventsStreamingEnabled ? NewLine("const executionId = id ? id : window.crypto.randomUUID();", 2) : "" //11
                      ));
                 }
                 else
                 {
                     resultType = "{status: number, response: object[]}";
-                    returnExp = "{status: this.status, response: JSON.parse(this.responseText)}";
+                    //returnExp = "{status: this.status, response: JSON.parse(this.responseText)}";
                     parameters = (parameters ?? "").Trim('\n', '\r');
                     content.AppendLine(string.Format(
                     """
@@ -912,7 +996,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                         }});
                     }}
                     """,
-                        GetComment(routine, parameters, resultType),//0
+                        GetComment(routine, resultType, paramComments),//0
                         camel,//1
                         parameters,//2
                         options.XsrfTokenHeaderName is not null ?
@@ -927,7 +1011,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                                     xhr.setRequestHeader("{0}", xsrfToken);
                                 }}
                         """, options.XsrfTokenHeaderName), 0) : "", //6
-                        includeParseRequestParam is true ? NewLine(
+                        includeParseRequestParam ? NewLine(
                         """
                                 if (parseRequest) {
                                     const modifiedXhr = parseRequest(xhr);
@@ -940,7 +1024,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                         """, 0) : "", //7
                         NewLine(sendExp, 0),//8
                         headers, //9
-                        eventsStreamingEnabled ? NewLine("const executionId = window.crypto.randomUUID();", 2) : "" //10
+                        eventsStreamingEnabled ? NewLine("const executionId = id ? id : window.crypto.randomUUID();", 2) : "" //10
                      ));
 
                 }
@@ -949,7 +1033,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             {
                 string funcBody;
                 string? headers = null;
-                if (eventsStreamingEnabled is true)
+                if (eventsStreamingEnabled)
                 {
                     if (headersDict.Count > 0)
                     {
@@ -957,30 +1041,42 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                     }
                     funcBody = string.Format(
                     """
-                    const executionId = window.crypto.randomUUID();
-                    const eventSource = {0}(executionId);
-                    eventSource.onmessage = {1} => {{
-                        onMessage(event.data);
-                    }};
+                    const executionId = id ? id : window.crypto.randomUUID();
+                    let eventSource: EventSource;
+                    if (onMessage) {{
+                        eventSource = {0}(executionId);
+                        eventSource.onmessage = {1} => {{
+                            onMessage(event.data);
+                        }};
+                        if (awaitConnectionMs !== undefined) {{
+                            await new Promise(resolve => setTimeout(resolve, awaitConnectionMs));
+                        }}
+                    }}
                     try {{
                         {2}await fetch({3}, {4}{{
                             method: "{5}",{6}{7}
                         }}{8});{9}
                     }}
                     finally {{
-                        setTimeout(() => eventSource.close(), 1000);
+                        if (onMessage) {{
+                            setTimeout(() => eventSource.close(), closeAfterMs);
+                        }}
                     }}
                 """,
                     createEventSourceFunc, // 0
                     options.SkipTypes ? "event" : "(event: MessageEvent)", // 1
-                    isVoid && includeStatusCode is false ? "" : "const response = ",//2
+                    isVoid && !includeStatusCode ? "" : "const response = ",//2
                     url,//3
                     includeParseRequestParam ? "parseRequest(" : "",//4
                     endpoint.Method,//5
                     NewLine(headers, 3),//6
                     NewLine(body, 3),//7
                     includeParseRequestParam ? ")" : "",//8
-                    NewLine(returnExp, 2));//9
+                    NewLine(
+                        returnExp?.Replace(
+                                string.Concat(Environment.NewLine, "    "), 
+                                string.Concat(Environment.NewLine, string.Concat(Enumerable.Repeat("    ", 2)))
+                                ), 2));//9
                 }
                 else
                 {
@@ -994,7 +1090,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                         method: "{3}",{4}{5}
                     }}{6});{7}
                 """,
-                    isVoid && includeStatusCode is false ? "" : "const response = ",//0
+                    isVoid && !includeStatusCode ? "" : "const response = ",//0
                     url,//1
                     includeParseRequestParam ? "parseRequest(" : "",//2
                     endpoint.Method,//3
@@ -1004,7 +1100,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                     NewLine(returnExp, 1));//7
                 }
 
-                if (options.SkipTypes is false)
+                if (!options.SkipTypes)
                 {
                     content.AppendLine(string.Format(
                         """
@@ -1014,7 +1110,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 export async function {1}({2}) : Promise<{3}> {{
                 {4}
                 """,
-                        GetComment(routine, parameters ?? "", resultType), // 0
+                        GetComment(routine, resultType, paramComments), // 0
                         camel, // 1
                         parameters,  // 2
                         resultType,  // 3
@@ -1031,7 +1127,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 export async function {1}({2}) {{
                 {3}
                 """,
-                        GetComment(routine, parameters ?? "", resultType),
+                        GetComment(routine, resultType, paramComments),
                         camel,
                         parameters,
                         funcBody));
@@ -1042,7 +1138,8 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
         } // void Handle
     }
 
-    private string GetComment(Routine routine, string parameters, string resultType)
+    //paramComments.Add(("parseRequest", "(request: RequestInit) => RequestInit", "Optional function to parse constructed request before making the request."));
+    private string GetComment(Routine routine, string resultType, List<(string name, string type, string desc)>? paramComments)
     {
         StringBuilder sb = new();
         if (options.CommentHeader != CommentHeader.None)
@@ -1065,14 +1162,13 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             //sb.AppendLine("* ");
             //sb.AppendLine("* @remarks");
             //sb.AppendLine(string.Format("* {0} {1}", endpoint.Method, endpoint.Url));
-            if (options.CommentHeaderIncludeComments is true && string.IsNullOrEmpty(routine.Comment?.Trim()) is false)
+            if (options.CommentHeaderIncludeComments && !string.IsNullOrEmpty(routine.Comment?.Trim()))
             {
                 sb.AppendLine("* ");
                 sb.AppendLine("* @remarks");
                 var lines = routine
                     .Comment
-                    .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-                    .ToArray();
+                    .Split('\n', StringSplitOptions.RemoveEmptyEntries);
                 foreach (var (line, index) in lines.Select((l, i) => (l, i)))
                 {
                     if (line == "\r" && index > 0)
@@ -1097,35 +1193,59 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             //sb.AppendLine(string.Format("* {0} {1}", endpoint.Method, endpoint.Url));
         }
         sb.AppendLine("* ");
-        if (string.IsNullOrEmpty(parameters) is false)
+
+        foreach (var pc in paramComments ?? [])
         {
-            foreach(var p in parameters.Trim().Split(','))
+            if (options.SkipTypes)
             {
-                var param = p.Trim();
-                if (string.IsNullOrEmpty(param))
-                {
-                    continue;
-                }
-                if (param.Contains(':'))
-                {
-                    var parts = param.Split(':');
-                    var name = parts[0].Trim();
-                    var type = string.Join(':', parts[1..]).Trim();
-                    if (type.Contains(" = "))
-                    {
-                        type = type.Split(" = ")[0].Trim();
-                    }
-                    sb.AppendLine(string.Concat("* @param {", type, "} ", name));
-                }
-                else
-                {
-                    sb.AppendLine(string.Concat("* @param ", param));
-                }
+                sb.AppendLine(string.Concat("* @param {", pc.type, "} ", pc.name, " - ", pc.desc));
+            }
+            else
+            {
+                sb.AppendLine(string.Concat("* @param ", pc.name, " - ", pc.desc));
             }
         }
-        if (string.IsNullOrEmpty(resultType) is false)
+        // if (string.IsNullOrEmpty(parameters) is false)
+        // {
+        //     foreach(var p in parameters.Trim().Split(','))
+        //     {
+        //         var param = p.Trim();
+        //         if (string.IsNullOrEmpty(param))
+        //         {
+        //             continue;
+        //         }
+        //         if (param.Contains(':'))
+        //         {
+        //             var parts = param.Split(':');
+        //             var name = parts[0].Trim();
+        //             var type = string.Join(':', parts[1..]).Trim();
+        //             if (type.Contains(" = "))
+        //             {
+        //                 type = type.Split(" = ")[0].Trim();
+        //             }
+        //             sb.AppendLine(string.Concat("* @param {", type, "} ", name.Trim('?')));
+        //         }
+        //         else
+        //         {
+        //             if (param.Contains('='))
+        //             {
+        //                 param = param.Split('=')[0].Trim();
+        //             }
+        //             sb.AppendLine(string.Concat("* @param ", param.Trim('?')));
+        //         }
+        //     }
+        // }
+        
+        if (!string.IsNullOrEmpty(resultType))
         {
-            sb.AppendLine(string.Concat("* @returns {", resultType, "}"));
+            if (resultType.StartsWith('{') && resultType.EndsWith('}'))
+            {
+                sb.AppendLine(string.Concat("* @returns ", resultType));
+            }
+            else
+            {
+                sb.AppendLine(string.Concat("* @returns {", resultType, "}"));
+            }
         }
         sb.AppendLine("* ");
         sb.Append(string.Format("* @see {0} {1}.{2}", routine.Type.ToString().ToUpperInvariant(), routine.Schema, routine.Name));
@@ -1205,8 +1325,8 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
     {
         return value
             .Split(separator, StringSplitOptions.RemoveEmptyEntries)
-            .Select((s, i) =>
-                string.Concat(i == 0 ? char.ToUpperInvariant(s[0]) : char.ToUpperInvariant(s[0]), s[1..]))
+            .Select((s) =>
+                string.Concat(char.ToUpperInvariant(s[0]), s[1..]))
             .Aggregate(string.Empty, string.Concat)
             .Trim('"');
     }
@@ -1223,7 +1343,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
 
     private string GetHost()
     {
-        if (options.IncludeHost is false)
+        if (!options.IncludeHost)
         {
             return "";
         }
@@ -1240,14 +1360,14 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             }
             else
             {
-                var section = app.Configuration?.GetSection("ASPNETCORE_URLS");
-                if (section?.Value is not null)
+                var section = app.Configuration.GetSection("ASPNETCORE_URLS");
+                if (section.Value is not null)
                 {
-                    host = section.Value.Split(";")?.LastOrDefault();
+                    host = section.Value.Split(";").LastOrDefault();
                 }
-                if (host is null && app.Configuration?["urls"] is not null)
+                if (host is null && app.Configuration["urls"] is not null)
                 {
-                    host = app.Configuration?["urls"];
+                    host = app.Configuration["urls"];
                 }
             }
         }

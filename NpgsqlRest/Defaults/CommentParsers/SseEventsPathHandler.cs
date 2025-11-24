@@ -26,7 +26,7 @@ internal static partial class DefaultCommentParser
         if (len == 1)
         {
             endpoint.SseEventsPath =
-                (endpoint.SseEventNoticeLevel ?? Options.DefaultSseEventNoticeLevel).ToString();
+                (endpoint.SseEventNoticeLevel ?? Options.DefaultSseEventNoticeLevel).ToString().ToLowerInvariant();
             Logger?.CommentSseStreamingPath(description, endpoint.SseEventsPath);
         }
         else
