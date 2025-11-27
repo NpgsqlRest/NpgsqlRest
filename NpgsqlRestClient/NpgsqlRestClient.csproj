@@ -8,6 +8,10 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <NoDefaultLaunchSettingsFile>true</NoDefaultLaunchSettingsFile>
     <PublishAot>true</PublishAot>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>full</TrimMode>
+    <StackTraceSupport>false</StackTraceSupport>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
     <Version>3.0.0</Version>
   </PropertyGroup>
 

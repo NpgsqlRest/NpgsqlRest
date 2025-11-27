@@ -47,6 +47,7 @@ Event streaming and event notifications, advanced security and authentication fe
 - **JavaScript**. Generate automatically fetch modules for all endpoints in development mode. Slash development time dramatically and reduce bugs.
 - **TypeScript**. Generate type-safe interfaces and types for generated fetch modules. Bring static type checking for your PostgreSQL database.
 - **HTTP Files**. Auto-generated REST client files, for all generated endpoints, for testing, development and auto-discovery.
+- **OpenAPI 3.0**. Generate OpenAPI 3.0 specification documents for API documentation and integration with tools like Swagger UI.
 
 ### Authentication & Security
 - **Multiple Auth Methods**. Cookie authentication, Bearer tokens authentication, Basic authentication and external OAuth providers.
@@ -74,6 +75,7 @@ Event streaming and event notifications, advanced security and authentication fe
 - **Response Compression**. Brotli and Gzip compression with configurable levels.
 - **HTTP Caching**. Define endpoint caching per endpoint in your database declarations.
 - **Server Caching**. Define endpoint in-memory server caching per endpoint in your database declarations.
+- **Rate Limiting**. Built-in rate limiting with multiple policies (fixed window, sliding window, token bucket, concurrency) configurable per endpoint.
 
 ### Real-Time & Streaming
 - **Server-Sent Events**. Innovative real-time streaming with PostgreSQL `RAISE INFO` statements. No database locking.
@@ -96,7 +98,7 @@ Event streaming and event notifications, advanced security and authentication fe
 - **Static Files**. Built-in serving of static content with high speed template parser for user claims and authorization features.
 - **Request Tracking**. Detailed request analytics and connection monitoring.
 - **Performance Metrics**. Built-in performance monitoring and diagnostics.
-- **Error Handling**. Advanced PostgreSQL error code mapping to HTTP status codes.
+- **Error Handling**. Standardized Problem Details (RFC 7807) error responses with configurable PostgreSQL error code policies.
 - **Custom Headers**. Configurable request/response header management in your database declarations.
 - **IP Tracking**. Client IP address parameter or PostgreSQL connection context for tracking.
 - **CRUD Support for Tables and View**. Generate REST Endpoints for tables and views, to insert, update, select with conflict resolutions (on conflict do update or do nothing).
@@ -184,7 +186,7 @@ Type executable name:
 ```console
 ~/dev
 ❯ ./npgsqlrest
-[11:33:35.440 INF] Started in 00:00:00.0940095, listening on ["http://localhost:8080"], version 2.27.0.0 [NpgsqlRest]
+[11:33:35.440 INF] Started in 00:00:00.0940095, listening on ["http://localhost:8080"], version 3.0.0.0 [NpgsqlRest]
 ```
 
 Or, run as NPX command for NPM distributions:
@@ -192,7 +194,7 @@ Or, run as NPX command for NPM distributions:
 ```console
 ~/dev
 ❯ npx npgsqlrest
-[11:33:35.440 INF] Started in 00:00:00.0940095, listening on ["http://localhost:8080"], version 2.27.0.0 [NpgsqlRest]
+[11:33:35.440 INF] Started in 00:00:00.0940095, listening on ["http://localhost:8080"], version 3.0.0.0 [NpgsqlRest]
 ```
 
 Or, run the appropriate Docker command (expose the 8080 default port and bind the default configuration):
@@ -200,8 +202,12 @@ Or, run the appropriate Docker command (expose the 8080 default port and bind th
 ```bash
 ~/dev
 ❯ docker run --name my_postgres_api -it -p 8080:8080 --volume ./appsettings.json:/app/appsettings.json vbilopav/npgsqlrest:latest
-[11:33:35.440 INF] Started in 00:00:00.0940095, listening on ["http://localhost:8080"], version 2.27.0.0 [NpgsqlRest]
+[11:33:35.440 INF] Started in 00:00:00.0940095, listening on ["http://localhost:8080"], version 3.0.0.0 [NpgsqlRest]
 ```
+
+Note: Two Docker images are available:
+- `vbilopav/npgsqlrest:latest` (or `:latest-aot`) - Native AOT compiled, smaller image (~80-100 MB), faster startup
+- `vbilopav/npgsqlrest:latest-jit` - .NET 10 JIT runtime, larger image (~200-250 MB), may have better peak performance
 
 Congratulations, your High Speed Web Server is running with `/hello` endpoint exposed.
 
@@ -255,7 +261,7 @@ After running with this configuration, we will see much more information in the 
 [12:46:05.332 DBG] Created HTTP file: ./src/http/todo_public.http [NpgsqlRest.HttpFiles]
 [12:46:05.340 DBG] Created Typescript type file: ./src/app/api/publicApiTypes.d.ts [NpgsqlRest.TsClient]
 [12:46:05.340 DBG] Created Typescript file: ./src/app/api/publicApi.ts [NpgsqlRest.TsClient]
-[12:46:05.358 INF] Started in 00:00:00.2759846, listening on ["http://localhost:8080"], version 2.27.0.0 [NpgsqlRest]
+[12:46:05.358 INF] Started in 00:00:00.2759846, listening on ["http://localhost:8080"], version 3.0.0.0 [NpgsqlRest]
 ```
 
 Also, two more files will be generated on startup:

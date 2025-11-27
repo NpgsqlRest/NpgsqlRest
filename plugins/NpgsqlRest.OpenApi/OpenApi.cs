@@ -129,7 +129,7 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
                         ["schema"] = GetSchemaForType(param.TypeDescriptor)
                     };
 
-                    parameters.Add(parameter);
+                    parameters.Add((JsonNode)parameter);
                 }
             }
             else if (endpoint.RequestParamType == RequestParamType.BodyJson)
@@ -149,7 +149,7 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
                     properties![param.ConvertedName] = GetSchemaForType(param.TypeDescriptor);
                     if (!param.TypeDescriptor.HasDefault)
                     {
-                        required.Add(JsonValue.Create(param.ConvertedName));
+                        required.Add((JsonNode?)JsonValue.Create(param.ConvertedName));
                     }
                 }
 
@@ -251,7 +251,7 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
                 var securityArray = new JsonArray();
                 foreach (var schemeName in _securitySchemes.AsObject().Select(kv => kv.Key))
                 {
-                    securityArray.Add(new JsonObject
+                    securityArray.Add((JsonNode)new JsonObject
                     {
                         [schemeName] = new JsonArray()
                     });
@@ -294,13 +294,7 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
             return;
         }
 
-        var options = new JsonSerializerOptions
-        {
-            WriteIndented = true,
-            TypeInfoResolver = OpenApiSerializerContext.Default
-        };
-
-        var json = JsonSerializer.Serialize(_document, options);
+        var json = JsonSerializer.Serialize(_document, OpenApiSerializerContext.Default.JsonObject);
 
         // Write to file if FileName is specified
         if (openApiOptions.FileName is not null)
@@ -540,7 +534,7 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
                     serverObj["description"] = server.Description;
                 }
 
-                serversArray.Add(serverObj);
+                serversArray.Add((JsonNode)serverObj);
             }
         }
 
@@ -566,7 +560,7 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
                     currentServerObj["description"] = "Development server";
                 }
 
-                serversArray.Add(currentServerObj);
+                serversArray.Add((JsonNode)currentServerObj);
             }
         }
 

@@ -4,11 +4,28 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
-## Version [3.0.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.0.0) (date is TBD)
+## Version [3.0.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.0.0) (2025-11-27)
 
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/2.36.0...2.36.1)
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.0.0...2.36.1)
 
-### .NET 10 Support
+### Docker JIT Version
+
+- New Docker image with .NET 10 JIT runtime: `npgsqlrest/npgsqlrest:3.0.0-jit`
+- This image uses the standard .NET 10 runtime with JIT compilation instead of AOT compilation.
+- Suitable for development and scenarios where AOT compilation is not required.
+- JIT version can be faster to execute but slower startup time and larger image size compared to AOT version.
+
+Image Size Comparison (approximate):
+
+| Version | Size        |
+|---------|-------------|
+| AOT     | ~80-100 MB  |
+| JIT     | ~200-250 MB |
+
+### .NET 10 Target Framework 
+
+- Upgraded target framework to .NET 10.
+- Faster and more memory efficient.
 
 ### TsClient (Code Generation) Improvements
 
@@ -533,6 +550,7 @@ rate_limiter [ name ]
 - Fix: user claims mapping to parameters or context will now by default be NULL when claim is null or empty string. Previous behavior was to map empty string as empty string.
 - Remove two logging options: `LogEndpointCreatedInfo` and `LogAnnotationSetInfo`. By default, all command parameters and values are logged at Debug level.
 - Refactor comment annotation paring for better maintainability.
+- .NET10 Upgrade.
 
 #### Login Endpoint Changes
 
