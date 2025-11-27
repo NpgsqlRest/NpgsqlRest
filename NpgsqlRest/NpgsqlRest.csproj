@@ -2,8 +2,8 @@
 
     <PropertyGroup>
         <OutputType>Library</OutputType>
-        <TargetFramework>net9.0</TargetFramework>
-        <LangVersion>13.0</LangVersion>
+        <TargetFramework>net10.0</TargetFramework>
+        <LangVersion>14</LangVersion>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <NoDefaultLaunchSettingsFile>true</NoDefaultLaunchSettingsFile>
@@ -42,7 +42,7 @@
 
     <ItemGroup>
         <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
-        <PackageReference Include="Npgsql" Version="9.0.4" />
+        <PackageReference Include="Npgsql" Version="10.0.0" />
         <PackageReferenceFiles Include="bin\$(Configuration)\$(AssemblyName).xml" />
     </ItemGroup>
 

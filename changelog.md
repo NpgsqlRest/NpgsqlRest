@@ -8,6 +8,7 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/2.36.0...2.36.1)
 
+### .NET 10 Support
 
 ### TsClient (Code Generation) Improvements
 

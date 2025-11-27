@@ -42,8 +42,7 @@ public class PasswordHasher : IPasswordHasher
         byte[] salt = RandomNumberGenerator.GetBytes(SaltByteSize);
 
         // Hash the password using PBKDF2
-        using var pbkdf2 = new Rfc2898DeriveBytes(password, salt, Iterations, HashAlgorithmName.SHA256);
-        byte[] hash = pbkdf2.GetBytes(HashByteSize);
+        byte[] hash = Rfc2898DeriveBytes.Pbkdf2(password, salt, Iterations, HashAlgorithmName.SHA256, HashByteSize);
 
         // Combine salt and hash into a single byte array
         byte[] hashBytes = new byte[SaltByteSize + HashByteSize];
@@ -83,8 +82,7 @@ public class PasswordHasher : IPasswordHasher
             Array.Copy(hashBytes, SaltByteSize, storedSubHash, 0, HashByteSize);
 
             // Compute the hash of the provided password
-            using var pbkdf2 = new Rfc2898DeriveBytes(providedPassword, salt, Iterations, HashAlgorithmName.SHA256);
-            byte[] computedHash = pbkdf2.GetBytes(HashByteSize);
+            byte[] computedHash = Rfc2898DeriveBytes.Pbkdf2(providedPassword, salt, Iterations, HashAlgorithmName.SHA256, HashByteSize);
 
             // Compare the hashes in constant time
             return CryptographicOperations.FixedTimeEquals(computedHash, storedSubHash);

@@ -85,7 +85,7 @@ namespace NpgsqlRestClient
                 var stringValue = value?.ToString();
                 var expiry = endpoint.CacheExpiresIn;
             
-                _db.StringSet(key, stringValue, expiry);
+                _db.StringSet(key, stringValue, expiry.HasValue ? new Expiration(expiry.Value) : default);
                 _logger?.LogTrace("Cached value for key: {Key} with expiry: {Expiry}", key, expiry);
             }
             catch (RedisException ex)

@@ -40,7 +40,7 @@ public static class LoginHandler
                 return;
             }
 
-            var schema = await reader.GetColumnSchemaAsync();
+            var schema = reader.GetColumnSchema();
             for (int i = 0; i < reader?.FieldCount; i++)
             {
                 var column = schema[i];
