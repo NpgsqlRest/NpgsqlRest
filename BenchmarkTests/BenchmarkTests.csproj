@@ -12,7 +12,6 @@
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" Version="0.15.6" />
     <PackageReference Include="Npgsql" Version="10.0.0" />
-    <PackageReference Include="System.Text.Json" Version="10.0.0" />
   </ItemGroup>
 
   <ItemGroup>

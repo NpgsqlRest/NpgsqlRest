@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-  RELEASE_VERSION: v2.36.2
+  RELEASE_VERSION: v3.0.0
 
 # Add workflow-level permissions
 permissions:
@@ -26,10 +26,10 @@ jobs:
         postgresql user: 'postgres'
         postgresql password: 'postgres'
     - uses: actions/checkout@v4  # Updated from v2
-    - name: Setup .NET9
-      uses: actions/setup-dotnet@v4  # Updated from v1
+    - name: Setup .NET10
+      uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 9.0.x
+        dotnet-version: 10.0.x
     - name: Install dependencies
       run: dotnet restore
     - name: Build
@@ -82,15 +82,14 @@ jobs:
   build-windows:
     needs: create-release
     runs-on: windows-2022
-    # Explicit permissions for this job
     permissions:
       contents: write
     steps:
-    - uses: actions/checkout@v4  # Updated from v2
-    - name: Setup .NET9
-      uses: actions/setup-dotnet@v4  # Updated from v1
+    - uses: actions/checkout@v4
+    - name: Setup .NET10
+      uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 9.0.x
+        dotnet-version: 10.0.x
     - name: Build Windows AOT
       run: dotnet publish ./NpgsqlRestClient/NpgsqlRestClient.csproj -r win-x64 -c Release
     - name: Upload Windows executable
@@ -99,22 +98,21 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ needs.create-release.outputs.upload_url }}
-        asset_path: ./NpgsqlRestClient/bin/Release/net9.0/win-x64/publish/NpgsqlRestClient.exe
+        asset_path: ./NpgsqlRestClient/bin/Release/net10.0/win-x64/publish/NpgsqlRestClient.exe
         asset_name: npgsqlrest-win64.exe
         asset_content_type: application/octet-stream
 
   build-linux:
     needs: create-release
     runs-on: ubuntu-22.04
-    # Explicit permissions for this job
     permissions:
       contents: write
     steps:
-    - uses: actions/checkout@v4  # Updated from v2
-    - name: Setup .NET9
-      uses: actions/setup-dotnet@v4  # Updated from v1
+    - uses: actions/checkout@v4
+    - name: Setup .NET10
+      uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 9.0.x
+        dotnet-version: 10.0.x
     - name: Build Linux AOT
       run: dotnet publish ./NpgsqlRestClient/NpgsqlRestClient.csproj -r linux-x64 -c Release
     - name: Upload Linux executable
@@ -123,22 +121,21 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ needs.create-release.outputs.upload_url }}
-        asset_path: ./NpgsqlRestClient/bin/Release/net9.0/linux-x64/publish/NpgsqlRestClient
+        asset_path: ./NpgsqlRestClient/bin/Release/net10.0/linux-x64/publish/NpgsqlRestClient
         asset_name: npgsqlrest-linux64
         asset_content_type: application/octet-stream
 
   build-macos:
     needs: create-release
     runs-on: macos-latest
-    # Explicit permissions for this job
     permissions:
       contents: write
     steps:
-    - uses: actions/checkout@v4  # Updated from v2
-    - name: Setup .NET9
-      uses: actions/setup-dotnet@v4  # Updated from v1
+    - uses: actions/checkout@v4
+    - name: Setup .NET10
+      uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 9.0.x
+        dotnet-version: 10.0.x
     - name: Build macOS ARM64 AOT
       run: dotnet publish ./NpgsqlRestClient/NpgsqlRestClient.csproj -r osx-arm64 -c Release
     - name: Upload macOS executable
@@ -147,11 +144,11 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ needs.create-release.outputs.upload_url }}
-        asset_path: ./NpgsqlRestClient/bin/Release/net9.0/osx-arm64/publish/NpgsqlRestClient  # Fixed path
+        asset_path: ./NpgsqlRestClient/bin/Release/net10.0/osx-arm64/publish/NpgsqlRestClient
         asset_name: npgsqlrest-osx-arm64
         asset_content_type: application/octet-stream
   
-  build-docker:
+  build-docker-aot:
     needs: build-linux
     runs-on: ubuntu-22.04
     permissions:
@@ -167,16 +164,47 @@ jobs:
       with:
         username: ${{ secrets.DOCKER_HUB_USERNAME }}
         password: ${{ secrets.DOCKER_HUB_TOKEN }}
-    - name: Build and push Docker image
+    - name: Build and push AOT Docker image
       uses: docker/build-push-action@v5
       with:
         context: ./docker
+        file: ./docker/Dockerfile
         push: true
         platforms: linux/amd64
         provenance: false
         tags: |
           vbilopav/npgsqlrest:${{ env.RELEASE_VERSION }}
+          vbilopav/npgsqlrest:${{ env.RELEASE_VERSION }}-aot
           vbilopav/npgsqlrest:latest
+          vbilopav/npgsqlrest:latest-aot
+
+  build-docker-jit:
+    needs: create-release
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_HUB_USERNAME }}
+        password: ${{ secrets.DOCKER_HUB_TOKEN }}
+    - name: Build and push JIT Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./docker/Dockerfile.jit
+        push: true
+        platforms: linux/amd64
+        provenance: false
+        tags: |
+          vbilopav/npgsqlrest:${{ env.RELEASE_VERSION }}-jit
+          vbilopav/npgsqlrest:latest-jit
 
   npm-publish:
     needs: create-release

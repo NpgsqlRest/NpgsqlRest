@@ -13,7 +13,7 @@
         <Authors>Vedran Bilopavlović</Authors>
         <Company>VB-Consulting</Company>
         <Company>VB-Consulting</Company>
-        <Description>Automatic REST API for Any Postgres Database as .NET9 Middleware</Description>
+        <Description>Automatic REST API for Any Postgres Database as .NET10 Middleware</Description>
         <PackageTags>api;api-rest;restful-api;http;postgres;dotnet;database;rest;server;postgresql;npgsqlrest;pgsql;pg;automatic</PackageTags>
         <PackageProjectUrl>https://github.com/NpgsqlRest/NpgsqlRest</PackageProjectUrl>
         <RepositoryUrl>https://github.com/NpgsqlRest/NpgsqlRest</RepositoryUrl>
