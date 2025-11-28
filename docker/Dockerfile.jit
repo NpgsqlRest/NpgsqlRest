@@ -17,13 +17,15 @@ COPY plugins/NpgsqlRest.TsClient/*.csproj plugins/NpgsqlRest.TsClient/
 RUN dotnet restore NpgsqlRestClient/NpgsqlRestClient.csproj
 
 # Copy everything else
+COPY LICENSE LICENSE
+COPY README.md README.MD
 COPY NpgsqlRest/ NpgsqlRest/
 COPY NpgsqlRestClient/ NpgsqlRestClient/
 COPY plugins/ plugins/
 
 # Build and publish
 WORKDIR /src/NpgsqlRestClient
-RUN dotnet publish -c Release -o /app/publish --no-restore /p:PublishAot=false
+RUN dotnet publish -c Release -o /app/publish -p:PublishAot=false
 
 FROM base AS final
 WORKDIR /app
