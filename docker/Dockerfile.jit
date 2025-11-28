@@ -1,4 +1,5 @@
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
+RUN apt-get update && apt-get install -y --no-install-recommends libgssapi-krb5-2 && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 EXPOSE 5000
 
@@ -17,13 +18,17 @@ COPY plugins/NpgsqlRest.TsClient/*.csproj plugins/NpgsqlRest.TsClient/
 RUN dotnet restore NpgsqlRestClient/NpgsqlRestClient.csproj
 
 # Copy everything else
+COPY LICENSE LICENSE
+COPY README.md README.MD
 COPY NpgsqlRest/ NpgsqlRest/
-COPY NpgsqlRestClient/ NpgsqlRestClient/
+COPY NpgsqlRestClient/*.cs NpgsqlRestClient/
+COPY NpgsqlRestClient/*.csproj NpgsqlRestClient/
+COPY NpgsqlRestClient/appsettings.json NpgsqlRestClient/
 COPY plugins/ plugins/
 
 # Build and publish
 WORKDIR /src/NpgsqlRestClient
-RUN dotnet publish -c Release -o /app/publish --no-restore /p:PublishAot=false
+RUN dotnet publish -c Release -o /app/publish -p:PublishAot=false
 
 FROM base AS final
 WORKDIR /app

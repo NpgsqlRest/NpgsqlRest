@@ -18,7 +18,6 @@ public class ErrorHandlingOptions
             { "57014", new() { StatusCode = 205, Title = "Cancelled" } },
             { "P0001", new() { StatusCode = 400 } },
             { "P0004", new() { StatusCode = 400 } },
-            { "42883", new() { StatusCode = 404, Title = "Not Found" } },
         }
     };
 }
