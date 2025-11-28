@@ -4,6 +4,14 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [3.0.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.0.1) (2025-11-28)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.0.0...3.0.1)
+
+- Fix: fix missing stack trace in AOT builds when exceptions are thrown.
+- Fix: Fix failing Docker JIT image build.
+- Change: removed error mapping for PostgreSQL error code 42883 (undefined_function) from HTTP 404 Not Found. Map it to default HTTP 500 Internal Server Error instead. This was confusing.
+
 ## Version [3.0.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.0.0) (2025-11-27)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.0.0...2.36.1)

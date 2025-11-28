@@ -287,31 +287,31 @@ public class Builder
         var errConfig = _config.Cfg.GetSection("ErrorHandlingOptions");
         if (errConfig.Exists() is false)
         {
+            // Always register ProblemDetails for AOT compatibility
+            Instance.Services.AddProblemDetails();
             return new();
         }
-        
+
         var removeTypeUrl = _config.GetConfigBool("RemoveTypeUrl", errConfig);
         var removeTraceId = _config.GetConfigBool("RemoveTraceId", errConfig);
-        if (removeTypeUrl is true || removeTraceId is true)
+        // Always register ProblemDetails for AOT compatibility
+        Instance.Services.AddProblemDetails(options =>
         {
-            Instance.Services.AddProblemDetails(options =>
+            options.CustomizeProblemDetails = ctx =>
             {
-                options.CustomizeProblemDetails = ctx =>
+                // Remove the type field completely
+                if (removeTypeUrl is true)
                 {
-                    // Remove the type field completely
-                    if (removeTypeUrl is true)
-                    {
-                        ctx.ProblemDetails.Type = null;
-                    }
+                    ctx.ProblemDetails.Type = null;
+                }
 
-                    // Remove the traceId extension
-                    if (removeTraceId is true)
-                    {
-                        ctx.ProblemDetails.Extensions.Remove("traceId");
-                    }
-                };
-            });
-        }
+                // Remove the traceId extension
+                if (removeTraceId is true)
+                {
+                    ctx.ProblemDetails.Extensions.Remove("traceId");
+                }
+            };
+        });
 
         var result = new ErrorHandlingOptions
         {
