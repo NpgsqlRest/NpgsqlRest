@@ -32,6 +32,7 @@ public class NpgsqlRestParameter : NpgsqlParameter
     {
         Ordinal = ordinal;
         ConvertedName = convertedName;
+
         ActualName = actualName;
         TypeDescriptor = typeDescriptor;
         NpgsqlDbType = typeDescriptor.ActualDbType;

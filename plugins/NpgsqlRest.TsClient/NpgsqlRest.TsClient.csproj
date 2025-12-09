@@ -9,8 +9,6 @@
         <NoWarn>$(NoWarn);1591</NoWarn>
         <IsPackable>true</IsPackable>
         <Title>NpgsqlRest.TsClient</Title>
-        <Authors>Vedran Bilopavlović</Authors>
-        <Company>VB-Consulting</Company>
         <Company>VB-Consulting</Company>
         <Description>Automatic Typescript Client Code Generation for NpgsqlRest</Description>
         <PackageTags>api;api-rest;restful-api;postgres;dotnet;ts;Typescript;code-gen;database;rest;server;postgresql;npgsqlrest;pgsql;pg;automatic</PackageTags>
@@ -28,10 +26,10 @@
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
         <PackageReadmeFile>README.MD</PackageReadmeFile>
         <DocumentationFile>bin\$(Configuration)\$(AssemblyName).xml</DocumentationFile>
-        <Version>1.30.0</Version>
-        <AssemblyVersion>1.30.0</AssemblyVersion>
-        <FileVersion>1.30.0</FileVersion>
-        <PackageVersion>1.30.0</PackageVersion>
+        <Version>1.31.0</Version>
+        <AssemblyVersion>1.31.0</AssemblyVersion>
+        <FileVersion>1.31.0</FileVersion>
+        <PackageVersion>1.31.0</PackageVersion>
         <LangVersion>14</LangVersion>
     </PropertyGroup>
 

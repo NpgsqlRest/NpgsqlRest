@@ -553,6 +553,7 @@ public class App
                 FileSystemCheckImage = _config.GetConfigBool("FileSystemCheckImage", uploadHandlersCfg, false),
 
                 CsvUploadEnabled = _config.GetConfigBool("CsvUploadEnabled", uploadHandlersCfg, true),
+                CsvUploadKey = _config.GetConfigStr("CsvUploadKey", uploadHandlersCfg) ?? "csv",
                 CsvUploadCheckFileStatus = _config.GetConfigBool("CsvUploadCheckFileStatus", uploadHandlersCfg, true),
                 CsvUploadDelimiterChars = _config.GetConfigStr("CsvUploadDelimiterChars", uploadHandlersCfg) ?? ",",
                 CsvUploadHasFieldsEnclosedInQuotes = _config.GetConfigBool("CsvUploadHasFieldsEnclosedInQuotes", uploadHandlersCfg, true),

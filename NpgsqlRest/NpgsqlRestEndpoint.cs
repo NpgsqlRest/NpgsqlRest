@@ -1,6 +1,6 @@
-﻿using System;
-using System.Collections.Frozen;
+﻿using System.Collections.Frozen;
 using System.Data;
+using System.IO.Pipelines;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.Extensions.Primitives;
 using Npgsql;
 using NpgsqlRest.Auth;
+using NpgsqlRest.HttpClientType;
 using NpgsqlRest.UploadHandlers;
 using NpgsqlRest.UploadHandlers.Handlers;
 using NpgsqlTypes;
@@ -32,39 +33,7 @@ public class NpgsqlRestEndpoint(
         {
             SearializeHeader(Options, context, ref headers);
         }
-
-        if (endpoint.Login is false)
-        {
-            if ((endpoint.RequiresAuthorization || endpoint.AuthorizeRoles is not null) && context.User?.Identity?.IsAuthenticated is false)
-            {
-                context.Response.StatusCode = (int)HttpStatusCode.Unauthorized;
-                await context.Response.CompleteAsync();
-                return;
-            }
-
-            if (endpoint.AuthorizeRoles is not null)
-            {
-                bool ok = false;
-                foreach (var claim in context.User?.Claims ?? [])
-                {
-                    if (string.Equals(claim.Type, Options.AuthenticationOptions.DefaultRoleClaimType, StringComparison.Ordinal))
-                    {
-                        if (endpoint.AuthorizeRoles.Contains(claim.Value) is true)
-                        {
-                            ok = true;
-                            break;
-                        }
-                    }
-                }
-                if (ok is false)
-                {
-                    context.Response.StatusCode = (int)HttpStatusCode.Forbidden;
-                    await context.Response.CompleteAsync();
-                    return;
-                }
-            }
-        }
-
+        
         NpgsqlConnection? connection = null;
         NpgsqlTransaction? transaction = null;
         string? commandText = null;
@@ -72,7 +41,7 @@ public class NpgsqlRestEndpoint(
         bool shouldCommit = true;
         IUploadHandler? uploadHandler = null;
 
-        var writer = System.IO.Pipelines.PipeWriter.Create(context.Response.Body);
+        var writer = PipeWriter.Create(context.Response.Body);
         try
         {
             if (endpoint.ConnectionName is not null)
@@ -174,6 +143,7 @@ public class NpgsqlRestEndpoint(
             uploadHandler = endpoint.Upload is true ? endpoint.CreateUploadHandler() : null;
             int uploadMetaParamIndex = -1;
             Dictionary<string, object?>? claimsDict = null;
+            List<string> customHttpTypes = Options.HttpClientOptions.Enabled ? new(routine.Parameters.Length) : null!;
             
             if (endpoint.Cached is true)
             {
@@ -330,6 +300,17 @@ public class NpgsqlRestEndpoint(
                                     cacheKeys?.Append(parameter.GetCacheStringValue());
                                 }
                             }
+
+                            if (Options.HttpClientOptions.Enabled)
+                            {
+                                if (parameter.TypeDescriptor.CustomType is not null)
+                                {
+                                    if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
+                                    {
+                                        customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
+                                    }
+                                }
+                            }
                             command.Parameters.Add(parameter);
 
                             if (hasNulls is false && parameter.Value == DBNull.Value)
@@ -404,6 +385,61 @@ public class NpgsqlRestEndpoint(
                                     if (endpoint.CachedParams.Contains(parameter.ConvertedName) || endpoint.CachedParams.Contains(parameter.ActualName))
                                     {
                                         cacheKeys?.Append(parameter.GetCacheStringValue());
+                                    }
+                                }
+                                
+                                if (Options.HttpClientOptions.Enabled)
+                                {
+                                    if (parameter.TypeDescriptor.CustomType is not null)
+                                    {
+                                        if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
+                                        {
+                                            customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
+                                        }
+                                    }
+                                }
+                                
+                                if (Options.HttpClientOptions.Enabled)
+                                {
+                                    if (parameter.TypeDescriptor.CustomType is not null)
+                                    {
+                                        if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
+                                        {
+                                            customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
+                                        }
+                                    }
+                                }
+                                
+                                if (Options.HttpClientOptions.Enabled)
+                                {
+                                    if (parameter.TypeDescriptor.CustomType is not null)
+                                    {
+                                        if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
+                                        {
+                                            customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
+                                        }
+                                    }
+                                }
+                                
+                                if (Options.HttpClientOptions.Enabled)
+                                {
+                                    if (parameter.TypeDescriptor.CustomType is not null)
+                                    {
+                                        if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
+                                        {
+                                            customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
+                                        }
+                                    }
+                                }
+                                
+                                if (Options.HttpClientOptions.Enabled)
+                                {
+                                    if (parameter.TypeDescriptor.CustomType is not null)
+                                    {
+                                        if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
+                                        {
+                                            customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
+                                        }
                                     }
                                 }
                                 command.Parameters.Add(parameter);
@@ -496,6 +532,17 @@ public class NpgsqlRestEndpoint(
                                     cacheKeys?.Append(parameter.GetCacheStringValue());
                                 }
                             }
+                            
+                            if (Options.HttpClientOptions.Enabled)
+                            {
+                                if (parameter.TypeDescriptor.CustomType is not null)
+                                {
+                                    if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
+                                    {
+                                        customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
+                                    }
+                                }
+                            }
                             command.Parameters.Add(parameter);
 
                             if (hasNulls is false && parameter.Value == DBNull.Value)
@@ -567,7 +614,11 @@ public class NpgsqlRestEndpoint(
                             }
                             if (parameter.Value is null)
                             {
-                                if (parameter.TypeDescriptor.HasDefault is false)
+                                if (parameter.TypeDescriptor.CustomType is not null)
+                                {
+                                    parameter.Value = DBNull.Value;
+                                }
+                                else if (parameter.TypeDescriptor.HasDefault is false)
                                 {
                                     shouldCommit = false;
                                     uploadHandler?.OnError(connection, context, null);
@@ -575,7 +626,10 @@ public class NpgsqlRestEndpoint(
                                     await context.Response.CompleteAsync();
                                     return;
                                 }
-                                continue;
+                                else
+                                {
+                                    continue;
+                                }
                             }
                         }
                     }
@@ -625,6 +679,16 @@ public class NpgsqlRestEndpoint(
                         }
                     }
 
+                    if (Options.HttpClientOptions.Enabled)
+                    {
+                        if (parameter.TypeDescriptor.CustomType is not null)
+                        {
+                            if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
+                            {
+                                customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
+                            }
+                        }
+                    }
                     command.Parameters.Add(parameter);
 
                     if (hasNulls is false && parameter.Value == DBNull.Value)
@@ -789,6 +853,16 @@ public class NpgsqlRestEndpoint(
                                 }
                             }
 
+                            if (Options.HttpClientOptions.Enabled)
+                            {
+                                if (parameter.TypeDescriptor.CustomType is not null)
+                                {
+                                    if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
+                                    {
+                                        customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
+                                    }
+                                }
+                            }
                             command.Parameters.Add(parameter);
 
                             if (hasNulls is false && parameter.Value == DBNull.Value)
@@ -860,14 +934,21 @@ public class NpgsqlRestEndpoint(
                             }
                             if (parameter.Value is null)
                             {
-                                if (parameter.TypeDescriptor.HasDefault is false)
+                                if (parameter.TypeDescriptor.CustomType is not null)
+                                {
+                                    parameter.Value = DBNull.Value;
+                                }
+                                else if (parameter.TypeDescriptor.HasDefault is false)
                                 {
                                     transaction?.RollbackAsync();
                                     context.Response.StatusCode = StatusCodes.Status404NotFound;
                                     await context.Response.CompleteAsync();
                                     return;
                                 }
-                                continue;
+                                else
+                                {
+                                    continue;
+                                }
                             }
                         }
                     }
@@ -916,6 +997,16 @@ public class NpgsqlRestEndpoint(
                         }
                     }
 
+                    if (Options.HttpClientOptions.Enabled)
+                    {
+                        if (parameter.TypeDescriptor.CustomType is not null)
+                        {
+                            if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
+                            {
+                                customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
+                            }
+                        }
+                    }
                     command.Parameters.Add(parameter);
 
                     if (hasNulls is false && parameter.Value == DBNull.Value)
@@ -976,8 +1067,41 @@ public class NpgsqlRestEndpoint(
                 return;
             }
 
-            // paramsList is ready
+            // parameters are ready !!!
             
+            // authorization check
+            if (endpoint.Login is false)
+            {
+                if ((endpoint.RequiresAuthorization || endpoint.AuthorizeRoles is not null) && context.User?.Identity?.IsAuthenticated is false)
+                {
+                    context.Response.StatusCode = (int)HttpStatusCode.Unauthorized;
+                    await context.Response.CompleteAsync();
+                    return;
+                }
+
+                if (endpoint.AuthorizeRoles is not null)
+                {
+                    bool ok = false;
+                    foreach (var claim in context.User?.Claims ?? [])
+                    {
+                        if (string.Equals(claim.Type, Options.AuthenticationOptions.DefaultRoleClaimType, StringComparison.Ordinal))
+                        {
+                            if (endpoint.AuthorizeRoles.Contains(claim.Value) is true)
+                            {
+                                ok = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (ok is false)
+                    {
+                        context.Response.StatusCode = (int)HttpStatusCode.Forbidden;
+                        await context.Response.CompleteAsync();
+                        return;
+                    }
+                }
+            }
+
             if (formatter.IsFormattable is true)
             {
                 if (formatter.RefContext)
@@ -1022,25 +1146,33 @@ public class NpgsqlRestEndpoint(
             }
 
             Dictionary<string, string>.AlternateLookup<ReadOnlySpan<char>>? lookup = null;
-            if (endpoint.HeadersNeedParsing is true || endpoint.CustomParamsNeedParsing)
+            if (endpoint.HeadersNeedParsing is true || endpoint.CustomParamsNeedParsing || HttpClientTypes.NeedsParsing)
             {
                 Dictionary<string, string> replacements = new(command.Parameters.Count * 2);
                 for (var i = 0; i < command.Parameters.Count; i++)
                 {
                     var value = command.Parameters[i].Value == DBNull.Value ? "" : command.Parameters[i].Value?.ToString() ?? "";
-                    replacements[((NpgsqlRestParameter)command.Parameters[i]).ActualName] = value;
-                    replacements[((NpgsqlRestParameter)command.Parameters[i]).ConvertedName] = value;
+                    var param = (NpgsqlRestParameter)command.Parameters[i];
+                    if (!string.IsNullOrEmpty(param.ActualName))
+                    {
+                        replacements[param.ActualName] = value;
+                    }
+                    replacements[param.ConvertedName] = value;
+                    if (param.TypeDescriptor.CustomTypeName is not null)
+                    {
+                        replacements[param.TypeDescriptor.CustomTypeName] = value;
+                    }
                 }
                 lookup = replacements.GetAlternateLookup<ReadOnlySpan<char>>();
+            }
 
+            if (endpoint.HeadersNeedParsing is true || endpoint.CustomParamsNeedParsing)
+            {
                 if (endpoint.CustomParamsNeedParsing && endpoint.CustomParameters is not null)
                 {
                     foreach (var (key, value) in endpoint.CustomParameters)
                     {
-                        if (value is not null)
-                        {
-                            endpoint.CustomParameters[key] = Formatter.FormatString(value, lookup!.Value).ToString();
-                        }
+                        endpoint.CustomParameters[key] = Formatter.FormatString(value, lookup!.Value).ToString();
                     }
                 }
             }
@@ -1075,6 +1207,11 @@ public class NpgsqlRestEndpoint(
                         }
                     }
                 }
+            }
+
+            if (Options.HttpClientOptions.Enabled && customHttpTypes.Count > 0)
+            {
+                await HttpClientTypeHandler.InvokeAllAsync(customHttpTypes, lookup, command.Parameters, cancellationToken);
             }
 
             object? uploadMetadata = null;
@@ -1752,7 +1889,7 @@ public class NpgsqlRestEndpoint(
         headers = sb.ToString();
     }
 
-    private static void WriteStringBuilderToWriter(StringBuilder row, System.IO.Pipelines.PipeWriter writer)
+    private static void WriteStringBuilderToWriter(StringBuilder row, PipeWriter writer)
     {
         foreach (ReadOnlyMemory<char> chunk in row.GetChunks())
         {

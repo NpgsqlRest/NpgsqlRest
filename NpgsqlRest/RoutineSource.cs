@@ -57,16 +57,16 @@ public class RoutineSource(
                 command.CommandText = Query;
             }
 
-            AddParameter(command, SchemaSimilarTo ?? Options.SchemaSimilarTo); // $1
-            AddParameter(command, SchemaNotSimilarTo ?? Options.SchemaNotSimilarTo); // $2
-            AddParameter(command, IncludeSchemas ?? Options.IncludeSchemas, true); // $3
-            AddParameter(command, ExcludeSchemas ?? Options.ExcludeSchemas, true); // $4
-            AddParameter(command, NameSimilarTo ?? Options.NameSimilarTo); // $5
-            AddParameter(command, NameNotSimilarTo ?? Options.NameNotSimilarTo); // $6
-            AddParameter(command, IncludeNames ?? Options.IncludeNames, true); // $7
-            AddParameter(command, ExcludeNames ?? Options.ExcludeNames, true); // $8
-            AddParameter(command, IncludeLanguages, true); // $9
-            AddParameter(command, ExcludeLanguages is null ? ["c", "internal"] : ExcludeLanguages, true); // $10
+            command.AddParameter(SchemaSimilarTo ?? Options.SchemaSimilarTo); // $1
+            command.AddParameter(SchemaNotSimilarTo ?? Options.SchemaNotSimilarTo); // $2
+            command.AddParameter(IncludeSchemas ?? Options.IncludeSchemas, true); // $3
+            command.AddParameter(ExcludeSchemas ?? Options.ExcludeSchemas, true); // $4
+            command.AddParameter(NameSimilarTo ?? Options.NameSimilarTo); // $5
+            command.AddParameter(NameNotSimilarTo ?? Options.NameNotSimilarTo); // $6
+            command.AddParameter(IncludeNames ?? Options.IncludeNames, true); // $7
+            command.AddParameter(ExcludeNames ?? Options.ExcludeNames, true); // $8
+            command.AddParameter(IncludeLanguages, true); // $9
+            command.AddParameter(ExcludeLanguages is null ? ["c", "internal"] : ExcludeLanguages, true); // $10
 
             command.TraceCommand(nameof(RoutineSource));
             using NpgsqlDataReader reader = command.ExecuteReaderWithRetry(retryStrategy);
@@ -131,8 +131,7 @@ public class RoutineSource(
                 {
                     returnTypeDescriptor = [.. returnRecordTypes.Select(x => new TypeDescriptor(x))];
                 }
-
-
+                
                 bool isUnnamedRecord = reader.Get<bool>(11);// "is_unnamed_record");
                 var routineType = type.GetEnum<RoutineType>();
                 var callIdent = routineType == RoutineType.Procedure ? "call " : "select ";
@@ -243,6 +242,7 @@ public class RoutineSource(
                         }
                         var defaultValue = paramDefaults[i];
                         var paramType = paramTypes[i];
+                        
                         var fullParamType = defaultValue == null ? paramType : $"{paramType} DEFAULT {defaultValue}";
                         simpleDefinition
                             .AppendLine(string.Concat("    ", paramName, " ", fullParamType, i == paramCount - 1 ? "" : ","));
@@ -255,10 +255,11 @@ public class RoutineSource(
 
                         var descriptor = new TypeDescriptor(
                             paramType,
-                            hasDefault: hasParamDefaults[i],
+                            hasDefault: hasParamDefaults[i], 
                             customType: customType,
                             customTypePosition: customTypePositions[i],
-                            originalParameterName: originalParameterName);
+                            originalParameterName: originalParameterName,
+                            customTypeName: customTypeName);
 
                         //parameters[i] = new NpgsqlRestParameter
                         //{
@@ -362,32 +363,5 @@ public class RoutineSource(
                 connection.Dispose();
             }
         }
-    }
-    
-    private static void AddParameter(NpgsqlCommand command, object? value, bool isArray = false)
-    {
-        if (value is null)
-        {
-            value = DBNull.Value;
-        }
-        else if (isArray && value is string[] array)
-        {
-            if (array.Length == 0)
-            {
-                value = DBNull.Value;
-            }
-        }
-        else if (!isArray && value is string str)
-        {
-            if (string.IsNullOrWhiteSpace(str))
-            {
-                value = DBNull.Value;
-            }
-        }
-        command.Parameters.Add(new NpgsqlParameter
-        {
-            NpgsqlDbType = isArray ? NpgsqlDbType.Text | NpgsqlDbType.Array : NpgsqlDbType.Text,
-            Value = value
-        });
     }
 }

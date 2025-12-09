@@ -17,6 +17,9 @@ And again some other comment.';
 create function comment_verb_test3() returns text language sql as 'select ''verb test3''';
 comment on function comment_verb_test3() is 'HTTP GET custom_url_from_comment';
 
+create function comment_verb_test4() returns text language sql as 'select ''verb test4''';
+comment on function comment_verb_test4() is 'HTTP GET /custom_url_from_comment_with_slash/';
+
 create function comment_wrong_verb() returns text language sql as 'select ''wrong verb''';
 comment on function comment_wrong_verb() is 'HTTP wrong-verb';
 
@@ -50,7 +53,17 @@ public class CommentHttpAttrTests(TestFixture test)
         using var response = await test.Client.GetAsync("/custom_url_from_comment");
         await AssertResponse(response, "verb test3");
     }
-
+    
+    [Fact]
+    public async Task Test_comment_verb_test4()
+    {
+        using var response1 = await test.Client.GetAsync("/custom_url_from_comment_with_slash");
+        await AssertResponse(response1, "verb test4");
+        
+        using var response2 = await test.Client.GetAsync("/custom_url_from_comment_with_slash/");
+        await AssertResponse(response2, "verb test4");
+    }
+    
     [Fact]
     public async Task Test_comment_wrong_verb()
     {

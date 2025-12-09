@@ -336,4 +336,6 @@ public class NpgsqlRestOptions
     /// This can be overridden by comment annotations in the database or setting policy for specific endpoints.
     /// </summary>
     public string? DefaultRateLimitingPolicy { get; set; } = null;
+    
+    public HttpClientOptions HttpClientOptions { get; set; } = new();
 }

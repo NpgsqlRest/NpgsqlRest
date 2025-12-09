@@ -1,6 +1,7 @@
 ﻿using Npgsql;
 using NpgsqlRest.Defaults;
 using System.Collections.Frozen;
+using NpgsqlRest.HttpClientType;
 using NpgsqlRest.UploadHandlers;
 
 namespace NpgsqlRest;
@@ -41,16 +42,33 @@ public static class NpgsqlRestBuilder
         var factory = builder.Services.GetRequiredService<ILoggerFactory>();
         Logger = factory.CreateLogger(options.LoggerName ?? typeof(NpgsqlRestBuilder).Namespace ?? "NpgsqlRest");
 
+        RetryStrategy? defaultStrategy = null;
+        if (Options.CommandRetryOptions.Enabled is true && string.IsNullOrEmpty(Options.CommandRetryOptions.DefaultStrategy) is false)
+        {
+            if (Options.CommandRetryOptions.Strategies
+                    .TryGetValue(Options.CommandRetryOptions.DefaultStrategy, out defaultStrategy) is false)
+            {
+                Logger?.LogWarning("Default retry strategy {defaultStrategy} not found in the list of strategies, command retry strategy will be ignored.",
+                    Options.CommandRetryOptions.DefaultStrategy);
+            }
+        }
+        
         var (
             entries,
             overloads,
             hasStreamingEvents
-            ) = Build(builder);
+            ) = Build(builder, defaultStrategy);
+            
         if (entries.Count == 0)
         {
             return builder;
         }
 
+        if (Options.HttpClientOptions.Enabled is true)
+        {
+            new HttpClientTypes(builder, defaultStrategy);
+        }
+        
         if (hasStreamingEvents is true)
         {
             builder.UseMiddleware<NpgsqlRestSseEventSource>();
@@ -97,7 +115,7 @@ public static class NpgsqlRestBuilder
     
     private const int MaxPathLength = 2048;
 
-    private static Metadata Build(IApplicationBuilder? builder)
+    private static Metadata Build(IApplicationBuilder? builder, RetryStrategy? defaultStrategy)
     {
         // Pre-size dictionaries with reasonable capacity to reduce allocations
         Dictionary<string, NpgsqlRestMetadataEntry> lookup = new(capacity: 128);
@@ -128,17 +146,6 @@ public static class NpgsqlRestBuilder
             else
             {
                 Options.CommentsMode = optionsCommentsMode;
-            }
-            
-            RetryStrategy? defaultStrategy = null;
-            if (Options.CommandRetryOptions.Enabled is true && string.IsNullOrEmpty(Options.CommandRetryOptions.DefaultStrategy) is false)
-            {
-                if (Options.CommandRetryOptions.Strategies
-                        .TryGetValue(Options.CommandRetryOptions.DefaultStrategy, out defaultStrategy) is false)
-                {
-                    Logger?.LogWarning("Default retry strategy {defaultStrategy} not found in the list of strategies, command retry strategy will be ignored.",
-                        Options.CommandRetryOptions.DefaultStrategy);
-                }
             }
             
             foreach (var (routine, formatter) in source.Read(builder?.ApplicationServices, defaultStrategy))

@@ -10,11 +10,13 @@
     <PublishAot>true</PublishAot>
     <PublishTrimmed>true</PublishTrimmed>
     <TrimMode>full</TrimMode>
-    <Version>3.0.0</Version>
+    <Version>3.1.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="ExcelDataReader" Version="3.8.0" />
+    <PackageReference Include="Fido2" Version="4.0.0" />
+    <PackageReference Include="Fido2.AspNet" Version="4.0.0" />
     <PackageReference Include="Serilog.AspNetCore" Version="9.0.0" />
     <PackageReference Include="Serilog.Sinks.OpenTelemetry" Version="4.2.0" />
     <PackageReference Include="StackExchange.Redis" Version="2.10.1" />

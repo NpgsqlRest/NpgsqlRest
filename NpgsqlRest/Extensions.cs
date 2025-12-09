@@ -2,6 +2,7 @@
 using System.Text;
 using Npgsql;
 using NpgsqlRest.Auth;
+using NpgsqlTypes;
 
 namespace NpgsqlRest;
 
@@ -158,6 +159,33 @@ public static class Ext
         }
     }
 
+    public static void AddParameter(this NpgsqlCommand command, object? value, bool isArray = false)
+    {
+        if (value is null)
+        {
+            value = DBNull.Value;
+        }
+        else if (isArray && value is string[] array)
+        {
+            if (array.Length == 0)
+            {
+                value = DBNull.Value;
+            }
+        }
+        else if (!isArray && value is string str)
+        {
+            if (string.IsNullOrWhiteSpace(str))
+            {
+                value = DBNull.Value;
+            }
+        }
+        command.Parameters.Add(new NpgsqlParameter
+        {
+            NpgsqlDbType = isArray ? NpgsqlDbType.Text | NpgsqlDbType.Array : NpgsqlDbType.Text,
+            Value = value
+        });
+    }
+    
     private static bool HasSearchPathInConnectionString(string connectionString, string schema)
     {
         // Fast string search for "Search Path=schema" pattern

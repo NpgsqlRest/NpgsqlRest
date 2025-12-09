@@ -4,9 +4,150 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [3.1.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.0.1) (2025-)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.1.0...3.0.1)
+
+### Http Types
+
+New feature that enables PostgreSQL functions to make HTTP requests to external APIs by using specially annotated composite types. When a function parameter uses a composite type with an HTTP definition comment, NpgsqlRest automatically invokes the HTTP request and populates the type fields with the response data before executing the function.
+
+**Creating an HTTP Type:**
+
+```sql
+-- Create a composite type with response fields
+create type weather_api as (
+    body text,
+    status_code int,
+    headers json,
+    content_type text,
+    success boolean,
+    error_message text
+);
+
+-- Add HTTP definition as a comment (RFC 7230 format)
+comment on type weather_api is 'GET https://api.weather.com/v1/current?city={_city}
+Authorization: Bearer {_api_key}
+timeout 30s';
+```
+
+**Using the HTTP Type in a function:**
+
+```sql
+create function get_weather(
+  _city text,
+  _api_key text,
+  _req weather_api
+)
+returns json
+language plpgsql
+as $$
+begin
+    if (_req).success then
+        return (_req).body::json;
+    else
+        return json_build_object('error', (_req).error_message);
+    end if;
+end;
+$$;
+```
+
+**HTTP Definition Format:**
+
+The comment on the composite type follows a simplified HTTP message format similar to `.http` files:
+
+```
+METHOD URL [HTTP/version]
+Header-Name: Header-Value
+...
+
+[request body]
+```
+
+Supported HTTP methods: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`
+
+**Timeout Directives:**
+
+Timeout can be specified before the request line using various formats:
+
+```
+timeout 30
+timeout 30s
+timeout 00:00:30
+@timeout 2 minutes
+```
+
+**Response Fields:**
+
+The composite type fields are automatically populated based on their names (configurable via `HttpClientOptions`):
+
+| Field Name      | Type            | Description                       |
+|-----------------|-----------------|-----------------------------------|
+| `body`          | `text`          | Response body content             |
+| `status_code`   | `int` or `text` | HTTP status code (e.g., 200, 404) |
+| `headers`       | `json`          | Response headers as JSON object   |
+| `content_type`  | `text`          | Content-Type header value         |
+| `success`       | `boolean`       | True for 2xx status codes         |
+| `error_message` | `text`          | Error message if request failed   |
+
+**Placeholder Substitution:**
+
+URLs, headers, and request body in the type comment can contain placeholders in the format `{parameter_name}`. These placeholders are automatically replaced with the values of other function parameters that share the same name.
+
+In the example above, the function `get_weather` has parameters `_city` and `_api_key`. The HTTP type comment contains placeholders `{_city}` and `{_api_key}` which are substituted with the actual parameter values when the HTTP request is made:
+
+```sql
+-- Type comment with placeholders
+comment on type weather_api is 'GET https://api.weather.com/v1/current?city={_city}
+Authorization: Bearer {_api_key}
+timeout 30s';
+
+-- Function with matching parameter names
+create function get_weather(
+  _city text,        -- Value substitutes {_city} placeholder
+  _api_key text,     -- Value substitutes {_api_key} placeholder
+  _req weather_api   -- HTTP type parameter (receives response)
+)
+...
+```
+
+When calling `GET /api/get-weather?_city=London&_api_key=secret123`, NpgsqlRest will:
+1. Substitute `{_city}` with `London` and `{_api_key}` with `secret123`
+2. Make the HTTP request to `https://api.weather.com/v1/current?city=London` with header `Authorization: Bearer secret123`
+3. Populate the `_req` parameter fields with the response data
+4. Execute the PostgreSQL function
+
+**Configuration Options:**
+
+Enable HTTP Types in `NpgsqlRestOptions.HttpClientOptions`:
+
+```csharp
+options.HttpClientOptions = new HttpClientOptions
+{
+    Enabled = true,
+    IncludeSchemas = ["public"],
+    ResponseBodyField = "body",
+    ResponseStatusCodeField = "status_code",
+    ResponseHeadersField = "headers",
+    ResponseContentTypeField = "content_type",
+    ResponseSuccessField = "success",
+    ResponseErrorMessageField = "error_message"
+};
+```
+
+### Other Changes and Fixes
+
+- Fixed default value on `ErrorHandlingOptions.RemoveTraceId` configuration setting. Default is true as it should be.
+- Fixed PostgreSQL parameter and result type mapping when default search path is not public.
+- Fixed type on TypeScript client generation when returing error. Errors now return JSON object instead of string.
+- Removed `options.md`, `annotations.md`, `client.md` and `login-endpoints.md` documentation files because dedicated website is now live: https://npgsqlrest.github.io/
+- Added missing `CsvUploadKey` with value `"csv"` in `NpgsqlRest.UploadOptions.UploadHandlers` configuration.
+- Moved authorization check after parameter parsing. This allows for endpoint to return proper 404 response codes when parameter is missing, instead of 400 when authorization fails.
+- When using custom types in PostgreSQL function parameters (composite types, enums, etc), and those parameters are not supplied in the request, they will now default to NULL always. Previous behavior was 404 Not Found when parameter was missing.
+
 ## Version [3.0.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.0.1) (2025-11-28)
 
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.0.0...3.0.1)
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.0.1...3.0.0)
 
 - Fix: fix missing stack trace in AOT builds when exceptions are thrown.
 - Fix: Fix failing Docker JIT image build.
@@ -38,7 +179,7 @@ Image Size Comparison (approximate):
 ### TsClient (Code Generation) Improvements
 
 1) When return value is JSON or JSONB, generated TypeScript type is `any` instead of `string`.
-2) New parameter annotation `tsclient_module`. Sets different module name for the generated TypeScript client file. For example: `tsclient_module = test` will create `test.ts` or `test.js` and add every and group endpoint to that module instead of the default..
+2) New parameter annotation `tsclient_module`. Sets different module name for the generated TypeScript client file. For example: `tsclient_module = test` will create `test.ts` or `test.js` and add every and group endpoint to that module instead of the default.
 3) Fixed and improved generated JSDoc comments for better IntelliSense support in IDEs. JavaScript JSDoc invlude proper types and TypeScript JSDoc will not include types to avoid duplication. All parameters comment now include description.
 4) SSE generated parameters signature changed.
 

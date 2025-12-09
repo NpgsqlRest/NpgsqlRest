@@ -394,7 +394,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             {
                 var parameter = routine.Parameters[i];
                 var descriptor = parameter.TypeDescriptor;//paramTypeDescriptors[i];
-                var nameSuffix = descriptor.HasDefault ? "?" : "";
+                var nameSuffix = (descriptor.HasDefault || descriptor.CustomType is not null) ? "?" : "";
                 paramNames[i] = QuoteJavaScriptVariableName($"{parameter.ConvertedName}{nameSuffix}");
                 if (string.Equals(endpoint.BodyParameterName, parameter.ConvertedName, StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(endpoint.BodyParameterName, parameter.ActualName, StringComparison.OrdinalIgnoreCase))
@@ -450,7 +450,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                         "        status: response.status,",
                         Environment.NewLine,
                         "        response: ", 
-                        (responseExp == "await response.text()" ? responseExp : string.Concat("response.status == 200 ? ", responseExp, " : await response.text() as any")),
+                        (responseExp == "await response.text()" ? responseExp : string.Concat("response.status == 200 ? ", responseExp, " : await response.json() as any")),
                         Environment.NewLine,
                         "    };");
                 }

@@ -16,13 +16,14 @@ public class TypeDescriptor
     public NpgsqlDbType DbType { get; }
     public NpgsqlDbType BaseDbType { get; }
     public NpgsqlDbType ActualDbType { get; }
-    public bool HasDefault { get; internal set; }
+    public bool HasDefault { get; private set; }
     public bool NeedsEscape { get; }
     public bool IsPk { get; }
     public bool IsIdentity { get; }
     public string? CustomType { get; }
     public short? CustomTypePosition { get; }
     public string? OriginalParameterName { get; }
+    public string? CustomTypeName { get; }
     public bool IsBinary { get; }
     internal bool ShouldRenderAsUnknownType => IsBinary is false;
 
@@ -33,7 +34,8 @@ public class TypeDescriptor
         bool isIdentity = false,
         string? customType = null,
         short? customTypePosition = null,
-        string? originalParameterName = null)
+        string? originalParameterName = null, 
+        string? customTypeName = null)
     {
         OriginalType = type;
         HasDefault = hasDefault;
@@ -106,6 +108,7 @@ public class TypeDescriptor
         CustomTypePosition = customTypePosition;
         OriginalParameterName = originalParameterName;
         IsBinary = BaseDbType == NpgsqlDbType.Bytea;
+        CustomTypeName = customTypeName;
     }
 
     internal void SetHasDefault()

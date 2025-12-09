@@ -8,8 +8,6 @@ using NpgsqlRest.Auth;
 using NpgsqlRest.CrudSource;
 using NpgsqlRest.UploadHandlers;
 
-#pragma warning disable CS8633 // Nullability in constraints for type parameter doesn't match the constraints for type parameter in implicitly implemented interface method'.
-#pragma warning disable CS8767 // Nullability of reference types in type of parameter doesn't match implicitly implemented member (possibly because of nullability attributes).
 namespace NpgsqlRestTests.Setup;
 
 public class Program
@@ -214,6 +212,10 @@ public class Program
             },
             
             ErrorHandlingOptions = errorHandlingOptions,
+            HttpClientOptions = new()
+            {
+                Enabled = true
+            }
         });
         app.Run();
     }

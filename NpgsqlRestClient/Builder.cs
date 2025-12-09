@@ -293,7 +293,7 @@ public class Builder
         }
 
         var removeTypeUrl = _config.GetConfigBool("RemoveTypeUrl", errConfig);
-        var removeTraceId = _config.GetConfigBool("RemoveTraceId", errConfig);
+        var removeTraceId = _config.GetConfigBool("RemoveTraceId", errConfig, true);
         // Always register ProblemDetails for AOT compatibility
         Instance.Services.AddProblemDetails(options =>
         {
@@ -1137,5 +1137,41 @@ public class Builder
         });
 
         return (defaultPolicy, true);
+    }
+
+    public HttpClientOptions BuildHttpClientOptions()
+    {
+        var cfg = _config.NpgsqlRestCfg.GetSection("HttpClientOptions");
+        var options = new HttpClientOptions
+        {
+            Enabled = _config.GetConfigBool("Enabled", cfg),
+            SchemaSimilarTo = _config.GetConfigStr("SchemaSimilarTo", cfg),
+            SchemaNotSimilarTo = _config.GetConfigStr("SchemaNotSimilarTo", cfg),
+            IncludeSchemas = _config.GetConfigEnumerable("IncludeSchemas", cfg)?.ToArray(),
+            ExcludeSchemas = _config.GetConfigEnumerable("ExcludeSchemas", cfg)?.ToArray(),
+            NameSimilarTo = _config.GetConfigStr("NameSimilarTo", cfg),
+            NameNotSimilarTo = _config.GetConfigStr("NameNotSimilarTo", cfg),
+            IncludeNames = _config.GetConfigEnumerable("IncludeNames", cfg)?.ToArray(),
+            ExcludeNames = _config.GetConfigEnumerable("ExcludeNames", cfg)?.ToArray(),
+            ResponseStatusCodeField = _config.GetConfigStr("ResponseStatusCodeField", cfg) ?? "status_code",
+            ResponseBodyField = _config.GetConfigStr("ResponseBodyField", cfg) ?? "body",
+            ResponseHeadersField = _config.GetConfigStr("ResponseHeadersField", cfg) ?? "headers",
+            ResponseContentTypeField = _config.GetConfigStr("ResponseContentTypeField", cfg) ?? "content_type",
+            ResponseSuccessField = _config.GetConfigStr("ResponseSuccessField", cfg) ?? "success",
+            ResponseErrorMessageField = _config.GetConfigStr("ResponseErrorMessageField", cfg) ?? "error_message"
+        };
+
+        if (options.Enabled)
+        {
+            Logger?.LogDebug("HTTP client options enabled: ResponseBodyField={ResponseBodyField}, ResponseStatusCodeField={ResponseStatusCodeField}, ResponseHeadersField={ResponseHeadersField}, ResponseContentTypeField={ResponseContentTypeField}, ResponseSuccessField={ResponseSuccessField}, ResponseErrorMessageField={ResponseErrorMessageField}",
+                options.ResponseBodyField,
+                options.ResponseStatusCodeField,
+                options.ResponseHeadersField,
+                options.ResponseContentTypeField,
+                options.ResponseSuccessField,
+                options.ResponseErrorMessageField);
+        }
+
+        return options;
     }
 }

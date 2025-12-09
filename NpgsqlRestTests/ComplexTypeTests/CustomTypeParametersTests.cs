@@ -163,6 +163,21 @@ public class CustomTypeParametersTests(TestFixture test)
         response?.StatusCode.Should().Be(HttpStatusCode.OK);
         content.Should().Be("test 123");
     }
+    
+    [Fact]
+    public async Task Test_get_custom_param_query_1p_default_param()
+    {
+        var query = new QueryBuilder
+        {
+            { "i", "1" },
+            { "t", "test XYZ" },
+        };
+        using var response = await test.Client.GetAsync($"/api/get-custom-param-query-1p/{query}");
+        var content = await response.Content.ReadAsStringAsync();
+
+        response?.StatusCode.Should().Be(HttpStatusCode.OK);
+        content.Should().Be(""); // default value for text is null
+    }
 
     [Fact]
     public async Task Test_get_custom_param_query_1p_2()
@@ -179,7 +194,7 @@ public class CustomTypeParametersTests(TestFixture test)
         response?.StatusCode.Should().Be(HttpStatusCode.OK);
         content.Should().Be("test 123");
     }
-
+    
     [Fact]
     public async Task Test_get_custom_param_query_2p()
     {
