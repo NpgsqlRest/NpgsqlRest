@@ -1,4 +1,5 @@
-﻿using System.Text.Json.Nodes;
+﻿using System.Text;
+using System.Text.Json.Nodes;
 using Microsoft.Extensions.Primitives;
 using Npgsql;
 
@@ -64,18 +65,40 @@ public class NpgsqlRestParameter : NpgsqlParameter
         }
     }
 
+    private const char CacheKeySeparator = '\x1F'; // Unit Separator - non-printable ASCII character
+    private const string CacheKeyNull = "\x00NULL\x00"; // Distinct marker for null/DBNull values
+
     internal string GetCacheStringValue()
     {
-        if (Value == DBNull.Value)
+        if (Value is null || Value == DBNull.Value)
         {
-            return string.Empty;
+            return CacheKeyNull;
         }
         if (TypeDescriptor.IsArray)
         {
-            return string.Join(",", Value as object[] ?? []);
+            // Arrays can be stored as List<object?> (from query string parsing) or object[]
+            IList<object?>? list = Value as IList<object?>;
+            if (list is null || list.Count == 0)
+            {
+                return "[]";
+            }
+            var sb = new StringBuilder();
+            sb.Append('[');
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (i > 0)
+                {
+                    sb.Append(CacheKeySeparator);
+                }
+                sb.Append(list[i]?.ToString() ?? CacheKeyNull);
+            }
+            sb.Append(']');
+            return sb.ToString();
         }
-        return Value?.ToString() ?? string.Empty;
+        return Value.ToString() ?? CacheKeyNull;
     }
+
+    internal static char GetCacheKeySeparator() => CacheKeySeparator;
 
 #pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring as nullable.
 #pragma warning disable CS8603 // Possible null reference return.

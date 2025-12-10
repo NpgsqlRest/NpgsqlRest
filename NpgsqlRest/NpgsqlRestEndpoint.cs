@@ -297,6 +297,7 @@ public class NpgsqlRestEndpoint(
                             {
                                 if (endpoint.CachedParams.Contains(parameter.ConvertedName) || endpoint.CachedParams.Contains(parameter.ActualName))
                                 {
+                                    cacheKeys?.Append(NpgsqlRestParameter.GetCacheKeySeparator());
                                     cacheKeys?.Append(parameter.GetCacheStringValue());
                                 }
                             }
@@ -384,6 +385,7 @@ public class NpgsqlRestEndpoint(
                                 {
                                     if (endpoint.CachedParams.Contains(parameter.ConvertedName) || endpoint.CachedParams.Contains(parameter.ActualName))
                                     {
+                                        cacheKeys?.Append(NpgsqlRestParameter.GetCacheKeySeparator());
                                         cacheKeys?.Append(parameter.GetCacheStringValue());
                                     }
                                 }
@@ -529,6 +531,7 @@ public class NpgsqlRestEndpoint(
                             {
                                 if (endpoint.CachedParams.Contains(parameter.ConvertedName) || endpoint.CachedParams.Contains(parameter.ActualName))
                                 {
+                                    cacheKeys?.Append(NpgsqlRestParameter.GetCacheKeySeparator());
                                     cacheKeys?.Append(parameter.GetCacheStringValue());
                                 }
                             }
@@ -675,6 +678,7 @@ public class NpgsqlRestEndpoint(
                     {
                         if (endpoint.CachedParams.Contains(parameter.ConvertedName) || endpoint.CachedParams.Contains(parameter.ActualName))
                         {
+                            cacheKeys?.Append(NpgsqlRestParameter.GetCacheKeySeparator()); 
                             cacheKeys?.Append(parameter.GetCacheStringValue());
                         }
                     }
@@ -849,6 +853,7 @@ public class NpgsqlRestEndpoint(
                             {
                                 if (endpoint.CachedParams.Contains(parameter.ConvertedName) || endpoint.CachedParams.Contains(parameter.ActualName))
                                 {
+                                    cacheKeys?.Append(NpgsqlRestParameter.GetCacheKeySeparator());
                                     cacheKeys?.Append(parameter.GetCacheStringValue());
                                 }
                             }
@@ -993,6 +998,7 @@ public class NpgsqlRestEndpoint(
                     {
                         if (endpoint.CachedParams.Contains(parameter.ConvertedName) || endpoint.CachedParams.Contains(parameter.ActualName))
                         {
+                            cacheKeys?.Append(NpgsqlRestParameter.GetCacheKeySeparator());
                             cacheKeys?.Append(parameter.GetCacheStringValue());
                         }
                     }
@@ -1506,11 +1512,39 @@ public class NpgsqlRestEndpoint(
                 }
                 else // end if (routine.ReturnsRecord == false)
                 {
+                    var binary = routine.ColumnsTypeDescriptor.Length == 1 && routine.ColumnsTypeDescriptor[0].IsBinary;
+
+                    // Check cache for records/sets (but not for binary or raw mode)
+                    var canCacheRecordsAndSets = Options.CacheOptions.DefaultRoutineCache is not null
+                        && endpoint.Cached is true
+                        && binary is false
+                        && endpoint.Raw is false;
+
+                    if (canCacheRecordsAndSets)
+                    {
+                        if (Options.CacheOptions.DefaultRoutineCache!.Get(endpoint, cacheKeys?.ToString()!, out var cachedResult))
+                        {
+                            if (shouldLog)
+                            {
+                                cmdLog?.AppendLine("/* from cache */");
+                                NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", commandText ?? "");
+                            }
+
+                            if (context.Response.ContentType is null)
+                            {
+                                context.Response.ContentType = Application.Json;
+                            }
+
+                            var cachedSpan = (cachedResult as string ?? "").AsSpan();
+                            writer.Advance(Encoding.UTF8.GetBytes(cachedSpan, writer.GetSpan(Encoding.UTF8.GetMaxByteCount(cachedSpan.Length))));
+                            return;
+                        }
+                    }
+
                     if (await PrepareCommand(connection, command, commandText, context, endpoint, true) is false)
                     {
                         return;
                     }
-                    var binary = routine.ColumnsTypeDescriptor.Length == 1 && routine.ColumnsTypeDescriptor[0].IsBinary;
                     await using var reader = await command.ExecuteReaderWithRetryAsync(
                         CommandBehavior.SequentialAccess,
                         endpoint.RetryStrategy,
@@ -1532,9 +1566,15 @@ public class NpgsqlRestEndpoint(
                         }
                     }
 
+                    // For caching, we need to buffer the entire response
+                    StringBuilder? cacheBuffer = canCacheRecordsAndSets ? new() : null;
+                    var maxCacheableRows = Options.CacheOptions.MaxCacheableRows;
+                    var shouldCache = canCacheRecordsAndSets;
+
                     if (routine.ReturnsSet && endpoint.Raw is false && binary is false)
                     {
                         writer.Advance(Encoding.UTF8.GetBytes(Consts.OpenBracket.ToString().AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(1))));
+                        cacheBuffer?.Append(Consts.OpenBracket);
                     }
 
                     bool first = true;
@@ -1700,8 +1740,20 @@ public class NpgsqlRestEndpoint(
                             }
                         } // end for
 
+                        // Check if we've exceeded the cacheable row limit
+                        if (shouldCache && maxCacheableRows.HasValue && rowCount > (ulong)maxCacheableRows.Value)
+                        {
+                            shouldCache = false;
+                            cacheBuffer = null; // Release memory
+                        }
+
                         if (bufferRows != 1 && rowCount % bufferRows == 0)
                         {
+                            // Append to cache buffer before clearing row
+                            if (shouldCache)
+                            {
+                                cacheBuffer?.Append(row);
+                            }
                             WriteStringBuilderToWriter(row, writer);
                             await writer.FlushAsync();
                             row.Clear();
@@ -1716,12 +1768,24 @@ public class NpgsqlRestEndpoint(
                     {
                         if (row.Length > 0)
                         {
+                            // Append remaining rows to cache buffer
+                            if (shouldCache)
+                            {
+                                cacheBuffer?.Append(row);
+                            }
                             WriteStringBuilderToWriter(row, writer);
                             await writer.FlushAsync();
                         }
                         if (routine.ReturnsSet && endpoint.Raw is false)
                         {
                             writer.Advance(Encoding.UTF8.GetBytes(Consts.CloseBracket.ToString().AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(1))));
+                            cacheBuffer?.Append(Consts.CloseBracket);
+                        }
+
+                        // Store in cache if within limits
+                        if (shouldCache && cacheBuffer is not null)
+                        {
+                            Options.CacheOptions.DefaultRoutineCache?.AddOrUpdate(endpoint, cacheKeys?.ToString()!, cacheBuffer.ToString());
                         }
                     }
                     return;

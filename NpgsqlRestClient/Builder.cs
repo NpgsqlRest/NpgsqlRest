@@ -996,12 +996,14 @@ public class Builder
         }
         
         var type = _config.GetConfigEnum<CacheType?>("Type", cacheCfg) ?? CacheType.Memory;
+        options.MaxCacheableRows = _config.GetConfigInt("MaxCacheableRows", cacheCfg);
         if (type == CacheType.Memory)
         {
             options.MemoryCachePruneIntervalSeconds =
                 _config.GetConfigInt("MemoryCachePruneIntervalSeconds", cacheCfg) ?? 60;
             options.DefaultRoutineCache = new RoutineCache();
-            Logger?.LogDebug("Using in-memory routine cache with prune interval of {MemoryCachePruneIntervalSeconds} seconds.", options.MemoryCachePruneIntervalSeconds);
+            Logger?.LogDebug("Using in-memory routine cache with prune interval of {MemoryCachePruneIntervalSeconds} seconds. MaxCacheableRows={MaxCacheableRows}", 
+                options.MemoryCachePruneIntervalSeconds, options.MaxCacheableRows);
         }
         else if (type == CacheType.Redis)
         {
@@ -1012,7 +1014,8 @@ public class Builder
             {
                 var redisCache = new RedisCache(configuration, Logger);
                 options.DefaultRoutineCache = redisCache;
-                Logger?.LogDebug("Using Redis routine cache with configuration: {RedisConfiguration}", configuration);
+                Logger?.LogDebug("Using Redis routine cache with configuration: {RedisConfiguration}. MaxCacheableRows={MaxCacheableRows}", 
+                    configuration, options.MaxCacheableRows);
                 app.Lifetime.ApplicationStopping.Register(() => redisCache.Dispose());
             }
             catch (Exception ex)

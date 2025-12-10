@@ -17,8 +17,7 @@ public class RoutineCache : IRoutineCache
         public bool IsExpired => ExpirationTime.HasValue && DateTime.UtcNow > ExpirationTime.Value;
     }
 
-    private static readonly ConcurrentDictionary<int, CacheEntry> _cache = new();
-    private static readonly ConcurrentDictionary<int, string> _originalKeys = new();
+    private static readonly ConcurrentDictionary<string, CacheEntry> _cache = new(StringComparer.Ordinal);
     private static Timer? _cleanupTimer;
 
     public static void Start(NpgsqlRestOptions options)
@@ -34,7 +33,6 @@ public class RoutineCache : IRoutineCache
     {
         _cleanupTimer?.Dispose();
         _cache.Clear();
-        _originalKeys.Clear();
     }
 
     private static void CleanupExpiredEntriesInternal()
@@ -47,30 +45,22 @@ public class RoutineCache : IRoutineCache
         foreach (var key in expiredKeys)
         {
             _cache.TryRemove(key, out _);
-            _originalKeys.TryRemove(key, out _);
         }
     }
 
     public bool Get(RoutineEndpoint endpoint, string key, out object? result)
     {
-        var hashedKey = key.GetHashCode();
-
-        if (_cache.TryGetValue(hashedKey, out var entry))
+        if (_cache.TryGetValue(key, out var entry))
         {
-            if (_originalKeys.TryGetValue(hashedKey, out var originalKey) && originalKey == key)
+            if (entry.IsExpired)
             {
-                if (entry.IsExpired)
-                {
-                    // Remove expired entry
-                    _cache.TryRemove(hashedKey, out _);
-                    _originalKeys.TryRemove(hashedKey, out _);
-                    result = null;
-                    return false;
-                }
-
-                result = entry.Value;
-                return true;
+                _cache.TryRemove(key, out _);
+                result = null;
+                return false;
             }
+
+            result = entry.Value;
+            return true;
         }
 
         result = null;
@@ -79,14 +69,12 @@ public class RoutineCache : IRoutineCache
 
     public void AddOrUpdate(RoutineEndpoint endpoint, string key, object? value)
     {
-        var hashedKey = key.GetHashCode();
         var entry = new CacheEntry
         {
             Value = value,
             ExpirationTime = endpoint.CacheExpiresIn.HasValue ? DateTime.UtcNow + endpoint.CacheExpiresIn.Value : null
         };
 
-        _cache[hashedKey] = entry;
-        _originalKeys[hashedKey] = key;
+        _cache[key] = entry;
     }
 }

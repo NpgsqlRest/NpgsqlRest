@@ -162,6 +162,50 @@ Enable HTTP Types in `NpgsqlRestOptions.HttpClientOptions` options or in client 
 }
 ```
 
+### Routine Caching Improvements
+
+Major improvements to the routine caching system for reliability, correctness, and expanded functionality:
+
+**Cache Key Generation Fixes:**
+
+- Fixed potential hash collisions by switching from integer hash codes to string-based cache keys.
+- Added separator character (`\x1F`) between parameter values to prevent cache key collisions when parameter values concatenate to the same string (e.g., `"ab" + "c"` vs `"a" + "bc"` now produce different cache keys).
+- Added distinct null marker (`\x00NULL\x00`) to differentiate between null values and empty strings in cache keys.
+- Fixed array parameter serialization to properly include all array elements in the cache key with separators.
+
+**Extended Caching Support for Records and Sets:**
+
+Caching now works for set-returning functions and record types, not just single scalar values. When a cached function returns multiple rows, the entire result set is cached and returned on subsequent calls.
+
+**New Configuration Option:**
+
+Added `MaxCacheableRows` option to `CacheOptions` to limit memory usage when caching large result sets:
+
+```csharp
+public class CacheOptions
+{
+    /// <summary>
+    /// Maximum number of rows that can be cached for set-returning functions.
+    /// If a result set exceeds this limit, it will not be cached (but will still be returned).
+    /// Set to 0 to disable caching for sets entirely. Set to null for unlimited (use with caution).
+    /// Default is 1000 rows.
+    /// </summary>
+    public int? MaxCacheableRows { get; set; } = 1000;
+}
+```
+
+Configuration in `appsettings.json`:
+
+```json
+{
+  "NpgsqlRest": {
+    "CacheOptions": {
+      "MaxCacheableRows": 1000
+    }
+  }
+}
+```
+
 ### Other Changes and Fixes
 
 - Fixed default value on `ErrorHandlingOptions.RemoveTraceId` configuration setting. Default is true as it should be.
