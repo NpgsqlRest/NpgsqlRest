@@ -8,46 +8,6 @@ public class HttpClientOptions
     public bool Enabled { get; set; } = false;
 
     /// <summary>
-    /// Filter schema names [similar to](https://www.postgresql.org/docs/current/functions-matching.html#FUNCTIONS-SIMILARTO-REGEXP) this parameter or `null` to ignore this parameter.
-    /// </summary>
-    public string? SchemaSimilarTo { get; set; }
-
-    /// <summary>
-    /// Filter schema names NOT [similar to](https://www.postgresql.org/docs/current/functions-matching.html#FUNCTIONS-SIMILARTO-REGEXP) this parameter or `null` to ignore this parameter.
-    /// </summary>
-    public string? SchemaNotSimilarTo { get; set; }
-
-    /// <summary>
-    /// List of schema names to be included or  `null` to ignore this parameter.
-    /// </summary>
-    public string[]? IncludeSchemas { get; set; }
-
-    /// <summary>
-    /// List of schema names to be excluded or  `null` to ignore this parameter. 
-    /// </summary>
-    public string[]? ExcludeSchemas { get; set; }
-
-    /// <summary>
-    /// Filter names [similar to](https://www.postgresql.org/docs/current/functions-matching.html#FUNCTIONS-SIMILARTO-REGEXP) this parameter or `null` to ignore this parameter.
-    /// </summary>
-    public string? NameSimilarTo { get; set; }
-
-    /// <summary>
-    /// Filter names NOT [similar to](https://www.postgresql.org/docs/current/functions-matching.html#FUNCTIONS-SIMILARTO-REGEXP) this parameter or `null` to ignore this parameter.
-    /// </summary>
-    public string? NameNotSimilarTo { get; set; }
-
-    /// <summary>
-    /// List of names to be included or `null` to ignore this parameter.
-    /// </summary>
-    public string[]? IncludeNames { get; set; }
-
-    /// <summary>
-    /// List of names to be excluded or `null` to ignore this parameter.
-    /// </summary>
-    public string[]? ExcludeNames { get; set; }
-    
-    /// <summary>
     /// Default name for the response status code field within annotated types.
     /// </summary>
     public string ResponseStatusCodeField { get; set; } = "status_code";

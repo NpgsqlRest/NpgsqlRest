@@ -5,7 +5,7 @@ namespace NpgsqlRest.HttpClientType;
 
 public class HttpClientTypes
 {
-    public const string TypeQuery = @"select
+    private const string TypeQuery = @"select
     (quote_ident(n.nspname) || '.' || quote_ident(t.typname))::regtype::text as name,
     des.description as comment,
     array_agg(quote_ident(a.attname)) as att_names
@@ -18,14 +18,7 @@ from
 where
     nspname not like 'pg_%'
     and nspname <> 'information_schema'
-    and ($1 is null or n.nspname similar to $1)
-    and ($2 is null or n.nspname not similar to $2)
-    and ($3 is null or n.nspname = any($3))
-    and ($4 is null or not n.nspname = any($4))
-    and ($5 is null or t.typname similar to $5)
-    and ($6 is null or t.typname not similar to $6)
-    and ($7 is null or t.typname = any($7))
-    and ($8 is null or not t.typname = any($8))
+    and des.description is not null
     and a.attnum > 0
 group by n.nspname, t.typname, des.description";
 
@@ -47,16 +40,6 @@ group by n.nspname, t.typname, des.description";
 
             using var command = connection.CreateCommand();
             command.CommandText = TypeQuery;
-
-            command.AddParameter(Options.HttpClientOptions.SchemaSimilarTo, false); // $1
-            command.AddParameter(Options.HttpClientOptions.SchemaNotSimilarTo, false); // $2
-            command.AddParameter(Options.HttpClientOptions.IncludeSchemas, true); // $3
-            command.AddParameter(Options.HttpClientOptions.ExcludeSchemas, true); // $4
-            command.AddParameter(Options.HttpClientOptions.NameSimilarTo, false); // $5
-            command.AddParameter(Options.HttpClientOptions.NameNotSimilarTo, false); // $6
-            command.AddParameter(Options.HttpClientOptions.IncludeNames, true); // $7
-            command.AddParameter(Options.HttpClientOptions.ExcludeNames, true); // $8
-
             command.TraceCommand(nameof(HttpClientTypes));
             using NpgsqlDataReader reader = command.ExecuteReaderWithRetry(retryStrategy);
 

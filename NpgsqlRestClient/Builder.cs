@@ -1145,14 +1145,6 @@ public class Builder
         var options = new HttpClientOptions
         {
             Enabled = _config.GetConfigBool("Enabled", cfg),
-            SchemaSimilarTo = _config.GetConfigStr("SchemaSimilarTo", cfg),
-            SchemaNotSimilarTo = _config.GetConfigStr("SchemaNotSimilarTo", cfg),
-            IncludeSchemas = _config.GetConfigEnumerable("IncludeSchemas", cfg)?.ToArray(),
-            ExcludeSchemas = _config.GetConfigEnumerable("ExcludeSchemas", cfg)?.ToArray(),
-            NameSimilarTo = _config.GetConfigStr("NameSimilarTo", cfg),
-            NameNotSimilarTo = _config.GetConfigStr("NameNotSimilarTo", cfg),
-            IncludeNames = _config.GetConfigEnumerable("IncludeNames", cfg)?.ToArray(),
-            ExcludeNames = _config.GetConfigEnumerable("ExcludeNames", cfg)?.ToArray(),
             ResponseStatusCodeField = _config.GetConfigStr("ResponseStatusCodeField", cfg) ?? "status_code",
             ResponseBodyField = _config.GetConfigStr("ResponseBodyField", cfg) ?? "body",
             ResponseHeadersField = _config.GetConfigStr("ResponseHeadersField", cfg) ?? "headers",

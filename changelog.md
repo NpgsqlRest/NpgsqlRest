@@ -119,20 +119,47 @@ When calling `GET /api/get-weather?_city=London&_api_key=secret123`, NpgsqlRest 
 
 **Configuration Options:**
 
-Enable HTTP Types in `NpgsqlRestOptions.HttpClientOptions`:
+Enable HTTP Types in `NpgsqlRestOptions.HttpClientOptions` options or in client configuration:
 
-```csharp
-options.HttpClientOptions = new HttpClientOptions
+```json
 {
-    Enabled = true,
-    IncludeSchemas = ["public"],
-    ResponseBodyField = "body",
-    ResponseStatusCodeField = "status_code",
-    ResponseHeadersField = "headers",
-    ResponseContentTypeField = "content_type",
-    ResponseSuccessField = "success",
-    ResponseErrorMessageField = "error_message"
-};
+  "NpgsqlRest": {
+    //
+    // HTTP client functionality for annotated composite types.
+    // Allows PostgreSQL functions to make HTTP requests by using specially annotated types as parameters.
+    //
+    "HttpClientOptions": {
+      //
+      // Enable HTTP client functionality for annotated types.
+      //
+      "Enabled": false,
+      //
+      // Default name for the response status code field within annotated types.
+      //
+      "ResponseStatusCodeField": "status_code",
+      //
+      // Default name for the response body field within annotated types.
+      //
+      "ResponseBodyField": "body",
+      //
+      // Default name for the response headers field within annotated types.
+      //
+      "ResponseHeadersField": "headers",
+      //
+      // Default name for the response content type field within annotated types.
+      //
+      "ResponseContentTypeField": "content_type",
+      //
+      // Default name for the response success field within annotated types.
+      //
+      "ResponseSuccessField": "success",
+      //
+      // Default name for the response error message field within annotated types.
+      //
+      "ResponseErrorMessageField": "error_message"
+    }
+  }
+}
 ```
 
 ### Other Changes and Fixes
