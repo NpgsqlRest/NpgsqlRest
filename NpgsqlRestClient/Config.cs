@@ -10,7 +10,7 @@ public class Config
     public IConfigurationRoot Cfg { get; private set; } = null!;
     public IConfigurationSection NpgsqlRestCfg { get; private set; } = null!;
     public IConfigurationSection ConnectionSettingsCfg { get; private set; } = null!;
-    public bool UseConnectionApplicationNameWithUsername { get; private set; }
+    public bool UseJsonApplicationName { get; private set; }
     public string CurrentDir => Directory.GetCurrentDirectory();
     public Dictionary<string, string>? EnvDict { get; private set; } = null;
     
@@ -93,7 +93,7 @@ public class Config
             }
         }
 
-        UseConnectionApplicationNameWithUsername = GetConfigBool("UseJsonApplicationName", ConnectionSettingsCfg);
+        UseJsonApplicationName = GetConfigBool("UseJsonApplicationName", ConnectionSettingsCfg);
     }
 
     public bool Exists(IConfigurationSection? section)

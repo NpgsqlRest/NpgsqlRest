@@ -241,19 +241,25 @@ public class App
     
     public Action<NpgsqlConnection, RoutineEndpoint, HttpContext>? BeforeConnectionOpen(string connectionString, NpgsqlRestAuthenticationOptions options)
     {
-        if (_config.UseConnectionApplicationNameWithUsername is false)
+        if (_config.UseJsonApplicationName is false)
         {
             return null;
         }
 
         // Extract the application name to avoid capturing _builder reference
         var applicationName = _builder.Instance.Environment.ApplicationName;
-        
+        var headerName = _config.GetConfigStr("ExecutionIdHeaderName", _config.NpgsqlRestCfg) ?? "X-Execution-Id";
+
+        _builder.Logger?.LogDebug("Using JsonApplicationName {{\"app\":\"{applicationName}\",\"uid\":\"<{UserIdClaimType}>\",\"id\":\"<{headerName}>\"}}",
+            applicationName,
+            options.DefaultUserIdClaimType,
+            headerName);
+
         return (connection, endpoint, context) =>
         {
             var uid = context.User.FindFirstValue(options.DefaultUserIdClaimType);
             //TODO: use ExecutionIdHeaderName from options
-            var executionId = context.Request.Headers["X-Execution-Id"].FirstOrDefault();
+            var executionId = context.Request.Headers[headerName].FirstOrDefault();
             connection.ConnectionString = new NpgsqlConnectionStringBuilder(connectionString)
             {
                 ApplicationName = string.Concat("{\"app\":\"", applicationName,
