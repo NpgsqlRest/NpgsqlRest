@@ -215,6 +215,8 @@ Configuration in `appsettings.json`:
 - Added missing `CsvUploadKey` with value `"csv"` in `NpgsqlRest.UploadOptions.UploadHandlers` configuration.
 - Moved authorization check after parameter parsing. This allows for endpoint to return proper 404 response codes when parameter is missing, instead of 400 when authorization fails.
 - When using custom types in PostgreSQL function parameters (composite types, enums, etc), and those parameters are not supplied in the request, they will now default to NULL always. Previous behavior was 404 Not Found when parameter was missing.
+- Fixed debug logging in ErrorHandlingOptions builder.
+- Fixed default mapping in ErrorHandlingOptions builder.
 
 ## Version [3.0.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.0.1) (2025-11-28)
 

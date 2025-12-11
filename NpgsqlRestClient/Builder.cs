@@ -285,11 +285,21 @@ public class Builder
     public ErrorHandlingOptions BuildErrorHandlingOptions()
     {
         var errConfig = _config.Cfg.GetSection("ErrorHandlingOptions");
+        var defaults = new ErrorHandlingOptions();
         if (errConfig.Exists() is false)
         {
             // Always register ProblemDetails for AOT compatibility
             Instance.Services.AddProblemDetails();
-            return new();
+            var defaultTimeoutLog = defaults.TimeoutErrorMapping?.ToString() ?? "disabled";
+            var defaultPoliciesLog = defaults.ErrorCodePolicies.Count > 0
+                ? string.Join("; ", defaults.ErrorCodePolicies.Select(p =>
+                    $"{p.Key}: [{string.Join(", ", p.Value.Select(m => $"{m.Key}->{m.Value.StatusCode}"))}]"))
+                : "none";
+            Logger?.LogDebug("Using default error handling options: DefaultErrorCodePolicy={DefaultErrorCodePolicy}, TimeoutErrorMapping=[{TimeoutErrorMapping}], ErrorCodePolicies=[{ErrorCodePolicies}]",
+                defaults.DefaultErrorCodePolicy ?? "Default",
+                defaultTimeoutLog,
+                defaultPoliciesLog);
+            return defaults;
         }
 
         var removeTypeUrl = _config.GetConfigBool("RemoveTypeUrl", errConfig);
@@ -315,7 +325,7 @@ public class Builder
 
         var result = new ErrorHandlingOptions
         {
-            DefaultErrorCodePolicy = _config.GetConfigStr("DefaultErrorCodePolicy", errConfig)
+            DefaultErrorCodePolicy = _config.GetConfigStr("DefaultErrorCodePolicy", errConfig) ?? defaults.DefaultErrorCodePolicy
         };
         var timeoutErrorMapping = errConfig.GetSection("TimeoutErrorMapping");
         if (timeoutErrorMapping.Exists())
@@ -332,19 +342,23 @@ public class Builder
                 };
             }
         }
-        
+        else
+        {
+            result.TimeoutErrorMapping = defaults.TimeoutErrorMapping;
+        }
+
         result.ErrorCodePolicies = new Dictionary<string, Dictionary<string, ErrorCodeMappingOptions>>();
-        
+
         var policiesCfg = errConfig.GetSection("ErrorCodePolicies");
-        
+
         foreach (var policySection in policiesCfg.GetChildren())
         {
-            var policy = _config.GetConfigStr("Name", policySection); 
+            var policy = _config.GetConfigStr("Name", policySection);
             if (string.IsNullOrEmpty(policy))
             {
                 continue;
             }
-            
+
             var mappingCfg = policySection.GetSection("ErrorCodes");
             var mappingDict = new Dictionary<string, ErrorCodeMappingOptions>();
             foreach (var mappingSection in mappingCfg.GetChildren())
@@ -367,15 +381,35 @@ public class Builder
                     Type = _config.GetConfigStr("Type", mappingSection),
                 });
             }
-            if (mappingDict.Any())
+
+            if (mappingDict.Count > 0)
             {
-                result.ErrorCodePolicies.TryAdd(policy, mappingDict);
-                if (Logger is not null)
-                {
-                    Logger?.LogDebug("Created Error Code Policy {policy} with mapping: {result}", policy, mappingDict);
-                }
+                result.ErrorCodePolicies[policy] = mappingDict;
             }
         }
+        
+        if (result.ErrorCodePolicies.Count == 0)
+        {
+            result.ErrorCodePolicies = defaults.ErrorCodePolicies;
+        }
+
+        // Log error handling options
+        var timeoutLog = result.TimeoutErrorMapping is not null
+            ? result.TimeoutErrorMapping.ToString()
+            : "disabled";
+
+        var policiesLog = result.ErrorCodePolicies.Count > 0
+            ? string.Join("; ", result.ErrorCodePolicies.Select(p =>
+                $"{p.Key}: [{string.Join(", ", p.Value.Select(m => $"{m.Key}->{m.Value.StatusCode}"))}]"))
+            : "none";
+
+        Logger?.LogDebug("Using error handling options: DefaultErrorCodePolicy={DefaultErrorCodePolicy}, RemoveTypeUrl={RemoveTypeUrl}, RemoveTraceId={RemoveTraceId}, TimeoutErrorMapping=[{TimeoutErrorMapping}], ErrorCodePolicies=[{ErrorCodePolicies}]",
+            result.DefaultErrorCodePolicy ?? "Default",
+            removeTypeUrl,
+            removeTraceId,
+            timeoutLog,
+            policiesLog);
+
         return result;
     }
     

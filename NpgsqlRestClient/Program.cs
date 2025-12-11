@@ -193,7 +193,14 @@ if (antiForgeryUsed)
 }
 appInstance.ConfigureStaticFiles(app, authenticationOptions);
 
-await using var dataSource = new NpgsqlDataSourceBuilder(connectionString).Build();
+//await using var dataSource = new NpgsqlDataSourceBuilder(connectionString).Build();
+//TODO: multi-host support and switch to data sources for all connections
+
+await using var dataSource = new NpgsqlDataSourceBuilder(connectionString).BuildMultiHost().WithTargetSession(TargetSessionAttributes.Primary);
+//var primaryDataSource = dataSource.WithTargetSession(TargetSessionAttributes.Primary);
+//dataSource.OpenConnectionAsync(TargetSessionAttributes.Primary);
+
+
 var logConnectionNoticeEventsMode = config.GetConfigEnum<PostgresConnectionNoticeLoggingMode?>("LogConnectionNoticeEventsMode", config.NpgsqlRestCfg) ?? PostgresConnectionNoticeLoggingMode.FirstStackFrameAndMessage;
 
 appInstance.ConfigureThreadPool();
