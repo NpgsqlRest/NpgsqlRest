@@ -13,16 +13,38 @@ public static class Ext
         ref NpgsqlConnection? connection,
         ref bool shouldDispose)
     {
-        // Try named connection string first
+        // Try named connection first (check DataSources for multi-host, then ConnectionStrings)
         if (options.MetadataQueryConnectionName is not null)
         {
+            // First check if there's a data source for this connection name (for multi-host support)
+            if (options.DataSources?.TryGetValue(options.MetadataQueryConnectionName, out var namedDataSource) is true)
+            {
+                connection = namedDataSource.OpenConnection();
+                shouldDispose = true;
+
+                if (options.MetadataQuerySchema is not null && HasSearchPathInConnectionString(connection.ConnectionString, options.MetadataQuerySchema) is false)
+                {
+                    SetSearchPath(connection, options.MetadataQuerySchema);
+                    Logger?.LogDebug("Using named data source '{name}' with schema '{schema}' for metadata queries.",
+                        options.MetadataQueryConnectionName,
+                        options.MetadataQuerySchema);
+                }
+                else
+                {
+                    Logger?.LogDebug("Using named data source '{name}' for metadata queries.",
+                        options.MetadataQueryConnectionName);
+                }
+                return;
+            }
+
+            // Fall back to ConnectionStrings
             if (options.ConnectionStrings is null)
             {
-                throw new ArgumentException("ConnectionStrings must be provided when using named connection strings.");
+                throw new ArgumentException("ConnectionStrings or DataSources must be provided when using named connections.");
             }
             if (!options.ConnectionStrings.TryGetValue(options.MetadataQueryConnectionName, out var connectionString))
             {
-                throw new ArgumentException($"Connection string '{options.MetadataQueryConnectionName}' not found in ConnectionStrings.");
+                throw new ArgumentException($"Connection '{options.MetadataQueryConnectionName}' not found in DataSources or ConnectionStrings.");
             }
 
             if (options.MetadataQuerySchema is not null)
@@ -51,7 +73,7 @@ public static class Ext
                 Logger?.LogDebug("Using named connection string '{name}' for metadata queries.",
                     options.MetadataQueryConnectionName);
             }
-            
+
             connection.OpenRetry(Options.ConnectionRetryOptions);
             return;
         }

@@ -66,6 +66,14 @@ public class NpgsqlRestOptions
     /// For example, some routines might use the primary database connection string, while others might use a read-only connection string from the replica servers.
     /// </summary>
     public IDictionary<string, string>? ConnectionStrings { get; set; }
+
+    /// <summary>
+    /// Dictionary of data sources by connection name. This is used for multi-host connection support.
+    /// When a connection name is specified in a routine endpoint, the middleware will first check this dictionary for a data source.
+    /// If not found, it falls back to the ConnectionStrings dictionary.
+    /// Use this for multi-host failover/load-balancing scenarios where you need NpgsqlMultiHostDataSource with specific target session attributes.
+    /// </summary>
+    public IDictionary<string, NpgsqlDataSource>? DataSources { get; set; }
     
     /// <summary>
     /// The connection name in ConnectionStrings dictionary that will be used to execute the metadata query. If this value is null, the default connection string or data source will be used.

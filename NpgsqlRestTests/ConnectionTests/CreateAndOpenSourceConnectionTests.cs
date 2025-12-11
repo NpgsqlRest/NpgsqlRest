@@ -120,7 +120,7 @@ public class CreateAndOpenSourceConnectionTests : IDisposable
         // Act & Assert
         var act = () => options.CreateAndOpenSourceConnection(null, ref connection, ref shouldDispose);
         act.Should().Throw<ArgumentException>()
-            .WithMessage("*ConnectionStrings must be provided*");
+            .WithMessage("*ConnectionStrings or DataSources must be provided*");
     }
 
     [Fact]

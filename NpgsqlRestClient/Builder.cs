@@ -1203,4 +1203,102 @@ public class Builder
 
         return options;
     }
+
+    /// <summary>
+    /// Checks if a connection string is a multi-host connection string (has comma-separated hosts).
+    /// </summary>
+    public static bool IsMultiHostConnectionString(string connectionString)
+    {
+        var builder = new NpgsqlConnectionStringBuilder(connectionString);
+        return builder.Host?.Contains(',') ?? false;
+    }
+
+    /// <summary>
+    /// Gets the target session attribute for a connection name from configuration.
+    /// </summary>
+    public TargetSessionAttributes GetTargetSessionAttribute(string? connectionName)
+    {
+        var multiHostCfg = _config.ConnectionSettingsCfg.GetSection("MultiHostConnectionTargets");
+        if (_config.Exists(multiHostCfg) is false)
+        {
+            return TargetSessionAttributes.Any;
+        }
+
+        // Check per-connection override first
+        if (connectionName is not null)
+        {
+            var byName = multiHostCfg.GetSection("ByConnectionName");
+            var overrideValue = _config.GetConfigStr(connectionName, byName);
+            if (overrideValue is not null && Enum.TryParse<TargetSessionAttributes>(overrideValue, true, out var result))
+            {
+                Logger?.LogDebug("Using target session attribute override '{TargetSession}' for connection '{ConnectionName}'", result, connectionName);
+                return result;
+            }
+        }
+
+        // Fall back to default
+        var defaultValue = _config.GetConfigStr("Default", multiHostCfg) ?? "Any";
+        if (Enum.TryParse<TargetSessionAttributes>(defaultValue, true, out var defaultResult))
+        {
+            return defaultResult;
+        }
+        return TargetSessionAttributes.Any;
+    }
+
+    /// <summary>
+    /// Builds data sources dictionary for multi-host connections.
+    /// </summary>
+    public Dictionary<string, NpgsqlDataSource> BuildDataSources(string mainConnectionString)
+    {
+        var result = new Dictionary<string, NpgsqlDataSource>();
+
+        // Build main data source if it's multi-host
+        if (IsMultiHostConnectionString(mainConnectionString))
+        {
+            var target = GetTargetSessionAttribute(ConnectionName);
+            var multiHost = new NpgsqlDataSourceBuilder(mainConnectionString).BuildMultiHost();
+            result["_default"] = multiHost.WithTargetSession(target);
+            Logger?.LogDebug("Built multi-host data source for main connection with target session '{TargetSession}'", target);
+        }
+
+        // Build additional connection data sources
+        if (_config.GetConfigBool("UseMultipleConnections", _config.NpgsqlRestCfg, false))
+        {
+            foreach (var section in _config.Cfg.GetSection("ConnectionStrings").GetChildren())
+            {
+                if (section?.Key is null || string.Equals(ConnectionName, section.Key, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var (connStr, _) = BuildConnection(section.Key, section.Value!, isMain: false, skipRetryOpts: true);
+                if (connStr is null || !IsMultiHostConnectionString(connStr))
+                {
+                    continue;
+                }
+
+                var target = GetTargetSessionAttribute(section.Key);
+                var multiHost = new NpgsqlDataSourceBuilder(connStr).BuildMultiHost();
+                result[section.Key] = multiHost.WithTargetSession(target);
+                Logger?.LogDebug("Built multi-host data source for connection '{ConnectionName}' with target session '{TargetSession}'", section.Key, target);
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Builds the main data source (handles both single-host and multi-host).
+    /// </summary>
+    public NpgsqlDataSource BuildMainDataSource(string connectionString)
+    {
+        if (IsMultiHostConnectionString(connectionString))
+        {
+            var target = GetTargetSessionAttribute(ConnectionName);
+            var multiHost = new NpgsqlDataSourceBuilder(connectionString).BuildMultiHost();
+            Logger?.LogDebug("Using multi-host data source with target session '{TargetSession}'", target);
+            return multiHost.WithTargetSession(target);
+        }
+        return new NpgsqlDataSourceBuilder(connectionString).Build();
+    }
 }

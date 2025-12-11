@@ -46,18 +46,28 @@ public class NpgsqlRestEndpoint(
         {
             if (endpoint.ConnectionName is not null)
             {
-                if (Options.ConnectionStrings?.TryGetValue(endpoint.ConnectionName, out var connectionString) is true)
+                // First check if there's a data source for this connection name (for multi-host support)
+                if (Options.DataSources?.TryGetValue(endpoint.ConnectionName, out var namedDataSource) is true)
+                {
+                    connection = namedDataSource.CreateConnection();
+                }
+                else if (Options.ConnectionStrings?.TryGetValue(endpoint.ConnectionName, out var connectionString) is true)
                 {
                     connection = new(connectionString);
                 }
                 else
                 {
-                    await ReturnErrorAsync($"Connection name {endpoint.ConnectionName} could not be found in options ConnectionStrings dictionary.", true, context);
+                    await ReturnErrorAsync($"Connection name {endpoint.ConnectionName} could not be found in options DataSources or ConnectionStrings dictionaries.", true, context);
                     return;
                 }
             }
             else if (Options.ServiceProviderMode != ServiceProviderObject.None)
             {
+                if (serviceProvider is null)
+                {
+                    await ReturnErrorAsync($"ServiceProvider must be provided when ServiceProviderMode is set to {Options.ServiceProviderMode}.", true, context);
+                    return;
+                }
                 if (Options.ServiceProviderMode == ServiceProviderObject.NpgsqlDataSource)
                 {
                     connection = serviceProvider.GetRequiredService<NpgsqlDataSource>().CreateConnection();
@@ -387,50 +397,6 @@ public class NpgsqlRestEndpoint(
                                     {
                                         cacheKeys?.Append(NpgsqlRestParameter.GetCacheKeySeparator());
                                         cacheKeys?.Append(parameter.GetCacheStringValue());
-                                    }
-                                }
-                                
-                                if (Options.HttpClientOptions.Enabled)
-                                {
-                                    if (parameter.TypeDescriptor.CustomType is not null)
-                                    {
-                                        if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
-                                        {
-                                            customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
-                                        }
-                                    }
-                                }
-                                
-                                if (Options.HttpClientOptions.Enabled)
-                                {
-                                    if (parameter.TypeDescriptor.CustomType is not null)
-                                    {
-                                        if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
-                                        {
-                                            customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
-                                        }
-                                    }
-                                }
-                                
-                                if (Options.HttpClientOptions.Enabled)
-                                {
-                                    if (parameter.TypeDescriptor.CustomType is not null)
-                                    {
-                                        if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
-                                        {
-                                            customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
-                                        }
-                                    }
-                                }
-                                
-                                if (Options.HttpClientOptions.Enabled)
-                                {
-                                    if (parameter.TypeDescriptor.CustomType is not null)
-                                    {
-                                        if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
-                                        {
-                                            customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
-                                        }
                                     }
                                 }
                                 
@@ -945,7 +911,8 @@ public class NpgsqlRestEndpoint(
                                 }
                                 else if (parameter.TypeDescriptor.HasDefault is false)
                                 {
-                                    transaction?.RollbackAsync();
+                                    shouldCommit = false;
+                                    uploadHandler?.OnError(connection, context, null);
                                     context.Response.StatusCode = StatusCodes.Status404NotFound;
                                     await context.Response.CompleteAsync();
                                     return;

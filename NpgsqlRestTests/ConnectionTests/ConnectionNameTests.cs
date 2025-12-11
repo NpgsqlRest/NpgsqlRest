@@ -86,6 +86,6 @@ public class ConnectionNameTests(TestFixture test)
         using var response = await test.Client.GetAsync("/api/get-conn3-connection-name/");
         var content = await response.Content.ReadAsStringAsync();
         response?.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
-        content.Should().Be("Connection name conn3 could not be found in options ConnectionStrings dictionary.");
+        content.Should().Be("Connection name conn3 could not be found in options DataSources or ConnectionStrings dictionaries.");
     }
 }

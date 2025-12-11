@@ -206,6 +206,71 @@ Configuration in `appsettings.json`:
 }
 ```
 
+### Multi-Host Connection Support
+
+Added support for PostgreSQL multi-host connections with failover and load balancing capabilities using Npgsql's `NpgsqlMultiHostDataSource`.
+
+**Features:**
+
+- Automatic detection of multi-host connection strings (connection strings with comma-separated hosts like `Host=server1,server2`)
+- Configurable target session attributes per connection: `Any`, `Primary`, `Standby`, `PreferPrimary`, `PreferStandby`, `ReadWrite`, `ReadOnly`
+- Seamless integration with existing named connections - multi-host data sources take priority over connection strings
+
+**Configuration:**
+
+```json
+{
+  "ConnectionSettings": {
+    "MultiHostConnectionTargets": {
+      // Default target for all multi-host connections
+      "Default": "Any",
+      // Per-connection overrides
+      "ByConnectionName": {
+        "readonly": "Standby",
+        "primary": "Primary"
+      }
+    }
+  }
+}
+```
+
+**Example Multi-Host Connection String:**
+
+```json
+{
+  "ConnectionStrings": {
+    "default": "Host=primary.db.com,replica1.db.com,replica2.db.com;Database=mydb;Username=app;Password=secret"
+  }
+}
+```
+
+**Target Session Attributes:**
+
+| Value | Description |
+|-------|-------------|
+| `Any` | Any successful connection is acceptable (default) |
+| `Primary` | Server must not be in hot standby mode |
+| `Standby` | Server must be in hot standby mode |
+| `PreferPrimary` | Try primary first, fall back to any |
+| `PreferStandby` | Try standby first, fall back to any |
+| `ReadWrite` | Session must accept read-write transactions |
+| `ReadOnly` | Session must not accept read-write transactions |
+
+See [Npgsql Failover and Load Balancing](https://www.npgsql.org/doc/failover-and-load-balancing.html) for more details.
+
+**New Options Property:**
+
+Added `DataSources` property to `NpgsqlRestOptions` for storing multi-host data sources:
+
+```csharp
+/// <summary>
+/// Dictionary of data sources by connection name. This is used for multi-host connection support.
+/// When a connection name is specified in a routine endpoint, the middleware will first check
+/// this dictionary for a data source. If not found, it falls back to the ConnectionStrings dictionary.
+/// </summary>
+public IDictionary<string, NpgsqlDataSource>? DataSources { get; set; }
+```
+
 ### Other Changes and Fixes
 
 - Fixed default value on `ErrorHandlingOptions.RemoveTraceId` configuration setting. Default is true as it should be.
@@ -217,6 +282,9 @@ Configuration in `appsettings.json`:
 - When using custom types in PostgreSQL function parameters (composite types, enums, etc), and those parameters are not supplied in the request, they will now default to NULL always. Previous behavior was 404 Not Found when parameter was missing.
 - Fixed debug logging in ErrorHandlingOptions builder.
 - Fixed default mapping in ErrorHandlingOptions builder.
+- Added guard clause that returns error if serviceProvider is null when ServiceProviderMode is set
+- Removed 5 duplicate HttpClientOptions.Enabled blocks (kept 1)
+- Replaced un-awaited transaction?.RollbackAsync() with proper shouldCommit = false and uploadHandler?.OnError() for consistency with other error paths
 
 ## Version [3.0.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.0.1) (2025-11-28)
 

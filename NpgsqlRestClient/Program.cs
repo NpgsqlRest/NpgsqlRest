@@ -193,13 +193,22 @@ if (antiForgeryUsed)
 }
 appInstance.ConfigureStaticFiles(app, authenticationOptions);
 
-//await using var dataSource = new NpgsqlDataSourceBuilder(connectionString).Build();
-//TODO: multi-host support and switch to data sources for all connections
+// Build data source (handles both single-host and multi-host connections)
+await using var dataSource = builder.BuildMainDataSource(connectionString);
 
-await using var dataSource = new NpgsqlDataSourceBuilder(connectionString).BuildMultiHost().WithTargetSession(TargetSessionAttributes.Primary);
-//var primaryDataSource = dataSource.WithTargetSession(TargetSessionAttributes.Primary);
-//dataSource.OpenConnectionAsync(TargetSessionAttributes.Primary);
-
+// Build additional multi-host data sources for named connections
+var dataSources = builder.BuildDataSources(connectionString);
+if (dataSources.Count > 0)
+{
+    // Register disposal of additional data sources
+    app.Lifetime.ApplicationStopping.Register(() =>
+    {
+        foreach (var ds in dataSources.Values)
+        {
+            ds.Dispose();
+        }
+    });
+}
 
 var logConnectionNoticeEventsMode = config.GetConfigEnum<PostgresConnectionNoticeLoggingMode?>("LogConnectionNoticeEventsMode", config.NpgsqlRestCfg) ?? PostgresConnectionNoticeLoggingMode.FirstStackFrameAndMessage;
 
@@ -208,6 +217,7 @@ appInstance.ConfigureThreadPool();
 NpgsqlRestOptions options = new()
 {
     DataSource = dataSource,
+    DataSources = dataSources.Count > 0 ? dataSources : null,
     ServiceProviderMode = ServiceProviderObject.None,
     ConnectionStrings = connectionStrings,
     ConnectionRetryOptions = retryOpts,
