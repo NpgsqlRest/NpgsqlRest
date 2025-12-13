@@ -215,6 +215,10 @@ public class Program
             HttpClientOptions = new()
             {
                 Enabled = true
+            },
+            CacheOptions = new()
+            {
+                InvalidateCacheSuffix = "invalidate"
             }
         });
         app.Run();

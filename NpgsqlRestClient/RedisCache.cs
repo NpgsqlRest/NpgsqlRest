@@ -9,19 +9,21 @@ namespace NpgsqlRestClient
         private readonly ConnectionMultiplexer _redis;
         private readonly IDatabase _db;
         private readonly ILogger? _logger;
+        private readonly CacheOptions _cacheOptions;
         private bool _disposed;
 
-        public RedisCache(string configuration, ILogger? logger = null)
+        public RedisCache(string configuration, ILogger? logger = null, CacheOptions? cacheOptions = null)
         {
             _logger = logger;
+            _cacheOptions = cacheOptions ?? new CacheOptions();
             ConnectionMultiplexer? redis = null;
-        
+
             try
             {
                 _logger?.LogDebug("Connecting to Redis with configuration: {RedisConfiguration}", configuration);
                 redis = ConnectionMultiplexer.Connect(configuration);
                 _db = redis.GetDatabase();
-            
+
                 // Test the connection
                 _db.Ping();
                 _redis = redis; // Only assign after successful initialization
@@ -37,10 +39,15 @@ namespace NpgsqlRestClient
             }
         }
 
+        private string GetEffectiveKey(string key)
+        {
+            return CacheKeyHasher.GetEffectiveKey(key, _cacheOptions);
+        }
+
         public bool Get(RoutineEndpoint endpoint, string key, out object? result)
         {
             result = null;
-        
+
             if (_disposed)
             {
                 _logger?.LogWarning("Attempted to get from disposed Redis cache");
@@ -49,14 +56,15 @@ namespace NpgsqlRestClient
 
             try
             {
-                var redisValue = _db.StringGet(key);
+                var effectiveKey = GetEffectiveKey(key);
+                var redisValue = _db.StringGet(effectiveKey);
                 if (redisValue.HasValue)
                 {
                     result = redisValue.ToString();
                     _logger?.LogTrace("Cache hit for key: {Key}", key);
                     return true;
                 }
-            
+
                 _logger?.LogTrace("Cache miss for key: {Key}", key);
                 return false;
             }
@@ -82,10 +90,11 @@ namespace NpgsqlRestClient
 
             try
             {
+                var effectiveKey = GetEffectiveKey(key);
                 var stringValue = value?.ToString();
                 var expiry = endpoint.CacheExpiresIn;
-            
-                _db.StringSet(key, stringValue, expiry.HasValue ? new Expiration(expiry.Value) : default);
+
+                _db.StringSet(effectiveKey, stringValue, expiry.HasValue ? new Expiration(expiry.Value) : default);
                 _logger?.LogTrace("Cached value for key: {Key} with expiry: {Expiry}", key, expiry);
             }
             catch (RedisException ex)
@@ -95,6 +104,33 @@ namespace NpgsqlRestClient
             catch (Exception ex)
             {
                 _logger?.LogError(ex, "Unexpected error while setting key in Redis: {Key}", key);
+            }
+        }
+
+        public bool Remove(string key)
+        {
+            if (_disposed)
+            {
+                _logger?.LogWarning("Attempted to remove from disposed Redis cache");
+                return false;
+            }
+
+            try
+            {
+                var effectiveKey = GetEffectiveKey(key);
+                var result = _db.KeyDelete(effectiveKey);
+                _logger?.LogTrace("Removed cache key: {Key}, success: {Result}", key, result);
+                return result;
+            }
+            catch (RedisException ex)
+            {
+                _logger?.LogError(ex, "Redis error while removing key: {Key}", key);
+                return false;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Unexpected error while removing key from Redis: {Key}", key);
+                return false;
             }
         }
 

@@ -1326,7 +1326,23 @@ public class NpgsqlRestEndpoint(
                 await LogoutHandler.HandleAsync(command, endpoint, context);
                 return;
             }
-            
+
+            // Handle cache invalidation endpoint
+            if (endpoint.InvalidateCache is true && Options.CacheOptions.DefaultRoutineCache is not null && cacheKeys is not null)
+            {
+                var cacheKey = cacheKeys.ToString();
+                var removed = Options.CacheOptions.DefaultRoutineCache.Remove(cacheKey);
+                context.Response.ContentType = "application/json";
+                context.Response.StatusCode = (int)HttpStatusCode.OK;
+                await context.Response.WriteAsync(removed ? "{\"invalidated\":true}" : "{\"invalidated\":false}", cancellationToken);
+                if (shouldLog)
+                {
+                    cmdLog?.AppendLine($"/* cache invalidation: {(removed ? "removed" : "not found")} */");
+                    NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", $"INVALIDATE CACHE KEY: {cacheKey}");
+                }
+                return;
+            }
+
             if (routine.IsVoid)
             {
                 if (await PrepareCommand(connection, command, commandText, context, endpoint, true) is false)
@@ -1541,7 +1557,10 @@ public class NpgsqlRestEndpoint(
                     if (routine.ReturnsSet && endpoint.Raw is false && binary is false)
                     {
                         writer.Advance(Encoding.UTF8.GetBytes(Consts.OpenBracket.ToString().AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(1))));
-                        cacheBuffer?.Append(Consts.OpenBracket);
+                        if (shouldCache)
+                        {
+                            cacheBuffer!.Append(Consts.OpenBracket);
+                        }
                     }
 
                     bool first = true;
@@ -1719,7 +1738,7 @@ public class NpgsqlRestEndpoint(
                             // Append to cache buffer before clearing row
                             if (shouldCache)
                             {
-                                cacheBuffer?.Append(row);
+                                cacheBuffer!.Append(row);
                             }
                             WriteStringBuilderToWriter(row, writer);
                             await writer.FlushAsync();
@@ -1738,7 +1757,7 @@ public class NpgsqlRestEndpoint(
                             // Append remaining rows to cache buffer
                             if (shouldCache)
                             {
-                                cacheBuffer?.Append(row);
+                                cacheBuffer!.Append(row);
                             }
                             WriteStringBuilderToWriter(row, writer);
                             await writer.FlushAsync();
@@ -1746,7 +1765,10 @@ public class NpgsqlRestEndpoint(
                         if (routine.ReturnsSet && endpoint.Raw is false)
                         {
                             writer.Advance(Encoding.UTF8.GetBytes(Consts.CloseBracket.ToString().AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(1))));
-                            cacheBuffer?.Append(Consts.CloseBracket);
+                            if (shouldCache)
+                            {
+                                cacheBuffer!.Append(Consts.CloseBracket);
+                            }
                         }
 
                         // Store in cache if within limits

@@ -211,6 +211,51 @@ public static class NpgsqlRestBuilder
                 }
                 lookup[key] = value;
 
+                // Create cache invalidation endpoint if configured and this endpoint is cached
+                if (endpoint.Cached is true && Options.CacheOptions.InvalidateCacheSuffix is not null)
+                {
+                    var invalidatePath = endpoint.Path.EndsWith('/')
+                        ? string.Concat(endpoint.Path, Options.CacheOptions.InvalidateCacheSuffix)
+                        : string.Concat(endpoint.Path, "/", Options.CacheOptions.InvalidateCacheSuffix);
+
+                    var invalidateEndpoint = new RoutineEndpoint(
+                        routine: routine,
+                        path: invalidatePath,
+                        method: endpoint.Method,
+                        requestParamType: endpoint.RequestParamType,
+                        requiresAuthorization: endpoint.RequiresAuthorization,
+                        responseContentType: "application/json",
+                        responseHeaders: endpoint.ResponseHeaders,
+                        requestHeadersMode: endpoint.RequestHeadersMode,
+                        requestHeadersParameterName: endpoint.RequestHeadersParameterName,
+                        bodyParameterName: endpoint.BodyParameterName,
+                        textResponseNullHandling: endpoint.TextResponseNullHandling,
+                        queryStringNullHandling: endpoint.QueryStringNullHandling,
+                        authorizeRoles: endpoint.AuthorizeRoles,
+                        cached: true,
+                        cachedParams: endpoint.CachedParams?.ToArray(),
+                        connectionName: endpoint.ConnectionName
+                    )
+                    {
+                        InvalidateCache = true,
+                        BasicAuth = endpoint.BasicAuth,
+                        RateLimiterPolicy = endpoint.RateLimiterPolicy
+                    };
+
+                    var invalidateKey = string.Concat(method, invalidatePath);
+                    var invalidateValue = new NpgsqlRestMetadataEntry(invalidateEndpoint, formatter, invalidateKey);
+                    lookup[invalidateKey] = invalidateValue;
+
+                    // Notify endpoint create handlers about the invalidation endpoint
+                    if (builder is not null)
+                    {
+                        foreach (var handler in Options.EndpointCreateHandlers)
+                        {
+                            handler.Handle(invalidateEndpoint);
+                        }
+                    }
+                }
+
                 if (routine.ColumnsTypeDescriptor is not null && routine.ColumnsTypeDescriptor.Length == 1)
                 {
                     bool[] unknownResultTypeList = new bool[routine.ColumnsTypeDescriptor.Length];

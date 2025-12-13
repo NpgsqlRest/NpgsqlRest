@@ -12,7 +12,7 @@ internal static class ParameterParser
 {
     internal static bool TryParseParameter(
         NpgsqlRestParameter parameter,
-        ref StringValues values, 
+        ref StringValues values,
         QueryStringNullHandling queryStringNullHandling)
     {
         if (parameter.TypeDescriptor.IsArray == false)
@@ -28,6 +28,7 @@ internal static class ParameterParser
                 if (TryGetValue(value, out var resultValue))
                 {
                     parameter.Value = resultValue;
+                    parameter.OriginalStringValue = value;
                     return true;
                 }
                 return false;
@@ -43,6 +44,7 @@ internal static class ParameterParser
                 if (TryGetValue(value, out var resultValue))
                 {
                     parameter.Value = resultValue;
+                    parameter.OriginalStringValue = value;
                     return true;
                 }
                 return false;
@@ -69,6 +71,8 @@ internal static class ParameterParser
             }
         }
         parameter.Value = list;
+        // For arrays, store the original values as a joined string
+        parameter.OriginalStringValue = string.Join(",", values.ToArray());
         return true;
 
         bool TryGetValue(
@@ -248,6 +252,8 @@ internal static class ParameterParser
         if (TryGetNonStringValue(value, ref kind, out var nonStringValue))
         {
             parameter.Value = nonStringValue;
+            // Store the original JSON representation for cache key consistency
+            parameter.OriginalStringValue = value.ToJsonString();
             return true;
         }
 
@@ -284,6 +290,8 @@ internal static class ParameterParser
                 list.Add(arrayItemContent);
             }
             parameter.Value = list;
+            // Store the original JSON array representation for cache key consistency
+            parameter.OriginalStringValue = value.ToJsonString();
             return true;
         }
 
@@ -291,10 +299,12 @@ internal static class ParameterParser
         if (TryGetNonStringValueFromString(content, out nonStringValue))
         {
             parameter.Value = nonStringValue;
+            parameter.OriginalStringValue = content;
             return true;
         }
 
         parameter.Value = content;
+        parameter.OriginalStringValue = content;
         return true;
 
         bool TryGetNonStringValue(

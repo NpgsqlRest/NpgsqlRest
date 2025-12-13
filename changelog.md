@@ -4,7 +4,7 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
-## Version [3.1.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.0.1) (2025-)
+## Version [3.1.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.0.1) (2025-12-13)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.1.0...3.0.1)
 
@@ -202,6 +202,95 @@ Configuration in `appsettings.json`:
     "CacheOptions": {
       "MaxCacheableRows": 1000
     }
+  }
+}
+```
+
+**Cache Key Hashing for Long Keys:**
+
+Added optional SHA256 hashing for long cache keys to improve performance, especially with Redis cache. When enabled, cache keys exceeding a configurable threshold are automatically hashed to a fixed 64-character string, reducing:
+
+- Memory usage for storing long cache keys
+- Network transfer overhead with Redis
+- Redis server memory consumption
+
+New configuration options in `CacheOptions`:
+
+```csharp
+public class CacheOptions
+{
+    /// <summary>
+    /// When true, cache keys longer than HashKeyThreshold characters are hashed to a fixed-length SHA256 string.
+    /// This reduces memory usage for long cache keys and improves Redis performance with large keys.
+    /// Default is false (cache keys are stored as-is).
+    /// </summary>
+    public bool UseHashedCacheKeys { get; set; } = false;
+
+    /// <summary>
+    /// Cache keys longer than this threshold (in characters) will be hashed when UseHashedCacheKeys is true.
+    /// Keys shorter than this threshold are stored as-is for better debuggability.
+    /// Default is 256 characters.
+    /// </summary>
+    public int HashKeyThreshold { get; set; } = 256;
+}
+```
+
+Configuration in `appsettings.json`:
+
+```json
+{
+  "CacheOptions": {
+    "UseHashedCacheKeys": true,
+    "HashKeyThreshold": 256
+  }
+}
+```
+
+This is particularly recommended when:
+- Using Redis cache with routines that have many or large parameters
+- Caching routines with long SQL expressions
+- High cache hit rates where memory efficiency matters
+
+**Cache Invalidation Endpoints:**
+
+Added support for programmatic cache invalidation via auto-generated invalidation endpoints. When `InvalidateCacheSuffix` is configured, NpgsqlRest automatically creates an invalidation endpoint for each cached endpoint.
+
+For example, if you have a cached endpoint `/api/get-user/` and set `InvalidateCacheSuffix` to `"invalidate"`, NpgsqlRest will create `/api/get-user/invalidate` endpoint automatically.
+
+Calling the invalidation endpoint with the same parameters as the cached endpoint removes the corresponding cache entry:
+
+```
+GET /api/get-user/?id=123           -> Returns cached user data
+GET /api/get-user/invalidate?id=123 -> Removes cache entry, returns {"invalidated":true}
+GET /api/get-user/?id=123           -> Fresh data (cache was cleared)
+```
+
+**Key Features:**
+- Same authentication and authorization as the original endpoint
+- Same parameter handling - no need to know the internal cache key format
+- Works correctly with hashed cache keys
+- Returns `{"invalidated":true}` if cache entry was removed, `{"invalidated":false}` if not found
+
+Configuration in `CacheOptions`:
+
+```csharp
+public class CacheOptions
+{
+    /// <summary>
+    /// When set, creates an additional invalidation endpoint for each cached endpoint.
+    /// The invalidation endpoint has the same path with this suffix appended.
+    /// Default is null (no invalidation endpoints created).
+    /// </summary>
+    public string? InvalidateCacheSuffix { get; set; } = null;
+}
+```
+
+Configuration in `appsettings.json`:
+
+```json
+{
+  "CacheOptions": {
+    "InvalidateCacheSuffix": "invalidate"
   }
 }
 ```

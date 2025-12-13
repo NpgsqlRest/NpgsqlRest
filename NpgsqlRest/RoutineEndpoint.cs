@@ -93,4 +93,9 @@ public class RoutineEndpoint(
     public string? RateLimiterPolicy { get; set; } = null;
     public string? ErrorCodePolicy { get; set; } = null;
     public TimeSpan? CommandTimeout { get; set; } = null;
+    /// <summary>
+    /// When true, this endpoint is a cache invalidation endpoint.
+    /// Instead of executing the routine, it removes the cached entry for the given parameters.
+    /// </summary>
+    public bool InvalidateCache { get; set; } = false;
 }

@@ -19,4 +19,28 @@ public class CacheOptions
     /// Default is 1000 rows.
     /// </summary>
     public int? MaxCacheableRows { get; set; } = 1000;
+
+    /// <summary>
+    /// When true, cache keys longer than HashKeyThreshold characters are hashed to a fixed-length SHA256 string.
+    /// This reduces memory usage for long cache keys and improves Redis performance with large keys.
+    /// Default is false (cache keys are stored as-is).
+    /// </summary>
+    public bool UseHashedCacheKeys { get; set; } = false;
+
+    /// <summary>
+    /// Cache keys longer than this threshold (in characters) will be hashed when UseHashedCacheKeys is true.
+    /// Keys shorter than this threshold are stored as-is for better debuggability.
+    /// Default is 256 characters.
+    /// </summary>
+    public int HashKeyThreshold { get; set; } = 256;
+
+    /// <summary>
+    /// When set, creates an additional invalidation endpoint for each cached endpoint.
+    /// The invalidation endpoint has the same path with this suffix appended.
+    /// For example, if a cached endpoint is /api/my-endpoint/ and this is set to "invalidate",
+    /// an invalidation endpoint /api/my-endpoint/invalidate will be created.
+    /// Calling the invalidation endpoint with the same parameters removes the cached entry.
+    /// Default is null (no invalidation endpoints created).
+    /// </summary>
+    public string? InvalidateCacheSuffix { get; set; } = null;
 }

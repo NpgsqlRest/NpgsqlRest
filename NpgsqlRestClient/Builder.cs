@@ -1028,28 +1028,32 @@ public class Builder
             Logger?.LogDebug("Routine caching is disabled.");
             return options;
         }
-        
+
         var type = _config.GetConfigEnum<CacheType?>("Type", cacheCfg) ?? CacheType.Memory;
         options.MaxCacheableRows = _config.GetConfigInt("MaxCacheableRows", cacheCfg);
+        options.UseHashedCacheKeys = _config.GetConfigBool("UseHashedCacheKeys", cacheCfg);
+        options.HashKeyThreshold = _config.GetConfigInt("HashKeyThreshold", cacheCfg) ?? 256;
+        options.InvalidateCacheSuffix = _config.GetConfigStr("InvalidateCacheSuffix", cacheCfg);
+
         if (type == CacheType.Memory)
         {
             options.MemoryCachePruneIntervalSeconds =
                 _config.GetConfigInt("MemoryCachePruneIntervalSeconds", cacheCfg) ?? 60;
             options.DefaultRoutineCache = new RoutineCache();
-            Logger?.LogDebug("Using in-memory routine cache with prune interval of {MemoryCachePruneIntervalSeconds} seconds. MaxCacheableRows={MaxCacheableRows}", 
-                options.MemoryCachePruneIntervalSeconds, options.MaxCacheableRows);
+            Logger?.LogDebug("Using in-memory routine cache with prune interval of {MemoryCachePruneIntervalSeconds} seconds. MaxCacheableRows={MaxCacheableRows}, UseHashedCacheKeys={UseHashedCacheKeys}, HashKeyThreshold={HashKeyThreshold}",
+                options.MemoryCachePruneIntervalSeconds, options.MaxCacheableRows, options.UseHashedCacheKeys, options.HashKeyThreshold);
         }
         else if (type == CacheType.Redis)
         {
             var configuration = _config.GetConfigStr("RedisConfiguration", cacheCfg) ??
                                 "localhost:6379,abortConnect=false,ssl=false,connectTimeout=10000,syncTimeout=5000,connectRetry=3";
-            
+
             try
             {
-                var redisCache = new RedisCache(configuration, Logger);
+                var redisCache = new RedisCache(configuration, Logger, options);
                 options.DefaultRoutineCache = redisCache;
-                Logger?.LogDebug("Using Redis routine cache with configuration: {RedisConfiguration}. MaxCacheableRows={MaxCacheableRows}", 
-                    configuration, options.MaxCacheableRows);
+                Logger?.LogDebug("Using Redis routine cache with configuration: {RedisConfiguration}. MaxCacheableRows={MaxCacheableRows}, UseHashedCacheKeys={UseHashedCacheKeys}, HashKeyThreshold={HashKeyThreshold}",
+                    configuration, options.MaxCacheableRows, options.UseHashedCacheKeys, options.HashKeyThreshold);
                 app.Lifetime.ApplicationStopping.Register(() => redisCache.Dispose());
             }
             catch (Exception ex)
@@ -1060,7 +1064,7 @@ public class Builder
                 options.MemoryCachePruneIntervalSeconds = _config.GetConfigInt("MemoryCachePruneIntervalSeconds", cacheCfg) ?? 60;
             }
         }
-        
+
         return options;
     }
     

@@ -17,6 +17,12 @@ public class NpgsqlRestParameter : NpgsqlParameter
     public JsonNode? JsonBodyNode { get; set; } = null;
     public NpgsqlRestParameter? HashOf { get; set; } = null;
 
+    /// <summary>
+    /// The original string representation of the parameter value as received from the request
+    /// (query string or JSON body). Used for cache key generation to ensure consistency.
+    /// </summary>
+    public string? OriginalStringValue { get; set; } = null;
+
     public bool IsUploadMetadata { get; set; } = false;
 
     public bool IsIpAddress { get; set; } = false;
@@ -74,6 +80,12 @@ public class NpgsqlRestParameter : NpgsqlParameter
         {
             return CacheKeyNull;
         }
+        // Prefer original string value from request for consistency
+        if (OriginalStringValue is not null)
+        {
+            return OriginalStringValue;
+        }
+        // Fallback for internally-set values (user claims, IP address, etc.)
         if (TypeDescriptor.IsArray)
         {
             // Arrays can be stored as List<object?> (from query string parsing) or object[]
