@@ -67,14 +67,14 @@ Event streaming and event notifications, advanced security and authentication fe
 - **High Performance**. Blazing fast native executable. See [Performance Benchmarks](https://github.com/NpgsqlRest/pg_function_load_tests).
 - **Connection Pooling**. Built-in connection pooler, courtesy of [Npgsql](https://www.npgsql.org/doc/connection-string-parameters.html#pooling).
 - **KeepAlive, Auto-prepare, Buffer Size**. Other performance tweaks and settings courtesy of [Npgsql](https://www.npgsql.org/doc/connection-string-parameters.html#performance).
-- **Failover, Load Balancing**. Set multiple hosts in connection string for failover and balancing.
+- **Failover, Load Balancing**. Multi-host connection support with configurable target session attributes (Primary, Standby, ReadWrite, ReadOnly, etc.) for automatic failover and load balancing.
 - **Multiple Connections**. Define multiple connections and set specific connections (read-only, write-only) per endpoint in your database declarations.
 - **Connection Retry**. Robust and configurable built-in connection retry mechanism.
 - **Thread Pool Optimization**. Configurable thread pool settings for maximum throughput.
 - **Request Optimization**. Kestrel server tuning with configurable limits.
 - **Response Compression**. Brotli and Gzip compression with configurable levels.
 - **HTTP Caching**. Define endpoint caching per endpoint in your database declarations.
-- **Server Caching**. Define endpoint in-memory server caching per endpoint in your database declarations.
+- **Server Caching**. Define endpoint in-memory server caching per endpoint in your database declarations with support for records and set-returning functions, cache key hashing for Redis optimization, and cache invalidation endpoints.
 - **Rate Limiting**. Built-in rate limiting with multiple policies (fixed window, sliding window, token bucket, concurrency) configurable per endpoint.
 
 ### Real-Time & Streaming
@@ -94,7 +94,8 @@ Event streaming and event notifications, advanced security and authentication fe
 - **Free And Open Source**. Fully open-source under the MIT license.
 
 ### Additional Features
-- **Upload Handlers**. Multiple upload handlers implemented: File System, Large Objects, CSV/Excel, etc., with code generation. Make complex upload and processing pipelines in minutes. 
+- **HTTP Types**. Enable PostgreSQL functions to make HTTP requests to external APIs using specially annotated composite types. Define HTTP requests (method, URL, headers, body) as type comments with parameter placeholder substitution.
+- **Upload Handlers**. Multiple upload handlers implemented: File System, Large Objects, CSV/Excel, etc., with code generation. Make complex upload and processing pipelines in minutes.
 - **Static Files**. Built-in serving of static content with high speed template parser for user claims and authorization features.
 - **Request Tracking**. Detailed request analytics and connection monitoring.
 - **Performance Metrics**. Built-in performance monitoring and diagnostics.

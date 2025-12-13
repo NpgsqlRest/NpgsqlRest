@@ -1,6 +1,6 @@
 {
   "name": "npgsqlrest",
-  "version": "3.0.1",
+  "version": "3.1.0",
   "description": "Automatic REST API for PostgreSQL Databases Client Build",
   "scripts": {
     "postinstall": "node postinstall.js",
@@ -13,7 +13,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vb-consulting/NpgsqlRest.git"
+    "url": "git+https://github.com/NpgsqlRest/NpgsqlRest.git"
   },
   "keywords": [
     "postgresql",
@@ -25,7 +25,7 @@
   "author": "vb-consulting",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/vb-consulting/NpgsqlRest/issues"
+    "url": "https://github.com/NpgsqlRest/NpgsqlRest/issues"
   },
-  "homepage": "https://github.com/vb-consulting/NpgsqlRest/blob/master/npm/readme.md"
+  "homepage": "https://github.com/NpgsqlRest/NpgsqlRest/blob/master/npm/readme.md"
 }

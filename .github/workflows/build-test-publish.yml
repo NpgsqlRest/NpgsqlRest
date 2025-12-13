@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-  RELEASE_VERSION: v3.0.1
+  RELEASE_VERSION: v3.1.0
 
 # Add workflow-level permissions
 permissions:
@@ -211,16 +211,17 @@ jobs:
     runs-on: ubuntu-22.04
     permissions:
       contents: read
+      id-token: write  # Required for NPM OIDC trusted publishing
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '20'
-        registry-url: 'https://registry.npmjs.org'
-    - name: Change to npm directory and publish
-      working-directory: ./npm
-      run: npm publish
-      env:
-        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        node-version: '24'
+    - name: Publish to npm with OIDC
+      uses: JS-DevTools/npm-publish@v4
+      with:
+        package: ./npm/package.json
+        access: public
+        provenance: true
