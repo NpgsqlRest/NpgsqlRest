@@ -187,7 +187,7 @@ Type executable name:
 ```console
 ~/dev
 ❯ ./npgsqlrest
-[11:33:35.440 INF] Started in 00:00:00.0940095, listening on ["http://localhost:8080"], version 3.0.0.0 [NpgsqlRest]
+[11:33:35.440 INF] Started in 00:00:00.0940095, listening on ["http://localhost:8080"], version 3.1.1.0 [NpgsqlRest]
 ```
 
 Or, run as NPX command for NPM distributions:
@@ -195,7 +195,7 @@ Or, run as NPX command for NPM distributions:
 ```console
 ~/dev
 ❯ npx npgsqlrest
-[11:33:35.440 INF] Started in 00:00:00.0940095, listening on ["http://localhost:8080"], version 3.0.0.0 [NpgsqlRest]
+[11:33:35.440 INF] Started in 00:00:00.0940095, listening on ["http://localhost:8080"], version 3.1.1.0 [NpgsqlRest]
 ```
 
 Or, run the appropriate Docker command (expose the 8080 default port and bind the default configuration):
