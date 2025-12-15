@@ -8,10 +8,10 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.1.0...3.1.1)
 
-- Fix schema usage for types not in defaults schemas. Narrow types selection for schemas with allowed usage.
-- Improve parameter logging.
-- Add version info log on startup.
-- Add executable location to version info output (`--version`).
+- Fixed schema usage for types not in defaults schemas. Narrow types selection for schemas with allowed usage.
+- Improved logging of parameter values in debug mode. Using PostgreSQL literal format for better readability.
+- Added version info log on startup.
+- Added executable location to version info output (`--version`).
 
 ## Version [3.1.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.1.0) (2025-12-13)
 
