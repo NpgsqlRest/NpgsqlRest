@@ -349,10 +349,9 @@ public class NpgsqlRestEndpoint(
                             paramIndex++;
                             if (shouldLog && Options.LogCommandParameters)
                             {
-                                object value = parameter.NpgsqlValue!;
                                 var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
                                     "***" :
-                                    FormatParam(value, parameter.TypeDescriptor);
+                                    FormatParameterForLog(parameter);
                                 cmdLog!.AppendLine(string.Concat(
                                     "-- $",
                                     paramIndex.ToString(),
@@ -436,10 +435,9 @@ public class NpgsqlRestEndpoint(
                                 paramIndex++;
                                 if (shouldLog && Options.LogCommandParameters)
                                 {
-                                    object value = parameter.NpgsqlValue!;
                                     var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
                                         "***" :
-                                        FormatParam(value, parameter.TypeDescriptor);
+                                        FormatParameterForLog(parameter);
                                     cmdLog!.AppendLine(string.Concat(
                                         "-- $",
                                         paramIndex.ToString(),
@@ -539,10 +537,9 @@ public class NpgsqlRestEndpoint(
                             paramIndex++;
                             if (shouldLog && Options.LogCommandParameters)
                             {
-                                object value = parameter.NpgsqlValue!;
                                 var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
                                     "***" :
-                                    FormatParam(value, parameter.TypeDescriptor);
+                                    FormatParameterForLog(parameter);
                                 cmdLog!.AppendLine(string.Concat(
                                     "-- $",
                                     paramIndex.ToString(),
@@ -686,10 +683,9 @@ public class NpgsqlRestEndpoint(
                     paramIndex++;
                     if (shouldLog && Options.LogCommandParameters)
                     {
-                        object value = parameter.NpgsqlValue!;
                         var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
                             "***" :
-                            FormatParam(value, parameter.TypeDescriptor);
+                            FormatParameterForLog(parameter);
                         cmdLog!.AppendLine(string.Concat(
                             "-- $",
                             paramIndex.ToString(),
@@ -861,10 +857,9 @@ public class NpgsqlRestEndpoint(
                             paramIndex++;
                             if (shouldLog && Options.LogCommandParameters)
                             {
-                                object pvalue = parameter.NpgsqlValue!;
                                 var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
                                     "***" :
-                                    FormatParam(pvalue, parameter.TypeDescriptor);
+                                    FormatParameterForLog(parameter);
                                 cmdLog!.AppendLine(string.Concat(
                                     "-- $",
                                     paramIndex.ToString(),
@@ -1007,10 +1002,9 @@ public class NpgsqlRestEndpoint(
                     paramIndex++;
                     if (shouldLog && Options.LogCommandParameters)
                     {
-                        object pvalue = parameter.NpgsqlValue!;
                         var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
                             "***" :
-                            FormatParam(pvalue, parameter.TypeDescriptor);
+                            FormatParameterForLog(parameter);
                         cmdLog!.AppendLine(string.Concat(
                             "-- $",
                             paramIndex.ToString(),

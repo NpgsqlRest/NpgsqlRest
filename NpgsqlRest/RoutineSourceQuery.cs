@@ -18,6 +18,7 @@ internal class RoutineSourceQuery
         where
             nspname not like 'pg_%'
             and nspname <> 'information_schema'
+            and has_schema_privilege(current_user, n.nspname, 'USAGE')
             and a.attnum > 0
 
     ), _schemas as (

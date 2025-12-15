@@ -70,7 +70,8 @@ if (args.Length >= 1 && (string.Equals(args[0], "-v", StringComparison.CurrentCu
         ("System.Text.Json", System.Reflection.Assembly.GetAssembly(typeof(System.Text.Json.JsonCommentHandling))?.GetName().Version?.ToString() ?? "-"),
         ("StackExchange.Redis", System.Reflection.Assembly.GetAssembly(typeof(StackExchange.Redis.ConnectionMultiplexer))?.GetName().Version?.ToString() ?? "-"),
         (" ", " "),
-        ("CurrentDirectory", Directory.GetCurrentDirectory())
+        ("CurrentDirectory", Directory.GetCurrentDirectory()),
+        ("BaseDirectory", AppContext.BaseDirectory)
     ]);
     _.NL();
     return;
@@ -116,6 +117,8 @@ if (cmdRetryOpts.Enabled && string.IsNullOrEmpty(cmdRetryOpts.DefaultStrategy))
 builder.BuildInstance();
 builder.Instance.Services.AddRouting();
 builder.BuildLogger(cmdRetryStrategy);
+builder.Logger?.LogInformation("NpgsqlRest version {version}",
+    System.Reflection.Assembly.GetAssembly(typeof(Program))?.GetName()?.Version?.ToString() ?? "-");
 var errorHandlingOptions = builder.BuildErrorHandlingOptions();
 var (rateLimiterDefaultPolicy, rateLimiterEnabled) = builder.BuildRateLimiter();
 

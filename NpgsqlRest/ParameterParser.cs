@@ -420,12 +420,32 @@ internal static class ParameterParser
         }
     }
 
-    internal static string FormatParam(object value, TypeDescriptor descriptor)
+    internal static string FormatParameterForLog(NpgsqlRestParameter parameter)
     {
-        if (value == DBNull.Value)
+        var value = parameter.NpgsqlValue;
+        var descriptor = parameter.TypeDescriptor;
+
+        if (value is null || value == DBNull.Value)
         {
             return Consts.Null;
         }
+
+        // Use OriginalStringValue if available and format it according to PostgreSQL standard
+        if (parameter.OriginalStringValue is not null)
+        {
+            if (descriptor.IsArray)
+            {
+                // Format as PostgreSQL array literal: '{value1,value2}'
+                return string.Concat("'", parameter.OriginalStringValue, "'");
+            }
+            if (descriptor is { IsNumeric: false, IsBoolean: false })
+            {
+                return string.Concat("'", parameter.OriginalStringValue, "'");
+            }
+            return parameter.OriginalStringValue;
+        }
+
+        // Fallback for internally-set values (user claims, IP address, etc.)
         if (descriptor.IsArray)
         {
             if (value is IList<object> objectList)
@@ -433,20 +453,18 @@ internal static class ParameterParser
                 var d = descriptor;
                 if (descriptor is { IsNumeric: false, IsBoolean: false })
                 {
-                    return string.Concat("{", string.Join(",", objectList.Select(x => string.Concat("'", Format(x, d), "'"))),
-                        "}");
+                    return string.Concat("'{", string.Join(",", objectList.Select(x => Format(x, d))), "}'");
                 }
-                return string.Concat("{", string.Join(",", objectList.Select(x => Format(x, d))), "}");
+                return string.Concat("'{", string.Join(",", objectList.Select(x => Format(x, d))), "}'");
             }
             if (value is IList<string> stringList)
             {
                 var d = descriptor;
                 if (descriptor is { IsNumeric: false, IsBoolean: false })
                 {
-                    return string.Concat("{", string.Join(",", stringList.Select(x => string.Concat("'", Format(x, d), "'"))),
-                        "}");
+                    return string.Concat("'{", string.Join(",", stringList.Select(x => Format(x, d))), "}'");
                 }
-                return string.Concat("{", string.Join(",", stringList.Select(x => Format(x, d))), "}");
+                return string.Concat("'{", string.Join(",", stringList.Select(x => Format(x, d))), "}'");
             }
         }
         if (descriptor is { IsNumeric: false, IsBoolean: false })
@@ -474,7 +492,7 @@ internal static class ParameterParser
             {
                 return dto.DateTime.ToString("T");
             }
-            
+
             if (descriptor.IsBoolean)
             {
                 return v.ToString()?.ToLowerInvariant() ?? string.Empty;

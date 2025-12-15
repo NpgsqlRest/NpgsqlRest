@@ -31,7 +31,6 @@ public class NpgsqlRestParameter : NpgsqlParameter
     public bool IsFromUserClaims => UserClaim is not null || IsUserClaims is true;
 
     public NpgsqlRestParameter(
-         
         int ordinal, 
         string convertedName, 
         string actualName, 

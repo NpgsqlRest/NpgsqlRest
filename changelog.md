@@ -4,9 +4,18 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
-## Version [3.1.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.0.1) (2025-12-13)
+## Version [3.1.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.1.1) (2025-12-15)
 
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.1.0...3.0.1)
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.1.0...3.1.1)
+
+- Fix schema usage for types not in defaults schemas. Narrow types selection for schemas with allowed usage.
+- Improve parameter logging.
+- Add version info log on startup.
+- Add executable location to version info output (`--version`).
+
+## Version [3.1.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.1.0) (2025-12-13)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.0.1...3.1.0)
 
 ### Http Types
 
@@ -377,7 +386,7 @@ public IDictionary<string, NpgsqlDataSource>? DataSources { get; set; }
 
 ## Version [3.0.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.0.1) (2025-11-28)
 
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.0.1...3.0.0)
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.0.0...3.0.1)
 
 - Fix: fix missing stack trace in AOT builds when exceptions are thrown.
 - Fix: Fix failing Docker JIT image build.
@@ -385,7 +394,7 @@ public IDictionary<string, NpgsqlDataSource>? DataSources { get; set; }
 
 ## Version [3.0.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.0.0) (2025-11-27)
 
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.0.0...2.36.1)
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/2.36.1...3.0.0)
 
 ### Docker JIT Version
 
