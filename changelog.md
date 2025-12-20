@@ -29,6 +29,21 @@ Added SIMD (Single Instruction, Multiple Data) optimizations using `SearchValues
 
 These optimizations are automatic and require no configuration changes. Performance gains scale with input size - small inputs see modest improvements (~10-20%), while large arrays and bulk operations benefit significantly (~40-60%).
 
+### Consistent JSON Error Responses
+
+All error responses (401 Unauthorized, 403 Forbidden, 404 Not Found, 500 Internal Server Error) now consistently return a JSON body using the RFC 7807 Problem Details format:
+
+```json
+{
+  "type": null,
+  "title": "Unauthorized",
+  "status": 401,
+  "detail": null
+}
+```
+
+Previously, some error responses (particularly authorization failures) returned empty bodies or plain text. Now all endpoints return a consistent, parseable JSON error format regardless of the error type.
+
 ## Version [3.1.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.1.1) (2025-12-15)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.1.0...3.1.1)

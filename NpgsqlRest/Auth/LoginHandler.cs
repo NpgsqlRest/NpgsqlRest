@@ -31,12 +31,20 @@ public static class LoginHandler
         {
             if (await reader.ReadAsync() is false)
             {
-                context.Response.StatusCode = (int)HttpStatusCode.Unauthorized;
+                await Results.Problem(
+                    type: null,
+                    statusCode: (int)HttpStatusCode.Unauthorized,
+                    title: "Unauthorized",
+                    detail: null).ExecuteAsync(context);
                 return;
             }
             if (reader.FieldCount == 0)
             {
-                context.Response.StatusCode = (int)HttpStatusCode.Unauthorized;
+                await Results.Problem(
+                    type: null,
+                    statusCode: (int)HttpStatusCode.Unauthorized,
+                    title: "Unauthorized",
+                    detail: null).ExecuteAsync(context);
                 return;
             }
 
@@ -56,7 +64,12 @@ public static class LoginHandler
                             var ok = reader?.GetBoolean(i);
                             if (ok is false)
                             {
-                                context.Response.StatusCode = (int)HttpStatusCode.Unauthorized;
+                                await Results.Problem(
+                                    type: null,
+                                    statusCode: (int)HttpStatusCode.Unauthorized,
+                                    title: "Unauthorized",
+                                    detail: null).ExecuteAsync(context);
+                                return;
                             }
                         }
                         else if (column.NpgsqlDbType is NpgsqlDbType.Integer or NpgsqlDbType.Smallint or NpgsqlDbType.Bigint)
@@ -70,8 +83,11 @@ public static class LoginHandler
                         else
                         {
                             Logger?.WrongStatusType(command.CommandText);
-                            context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
-                            await context.Response.CompleteAsync();
+                            await Results.Problem(
+                                type: null,
+                                statusCode: (int)HttpStatusCode.InternalServerError,
+                                title: "Internal Server Error",
+                                detail: null).ExecuteAsync(context);
                             return;
                         }
                         continue;
@@ -139,8 +155,11 @@ public static class LoginHandler
                                                 if (Options.AuthenticationOptions.PasswordHasher?.VerifyHashedPassword(hash, pass) is false)
                                                 {
                                                     Logger?.VerifyPasswordFailed(tracePath, userId, userName);
-                                                    context.Response.StatusCode = (int)HttpStatusCode.NotFound;
-                                                    await context.Response.CompleteAsync();
+                                                    await Results.Problem(
+                                                        type: null,
+                                                        statusCode: (int)HttpStatusCode.NotFound,
+                                                        title: "Not Found",
+                                                        detail: null).ExecuteAsync(context);
                                                     verificationFailed = true;
                                                 }
                                             }
@@ -232,7 +251,11 @@ public static class LoginHandler
                 if (Results.SignIn(principal: principal, authenticationScheme: scheme) is not SignInHttpResult result)
                 {
                     Logger?.LogError("Failed in constructing user identity for authentication.");
-                    context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
+                    await Results.Problem(
+                        type: null,
+                        statusCode: (int)HttpStatusCode.InternalServerError,
+                        title: "Internal Server Error",
+                        detail: null).ExecuteAsync(context);
                     return;
                 }
                 await result.ExecuteAsync(context);

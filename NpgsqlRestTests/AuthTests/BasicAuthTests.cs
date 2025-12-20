@@ -157,19 +157,25 @@ public class BasicAuthTests(TestFixture test)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/get-basic-auth-user");
         request.Headers.Add("Authorization", "Basic XXX");
-        
+
         using var result = await test.Client.SendAsync(request);
         result.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var content = await result.Content.ReadAsStringAsync();
+        content.Should().Contain("\"status\":401");
+        content.Should().Contain("\"title\":\"Unauthorized\"");
     }
-    
+
     [Fact]
     public async Task Test_get_basic_auth_user_test3()
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/get-basic-auth-user");
         using var result = await test.Client.SendAsync(request);
         result.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var content = await result.Content.ReadAsStringAsync();
+        content.Should().Contain("\"status\":401");
+        content.Should().Contain("\"title\":\"Unauthorized\"");
     }
-    
+
     [Fact]
     public async Task Test_get_basic_auth_user_test4()
     {
@@ -177,8 +183,11 @@ public class BasicAuthTests(TestFixture test)
         request.Headers.Add("Authorization", "Basic eHh4"); // xxx
         using var result = await test.Client.SendAsync(request);
         result.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var content = await result.Content.ReadAsStringAsync();
+        content.Should().Contain("\"status\":401");
+        content.Should().Contain("\"title\":\"Unauthorized\"");
     }
-    
+
     [Fact]
     public async Task Test_get_basic_auth_invalid_username()
     {
@@ -186,8 +195,11 @@ public class BasicAuthTests(TestFixture test)
         request.Headers.Add("Authorization", "Basic eHh4Onl5eQ=="); // xxx:yyy
         using var result = await test.Client.SendAsync(request);
         result.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var content = await result.Content.ReadAsStringAsync();
+        content.Should().Contain("\"status\":401");
+        content.Should().Contain("\"title\":\"Unauthorized\"");
     }
-    
+
     [Fact]
     public async Task Test_get_basic_auth_invalid_password()
     {
@@ -195,8 +207,11 @@ public class BasicAuthTests(TestFixture test)
         request.Headers.Add("Authorization", "Basic bXlfbmFtZTp5eXk="); // my_name:yyy
         using var result = await test.Client.SendAsync(request);
         result.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var content = await result.Content.ReadAsStringAsync();
+        content.Should().Contain("\"status\":401");
+        content.Should().Contain("\"title\":\"Unauthorized\"");
     }
-    
+
     [Fact]
     public async Task Test_get_basic_auth_no_creds()
     {
@@ -206,6 +221,9 @@ public class BasicAuthTests(TestFixture test)
         request.Headers.Add("Authorization", "Basic bXlfbmFtZTpteV9wYXNzd29yZA=="); // valid creds but no creds set in function
         using var result = await test.Client.SendAsync(request);
         result.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var content = await result.Content.ReadAsStringAsync();
+        content.Should().Contain("\"status\":401");
+        content.Should().Contain("\"title\":\"Unauthorized\"");
     }
 
     [Fact]
@@ -215,8 +233,10 @@ public class BasicAuthTests(TestFixture test)
         using var result = await test.Client.SendAsync(request);
         var response = await result.Content.ReadAsStringAsync();
         result.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.Should().Contain("\"status\":401");
+        response.Should().Contain("\"title\":\"Unauthorized\"");
     }
-    
+
     [Fact]
     public async Task Test_get_basic_auth_challenge_command_invalid_request2()
     {
@@ -225,6 +245,8 @@ public class BasicAuthTests(TestFixture test)
         using var result = await test.Client.SendAsync(request);
         var response = await result.Content.ReadAsStringAsync();
         result.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.Should().Contain("\"status\":401");
+        response.Should().Contain("\"title\":\"Unauthorized\"");
     }
     
     [Fact]
@@ -256,8 +278,11 @@ public class BasicAuthTests(TestFixture test)
         request.Headers.Add("Authorization", "Basic eHh4Onl5eQ=="); // xxx:yyy
         using var result = await test.Client.SendAsync(request);
         result.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var content = await result.Content.ReadAsStringAsync();
+        content.Should().Contain("\"status\":401");
+        content.Should().Contain("\"title\":\"Unauthorized\"");
     }
-    
+
     [Fact]
     public async Task Test_get_basic_auth_multiple_users_test1()
     {
@@ -287,8 +312,11 @@ public class BasicAuthTests(TestFixture test)
         request.Headers.Add("Authorization", "Basic dXNlcjM6cGFzczM="); // user3:pass3
         using var result = await test.Client.SendAsync(request);
         result.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var content = await result.Content.ReadAsStringAsync();
+        content.Should().Contain("\"status\":401");
+        content.Should().Contain("\"title\":\"Unauthorized\"");
     }
-    
+
     [Fact]
     public async Task Test_get_basic_auth_multiple_users_test4()
     {
@@ -296,8 +324,11 @@ public class BasicAuthTests(TestFixture test)
         request.Headers.Add("Authorization", "Basic dXNlcjI6cGFzczM="); // user2:pass3
         using var result = await test.Client.SendAsync(request);
         result.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var content = await result.Content.ReadAsStringAsync();
+        content.Should().Contain("\"status\":401");
+        content.Should().Contain("\"title\":\"Unauthorized\"");
     }
-    
+
     [Fact]
     public async Task Test_get_basic_auth_multiple_users_test5()
     {
@@ -305,6 +336,9 @@ public class BasicAuthTests(TestFixture test)
         request.Headers.Add("Authorization", "Basic dXNlcjM6cGFzczI="); // user3:pass2
         using var result = await test.Client.SendAsync(request);
         result.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var content = await result.Content.ReadAsStringAsync();
+        content.Should().Contain("\"status\":401");
+        content.Should().Contain("\"title\":\"Unauthorized\"");
     }
 }
 

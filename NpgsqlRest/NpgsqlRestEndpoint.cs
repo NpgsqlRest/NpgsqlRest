@@ -1041,8 +1041,11 @@ public class NpgsqlRestEndpoint(
             {
                 if ((endpoint.RequiresAuthorization || endpoint.AuthorizeRoles is not null) && context.User?.Identity?.IsAuthenticated is false)
                 {
-                    context.Response.StatusCode = (int)HttpStatusCode.Unauthorized;
-                    await context.Response.CompleteAsync();
+                    await Results.Problem(
+                        type: null,
+                        statusCode: (int)HttpStatusCode.Unauthorized,
+                        title: "Unauthorized",
+                        detail: null).ExecuteAsync(context);
                     return;
                 }
 
@@ -1062,8 +1065,11 @@ public class NpgsqlRestEndpoint(
                     }
                     if (ok is false)
                     {
-                        context.Response.StatusCode = (int)HttpStatusCode.Forbidden;
-                        await context.Response.CompleteAsync();
+                        await Results.Problem(
+                            type: null,
+                            statusCode: (int)HttpStatusCode.Forbidden,
+                            title: "Forbidden",
+                            detail: null).ExecuteAsync(context);
                         return;
                     }
                 }

@@ -109,6 +109,9 @@ public class AuthLoginTests(TestFixture test)
 
         using var response1 = await client.PostAsync("/api/custom-authorize1/", null);
         response1.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var content1 = await response1.Content.ReadAsStringAsync();
+        content1.Should().Contain("\"status\":401");
+        content1.Should().Contain("\"title\":\"Unauthorized\"");
 
         using var login = await client.PostAsync(requestUri: "/api/custom-login1/", null);
         login.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -124,6 +127,9 @@ public class AuthLoginTests(TestFixture test)
 
         using var response4 = await client.PostAsync("/api/custom-authorize1-rolex-roley/", null);
         response4.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var content4 = await response4.Content.ReadAsStringAsync();
+        content4.Should().Contain("\"status\":403");
+        content4.Should().Contain("\"title\":\"Forbidden\"");
     }
 
     [Fact]
@@ -134,12 +140,18 @@ public class AuthLoginTests(TestFixture test)
 
         using var response1 = await client.PostAsync("/api/custom-authorize1/", null);
         response1.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var content1 = await response1.Content.ReadAsStringAsync();
+        content1.Should().Contain("\"status\":401");
+        content1.Should().Contain("\"title\":\"Unauthorized\"");
 
         using var login = await client.PostAsync(requestUri: "/api/custom-login2/", null);
         ((int)login.StatusCode).Should().Be(406);
 
         using var response2 = await client.PostAsync("/api/custom-authorize1/", null);
         response2.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var content2 = await response2.Content.ReadAsStringAsync();
+        content2.Should().Contain("\"status\":401");
+        content2.Should().Contain("\"title\":\"Unauthorized\"");
     }
 
     [Fact]
@@ -150,12 +162,21 @@ public class AuthLoginTests(TestFixture test)
 
         using var response1 = await client.PostAsync("/api/custom-authorize1/", null);
         response1.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var content1 = await response1.Content.ReadAsStringAsync();
+        content1.Should().Contain("\"status\":401");
+        content1.Should().Contain("\"title\":\"Unauthorized\"");
 
         using var login = await client.PostAsync(requestUri: "/api/custom-login3/", null);
         login.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var loginContent = await login.Content.ReadAsStringAsync();
+        loginContent.Should().Contain("\"status\":401");
+        loginContent.Should().Contain("\"title\":\"Unauthorized\"");
 
         using var response2 = await client.PostAsync("/api/custom-authorize1/", null);
         response2.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var content2 = await response2.Content.ReadAsStringAsync();
+        content2.Should().Contain("\"status\":401");
+        content2.Should().Contain("\"title\":\"Unauthorized\"");
     }
 
     [Fact]
@@ -166,6 +187,9 @@ public class AuthLoginTests(TestFixture test)
 
         using var response1 = await client.PostAsync("/api/custom-authorize1/", null);
         response1.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var content1 = await response1.Content.ReadAsStringAsync();
+        content1.Should().Contain("\"status\":401");
+        content1.Should().Contain("\"title\":\"Unauthorized\"");
 
         using var login = await client.PostAsync(requestUri: "/api/custom-login1/", null);
         login.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -178,6 +202,9 @@ public class AuthLoginTests(TestFixture test)
 
         using var response3 = await client.PostAsync("/api/custom-authorize1/", null);
         response3.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var content3 = await response3.Content.ReadAsStringAsync();
+        content3.Should().Contain("\"status\":401");
+        content3.Should().Contain("\"title\":\"Unauthorized\"");
     }
 
     [Fact]
@@ -188,12 +215,21 @@ public class AuthLoginTests(TestFixture test)
 
         using var response1 = await client.PostAsync("/api/custom-authorize1/", null);
         response1.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var content1 = await response1.Content.ReadAsStringAsync();
+        content1.Should().Contain("\"status\":401");
+        content1.Should().Contain("\"title\":\"Unauthorized\"");
 
         using var login1 = await client.PostAsync(requestUri: "/api/custom-login4/", null);
         login1.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var loginContent1 = await login1.Content.ReadAsStringAsync();
+        loginContent1.Should().Contain("\"status\":401");
+        loginContent1.Should().Contain("\"title\":\"Unauthorized\"");
 
         using var response2 = await client.PostAsync("/api/custom-authorize1/", null);
         response2.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var content2 = await response2.Content.ReadAsStringAsync();
+        content2.Should().Contain("\"status\":401");
+        content2.Should().Contain("\"title\":\"Unauthorized\"");
 
         using var login2 = await client.PostAsync(requestUri: "/api/custom-login5/", null);
         login2.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -210,6 +246,9 @@ public class AuthLoginTests(TestFixture test)
 
         using var response1 = await client.PostAsync("/api/custom-authorize1/", null);
         response1.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var content1 = await response1.Content.ReadAsStringAsync();
+        content1.Should().Contain("\"status\":401");
+        content1.Should().Contain("\"title\":\"Unauthorized\"");
 
         using var login = await client.PostAsync(requestUri: "/api/custom-login6/", null);
         login.StatusCode.Should().Be(HttpStatusCode.OK);

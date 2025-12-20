@@ -213,8 +213,11 @@ public static class BasicAuthHandler
 
     private static async Task Challenge(HttpContext context, string realm)
     {
-        context.Response.StatusCode = 401;
         context.Response.Headers.Append("WWW-Authenticate", string.Concat("Basic realm=\"", realm, "\""));
-        await context.Response.WriteAsync("Unauthorized");
+        await Results.Problem(
+            type: null,
+            statusCode: 401,
+            title: "Unauthorized",
+            detail: null).ExecuteAsync(context);
     }
 }
