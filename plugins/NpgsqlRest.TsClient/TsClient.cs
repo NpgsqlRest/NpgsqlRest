@@ -443,14 +443,21 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             {
                 if (includeStatusCode)
                 {
-                    //return string.Concat("return {status: response.status, response: ", responseExp, "};");
+                    var errorType = options.ErrorType.EndsWith(" | undefined")
+                        ? options.ErrorType[..^12]  // Remove " | undefined" suffix for inline use
+                        : options.ErrorType;
                     return string.Concat(
-                        "return {", 
+                        "return {",
                         Environment.NewLine,
                         "        status: response.status,",
                         Environment.NewLine,
-                        "        response: ", 
-                        (responseExp == "await response.text()" ? responseExp : string.Concat("response.status == 200 ? ", responseExp, " : await response.json() as any")),
+                        "        response: ",
+                        (responseExp == "await response.text()" ?
+                            "response.status === 200 ? " + responseExp + " : undefined!" :
+                            string.Concat("response.status === 200 ? ", responseExp, " : undefined!")),
+                        ",",
+                        Environment.NewLine,
+                        $"        error: response.status !== 200 ? {options.ErrorExpression} as {errorType} : undefined",
                         Environment.NewLine,
                         "    };");
                 }
@@ -804,7 +811,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             else
             {
                 resultType = includeStatusCode ?
-                    string.Concat("{status: number, response: ", responseName, "", "}") :
+                    string.Concat("{status: number, response: ", responseName, ", error: ", options.ErrorType, "}") :
                     responseName;
             }
 
@@ -813,16 +820,21 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 string onloadExp;
                 if (!isVoid)
                 {
+                    var uploadErrorType = options.ErrorType.EndsWith(" | undefined")
+                        ? options.ErrorType[..^12]  // Remove " | undefined" suffix for inline use
+                        : options.ErrorType;
+                    // Need to escape braces in the error type for string.Format
+                    var escapedErrorType = uploadErrorType.Replace("{", "{{").Replace("}", "}}");
                     onloadExp =string.Format(
                         """
                             xhr.onload = function () {{
                                 if (this.status >= 200 && this.status < 300) {{
                                     resolve({0});
                                 }} else {{
-                                    resolve({{status: this.status, response: this.response}});
+                                    resolve({{status: this.status, response: undefined!, error: JSON.parse(this.responseText) as {1}}});
                                 }}
                             }};
-                    """, returnExp);
+                    """, returnExp, escapedErrorType);
                 }
                 else
                 {
@@ -954,7 +966,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 }
                 else
                 {
-                    resultType = "{status: number, response: object[]}";
+                    resultType = $"{{status: number, response: object[], error: {options.ErrorType}}}";
                     //returnExp = "{status: this.status, response: JSON.parse(this.responseText)}";
                     parameters = (parameters ?? "").Trim('\n', '\r');
                     content.AppendLine(string.Format(

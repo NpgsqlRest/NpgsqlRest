@@ -186,7 +186,12 @@ public static class BasicAuthHandler
                 username,
                 realm,
                 string.Concat(endpoint.Method.ToString(), endpoint.Path));
-            await Challenge(context, realm);
+
+            // Response was already written by LoginHandler, don't write again
+            if (context.Response.HasStarted is false)
+            {
+                await Challenge(context, realm);
+            }
             return;
         }
 

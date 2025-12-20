@@ -144,4 +144,16 @@ public class TsClientOptions
     /// When true, include PostgreSQL schema name in the generated type names to avoid name collisions. Set to false to simplify type names when no name collisions are expected.
     /// </summary>
     public bool IncludeSchemaInNames { get; set; } = false;
+
+    /// <summary>
+    /// Expression to parse error response. Default is "await response.json()".
+    /// Only used when IncludeStatusCode is true.
+    /// </summary>
+    public string ErrorExpression { get; set; } = "await response.json()";
+
+    /// <summary>
+    /// TypeScript type for error response. Default is "{status: number; title: string; detail?: string | null} | undefined".
+    /// Only used when IncludeStatusCode is true.
+    /// </summary>
+    public string ErrorType { get; set; } = "{status: number; title: string; detail?: string | null} | undefined";
 }

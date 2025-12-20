@@ -404,6 +404,8 @@ public class App
                 ExportEventSources = _config.GetConfigBool("ExportEventSources", tsClientCfg, true),
                 CustomImports = _config.GetConfigEnumerable("CustomImports", tsClientCfg)?.ToArray() ?? [],
                 IncludeSchemaInNames = _config.GetConfigBool("IncludeSchemaInNames", tsClientCfg, true),
+                ErrorExpression = _config.GetConfigStr("ErrorExpression", tsClientCfg) ?? "await response.json()",
+                ErrorType = _config.GetConfigStr("ErrorType", tsClientCfg) ?? "{status: number; title: string; detail?: string | null} | undefined",
             };
 
             Dictionary<string, string> customHeaders = [];

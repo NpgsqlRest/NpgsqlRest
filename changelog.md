@@ -44,6 +44,25 @@ All error responses (401 Unauthorized, 403 Forbidden, 404 Not Found, 500 Interna
 
 Previously, some error responses (particularly authorization failures) returned empty bodies or plain text. Now all endpoints return a consistent, parseable JSON error format regardless of the error type.
 
+### TsClient: Configurable Error Expression and Type
+
+Added two new options to the TypeScript client code generator (`TsClient`) for customizing error handling in generated code:
+
+- **`ErrorExpression`** (default: `"await response.json()"`): The expression used to parse error responses. Allows customization for different error parsing strategies.
+- **`ErrorType`** (default: `"{status: number; title: string; detail?: string | null} | undefined"`): The TypeScript type annotation for error responses.
+
+These options are only used when `IncludeStatusCode` is `true`. Configuration example:
+
+```json
+{
+  "ClientCodeGen": {
+    "IncludeStatusCode": true,
+    "ErrorExpression": "await response.json()",
+    "ErrorType": "{status: number; title: string; detail?: string | null} | undefined"
+  }
+}
+```
+
 ## Version [3.1.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.1.1) (2025-12-15)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.1.0...3.1.1)
