@@ -69,6 +69,7 @@ if (args.Length >= 1 && (string.Equals(args[0], "-v", StringComparison.CurrentCu
         ("Serilog.Sinks.OpenTelemetry", System.Reflection.Assembly.GetAssembly(typeof(Serilog.Sinks.OpenTelemetry.OpenTelemetrySinkOptions))?.GetName().Version?.ToString() ?? "-"),
         ("System.Text.Json", System.Reflection.Assembly.GetAssembly(typeof(System.Text.Json.JsonCommentHandling))?.GetName().Version?.ToString() ?? "-"),
         ("StackExchange.Redis", System.Reflection.Assembly.GetAssembly(typeof(StackExchange.Redis.ConnectionMultiplexer))?.GetName().Version?.ToString() ?? "-"),
+        ("Microsoft.Extensions.Caching.Hybrid", System.Reflection.Assembly.GetAssembly(typeof(Microsoft.Extensions.Caching.Hybrid.HybridCache))?.GetName().Version?.ToString() ?? "-"),
         (" ", " "),
         ("CurrentDirectory", Directory.GetCurrentDirectory()),
         ("BaseDirectory", AppContext.BaseDirectory)
@@ -137,6 +138,7 @@ builder.BuildAuthentication();
 var usingCors = builder.BuildCors();
 var compressionEnabled = builder.ConfigureResponseCompression();
 var antiForgeryUsed = builder.ConfigureAntiForgery();
+var cacheType = builder.ConfigureCacheServices();
 
 WebApplication app = builder.Build();
 
@@ -267,7 +269,7 @@ NpgsqlRestOptions options = new()
     RoutineSources = appInstance.CreateRoutineSources(),
     UploadOptions = appInstance.CreateUploadOptions(),
     
-    CacheOptions = builder.BuildCacheOptions(app),
+    CacheOptions = builder.BuildCacheOptions(app, cacheType),
     DefaultRateLimitingPolicy = rateLimiterDefaultPolicy,
     HttpClientOptions = builder.BuildHttpClientOptions(),
 };

@@ -97,6 +97,38 @@ These options are only used when `IncludeStatusCode` is `true`. Configuration ex
 
 Void functions and procedures now also return the error object when `IncludeStatusCode` is `true`.
 
+### HybridCache Support
+
+Added **HybridCache** as a third caching option alongside Memory and Redis. HybridCache uses Microsoft's `Microsoft.Extensions.Caching.Hybrid` library to provide:
+
+- **Stampede protection**: Prevents multiple concurrent requests from hitting the database when cache expires
+- **Optional Redis L2 backend**: Can use Redis as a distributed secondary cache for sharing across instances
+- **In-memory L1 cache**: Fast local cache for frequently accessed data
+
+Configuration in `appsettings.json`:
+
+```json
+{
+  "CacheOptions": {
+    "Enabled": true,
+    "Type": "Hybrid",
+    "UseRedisBackend": false,
+    "RedisConfiguration": "localhost:6379,abortConnect=false",
+    "MaximumKeyLength": 1024,
+    "MaximumPayloadBytes": 1048576,
+    "DefaultExpiration": "5 minutes",
+    "LocalCacheExpiration": "1 minute"
+  }
+}
+```
+
+**Cache types:**
+- `Memory`: In-process memory cache (fastest, single instance only)
+- `Redis`: Distributed Redis cache (slower, shared across instances)
+- `Hybrid`: HybridCache with stampede protection, optionally backed by Redis
+
+When `UseRedisBackend` is `false` (default), HybridCache works as an in-memory cache with stampede protection. When `true`, it uses Redis as the L2 distributed cache for sharing across multiple application instances.
+
 Fixed `IncludeSchemaInNames` option to work correctly when `UseRoutineNameInsteadOfEndpoint` is `false` (the default).
 
 ## Version [3.1.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.1.1) (2025-12-15)

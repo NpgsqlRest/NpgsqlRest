@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption.ConfigurationM
 using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.ResponseCompression;
+using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Primitives;
 using Microsoft.Net.Http.Headers;
 using Npgsql;
@@ -1014,9 +1015,58 @@ public class Builder
         return options;
     }
     
-    public enum CacheType { Memory, Redis }
-    
-    public CacheOptions BuildCacheOptions(WebApplication app)
+    public enum CacheType { Memory, Redis, Hybrid }
+
+    public CacheType ConfigureCacheServices()
+    {
+        var cacheCfg = _config.Cfg.GetSection("CacheOptions");
+        if (cacheCfg is null || _config.GetConfigBool("Enabled", cacheCfg) is false)
+        {
+            return CacheType.Memory;
+        }
+
+        var type = _config.GetConfigEnum<CacheType?>("Type", cacheCfg) ?? CacheType.Memory;
+
+        if (type == CacheType.Hybrid)
+        {
+            var redisConfiguration = _config.GetConfigStr("RedisConfiguration", cacheCfg);
+            var useRedisBackend = _config.GetConfigBool("UseRedisBackend", cacheCfg, false);
+
+            // Only register Redis as L2 cache if explicitly enabled
+            if (useRedisBackend && !string.IsNullOrEmpty(redisConfiguration))
+            {
+                Instance.Services.AddStackExchangeRedisCache(options =>
+                {
+                    options.Configuration = redisConfiguration;
+                });
+                Logger?.LogDebug("HybridCache services configured with Redis L2 at: {RedisConfiguration}", redisConfiguration);
+            }
+            else
+            {
+                Logger?.LogDebug("HybridCache services configured with in-memory only (no Redis L2)");
+            }
+
+            // Register HybridCache with configuration
+            Instance.Services.AddHybridCache(options =>
+            {
+                options.MaximumKeyLength = _config.GetConfigInt("MaximumKeyLength", cacheCfg) ?? 1024;
+                options.MaximumPayloadBytes = _config.GetConfigInt("MaximumPayloadBytes", cacheCfg) ?? 1024 * 1024;
+
+                var defaultExpiration = Parser.ParsePostgresInterval(_config.GetConfigStr("DefaultExpiration", cacheCfg));
+                var localExpiration = Parser.ParsePostgresInterval(_config.GetConfigStr("LocalCacheExpiration", cacheCfg));
+
+                options.DefaultEntryOptions = new HybridCacheEntryOptions
+                {
+                    Expiration = defaultExpiration,
+                    LocalCacheExpiration = localExpiration ?? defaultExpiration
+                };
+            });
+        }
+
+        return type;
+    }
+
+    public CacheOptions BuildCacheOptions(WebApplication app, CacheType configuredCacheType)
     {
         var cacheCfg = _config.Cfg.GetSection("CacheOptions");
         var options = new CacheOptions()
@@ -1029,13 +1079,12 @@ public class Builder
             return options;
         }
 
-        var type = _config.GetConfigEnum<CacheType?>("Type", cacheCfg) ?? CacheType.Memory;
         options.MaxCacheableRows = _config.GetConfigInt("MaxCacheableRows", cacheCfg);
         options.UseHashedCacheKeys = _config.GetConfigBool("UseHashedCacheKeys", cacheCfg);
         options.HashKeyThreshold = _config.GetConfigInt("HashKeyThreshold", cacheCfg) ?? 256;
         options.InvalidateCacheSuffix = _config.GetConfigStr("InvalidateCacheSuffix", cacheCfg);
 
-        if (type == CacheType.Memory)
+        if (configuredCacheType == CacheType.Memory)
         {
             options.MemoryCachePruneIntervalSeconds =
                 _config.GetConfigInt("MemoryCachePruneIntervalSeconds", cacheCfg) ?? 60;
@@ -1043,7 +1092,7 @@ public class Builder
             Logger?.LogDebug("Using in-memory routine cache with prune interval of {MemoryCachePruneIntervalSeconds} seconds. MaxCacheableRows={MaxCacheableRows}, UseHashedCacheKeys={UseHashedCacheKeys}, HashKeyThreshold={HashKeyThreshold}",
                 options.MemoryCachePruneIntervalSeconds, options.MaxCacheableRows, options.UseHashedCacheKeys, options.HashKeyThreshold);
         }
-        else if (type == CacheType.Redis)
+        else if (configuredCacheType == CacheType.Redis)
         {
             var configuration = _config.GetConfigStr("RedisConfiguration", cacheCfg) ??
                                 "localhost:6379,abortConnect=false,ssl=false,connectTimeout=10000,syncTimeout=5000,connectRetry=3";
@@ -1060,6 +1109,36 @@ public class Builder
             {
                 Logger?.LogError(ex, "Failed to initialize Redis cache with configuration: {RedisConfiguration}", configuration);
                 Logger?.LogWarning("Falling back to in-memory cache due to Redis initialization failure");
+                options.DefaultRoutineCache = new RoutineCache();
+                options.MemoryCachePruneIntervalSeconds = _config.GetConfigInt("MemoryCachePruneIntervalSeconds", cacheCfg) ?? 60;
+            }
+        }
+        else if (configuredCacheType == CacheType.Hybrid)
+        {
+            var useRedisBackend = _config.GetConfigBool("UseRedisBackend", cacheCfg, false);
+            var redisConfiguration = _config.GetConfigStr("RedisConfiguration", cacheCfg);
+
+            try
+            {
+                var hybridCache = app.Services.GetRequiredService<Microsoft.Extensions.Caching.Hybrid.HybridCache>();
+                var hybridCacheWrapper = new HybridCacheWrapper(hybridCache, Logger, options);
+                options.DefaultRoutineCache = hybridCacheWrapper;
+
+                if (useRedisBackend && !string.IsNullOrEmpty(redisConfiguration))
+                {
+                    Logger?.LogDebug("Using HybridCache (L1: in-memory, L2: Redis at {RedisConfiguration}). MaxCacheableRows={MaxCacheableRows}, UseHashedCacheKeys={UseHashedCacheKeys}, HashKeyThreshold={HashKeyThreshold}",
+                        redisConfiguration, options.MaxCacheableRows, options.UseHashedCacheKeys, options.HashKeyThreshold);
+                }
+                else
+                {
+                    Logger?.LogDebug("Using HybridCache (in-memory only, with stampede protection). MaxCacheableRows={MaxCacheableRows}, UseHashedCacheKeys={UseHashedCacheKeys}, HashKeyThreshold={HashKeyThreshold}",
+                        options.MaxCacheableRows, options.UseHashedCacheKeys, options.HashKeyThreshold);
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger?.LogError(ex, "Failed to initialize HybridCache");
+                Logger?.LogWarning("Falling back to in-memory cache due to HybridCache initialization failure");
                 options.DefaultRoutineCache = new RoutineCache();
                 options.MemoryCachePruneIntervalSeconds = _config.GetConfigInt("MemoryCachePruneIntervalSeconds", cacheCfg) ?? 60;
             }
