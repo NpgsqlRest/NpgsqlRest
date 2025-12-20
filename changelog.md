@@ -63,6 +63,10 @@ These options are only used when `IncludeStatusCode` is `true`. Configuration ex
 }
 ```
 
+Void functions and procedures now also return the error object when `IncludeStatusCode` is `true`.
+
+Fixed `IncludeSchemaInNames` option to work correctly when `UseRoutineNameInsteadOfEndpoint` is `false` (the default).
+
 ## Version [3.1.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.1.1) (2025-12-15)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.1.0...3.1.1)

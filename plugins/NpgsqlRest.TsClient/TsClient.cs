@@ -319,14 +319,16 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 }
                 else
                 {
+                    string pathName;
                     if (string.IsNullOrEmpty(_npgsqlRestoptions?.UrlPathPrefix) || _npgsqlRestoptions.UrlPathPrefix.Length > endpoint.Path.Length)
                     {
-                        name = endpoint.Path;
+                        pathName = endpoint.Path;
                     }
                     else
                     {
-                        name = endpoint.Path[_npgsqlRestoptions.UrlPathPrefix.Length..];
+                        pathName = endpoint.Path[_npgsqlRestoptions.UrlPathPrefix.Length..];
                     }
+                    name = options.IncludeSchemaInNames ? string.Concat(routine.Schema, "/", pathName) : pathName;
                 }
             }
             catch
@@ -464,11 +466,6 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 return string.Concat("return ", responseExp, ";");
             }
 
-            // TODO when routine is void and doesnt return values, it will also return now JSON content on error
-            // we need as different return signature for that (procedures and void functions)
-            
-            // TODO IncludeSchemaInNames doesnt seem to work
-            
             if (!isVoid)
             {
                 if (endpoint.Upload)
@@ -600,7 +597,17 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             {
                 if (includeStatusCode)
                 {
-                    returnExp = "return response.status;";
+                    var errorType = options.ErrorType.EndsWith(" | undefined")
+                        ? options.ErrorType[..^12]  // Remove " | undefined" suffix for inline use
+                        : options.ErrorType;
+                    returnExp = string.Concat(
+                        "return {",
+                        Environment.NewLine,
+                        "        status: response.status,",
+                        Environment.NewLine,
+                        $"        error: response.status !== 200 ? {options.ErrorExpression} as {errorType} : undefined",
+                        Environment.NewLine,
+                        "    };");
                 }
             }
 
@@ -805,7 +812,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             if (string.Equals(responseName, "void", StringComparison.OrdinalIgnoreCase))
             {
                 resultType = includeStatusCode ?
-                    "number" :
+                    string.Concat("{status: number, error: ", options.ErrorType, "}") :
                     responseName;
             }
             else
