@@ -42,7 +42,7 @@ public class Config
                 .AddJsonFile(Path.GetFullPath("appsettings.Development.json", CurrentDir), optional: true)
                 .Build();
         }
-        // TODO add .env file support from key "EnvironmentFile" in "Config" section
+
         var cfgCfg = tempCfg.GetSection("Config");
         ConfigurationBuilder configBuilder = new();
         var useEnv = cfgCfg != null && GetConfigBool("AddEnvironmentVariables", cfgCfg);
@@ -84,7 +84,21 @@ public class Config
         NpgsqlRestCfg = Cfg.GetSection("NpgsqlRest");
         ConnectionSettingsCfg = Cfg.GetSection("ConnectionSettings");
         
-        if (cfgCfg != null && GetConfigBool("ParseEnvironmentVariables", cfgCfg, true) is true)
+        var parseEnv = cfgCfg != null && GetConfigBool("ParseEnvironmentVariables", cfgCfg, true) is true;
+        if (useEnv || parseEnv)
+        {
+            var envFilePath = cfgCfg?.GetSection("EnvFile")?.Value;
+            if (envFilePath is not null)
+            {
+                var fullPath = Path.GetFullPath(envFilePath, CurrentDir);
+                if (File.Exists(fullPath))
+                {
+                    LoadEnvFile(fullPath);
+                }
+            }
+        }
+
+        if (parseEnv)
         {
             EnvDict = new Dictionary<string, string>();
             var envVars = Environment.GetEnvironmentVariables();
@@ -314,6 +328,37 @@ public class Config
         }
 
         return obj;
+    }
+
+    private static void LoadEnvFile(string path)
+    {
+        foreach (var line in File.ReadLines(path))
+        {
+            var trimmed = line.Trim();
+            if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith('#'))
+            {
+                continue;
+            }
+
+            var separatorIndex = trimmed.IndexOf('=');
+            if (separatorIndex <= 0)
+            {
+                continue;
+            }
+
+            var key = trimmed[..separatorIndex].Trim();
+            var value = trimmed[(separatorIndex + 1)..].Trim();
+
+            // Remove surrounding quotes if present
+            if (value.Length >= 2 &&
+                ((value.StartsWith('"') && value.EndsWith('"')) ||
+                 (value.StartsWith('\'') && value.EndsWith('\''))))
+            {
+                value = value[1..^1];
+            }
+
+            Environment.SetEnvironmentVariable(key, value);
+        }
     }
 
     private (List<(string fileName, bool optional)> configFiles, string[] commanLineArgs) BuildFromArgs(string[] args)

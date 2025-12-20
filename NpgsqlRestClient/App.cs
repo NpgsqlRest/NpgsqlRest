@@ -258,7 +258,6 @@ public class App
         return (connection, endpoint, context) =>
         {
             var uid = context.User.FindFirstValue(options.DefaultUserIdClaimType);
-            //TODO: use ExecutionIdHeaderName from options
             var executionId = context.Request.Headers[headerName].FirstOrDefault();
             connection.ConnectionString = new NpgsqlConnectionStringBuilder(connectionString)
             {

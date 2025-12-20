@@ -44,6 +44,38 @@ All error responses (401 Unauthorized, 403 Forbidden, 404 Not Found, 500 Interna
 
 Previously, some error responses (particularly authorization failures) returned empty bodies or plain text. Now all endpoints return a consistent, parseable JSON error format regardless of the error type.
 
+### EnvFile Configuration Option
+
+Added new `EnvFile` option to the `Config` section for loading environment variables from a `.env` file:
+
+```json
+{
+  "Config": {
+    "AddEnvironmentVariables": false,
+    "ParseEnvironmentVariables": true,
+    "EnvFile": ".env"
+  }
+}
+```
+
+When `AddEnvironmentVariables` or `ParseEnvironmentVariables` is `true` and the `EnvFile` path is set, the application will load environment variables from the specified file. The file format supports:
+
+- `KEY=VALUE` pairs (one per line)
+- Comments (lines starting with `#`)
+- Quoted values (both single and double quotes)
+
+Example `.env` file:
+
+```
+PGHOST=localhost
+PGPORT=5432
+PGDATABASE=example_db
+PGUSER=postgres
+PGPASSWORD=postgres
+```
+
+The variables are loaded into the environment and made available for configuration parsing with the `{ENV_VAR_NAME}` syntax.
+
 ### TsClient: Configurable Error Expression and Type
 
 Added two new options to the TypeScript client code generator (`TsClient`) for customizing error handling in generated code:
