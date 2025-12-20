@@ -1,4 +1,5 @@
-﻿using System.Diagnostics.CodeAnalysis;
+﻿using System.Buffers;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text;
 using System.Text.Json.Serialization;
@@ -17,6 +18,11 @@ internal static partial class ParameterPattern
 
 public static class PgConverters
 {
+    // SIMD-accelerated search values for delimiter detection
+    private static readonly SearchValues<char> ArrayDelimiters = SearchValues.Create(",{}\"\\");
+    private static readonly SearchValues<char> TupleDelimiters = SearchValues.Create(",()\"\\");
+    private static readonly SearchValues<char> QuoteSearchValue = SearchValues.Create("\"");
+
     private static readonly JsonSerializerOptions PlainTextSerializerOptions = new()
     {
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
@@ -56,8 +62,30 @@ public static class PgConverters
         bool insideQuotes = false;
         bool first = true;
 
-        for (int i = 1; i < len; i++)
+        int i = 1;
+        while (i < len)
         {
+            // Use SIMD-accelerated search to find the next delimiter
+            var remaining = value.Slice(i);
+            int nextDelimiterOffset = remaining.IndexOfAny(TupleDelimiters);
+
+            if (nextDelimiterOffset == -1)
+            {
+                // No more delimiters, append the rest
+                if (!insideQuotes)
+                {
+                    current.Append(remaining);
+                }
+                break;
+            }
+
+            // Append characters before the delimiter
+            if (nextDelimiterOffset > 0)
+            {
+                current.Append(remaining.Slice(0, nextDelimiterOffset));
+                i += nextDelimiterOffset;
+            }
+
             char currentChar = value[i];
 
             if ((currentChar == Consts.Comma || (currentChar == Consts.CloseParenthesis && i == len - 1)) && !insideQuotes)
@@ -80,29 +108,32 @@ public static class PgConverters
                     result.Append(SerializeString(segment));
                     current.Clear();
                 }
+                i++;
             }
             else
             {
                 if (currentChar == Consts.DoubleQuote && i < len - 2 && value[i + 1] == Consts.DoubleQuote)
                 {
                     current.Append(currentChar);
-                    i++;
+                    i += 2;
                     continue;
                 }
                 if (currentChar == Consts.DoubleQuote)
                 {
                     insideQuotes = !insideQuotes;
+                    i++;
                 }
                 else
                 {
                     if (currentChar == Consts.Backslash && i < len - 2 && value[i + 1] == Consts.Backslash)
                     {
-                        i++;
+                        i += 2;
                         current.Append(currentChar);
                     }
                     else
                     {
                         current.Append(currentChar);
+                        i++;
                     }
                 }
             }
@@ -144,14 +175,76 @@ public static class PgConverters
             return false;
         }
 
-        for (int i = 1; i < len; i++)
+        int i = 1;
+        while (i < len)
         {
+            // Use SIMD-accelerated search to find the next delimiter
+            var remaining = value.Slice(i);
+            int nextDelimiterOffset = remaining.IndexOfAny(ArrayDelimiters);
+
+            if (nextDelimiterOffset == -1)
+            {
+                // No more delimiters, this shouldn't happen with well-formed input
+                break;
+            }
+
+            // Process characters before the delimiter based on type
+            if (nextDelimiterOffset > 0)
+            {
+                var segment = remaining.Slice(0, nextDelimiterOffset);
+                if (descriptor.IsBoolean)
+                {
+                    // For booleans, we only need the first char to determine true/false
+                    foreach (var ch in segment)
+                    {
+                        if (ch == 't')
+                            current.Append(Consts.True);
+                        else if (ch == 'f')
+                            current.Append(Consts.False);
+                        else
+                            current.Append(ch);
+                    }
+                }
+                else if (descriptor.IsDateTime)
+                {
+                    foreach (var ch in segment)
+                    {
+                        current.Append(ch == Consts.Space ? 'T' : ch);
+                    }
+                }
+                else
+                {
+                    // Check for escape sequences in the segment
+                    int escapeIdx = segment.IndexOfAny('\n', '\t', '\r');
+                    if (escapeIdx == -1)
+                    {
+                        current.Append(segment);
+                    }
+                    else
+                    {
+                        foreach (var ch in segment)
+                        {
+                            if (ch == '\n')
+                                current.Append("\\n");
+                            else if (ch == '\t')
+                                current.Append("\\t");
+                            else if (ch == '\r')
+                                current.Append("\\r");
+                            else
+                                current.Append(ch);
+                        }
+                    }
+                }
+                i += nextDelimiterOffset;
+            }
+
             char currentChar = value[i];
 
-            if (currentChar == Consts.DoubleQuote && value[i - 1] != Consts.Backslash)
+            if (currentChar == Consts.DoubleQuote && (i == 1 || value[i - 1] != Consts.Backslash))
             {
                 insideQuotes = !insideQuotes;
                 hasQuotes = true;
+                i++;
             }
             else if ((currentChar == Consts.Comma && !insideQuotes) || currentChar == Consts.CloseBrace)
             {
@@ -180,49 +273,36 @@ public static class PgConverters
                 }
                 current.Clear();
                 hasQuotes = false;
+                i++;
             }
             else
             {
+                // Handle backslash or other delimiter characters that are part of content
                 if (descriptor.IsBoolean)
                 {
                     if (currentChar == 't')
-                    {
                         current.Append(Consts.True);
-                    }
                     else if (currentChar == 'f')
-                    {
                         current.Append(Consts.False);
-                    }
                     else
-                    {
                         current.Append(currentChar);
-                    }
                 }
                 else if (descriptor.IsDateTime)
                 {
-                    //json time requires T between date and time
                     current.Append(currentChar == Consts.Space ? 'T' : currentChar);
                 }
-                else 
+                else
                 {
                     if (currentChar == '\n')
-                    {
                         current.Append("\\n");
-                    }
                     else if (currentChar == '\t')
-                    {
-                        current.Append("\\r");
-                    }
+                        current.Append("\\t");
                     else if (currentChar == '\r')
-                    {
                         current.Append("\\r");
-                    }
                     else
-                    {
                         current.Append(currentChar);
-                    }
-
                 }
+                i++;
             }
         }
 
@@ -232,29 +312,55 @@ public static class PgConverters
 
     internal static string QuoteText(ReadOnlySpan<char> value)
     {
-        int newLength = value.Length + 2;
-        for (int i = 0; i < value.Length; i++)
+        // Use SIMD-accelerated count of quotes
+        int quoteCount = 0;
+        var remaining = value;
+        while (true)
         {
-            if (value[i] == Consts.DoubleQuote)
-            {
-                newLength++;
-            }
+            int idx = remaining.IndexOfAny(QuoteSearchValue);
+            if (idx == -1)
+                break;
+            quoteCount++;
+            remaining = remaining.Slice(idx + 1);
         }
+
+        int newLength = value.Length + 2 + quoteCount;
         Span<char> result = stackalloc char[newLength];
         result[0] = Consts.DoubleQuote;
-        int currentPos = 1;
-        for (int i = 0; i < value.Length; i++)
+
+        if (quoteCount == 0)
         {
-            if (value[i] == Consts.DoubleQuote)
-            {
-                result[currentPos++] = Consts.DoubleQuote;
-                result[currentPos++] = Consts.DoubleQuote;
-            }
-            else
-            {
-                result[currentPos++] = value[i];
-            }
+            // Fast path: no quotes to escape, just copy
+            value.CopyTo(result.Slice(1));
+            result[newLength - 1] = Consts.DoubleQuote;
+            return new string(result);
         }
+
+        // Slow path: need to escape quotes
+        int currentPos = 1;
+        remaining = value;
+        while (true)
+        {
+            int idx = remaining.IndexOfAny(QuoteSearchValue);
+            if (idx == -1)
+            {
+                // Copy remaining and finish
+                remaining.CopyTo(result.Slice(currentPos));
+                currentPos += remaining.Length;
+                break;
+            }
+
+            // Copy up to the quote
+            remaining.Slice(0, idx).CopyTo(result.Slice(currentPos));
+            currentPos += idx;
+
+            // Escape the quote
+            result[currentPos++] = Consts.DoubleQuote;
+            result[currentPos++] = Consts.DoubleQuote;
+
+            remaining = remaining.Slice(idx + 1);
+        }
+
         result[currentPos] = Consts.DoubleQuote;
         return new string(result);
     }

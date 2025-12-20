@@ -457,6 +457,11 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 return string.Concat("return ", responseExp, ";");
             }
 
+            // TODO when routine is void and doesnt return values, it will also return now JSON content on error
+            // we need as different return signature for that (procedures and void functions)
+            
+            // TODO IncludeSchemaInNames doesnt seem to work
+            
             if (!isVoid)
             {
                 if (endpoint.Upload)

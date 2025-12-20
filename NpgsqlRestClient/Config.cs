@@ -42,6 +42,7 @@ public class Config
                 .AddJsonFile(Path.GetFullPath("appsettings.Development.json", CurrentDir), optional: true)
                 .Build();
         }
+        // TODO add .env file support from key "EnvironmentFile" in "Config" section
         var cfgCfg = tempCfg.GetSection("Config");
         ConfigurationBuilder configBuilder = new();
         var useEnv = cfgCfg != null && GetConfigBool("AddEnvironmentVariables", cfgCfg);

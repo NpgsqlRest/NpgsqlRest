@@ -1,10 +1,14 @@
-﻿using System.Runtime.CompilerServices;
+﻿using System.Buffers;
+using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 
 namespace NpgsqlRest;
 
 public static partial class Parser
 {
+    // SIMD-accelerated search for wildcard characters
+    private static readonly SearchValues<char> WildcardChars = SearchValues.Create("*?");
+
     [GeneratedRegex(@"^(\d*\.?\d+)\s*([a-z]*)$", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
     private static partial Regex IntervalRegex();
 
@@ -60,12 +64,34 @@ public static partial class Parser
         int nl = name.Length, pl = pattern.Length;
         if (nl == 0 || pl == 0) return false;
 
+        // Fast path: extension matching (*.ext)
         if (pl > 1 && pattern[0] == Consts.Multiply && pattern[1] == Consts.Dot)
         {
             ReadOnlySpan<char> ext = pattern.AsSpan(1);
             return nl > ext.Length && name.AsSpan(nl - ext.Length).Equals(ext, StringComparison.OrdinalIgnoreCase);
         }
 
+        // Check if pattern has wildcards using SIMD
+        ReadOnlySpan<char> patternSpan = pattern.AsSpan();
+        int firstWildcard = patternSpan.IndexOfAny(WildcardChars);
+
+        // Fast path: no wildcards - simple case-insensitive comparison
+        if (firstWildcard == -1)
+        {
+            return name.AsSpan().Equals(patternSpan, StringComparison.OrdinalIgnoreCase);
+        }
+
+        // Fast path: pattern starts with literal segment
+        if (firstWildcard > 0)
+        {
+            // Check if name starts with the literal prefix
+            if (!name.AsSpan(0, Math.Min(firstWildcard, nl)).Equals(patternSpan.Slice(0, Math.Min(firstWildcard, nl)), StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        // Standard wildcard matching algorithm
         int ni = 0, pi = 0;
         int lastStar = -1, lastMatch = 0;
 

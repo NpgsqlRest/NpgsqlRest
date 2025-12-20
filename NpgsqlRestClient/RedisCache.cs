@@ -4,6 +4,9 @@ using StackExchange.Redis;
 
 namespace NpgsqlRestClient
 {
+    // TODO use hybrid cache with in-memory and Redis
+    // https://dev.to/bytehide/hybridcache-in-aspnet-core-9-a-practical-guide-4eck
+    // https://learn.microsoft.com/en-us/aspnet/core/performance/caching/hybrid?view=aspnetcore-10.0
     public class RedisCache : IRoutineCache, IDisposable
     {
         private readonly ConnectionMultiplexer _redis;
