@@ -4,7 +4,7 @@ public enum RoutineType { Table, View, Function, Procedure, Other }
 public enum CrudType { Select, Insert, Update, Delete }
 public enum Method { GET, PUT, POST, DELETE }
 public enum RequestParamType { QueryString, BodyJson }
-public enum ParamType { QueryString, BodyJson, BodyParam, HeaderParam }
+public enum ParamType { QueryString, BodyJson, BodyParam, HeaderParam, PathParam }
 public enum CommentHeader { None, Simple, Full }
 public enum TextResponseNullHandling { EmptyString, NullLiteral, NoContent }
 public enum QueryStringNullHandling { EmptyString, NullLiteral, Ignore }

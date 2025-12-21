@@ -98,4 +98,16 @@ public class RoutineEndpoint(
     /// Instead of executing the routine, it removes the cached entry for the given parameters.
     /// </summary>
     public bool InvalidateCache { get; set; } = false;
+
+    /// <summary>
+    /// List of parameter names that are extracted from the URL path.
+    /// For example, path "/products/{p_id}" would have PathParameters = ["p_id"].
+    /// These parameters are populated from ASP.NET Core RouteValues.
+    /// </summary>
+    public string[]? PathParameters { get; set; } = null;
+
+    /// <summary>
+    /// Returns true if this endpoint has any path parameters defined.
+    /// </summary>
+    public bool HasPathParameters => PathParameters is not null && PathParameters.Length > 0;
 }

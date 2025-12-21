@@ -60,6 +60,8 @@ internal static partial class DefaultCommentParser
                 {
                     endpoint.Path = string.Concat("/", endpoint.Path);
                 }
+                // Extract path parameters from the path template
+                endpoint.PathParameters = ExtractPathParameters(endpoint.Path);
             }
         }
         

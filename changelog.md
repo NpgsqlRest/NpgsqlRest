@@ -4,6 +4,85 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [3.1.3](https://github.com/NpgsqlRest/NpgsqlRest/tree/ ) (TBD)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.1.2...3.1.3)
+
+### Path Parameters Support
+
+Added support for RESTful path parameters using the `{param}` syntax in URL paths. This allows defining routes like `/products/{id}` where parameter values are extracted directly from the URL path instead of query strings or request body.
+
+**Usage:**
+
+```sql
+-- Single path parameter
+create function get_product(p_id int) returns text language sql as 'select ...';
+comment on function get_product(int) is '
+HTTP GET /products/{p_id}
+';
+-- Call: GET /products/123 → p_id = 123
+
+-- Multiple path parameters
+create function get_review(p_id int, review_id int) returns text language sql as 'select ...';
+comment on function get_review(int, int) is '
+HTTP GET /products/{p_id}/reviews/{review_id}
+';
+-- Call: GET /products/5/reviews/10 → p_id = 5, review_id = 10
+
+-- Path parameters with query string parameters
+create function get_product_details(p_id int, include_reviews boolean default false) returns text language sql as 'select ...';
+comment on function get_product_details(int, boolean) is '
+HTTP GET /products/{p_id}/details
+';
+-- Call: GET /products/42/details?includeReviews=true → p_id = 42, include_reviews = true
+
+-- Path parameters with JSON body (POST/PUT)
+create function update_product(p_id int, new_name text) returns text language sql as 'select ...';
+comment on function update_product(int, text) is '
+HTTP POST /products/{p_id}
+';
+-- Call: POST /products/7 with body {"newName": "New Name"} → p_id = 7, new_name = "New Name"
+```
+
+**Key features:**
+
+- Path parameter names in `{param}` can use either the PostgreSQL name (`{p_id}`) or the converted camelCase name (`{pId}`), matching is case-insensitive
+- Works with all HTTP methods (GET, POST, PUT, DELETE)
+- Can be combined with query string parameters (GET/DELETE) or JSON body parameters (POST/PUT)
+- Supports all parameter types (int, text, uuid, bigint, etc.)
+- TsClient generates template literal URLs: `` `${baseUrl}/products/${request.pId}` ``
+- New `ParamType.PathParam` enum value for identifying path-sourced parameters
+- Zero performance impact on endpoints without path parameters
+
+### HybridCache Configuration Keys Renamed
+
+HybridCache-specific configuration keys in the `CacheOptions` section have been renamed to include the `HybridCache` prefix for better clarity and consistency:
+
+| Old Key | New Key |
+|---------|---------|
+| `UseRedisBackend` | `HybridCacheUseRedisBackend` |
+| `MaximumKeyLength` | `HybridCacheMaximumKeyLength` |
+| `MaximumPayloadBytes` | `HybridCacheMaximumPayloadBytes` |
+| `DefaultExpiration` | `HybridCacheDefaultExpiration` |
+| `LocalCacheExpiration` | `HybridCacheLocalCacheExpiration` |
+
+**Migration:** Update your `appsettings.json` to use the new key names:
+
+```json
+{
+  "CacheOptions": {
+    "Type": "Hybrid",
+    "HybridCacheUseRedisBackend": false,
+    "HybridCacheMaximumKeyLength": 1024,
+    "HybridCacheMaximumPayloadBytes": 1048576,
+    "HybridCacheDefaultExpiration": "5 minutes",
+    "HybridCacheLocalCacheExpiration": "1 minute"
+  }
+}
+```
+
+---
+
 ## Version [3.1.2](https://github.com/NpgsqlRest/NpgsqlRest/tree/ ) (TBD)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.1.1...3.1.2)

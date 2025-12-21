@@ -1030,7 +1030,7 @@ public class Builder
         if (type == CacheType.Hybrid)
         {
             var redisConfiguration = _config.GetConfigStr("RedisConfiguration", cacheCfg);
-            var useRedisBackend = _config.GetConfigBool("UseRedisBackend", cacheCfg, false);
+            var useRedisBackend = _config.GetConfigBool("HybridCacheUseRedisBackend", cacheCfg, false);
 
             // Only register Redis as L2 cache if explicitly enabled
             if (useRedisBackend && !string.IsNullOrEmpty(redisConfiguration))
@@ -1049,11 +1049,11 @@ public class Builder
             // Register HybridCache with configuration
             Instance.Services.AddHybridCache(options =>
             {
-                options.MaximumKeyLength = _config.GetConfigInt("MaximumKeyLength", cacheCfg) ?? 1024;
-                options.MaximumPayloadBytes = _config.GetConfigInt("MaximumPayloadBytes", cacheCfg) ?? 1024 * 1024;
+                options.MaximumKeyLength = _config.GetConfigInt("HybridCacheMaximumKeyLength", cacheCfg) ?? 1024;
+                options.MaximumPayloadBytes = _config.GetConfigInt("HybridCacheMaximumPayloadBytes", cacheCfg) ?? 1024 * 1024;
 
-                var defaultExpiration = Parser.ParsePostgresInterval(_config.GetConfigStr("DefaultExpiration", cacheCfg));
-                var localExpiration = Parser.ParsePostgresInterval(_config.GetConfigStr("LocalCacheExpiration", cacheCfg));
+                var defaultExpiration = Parser.ParsePostgresInterval(_config.GetConfigStr("HybridCacheDefaultExpiration", cacheCfg));
+                var localExpiration = Parser.ParsePostgresInterval(_config.GetConfigStr("HybridCacheLocalCacheExpiration", cacheCfg));
 
                 options.DefaultEntryOptions = new HybridCacheEntryOptions
                 {

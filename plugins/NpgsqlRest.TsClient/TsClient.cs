@@ -641,10 +641,28 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             var body = endpoint.RequestParamType == RequestParamType.BodyJson && requestName is not null ?
                 @"body: JSON.stringify(request)" : null;
 
-            var qs = endpoint.RequestParamType == RequestParamType.QueryString && requestName is not null ?
-                (bodyParameterName is null ? " + parseQuery(request)" : 
-                    $" + parseQuery((({{ [\"{bodyParameterName}\"]: _, ...rest }}) => rest)(request))" ) : 
-                "";
+            // For path parameters, we need to exclude them from the query string and from the body
+            var hasPathParams = endpoint.HasPathParameters;
+            string qs;
+            if (endpoint.RequestParamType == RequestParamType.QueryString && requestName is not null)
+            {
+                if (hasPathParams || bodyParameterName is not null)
+                {
+                    // Exclude path parameters and body parameter from query string
+                    var exclusion = CreatePathParamExclusionExpression(
+                        endpoint.PathParameters ?? [],
+                        bodyParameterName);
+                    qs = $" + parseQuery(({exclusion})";
+                }
+                else
+                {
+                    qs = " + parseQuery(request)";
+                }
+            }
+            else
+            {
+                qs = "";
+            }
 
             string? parameters = null;
             List<(string name, string type, string desc)> paramComments = new();
@@ -760,11 +778,24 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             }
 
             string url;
+            // Convert path for template literals if it has path parameters
+            var pathForUrl = hasPathParams ? ConvertPathToTemplateLiteral(endpoint.Path) : endpoint.Path;
+
             if (!options.ExportUrls)
             {
-                url = includeParseUrlParam ?
-                    string.Format("parseUrl(baseUrl + \"{0}\"{1})", endpoint.Path, qs) :
-                    string.Format("baseUrl + \"{0}\"{1}", endpoint.Path, qs);
+                if (hasPathParams)
+                {
+                    // Use template literal for path parameters
+                    url = includeParseUrlParam ?
+                        string.Format("parseUrl(`${{baseUrl}}{0}`{1})", pathForUrl, qs) :
+                        string.Format("`${{baseUrl}}{0}`{1}", pathForUrl, qs);
+                }
+                else
+                {
+                    url = includeParseUrlParam ?
+                        string.Format("parseUrl(baseUrl + \"{0}\"{1})", endpoint.Path, qs) :
+                        string.Format("baseUrl + \"{0}\"{1}", endpoint.Path, qs);
+                }
             }
             else
             {
@@ -774,21 +805,45 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
 
                 if (!options.SkipTypes)
                 {
-                    contentHeader.AppendLine(string.Format(
-                        "export const {0}Url = {1} => baseUrl + \"{2}\"{3};",
-                        camel,
-                        requestName is not null && body is null ? string.Format("(request: {0})", requestName) : "()",
-                        endpoint.Path,
-                        qs));
+                    if (hasPathParams)
+                    {
+                        contentHeader.AppendLine(string.Format(
+                            "export const {0}Url = {1} => `${{baseUrl}}{2}`{3};",
+                            camel,
+                            requestName is not null ? string.Format("(request: {0})", requestName) : "()",
+                            pathForUrl,
+                            qs));
+                    }
+                    else
+                    {
+                        contentHeader.AppendLine(string.Format(
+                            "export const {0}Url = {1} => baseUrl + \"{2}\"{3};",
+                            camel,
+                            requestName is not null && body is null ? string.Format("(request: {0})", requestName) : "()",
+                            endpoint.Path,
+                            qs));
+                    }
                 }
                 else
                 {
-                    contentHeader.AppendLine(string.Format(
-                        "export const {0}Url = {1} => baseUrl + \"{2}\"{3};",
-                        camel,
-                        requestName is not null && body is null ? "request" : "()",
-                        endpoint.Path,
-                        qs));
+                    if (hasPathParams)
+                    {
+                        contentHeader.AppendLine(string.Format(
+                            "export const {0}Url = {1} => `${{baseUrl}}{2}`{3};",
+                            camel,
+                            requestName is not null ? "request" : "()",
+                            pathForUrl,
+                            qs));
+                    }
+                    else
+                    {
+                        contentHeader.AppendLine(string.Format(
+                            "export const {0}Url = {1} => baseUrl + \"{2}\"{3};",
+                            camel,
+                            requestName is not null && body is null ? "request" : "()",
+                            endpoint.Path,
+                            qs));
+                    }
                 }
             }
             string? createEventSourceFunc = null;
@@ -1420,4 +1475,31 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
     private static partial Regex InvalidChars1();
     [GeneratedRegex("[^a-zA-Z0-9_$]")]
     private static partial Regex InvalidChars2();
+    [GeneratedRegex(@"\{(\w+)\}")]
+    private static partial Regex PathParamRegex();
+
+    /// <summary>
+    /// Converts a path with {param} placeholders to a JavaScript template literal.
+    /// Example: "/products/{p_id}" => "/products/${request.p_id}"
+    /// </summary>
+    private static string ConvertPathToTemplateLiteral(string path)
+    {
+        return PathParamRegex().Replace(path, @"${request.$1}");
+    }
+
+    /// <summary>
+    /// Creates an exclusion expression for path parameters in parseQuery.
+    /// Example: ["p_id", "review_id"] => "(({ [\"p_id\"]: _1, [\"review_id\"]: _2, ...rest }) => rest)(request)"
+    /// </summary>
+    private static string CreatePathParamExclusionExpression(string[] pathParams, string? bodyParameterName)
+    {
+        var excludeParams = new List<string>(pathParams);
+        if (bodyParameterName is not null)
+        {
+            excludeParams.Add(bodyParameterName);
+        }
+
+        var destructured = string.Join(", ", excludeParams.Select((p, i) => $"[\"{p}\"]: _{i + 1}"));
+        return $"({{ {destructured}, ...rest }}) => rest)(request)";
+    }
 }

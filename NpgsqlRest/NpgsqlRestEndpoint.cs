@@ -552,6 +552,113 @@ public class NpgsqlRestEndpoint(
                         }
                     }
 
+                    // path parameter - extract from RouteValues
+                    if (parameter.Value is null && endpoint.HasPathParameters)
+                    {
+                        string? matchedPathParam = null;
+                        foreach (var pathParam in endpoint.PathParameters!)
+                        {
+                            if (string.Equals(pathParam, parameter.ConvertedName, StringComparison.OrdinalIgnoreCase) ||
+                                string.Equals(pathParam, parameter.ActualName, StringComparison.OrdinalIgnoreCase))
+                            {
+                                matchedPathParam = pathParam;
+                                break;
+                            }
+                        }
+
+                        // Try to get route value using the path parameter name from the template
+                        if (matchedPathParam is not null && context.Request.RouteValues.TryGetValue(matchedPathParam, out var routeValue))
+                        {
+                            StringValues pathStringValues = routeValue?.ToString() ?? "";
+                            if (TryParseParameter(parameter, ref pathStringValues, endpoint.QueryStringNullHandling))
+                            {
+                                parameter.ParamType = ParamType.PathParam;
+                                parameter.QueryStringValues = pathStringValues;
+
+                                if (Options.ValidateParameters is not null)
+                                {
+                                    Options.ValidateParameters(new ParameterValidationValues(
+                                        context,
+                                        routine,
+                                        parameter));
+                                    if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
+                                    {
+                                        return;
+                                    }
+                                }
+                                if (Options.ValidateParametersAsync is not null)
+                                {
+                                    await Options.ValidateParametersAsync(new ParameterValidationValues(
+                                        context,
+                                        routine,
+                                        parameter));
+                                    if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
+                                    {
+                                        return;
+                                    }
+                                }
+                                if (endpoint.Cached is true && endpoint.CachedParams is not null)
+                                {
+                                    if (endpoint.CachedParams.Contains(parameter.ConvertedName) || endpoint.CachedParams.Contains(parameter.ActualName))
+                                    {
+                                        cacheKeys?.Append(NpgsqlRestParameter.GetCacheKeySeparator());
+                                        cacheKeys?.Append(parameter.GetCacheStringValue());
+                                    }
+                                }
+
+                                if (Options.HttpClientOptions.Enabled)
+                                {
+                                    if (parameter.TypeDescriptor.CustomType is not null)
+                                    {
+                                        if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
+                                        {
+                                            customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
+                                        }
+                                    }
+                                }
+                                command.Parameters.Add(parameter);
+
+                                if (hasNulls is false && parameter.Value == DBNull.Value)
+                                {
+                                    hasNulls = true;
+                                }
+
+                                if (formatter.IsFormattable is false)
+                                {
+                                    if (formatter.RefContext)
+                                    {
+                                        commandText = string.Concat(commandText,
+                                            formatter.AppendCommandParameter(parameter, paramIndex, context));
+                                        if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
+                                        {
+                                            return;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        commandText = string.Concat(commandText,
+                                            formatter.AppendCommandParameter(parameter, paramIndex));
+                                    }
+                                }
+                                paramIndex++;
+                                if (shouldLog && Options.LogCommandParameters)
+                                {
+                                    var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
+                                        "***" :
+                                        FormatParameterForLog(parameter);
+                                    cmdLog!.AppendLine(string.Concat(
+                                        "-- $",
+                                        paramIndex.ToString(),
+                                        " ", parameter.TypeDescriptor.OriginalType,
+                                        " = ",
+                                        p));
+                                }
+
+                                continue;
+                            }
+                        }
+                    }
+
                     if (queryDict.TryGetValue(parameter.ConvertedName, out var qsValue) is false)
                     {
                         if (parameter.Value is null)
@@ -719,9 +826,12 @@ public class NpgsqlRestEndpoint(
                     return;
                 }
 
-                if (bodyDict.Count != routine.ParamCount && overloads.Count > 0)
+                // Account for path parameters when counting body parameters
+                var pathParamCount = endpoint.PathParameters?.Length ?? 0;
+                var expectedBodyParamCount = routine.ParamCount - pathParamCount;
+                if (bodyDict.Count != expectedBodyParamCount && overloads.Count > 0)
                 {
-                    if (overloads.TryGetValue(string.Concat(entry.Key, bodyDict.Count), out var overload))
+                    if (overloads.TryGetValue(string.Concat(entry.Key, bodyDict.Count + pathParamCount), out var overload))
                     {
                         routine = overload.Endpoint.Routine;
                         endpoint = overload.Endpoint;
@@ -869,6 +979,113 @@ public class NpgsqlRestEndpoint(
                             }
 
                             continue;
+                        }
+                    }
+
+                    // path parameter - extract from RouteValues (for JSON body mode)
+                    if (parameter.Value is null && endpoint.HasPathParameters)
+                    {
+                        string? matchedPathParam = null;
+                        foreach (var pathParam in endpoint.PathParameters!)
+                        {
+                            if (string.Equals(pathParam, parameter.ConvertedName, StringComparison.OrdinalIgnoreCase) ||
+                                string.Equals(pathParam, parameter.ActualName, StringComparison.OrdinalIgnoreCase))
+                            {
+                                matchedPathParam = pathParam;
+                                break;
+                            }
+                        }
+
+                        // Try to get route value using the path parameter name from the template
+                        if (matchedPathParam is not null && context.Request.RouteValues.TryGetValue(matchedPathParam, out var routeValue))
+                        {
+                            StringValues pathStringValues = routeValue?.ToString() ?? "";
+                            if (TryParseParameter(parameter, ref pathStringValues, endpoint.QueryStringNullHandling))
+                            {
+                                parameter.ParamType = ParamType.PathParam;
+                                parameter.QueryStringValues = pathStringValues;
+
+                                if (Options.ValidateParameters is not null)
+                                {
+                                    Options.ValidateParameters(new ParameterValidationValues(
+                                        context,
+                                        routine,
+                                        parameter));
+                                    if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
+                                    {
+                                        return;
+                                    }
+                                }
+                                if (Options.ValidateParametersAsync is not null)
+                                {
+                                    await Options.ValidateParametersAsync(new ParameterValidationValues(
+                                        context,
+                                        routine,
+                                        parameter));
+                                    if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
+                                    {
+                                        return;
+                                    }
+                                }
+                                if (endpoint.Cached is true && endpoint.CachedParams is not null)
+                                {
+                                    if (endpoint.CachedParams.Contains(parameter.ConvertedName) || endpoint.CachedParams.Contains(parameter.ActualName))
+                                    {
+                                        cacheKeys?.Append(NpgsqlRestParameter.GetCacheKeySeparator());
+                                        cacheKeys?.Append(parameter.GetCacheStringValue());
+                                    }
+                                }
+
+                                if (Options.HttpClientOptions.Enabled)
+                                {
+                                    if (parameter.TypeDescriptor.CustomType is not null)
+                                    {
+                                        if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
+                                        {
+                                            customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
+                                        }
+                                    }
+                                }
+                                command.Parameters.Add(parameter);
+
+                                if (hasNulls is false && parameter.Value == DBNull.Value)
+                                {
+                                    hasNulls = true;
+                                }
+
+                                if (formatter.IsFormattable is false)
+                                {
+                                    if (formatter.RefContext)
+                                    {
+                                        commandText = string.Concat(commandText,
+                                            formatter.AppendCommandParameter(parameter, paramIndex, context));
+                                        if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
+                                        {
+                                            return;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        commandText = string.Concat(commandText,
+                                            formatter.AppendCommandParameter(parameter, paramIndex));
+                                    }
+                                }
+                                paramIndex++;
+                                if (shouldLog && Options.LogCommandParameters)
+                                {
+                                    var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
+                                        "***" :
+                                        FormatParameterForLog(parameter);
+                                    cmdLog!.AppendLine(string.Concat(
+                                        "-- $",
+                                        paramIndex.ToString(),
+                                        " ", parameter.TypeDescriptor.OriginalType,
+                                        " = ",
+                                        p));
+                                }
+
+                                continue;
+                            }
                         }
                     }
 

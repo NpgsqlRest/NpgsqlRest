@@ -2,7 +2,7 @@ FROM ubuntu:25.04 AS builder
 WORKDIR /app
 RUN apt-get update && \
     apt-get install -y --no-install-recommends wget ca-certificates && \
-    wget https://github.com/NpgsqlRest/NpgsqlRest/releases/download/v3.1.2/npgsqlrest-linux64 -O npgsqlrest && \
+    wget https://github.com/NpgsqlRest/NpgsqlRest/releases/download/v3.1.3/npgsqlrest-linux64 -O npgsqlrest && \
     chmod +x npgsqlrest
 
 FROM ubuntu:25.04
