@@ -96,7 +96,7 @@ tsclient_parse_request=true
 namespace NpgsqlRestTests.TsClientTests
 {
     [Collection("TestFixture")]
-    public class GetProductTests(TestFixture test)
+    public class GetProductTests
     {
         private const string Expected = """
 const baseUrl = "";
