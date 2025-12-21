@@ -34,7 +34,7 @@ tsclient_status_code=true
 namespace NpgsqlRestTests.TsClientTests
 {
     [Collection("TestFixture")]
-    public class AddNumbersTests(TestFixture test)
+    public class AddNumbersTests
     {
         private const string Expected = """
 const baseUrl = "";

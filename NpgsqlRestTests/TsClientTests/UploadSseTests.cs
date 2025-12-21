@@ -29,7 +29,7 @@ sse_events_path /api/tsclient-test/upload-with-sse/events
 namespace NpgsqlRestTests.TsClientTests
 {
     [Collection("TestFixture")]
-    public class UploadSseTests(TestFixture test)
+    public class UploadSseTests
     {
         private const string Expected = """
 const baseUrl = "";

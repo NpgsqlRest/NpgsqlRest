@@ -28,7 +28,7 @@ sse_events_path /api/tsclient-test/sse-endpoint/events
 namespace NpgsqlRestTests.TsClientTests
 {
     [Collection("TestFixture")]
-    public class SseTests(TestFixture test)
+    public class SseTests
     {
         private const string Expected = """
 const baseUrl = "";
