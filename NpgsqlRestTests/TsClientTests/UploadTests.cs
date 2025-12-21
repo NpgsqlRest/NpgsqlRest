@@ -27,7 +27,7 @@ param _meta is upload metadata
 namespace NpgsqlRestTests.TsClientTests
 {
     [Collection("TestFixture")]
-    public class UploadTests(TestFixture test)
+    public class UploadTests
     {
         private const string Expected = """
 const baseUrl = "";
