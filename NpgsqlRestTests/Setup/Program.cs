@@ -6,12 +6,18 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.DependencyInjection;
 using NpgsqlRest.Auth;
 using NpgsqlRest.CrudSource;
+using NpgsqlRest.TsClient;
 using NpgsqlRest.UploadHandlers;
 
 namespace NpgsqlRestTests.Setup;
 
 public class Program
 {
+    /// <summary>
+    /// Output path for TsClient generated files (used by tests)
+    /// </summary>
+    public static string TsClientOutputPath { get; } = Path.Combine(Path.GetTempPath(), "NpgsqlRestTests", "TsClient");
+
     static async Task ValidateAsync(ParameterValidationValues p)
     {
         if (p.Routine.Name == "case_jsonpath_param" && p.Parameter.Value?.ToString() == "XXX")
@@ -137,12 +143,29 @@ public class Program
         {
             ["22012"] = new() { StatusCode = 409, Title = "Conflict - Custom Policy" }
         });
-
+        
         app.UseNpgsqlRest(new(connectionString)
         {
             //NameSimilarTo = "get_conn1_connection_name_p",
             //SchemaSimilarTo = "custom_param_schema",
-            IncludeSchemas = ["public", "custom_param_schema", "my_schema", "custom_table_param_schema"],
+            IncludeSchemas = ["public", "custom_param_schema", "my_schema", "custom_table_param_schema", "tsclient_test"],
+
+            // TsClient configuration for testing - uses tsclient_module annotations for per-function files
+            EndpointCreateHandlers = [
+                new TsClient(new TsClientOptions
+                {
+                    FilePath = Path.Combine(TsClientOutputPath, "{0}.ts"),
+                    FileOverwrite = true,
+                    BySchema = true, // Required for tsclient_module to generate separate files
+                    IncludeHost = false,
+                    CreateSeparateTypeFile = false,
+                    CommentHeader = CommentHeader.Simple,
+                    HeaderLines = [], // No auto-generated timestamp for consistent test assertions
+                    // Only process tsclient_test schema to avoid issues with custom sources that have null definitions
+                    SkipSchemas = ["public", "custom_param_schema", "my_schema", "custom_table_param_schema", ""],
+                    IncludeStatusCode = false
+                }),
+            ],
             CommentsMode = CommentsMode.ParseAll,
             ValidateParametersAsync = ValidateAsync,
             ConnectionStrings = new Dictionary<string, string>()

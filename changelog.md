@@ -4,7 +4,7 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
-## Version [3.1.3](https://github.com/NpgsqlRest/NpgsqlRest/tree/ ) (TBD)
+## Version [3.1.3](https://github.com/NpgsqlRest/NpgsqlRest/tree/ ) (2025-12-21)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.1.2...3.1.3)
 
@@ -54,6 +54,11 @@ HTTP POST /products/{p_id}
 - New `ParamType.PathParam` enum value for identifying path-sourced parameters
 - Zero performance impact on endpoints without path parameters
 
+### TsClient Improvements
+
+- Fixed `parseQuery` helper being unnecessarily included in generated TypeScript files when all function parameters are path parameters (no query string parameters remain).
+- Added comprehensive test coverage for TsClient TypeScript generation including tests for: path parameters, status code responses, `tsclient_parse_url`, `tsclient_parse_request`, file upload endpoints, SSE endpoints, and combined upload+SSE endpoints.
+
 ### HybridCache Configuration Keys Renamed
 
 HybridCache-specific configuration keys in the `CacheOptions` section have been renamed to include the `HybridCache` prefix for better clarity and consistency:
@@ -83,7 +88,7 @@ HybridCache-specific configuration keys in the `CacheOptions` section have been 
 
 ---
 
-## Version [3.1.2](https://github.com/NpgsqlRest/NpgsqlRest/tree/ ) (TBD)
+## Version [3.1.2](https://github.com/NpgsqlRest/NpgsqlRest/tree/ ) (2025-12-20)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.1.1...3.1.2)
 

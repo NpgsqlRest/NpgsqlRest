@@ -114,7 +114,9 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                     string.Format("const baseUrl = \"{0}\";", GetHost()));
 
             bool haveParseQuery = filtered
-                .Where(e => e.RequestParamType == RequestParamType.QueryString && e.Routine.ParamCount > 0)
+                .Where(e => e.RequestParamType == RequestParamType.QueryString &&
+                            e.Routine.ParamCount > 0 &&
+                            e.Routine.ParamCount > (e.PathParameters?.Length ?? 0))
                 .Any();
 
             if (haveParseQuery)
@@ -643,8 +645,12 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
 
             // For path parameters, we need to exclude them from the query string and from the body
             var hasPathParams = endpoint.HasPathParameters;
+            var pathParamCount = endpoint.PathParameters?.Length ?? 0;
+            var bodyParamCount = bodyParameterName is not null ? 1 : 0;
+            var queryParamCount = paramCount - pathParamCount - bodyParamCount;
+
             string qs;
-            if (endpoint.RequestParamType == RequestParamType.QueryString && requestName is not null)
+            if (endpoint.RequestParamType == RequestParamType.QueryString && requestName is not null && queryParamCount > 0)
             {
                 if (hasPathParams || bodyParameterName is not null)
                 {
