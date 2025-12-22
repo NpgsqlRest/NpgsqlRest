@@ -30,11 +30,6 @@ public class Builder
     }
     
     public WebApplicationBuilder Instance { get; private set; }  = default!;
-
-    // public bool LogToConsole { get; private set; } = false;
-    // public bool LogToFile { get; private set; } = false;
-    // public bool LogToPostgres { get; private set; } = false;
-    // public bool LogToOpenTelemetry { get; private set; } = false;
     
     public bool LoggingEnabled { get; private set; } = false;
     
@@ -1117,7 +1112,7 @@ public class Builder
         }
         else if (configuredCacheType == CacheType.Hybrid)
         {
-            var useRedisBackend = _config.GetConfigBool("UseRedisBackend", cacheCfg, false);
+            var useRedisBackend = _config.GetConfigBool("HybridCacheUseRedisBackend", cacheCfg, false);
             var redisConfiguration = _config.GetConfigStr("RedisConfiguration", cacheCfg);
 
             try
@@ -1165,7 +1160,7 @@ public class Builder
         }
 
         var defaultPolicy = _config.GetConfigStr("DefaultPolicy", rateLimiterCfg);
-        var message = _config.GetConfigStr("Message", rateLimiterCfg);
+        var message = _config.GetConfigStr("StatusMessage", rateLimiterCfg);
         Instance.Services.AddRateLimiter(options =>
         {
             options.RejectionStatusCode = _config.GetConfigInt("StatusCode", rateLimiterCfg) ?? 429;
@@ -1237,7 +1232,7 @@ public class Builder
                         name,
                         _config.GetConfigInt("TokenLimit", sectionCfg) ?? 100,
                         _config.GetConfigInt("TokensPerPeriod", sectionCfg) ?? 10,
-                        _config.GetConfigInt("ReplenishmentPeriodSeconds", sectionCfg) ?? 1,
+                        _config.GetConfigInt("ReplenishmentPeriodSeconds", sectionCfg) ?? 10,
                         _config.GetConfigInt("QueueLimit", sectionCfg) ?? 10,
                         _config.GetConfigBool("AutoReplenishment", sectionCfg, true));
                 }
@@ -1246,13 +1241,13 @@ public class Builder
                     options.AddConcurrencyLimiter(name, config =>
                     {
                         config.PermitLimit = _config.GetConfigInt("PermitLimit", sectionCfg) ?? 10;
-                        config.QueueLimit = _config.GetConfigInt("QueueLimit", sectionCfg) ?? 10;
+                        config.QueueLimit = _config.GetConfigInt("QueueLimit", sectionCfg) ?? 5;
                         config.QueueProcessingOrder = _config.GetConfigBool("OldestFirst", sectionCfg, true) is true ? QueueProcessingOrder.OldestFirst : QueueProcessingOrder.NewestFirst;
                     });
                     Logger?.LogDebug("Using Concurrency rate limiter with name {Name}: PermitLimit={PermitLimit}, QueueLimit={QueueLimit}, OldestFirst={OldestFirst}",
                         name,
                         _config.GetConfigInt("PermitLimit", sectionCfg) ?? 10,
-                        _config.GetConfigInt("QueueLimit", sectionCfg) ?? 10,
+                        _config.GetConfigInt("QueueLimit", sectionCfg) ?? 5,
                         _config.GetConfigBool("OldestFirst", sectionCfg, true));
                 }
             }

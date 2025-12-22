@@ -173,6 +173,16 @@ For upload endpoints with proxy, you can configure whether to process uploads lo
 - **Timeout handling**: Configurable per-request timeout with proper 504 Gateway Timeout responses
 - **Header forwarding**: Configurable request/response header forwarding with exclusion lists
 
+### Docker Image with Bun Runtime
+
+Added new Docker image variant with pre-installed [Bun](https://bun.sh/) runtime: `vbilopav/npgsqlrest:latest-bun`
+
+This image includes the Bun JavaScript runtime alongside NpgsqlRest, enabling proxy endpoints to execute Bun scripts within the same container. Useful for scenarios where you need lightweight proxy handlers without external service calls.
+
+**Available tags:**
+- `vbilopav/npgsqlrest:3.2.0-bun` - specific version with Bun
+- `vbilopav/npgsqlrest:latest-bun` - latest version with Bun
+
 ### Configuration Default Fixes
 
 Fixed multiple configuration default mismatches where code fallback values did not match the defaults defined in `appsettings.json`. When configuration keys were not present, the application would use incorrect fallback values instead of the documented defaults.
@@ -190,6 +200,12 @@ Fixed multiple configuration default mismatches where code fallback values did n
 | `NpgsqlRest.HttpFileOptions` | `NamePattern` | `"{0}{1}"` | `"{0}_{1}"` |
 | `NpgsqlRest.OpenApiOptions` | `FileOverwrite` | `false` | `true` |
 | `NpgsqlRest.CrudSource` | `Enabled` | `false` | `true` |
+| `StaticFiles.ParseContentOptions` | `Headers` | `null` | `["Cache-Control: no-store, no-cache, must-revalidate", "Pragma: no-cache", "Expires: 0"]` |
+| `NpgsqlRest` | `RequestHeadersMode` | `Ignore` | `Parameter` |
+| `RateLimiterOptions.TokenBucket` | `ReplenishmentPeriodSeconds` (log) | `1` | `10` |
+| `RateLimiterOptions.Concurrency` | `QueueLimit` | `10` | `5` |
+| `RateLimiterOptions` | `Message` (field name) | `"Message"` | `"StatusMessage"` |
+| `CacheOptions` | `UseRedisBackend` (field name) | `"UseRedisBackend"` | `"HybridCacheUseRedisBackend"` |
 
 **Note:** If you were relying on the previous (incorrect) fallback behavior, you may need to explicitly set these values in your configuration.
 

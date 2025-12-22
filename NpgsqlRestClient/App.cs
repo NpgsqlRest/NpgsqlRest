@@ -102,7 +102,7 @@ public class App
             antiforgeryFieldNameTag,
             antiforgeryTokenTag,
             antiforgery,
-            _config.GetConfigEnumerable("Headers", parseCfg)?.ToArray(),
+            _config.GetConfigEnumerable("Headers", parseCfg)?.ToArray() ?? ["Cache-Control: no-store, no-cache, must-revalidate", "Pragma: no-cache", "Expires: 0"],
             authorizePaths,
             unauthorizedRedirectPath,
             unauthorizedReturnToQueryParameter,
