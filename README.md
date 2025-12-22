@@ -17,7 +17,10 @@
 - **Declarative Configuration** - Configure endpoints directly in your database using comment annotations
 - **TypeScript Code Generation** - Auto-generate type-safe frontend code with full static type checking
 - **Native Executables** - AOT-compiled binaries with zero dependencies and instant startup
-- **Enterprise Ready** - Authentication, authorization, rate limiting, caching, SSE streaming, and more
+- **RESTful Path Parameters** - Define routes like `/products/{id}` with parameters extracted from URL paths
+- **Reverse Proxy Endpoints** - Forward requests to upstream services with passthrough or transform modes
+- **HTTP Custom Types** - Enable PostgreSQL functions to call external APIs via annotated composite types
+- **Enterprise Ready** - Authentication, authorization, rate limiting, caching, SSE streaming, OpenAPI 3.0, and more
 
 ## Quick Start
 
