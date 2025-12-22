@@ -110,4 +110,34 @@ public class RoutineEndpoint(
     /// Returns true if this endpoint has any path parameters defined.
     /// </summary>
     public bool HasPathParameters => PathParameters is not null && PathParameters.Length > 0;
+
+    /// <summary>
+    /// When true, this endpoint acts as a reverse proxy.
+    /// Incoming requests are forwarded to ProxyHost + Path, and the response is returned to the client.
+    /// </summary>
+    public bool IsProxy { get; set; } = false;
+
+    /// <summary>
+    /// The proxy host URL for this endpoint (e.g., "https://api.example.com").
+    /// If null, uses ProxyOptions.Host from global configuration.
+    /// </summary>
+    public string? ProxyHost { get; set; } = null;
+
+    /// <summary>
+    /// Optional HTTP method override for the proxy request.
+    /// If null, uses the same method as the incoming request.
+    /// </summary>
+    public Method? ProxyMethod { get; set; } = null;
+
+    /// <summary>
+    /// Computed during endpoint creation: true if any routine parameter matches a proxy response field name.
+    /// When true, the routine will be invoked with proxy response data.
+    /// When false, the proxy response is returned directly without invoking the routine.
+    /// </summary>
+    internal bool HasProxyResponseParameters { get; set; } = false;
+
+    /// <summary>
+    /// Set of parameter names that receive proxy response data.
+    /// </summary>
+    internal HashSet<string>? ProxyResponseParameterNames { get; set; } = null;
 }

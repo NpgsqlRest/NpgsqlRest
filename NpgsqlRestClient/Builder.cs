@@ -1289,6 +1289,59 @@ public class Builder
         return options;
     }
 
+    public ProxyOptions BuildProxyOptions()
+    {
+        var cfg = _config.NpgsqlRestCfg.GetSection("ProxyOptions");
+        var options = new ProxyOptions
+        {
+            Enabled = _config.GetConfigBool("Enabled", cfg),
+            Host = _config.GetConfigStr("Host", cfg),
+            DefaultTimeout = Parser.ParsePostgresInterval(_config.GetConfigStr("DefaultTimeout", cfg)) ?? TimeSpan.FromSeconds(30),
+            ForwardHeaders = _config.GetConfigBool("ForwardHeaders", cfg, true),
+            ForwardResponseHeaders = _config.GetConfigBool("ForwardResponseHeaders", cfg, true),
+            ResponseStatusCodeParameter = _config.GetConfigStr("ResponseStatusCodeParameter", cfg) ?? "_proxy_status_code",
+            ResponseBodyParameter = _config.GetConfigStr("ResponseBodyParameter", cfg) ?? "_proxy_body",
+            ResponseHeadersParameter = _config.GetConfigStr("ResponseHeadersParameter", cfg) ?? "_proxy_headers",
+            ResponseContentTypeParameter = _config.GetConfigStr("ResponseContentTypeParameter", cfg) ?? "_proxy_content_type",
+            ResponseSuccessParameter = _config.GetConfigStr("ResponseSuccessParameter", cfg) ?? "_proxy_success",
+            ResponseErrorMessageParameter = _config.GetConfigStr("ResponseErrorMessageParameter", cfg) ?? "_proxy_error_message",
+            ForwardUploadContent = _config.GetConfigBool("ForwardUploadContent", cfg)
+        };
+
+        // Parse ExcludeHeaders from array config
+        var excludeHeadersSection = cfg?.GetSection("ExcludeHeaders");
+        if (excludeHeadersSection is not null)
+        {
+            var headers = excludeHeadersSection.GetChildren().Select(x => x.Value).Where(x => x is not null).Cast<string>().ToArray();
+            if (headers.Length > 0)
+            {
+                options.ExcludeHeaders = new HashSet<string>(headers, StringComparer.OrdinalIgnoreCase);
+            }
+        }
+
+        // Parse ExcludeResponseHeaders from array config
+        var excludeResponseHeadersSection = cfg?.GetSection("ExcludeResponseHeaders");
+        if (excludeResponseHeadersSection is not null)
+        {
+            var headers = excludeResponseHeadersSection.GetChildren().Select(x => x.Value).Where(x => x is not null).Cast<string>().ToArray();
+            if (headers.Length > 0)
+            {
+                options.ExcludeResponseHeaders = new HashSet<string>(headers, StringComparer.OrdinalIgnoreCase);
+            }
+        }
+
+        if (options.Enabled)
+        {
+            Logger?.LogDebug("Proxy options enabled: Host={Host}, DefaultTimeout={DefaultTimeout}, ForwardHeaders={ForwardHeaders}, ForwardResponseHeaders={ForwardResponseHeaders}",
+                options.Host,
+                options.DefaultTimeout,
+                options.ForwardHeaders,
+                options.ForwardResponseHeaders);
+        }
+
+        return options;
+    }
+
     /// <summary>
     /// Checks if a connection string is a multi-host connection string (has comma-separated hosts).
     /// </summary>

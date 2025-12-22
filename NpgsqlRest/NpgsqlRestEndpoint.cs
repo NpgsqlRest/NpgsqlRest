@@ -150,7 +150,12 @@ public class NpgsqlRestEndpoint(
             string? body = null;
             Dictionary<string, StringValues>? queryDict = null;
             StringBuilder? cacheKeys = null;
-            uploadHandler = endpoint.Upload is true ? endpoint.CreateUploadHandler() : null;
+            // Skip local upload handling if proxy will forward the upload content
+            var skipUploadForProxy = endpoint.Upload is true &&
+                                     endpoint.IsProxy &&
+                                     Options.ProxyOptions.Enabled &&
+                                     Options.ProxyOptions.ForwardUploadContent;
+            uploadHandler = (endpoint.Upload is true && !skipUploadForProxy) ? endpoint.CreateUploadHandler() : null;
             int uploadMetaParamIndex = -1;
             Dictionary<string, object?>? claimsDict = null;
             List<string> customHttpTypes = Options.HttpClientOptions.Enabled ? new(routine.Parameters.Length) : null!;
@@ -691,6 +696,12 @@ public class NpgsqlRestEndpoint(
                                 {
                                     parameter.Value = DBNull.Value;
                                 }
+                                else if (IsProxyResponseParameter(endpoint, parameter))
+                                {
+                                    // Proxy response parameter - set placeholder value and fall through to add it
+                                    parameter.Value = DBNull.Value;
+                                    parameter.ParamType = ParamType.QueryString;
+                                }
                                 else if (parameter.TypeDescriptor.HasDefault is false)
                                 {
                                     shouldCommit = false;
@@ -709,7 +720,14 @@ public class NpgsqlRestEndpoint(
 
                     if (parameter.Value is null && TryParseParameter(parameter, ref qsValue, endpoint.QueryStringNullHandling) is false)
                     {
-                        if (parameter.TypeDescriptor.HasDefault is false)
+                        // Check if this is a proxy response parameter - it will be filled in later
+                        if (IsProxyResponseParameter(endpoint, parameter))
+                        {
+                            parameter.Value = DBNull.Value;
+                            parameter.ParamType = ParamType.QueryString;
+                            // Don't skip - fall through to add the parameter
+                        }
+                        else if (parameter.TypeDescriptor.HasDefault is false)
                         {
                             shouldCommit = false;
                             uploadHandler?.OnError(connection, context, null);
@@ -717,7 +735,10 @@ public class NpgsqlRestEndpoint(
                             await context.Response.CompleteAsync();
                             return;
                         }
-                        continue;
+                        else
+                        {
+                            continue;
+                        }
                     }
 
                     parameter.ParamType = ParamType.QueryString;
@@ -802,15 +823,19 @@ public class NpgsqlRestEndpoint(
                     }
                 }
 
-                foreach (var queryKey in queryDict.Keys)
+                // Skip query string validation for passthrough proxy endpoints - query will be forwarded as-is
+                if (!(endpoint.IsProxy && Options.ProxyOptions.Enabled && !endpoint.HasProxyResponseParameters))
                 {
-                    if (routine.ParamsHash.Contains(queryKey) is false)
+                    foreach (var queryKey in queryDict.Keys)
                     {
-                        shouldCommit = false;
-                        uploadHandler?.OnError(connection, context, null);
-                        context.Response.StatusCode = StatusCodes.Status404NotFound;
-                        await context.Response.CompleteAsync();
-                        return;
+                        if (routine.ParamsHash.Contains(queryKey) is false)
+                        {
+                            shouldCommit = false;
+                            uploadHandler?.OnError(connection, context, null);
+                            context.Response.StatusCode = StatusCodes.Status404NotFound;
+                            await context.Response.CompleteAsync();
+                            return;
+                        }
                     }
                 }
             } // end of query string parameters
@@ -1121,6 +1146,12 @@ public class NpgsqlRestEndpoint(
                                 {
                                     parameter.Value = DBNull.Value;
                                 }
+                                else if (IsProxyResponseParameter(endpoint, parameter))
+                                {
+                                    // Proxy response parameter - set placeholder value and fall through to add it
+                                    parameter.Value = DBNull.Value;
+                                    parameter.ParamType = ParamType.BodyJson;
+                                }
                                 else if (parameter.TypeDescriptor.HasDefault is false)
                                 {
                                     shouldCommit = false;
@@ -1139,7 +1170,14 @@ public class NpgsqlRestEndpoint(
 
                     if (parameter.Value is null && TryParseParameter(parameter, value) is false)
                     {
-                        if (parameter.TypeDescriptor.HasDefault is false)
+                        // Check if this is a proxy response parameter - it will be filled in later
+                        if (IsProxyResponseParameter(endpoint, parameter))
+                        {
+                            parameter.Value = DBNull.Value;
+                            parameter.ParamType = ParamType.BodyJson;
+                            // Don't skip - fall through to add the parameter
+                        }
+                        else if (parameter.TypeDescriptor.HasDefault is false)
                         {
                             shouldCommit = false;
                             uploadHandler?.OnError(connection, context, null);
@@ -1147,7 +1185,10 @@ public class NpgsqlRestEndpoint(
                             await context.Response.CompleteAsync();
                             return;
                         }
-                        continue;
+                        else
+                        {
+                            continue;
+                        }
                     }
                     parameter.ParamType = ParamType.BodyJson;
                     parameter.JsonBodyNode = value;
@@ -1231,15 +1272,19 @@ public class NpgsqlRestEndpoint(
                     }
                 }
 
-                foreach (var bodyKey in bodyDict.Keys)
+                // Skip body validation for passthrough proxy endpoints - body will be forwarded as-is
+                if (!(endpoint.IsProxy && Options.ProxyOptions.Enabled && !endpoint.HasProxyResponseParameters))
                 {
-                    if (routine.ParamsHash.Contains(bodyKey) is false)
+                    foreach (var bodyKey in bodyDict.Keys)
                     {
-                        shouldCommit = false;
-                        uploadHandler?.OnError(connection, context, null);
-                        context.Response.StatusCode = StatusCodes.Status404NotFound;
-                        await context.Response.CompleteAsync();
-                        return;
+                        if (routine.ParamsHash.Contains(bodyKey) is false)
+                        {
+                            shouldCommit = false;
+                            uploadHandler?.OnError(connection, context, null);
+                            context.Response.StatusCode = StatusCodes.Status404NotFound;
+                            await context.Response.CompleteAsync();
+                            return;
+                        }
                     }
                 }
             } // end of json body parameters
@@ -1402,6 +1447,65 @@ public class NpgsqlRestEndpoint(
             if (Options.HttpClientOptions.Enabled && customHttpTypes.Count > 0)
             {
                 await HttpClientTypeHandler.InvokeAllAsync(customHttpTypes, lookup, command.Parameters, cancellationToken);
+            }
+
+            // Handle reverse proxy endpoints
+            if (endpoint.IsProxy && Options.ProxyOptions.Enabled)
+            {
+                // Build user context headers if UserContext is enabled
+                Dictionary<string, string>? userContextHeaders = null;
+                if (endpoint.UserContext is true)
+                {
+                    userContextHeaders = [];
+                    claimsDict ??= context.User.BuildClaimsDictionary(Options.AuthenticationOptions);
+
+                    // Add IP address header
+                    if (Options.AuthenticationOptions.IpAddressContextKey is not null)
+                    {
+                        var ipAddress = context.Request.GetClientIpAddress();
+                        if (!string.IsNullOrEmpty(ipAddress))
+                        {
+                            userContextHeaders[Options.AuthenticationOptions.IpAddressContextKey] = ipAddress;
+                        }
+                    }
+
+                    if (context.User?.Identity?.IsAuthenticated is true)
+                    {
+                        // Add claims JSON header
+                        if (Options.AuthenticationOptions.ClaimsJsonContextKey is not null)
+                        {
+                            var claimsJson = context.User!.GetUserClaimsDbParam(claimsDict!);
+                            if (claimsJson is string claimsJsonStr)
+                            {
+                                userContextHeaders[Options.AuthenticationOptions.ClaimsJsonContextKey] = claimsJsonStr;
+                            }
+                        }
+
+                        // Add individual claim headers from ContextKeyClaimsMapping
+                        foreach (var mapping in Options.AuthenticationOptions.ContextKeyClaimsMapping)
+                        {
+                            var claimValue = claimsDict!.GetClaimDbContextParam(mapping.Value);
+                            if (claimValue is string claimValueStr)
+                            {
+                                userContextHeaders[mapping.Key] = claimValueStr;
+                            }
+                        }
+                    }
+                }
+
+                var proxyResponse = await Proxy.ProxyRequestHandler.InvokeAsync(context, endpoint, body, command.Parameters, userContextHeaders, cancellationToken);
+
+                if (endpoint.HasProxyResponseParameters)
+                {
+                    // Map proxy response to parameters and continue with routine execution
+                    MapProxyResponseToParameters(proxyResponse, command.Parameters, endpoint);
+                }
+                else
+                {
+                    // No proxy parameters - return proxy response directly without invoking PostgreSQL
+                    await Proxy.ProxyRequestHandler.WriteResponseAsync(context, proxyResponse, Options.ProxyOptions);
+                    return;
+                }
             }
 
             object? uploadMetadata = null;
@@ -2157,6 +2261,71 @@ public class NpgsqlRestEndpoint(
         }
         sb.Append('}');
         headers = sb.ToString();
+    }
+
+    private static void MapProxyResponseToParameters(
+        Proxy.ProxyResponse proxyResponse,
+        NpgsqlParameterCollection parameters,
+        RoutineEndpoint endpoint)
+    {
+        var proxyOptions = Options.ProxyOptions;
+
+        for (var i = 0; i < parameters.Count; i++)
+        {
+            var parameter = (NpgsqlRestParameter)parameters[i];
+            var paramName = parameter.ActualName ?? parameter.ParameterName;
+
+            if (endpoint.ProxyResponseParameterNames?.Contains(paramName) != true)
+            {
+                continue;
+            }
+
+            if (string.Equals(paramName, proxyOptions.ResponseStatusCodeParameter, StringComparison.OrdinalIgnoreCase))
+            {
+                if (parameter.TypeDescriptor.IsText)
+                {
+                    parameter.Value = proxyResponse.StatusCode.ToString();
+                }
+                else
+                {
+                    parameter.Value = proxyResponse.StatusCode;
+                }
+            }
+            else if (string.Equals(paramName, proxyOptions.ResponseBodyParameter, StringComparison.OrdinalIgnoreCase))
+            {
+                parameter.Value = (object?)proxyResponse.Body ?? DBNull.Value;
+            }
+            else if (string.Equals(paramName, proxyOptions.ResponseHeadersParameter, StringComparison.OrdinalIgnoreCase))
+            {
+                parameter.Value = (object?)proxyResponse.Headers ?? DBNull.Value;
+            }
+            else if (string.Equals(paramName, proxyOptions.ResponseContentTypeParameter, StringComparison.OrdinalIgnoreCase))
+            {
+                parameter.Value = (object?)proxyResponse.ContentType ?? DBNull.Value;
+            }
+            else if (string.Equals(paramName, proxyOptions.ResponseSuccessParameter, StringComparison.OrdinalIgnoreCase))
+            {
+                parameter.Value = proxyResponse.IsSuccess;
+            }
+            else if (string.Equals(paramName, proxyOptions.ResponseErrorMessageParameter, StringComparison.OrdinalIgnoreCase))
+            {
+                parameter.Value = (object?)proxyResponse.ErrorMessage ?? DBNull.Value;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Check if a parameter is a proxy response parameter that will be filled in by the proxy response.
+    /// </summary>
+    private static bool IsProxyResponseParameter(RoutineEndpoint endpoint, NpgsqlRestParameter parameter)
+    {
+        if (!endpoint.IsProxy || !Options.ProxyOptions.Enabled || endpoint.ProxyResponseParameterNames is null)
+        {
+            return false;
+        }
+
+        var paramName = parameter.ActualName ?? parameter.ConvertedName;
+        return paramName is not null && endpoint.ProxyResponseParameterNames.Contains(paramName);
     }
 
     private static void WriteStringBuilderToWriter(StringBuilder row, PipeWriter writer)

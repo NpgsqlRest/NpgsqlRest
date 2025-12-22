@@ -351,6 +351,16 @@ internal static partial class DefaultCommentParser
                 {
                     HandleErrorCodePolicy(routineEndpoint, words, description);
                 }
+
+                // proxy
+                // proxy [ GET | POST | PUT | DELETE | PATCH ]
+                // proxy host_url
+                // proxy [ GET | POST | PUT | DELETE | PATCH ] host_url
+                // reverse_proxy [ ... ]
+                else if (haveTag is true && StrEqualsToArray(wordsLower[0], ProxyKey))
+                {
+                    HandleProxy(routine, routineEndpoint, wordsLower, words, len, description);
+                }
             }
             if (disabled)
             {

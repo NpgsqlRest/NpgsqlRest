@@ -346,4 +346,10 @@ public class NpgsqlRestOptions
     public string? DefaultRateLimitingPolicy { get; set; } = null;
     
     public HttpClientOptions HttpClientOptions { get; set; } = new();
+
+    /// <summary>
+    /// Options for reverse proxy functionality.
+    /// When enabled, endpoints marked with 'proxy' annotation will forward requests to another URL.
+    /// </summary>
+    public ProxyOptions ProxyOptions { get; set; } = new();
 }

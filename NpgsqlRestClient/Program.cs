@@ -272,6 +272,7 @@ NpgsqlRestOptions options = new()
     CacheOptions = builder.BuildCacheOptions(app, cacheType),
     DefaultRateLimitingPolicy = rateLimiterDefaultPolicy,
     HttpClientOptions = builder.BuildHttpClientOptions(),
+    ProxyOptions = builder.BuildProxyOptions(),
 };
 
 app.UseNpgsqlRest(options);

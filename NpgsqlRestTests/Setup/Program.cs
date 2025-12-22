@@ -242,6 +242,11 @@ public class Program
             CacheOptions = new()
             {
                 InvalidateCacheSuffix = "invalidate"
+            },
+            ProxyOptions = new()
+            {
+                Enabled = true,
+                Host = "http://localhost:50954" // ProxyWireMockFixture.Port
             }
         });
         app.Run();

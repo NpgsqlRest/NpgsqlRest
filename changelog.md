@@ -8,6 +8,171 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.1.3...3.2.0)
 
+### Reverse Proxy Feature
+
+Added reverse proxy support for NpgsqlRest endpoints. When an endpoint is marked as a proxy, incoming HTTP requests are forwarded to an upstream service, and the response can either be returned directly to the client (passthrough mode) or processed by the PostgreSQL function (transform mode).
+
+**Basic Usage:**
+
+```sql
+-- Passthrough mode: forward request, return upstream response directly
+create function get_external_data()
+returns void
+language sql as 'select';
+comment on function get_external_data() is 'HTTP GET
+proxy';
+
+-- Transform mode: forward request, process response in PostgreSQL
+create function get_and_transform(
+    _proxy_status_code int default null,
+    _proxy_body text default null,
+    _proxy_headers json default null,
+    _proxy_content_type text default null,
+    _proxy_success boolean default null,
+    _proxy_error_message text default null
+)
+returns json
+language plpgsql as $$
+begin
+    if not _proxy_success then
+        return json_build_object('error', _proxy_error_message);
+    end if;
+    return json_build_object(
+        'status', _proxy_status_code,
+        'data', _proxy_body::json
+    );
+end;
+$$;
+comment on function get_and_transform(int, text, json, text, boolean, text) is 'HTTP GET
+proxy';
+```
+
+**Proxy Annotations:**
+
+```sql
+-- Basic proxy with default host from configuration
+comment on function my_func() is 'proxy';
+
+-- Proxy with custom host
+comment on function my_func() is 'proxy https://api.example.com';
+comment on function my_func() is 'proxy_host https://api.example.com';
+
+-- Proxy with custom HTTP method
+comment on function my_func() is 'proxy POST';
+comment on function my_func() is 'proxy_method POST';
+
+-- Combined host and method
+comment on function my_func() is 'proxy https://api.example.com POST';
+```
+
+**Response Parameters:**
+
+When the PostgreSQL function has parameters matching these names, the proxy response data is passed to the function:
+
+| Parameter Name | Type | Description |
+|----------------|------|-------------|
+| `_proxy_status_code` | `int` | HTTP status code from upstream (e.g., 200, 404) |
+| `_proxy_body` | `text` | Response body content |
+| `_proxy_headers` | `json` | Response headers as JSON object |
+| `_proxy_content_type` | `text` | Content-Type header value |
+| `_proxy_success` | `boolean` | True for 2xx status codes |
+| `_proxy_error_message` | `text` | Error message if request failed |
+
+**User Claims and Context Forwarding:**
+
+When `user_params` is enabled, user claim values are forwarded to the upstream proxy as query string parameters:
+
+```sql
+create function proxy_with_claims(
+    _user_id text default null,        -- Forwarded as ?userId=...
+    _user_name text default null,      -- Forwarded as ?userName=...
+    _ip_address text default null,     -- Forwarded as ?ipAddress=...
+    _user_claims json default null,    -- Forwarded as ?userClaims=...
+    _proxy_status_code int default null,
+    _proxy_body text default null
+)
+returns json language plpgsql as $$
+begin
+    return json_build_object('user', _user_id, 'data', _proxy_body);
+end;
+$$;
+comment on function proxy_with_claims(text, text, text, json, int, text) is 'HTTP GET
+authorize
+user_params
+proxy';
+```
+
+When `user_context` is enabled, user context values are forwarded as HTTP headers to the upstream proxy:
+
+```sql
+create function proxy_with_context(
+    _proxy_status_code int default null,
+    _proxy_body text default null
+)
+returns json language plpgsql as $$
+begin
+    return json_build_object('status', _proxy_status_code);
+end;
+$$;
+comment on function proxy_with_context(int, text) is 'HTTP GET
+authorize
+user_context
+proxy';
+-- Headers forwarded: request.user_id, request.user_name, request.user_roles (configurable via ContextKeyClaimsMapping)
+```
+
+**Upload Forwarding:**
+
+For upload endpoints with proxy, you can configure whether to process uploads locally or forward raw multipart data:
+
+```json
+{
+  "NpgsqlRest": {
+    "ProxyOptions": {
+      "ForwardUploadContent": false
+    }
+  }
+}
+```
+
+- `ForwardUploadContent: false` (default): Uploads are processed locally; proxy receives parsed data
+- `ForwardUploadContent: true`: Raw multipart/form-data is streamed directly to upstream (memory-efficient)
+
+**Configuration:**
+
+```json
+{
+  "NpgsqlRest": {
+    "ProxyOptions": {
+      "Enabled": false,
+      "Host": null,
+      "DefaultTimeout": "30 seconds",
+      "ForwardHeaders": true,
+      "ExcludeHeaders": ["Host", "Content-Length", "Transfer-Encoding"],
+      "ForwardResponseHeaders": true,
+      "ExcludeResponseHeaders": ["Transfer-Encoding", "Content-Length"],
+      "ResponseStatusCodeParameter": "_proxy_status_code",
+      "ResponseBodyParameter": "_proxy_body",
+      "ResponseHeadersParameter": "_proxy_headers",
+      "ResponseContentTypeParameter": "_proxy_content_type",
+      "ResponseSuccessParameter": "_proxy_success",
+      "ResponseErrorMessageParameter": "_proxy_error_message",
+      "ForwardUploadContent": false
+    }
+  }
+}
+```
+
+**Key Features:**
+
+- **Passthrough mode**: No database connection opened when function has no proxy response parameters
+- **Transform mode**: Process upstream response in PostgreSQL before returning to client
+- **User claims forwarding**: Authenticated user claims passed as query parameters to upstream
+- **User context headers**: User context values passed as HTTP headers to upstream
+- **Streaming uploads**: Memory-efficient streaming for large file uploads when `ForwardUploadContent` is enabled
+- **Timeout handling**: Configurable per-request timeout with proper 504 Gateway Timeout responses
+- **Header forwarding**: Configurable request/response header forwarding with exclusion lists
+
 ### Configuration Default Fixes
 
 Fixed multiple configuration default mismatches where code fallback values did not match the defaults defined in `appsettings.json`. When configuration keys were not present, the application would use incorrect fallback values instead of the documented defaults.
