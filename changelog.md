@@ -4,6 +4,32 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [3.2.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/) (TBD)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.1.3...3.2.0)
+
+### Configuration Default Fixes
+
+Fixed multiple configuration default mismatches where code fallback values did not match the defaults defined in `appsettings.json`. When configuration keys were not present, the application would use incorrect fallback values instead of the documented defaults.
+
+**Fixed defaults:**
+
+| Section | Key | Was | Now |
+|---------|-----|-----|-----|
+| `DataProtection` | `GetAllElementsCommand` | `"select data from get_all_data_protection_elements()"` | `"select get_data_protection_keys()"` |
+| `DataProtection` | `StoreElementCommand` | `"call store_data_protection_element($1,$2)"` | `"call store_data_protection_keys($1,$2)"` |
+| `Cors` | `AllowedOrigins` | `["*"]` | `[]` |
+| `CommandRetryOptions` | `Enabled` | `false` | `true` |
+| `RateLimiterOptions.Concurrency` | `PermitLimit` | `100` | `10` |
+| `Auth.BasicAuth` | `UseDefaultPasswordHasher` | `false` | `true` |
+| `NpgsqlRest.HttpFileOptions` | `NamePattern` | `"{0}{1}"` | `"{0}_{1}"` |
+| `NpgsqlRest.OpenApiOptions` | `FileOverwrite` | `false` | `true` |
+| `NpgsqlRest.CrudSource` | `Enabled` | `false` | `true` |
+
+**Note:** If you were relying on the previous (incorrect) fallback behavior, you may need to explicitly set these values in your configuration.
+
+---
+
 ## Version [3.1.3](https://github.com/NpgsqlRest/NpgsqlRest/tree/) (2025-12-21)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.1.2...3.1.3)

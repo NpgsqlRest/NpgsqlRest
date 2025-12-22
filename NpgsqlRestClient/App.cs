@@ -138,7 +138,7 @@ public class App
             Realm = _config.GetConfigStr("Realm", basicAuthCfg) ?? BasicAuthOptions.DefaultRealm,
             Users = _config.GetConfigDict(basicAuthCfg.GetSection("Users")) ?? new Dictionary<string, string>(),
             ChallengeCommand = _config.GetConfigStr("ChallengeCommand", basicAuthCfg),
-            UseDefaultPasswordHasher = _config.GetConfigBool("UseDefaultPasswordHasher", basicAuthCfg, false),
+            UseDefaultPasswordHasher = _config.GetConfigBool("UseDefaultPasswordHasher", basicAuthCfg, true),
             SslRequirement = _config.GetConfigEnum<SslRequirement?>("SslRequirement", basicAuthCfg) ?? SslRequirement.Required
         };
 
@@ -279,7 +279,7 @@ public class App
             {
                 Name = _config.GetConfigStr("Name", httpFilecfg),
                 Option = _config.GetConfigEnum<HttpFileOption?>("Option", httpFilecfg) ?? HttpFileOption.File,
-                NamePattern = _config.GetConfigStr("NamePattern", httpFilecfg) ?? "{0}{1}",
+                NamePattern = _config.GetConfigStr("NamePattern", httpFilecfg) ?? "{0}_{1}",
                 CommentHeader = _config.GetConfigEnum<CommentHeader?>("CommentHeader", httpFilecfg) ?? CommentHeader.Simple,
                 CommentHeaderIncludeComments = _config.GetConfigBool("CommentHeaderIncludeComments", httpFilecfg, true),
                 FileMode = _config.GetConfigEnum<HttpFileMode?>("FileMode", httpFilecfg) ?? HttpFileMode.Schema,
@@ -297,7 +297,7 @@ public class App
             {
                 FileName = _config.GetConfigStr("FileName", openApiCfg),
                 UrlPath = _config.GetConfigStr("UrlPath", openApiCfg),
-                FileOverwrite = _config.GetConfigBool("FileOverwrite", openApiCfg, false),
+                FileOverwrite = _config.GetConfigBool("FileOverwrite", openApiCfg, true),
                 DocumentTitle = _config.GetConfigStr("DocumentTitle", openApiCfg),
                 DocumentVersion = _config.GetConfigStr("DocumentVersion", openApiCfg) ?? "1.0.0",
                 DocumentDescription = _config.GetConfigStr("DocumentDescription", openApiCfg),
@@ -483,7 +483,7 @@ public class App
         _builder.Logger?.LogDebug("Using {name} PostrgeSQL Source", nameof(RoutineSource));
 
         var crudSourceCfg = _config.NpgsqlRestCfg.GetSection("CrudSource");
-        if (crudSourceCfg.Exists() is false || _config.GetConfigBool("Enabled", crudSourceCfg) is false)
+        if (crudSourceCfg.Exists() is false || _config.GetConfigBool("Enabled", crudSourceCfg, true) is false)
         {
             return sources;
         }
@@ -520,7 +520,7 @@ public class App
 
         var result = new NpgsqlRestUploadOptions
         {
-            Enabled = _config.GetConfigBool("Enabled", uploadCfg, true),
+            Enabled = _config.GetConfigBool("Enabled", uploadCfg),
             LogUploadEvent = _config.GetConfigBool("LogUploadEvent", uploadCfg, true),
             LogUploadParameters = _config.GetConfigBool("LogUploadParameters", uploadCfg, false),
             DefaultUploadHandler = _config.GetConfigStr("DefaultUploadHandler", uploadCfg) ?? "large_object",

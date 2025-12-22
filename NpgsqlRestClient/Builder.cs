@@ -456,8 +456,8 @@ public class Builder
         }
         else if (storage == DataProtectionStorage.Database)
         {
-            var getAllElementsCommand = _config.GetConfigStr("GetAllElementsCommand", dataProtectionCfg) ?? "select data from get_all_data_protection_elements()";
-            var storeElementCommand = _config.GetConfigStr("StoreElementCommand", dataProtectionCfg) ?? "call store_data_protection_element($1,$2)";
+            var getAllElementsCommand = _config.GetConfigStr("GetAllElementsCommand", dataProtectionCfg) ?? "select get_data_protection_keys()";
+            var storeElementCommand = _config.GetConfigStr("StoreElementCommand", dataProtectionCfg) ?? "call store_data_protection_keys($1,$2)";
             Instance.Services.Configure<KeyManagementOptions>(options =>
             {
                 options.XmlRepository = new DbDataProtection(
@@ -593,7 +593,7 @@ public class Builder
             return false;
         }
 
-        string[] allowedOrigins = _config.GetConfigEnumerable("AllowedOrigins", corsCfg)?.ToArray() ?? ["*"];
+        string[] allowedOrigins = _config.GetConfigEnumerable("AllowedOrigins", corsCfg)?.ToArray() ?? [];
         var allowedMethods = _config.GetConfigEnumerable("AllowedMethods", corsCfg)?.ToArray() ?? ["*"];
         var allowedHeaders = _config.GetConfigEnumerable("AllowedHeaders", corsCfg)?.ToArray() ?? ["*"];
 
@@ -874,7 +874,9 @@ public class Builder
 
         if (connectionString is null)
         {
-            connectionString = "Host={PGHOST};Port=5432;Database={PGDATABASE};Username={PGUSER};Password={PGPASSWORD}";
+            throw new InvalidOperationException(
+                "No connection string configured. Please provide a connection string in the 'ConnectionStrings' section of your configuration file, " +
+                "or set the PGHOST, PGDATABASE, PGUSER, and PGPASSWORD environment variables with 'Config.AddEnvironmentVariables: true'.");
         }
 
         var (result, retryOpts) = BuildConnection(connectionName, connectionString!, isMain: true, skipRetryOpts: false);
@@ -952,7 +954,7 @@ public class Builder
         var retryCfg = _config.Cfg.GetSection("CommandRetryOptions");
         var options = new CommandRetryOptions
         {
-            Enabled = _config.GetConfigBool("Enabled", retryCfg),
+            Enabled = _config.GetConfigBool("Enabled", retryCfg, true),
             DefaultStrategy = _config.GetConfigStr("DefaultStrategy", retryCfg) ?? "default"
         };
         if (options.Enabled is false)
@@ -1243,13 +1245,13 @@ public class Builder
                 {
                     options.AddConcurrencyLimiter(name, config =>
                     {
-                        config.PermitLimit = _config.GetConfigInt("PermitLimit", sectionCfg) ?? 100;
+                        config.PermitLimit = _config.GetConfigInt("PermitLimit", sectionCfg) ?? 10;
                         config.QueueLimit = _config.GetConfigInt("QueueLimit", sectionCfg) ?? 10;
                         config.QueueProcessingOrder = _config.GetConfigBool("OldestFirst", sectionCfg, true) is true ? QueueProcessingOrder.OldestFirst : QueueProcessingOrder.NewestFirst;
                     });
                     Logger?.LogDebug("Using Concurrency rate limiter with name {Name}: PermitLimit={PermitLimit}, QueueLimit={QueueLimit}, OldestFirst={OldestFirst}",
                         name,
-                        _config.GetConfigInt("PermitLimit", sectionCfg) ?? 100,
+                        _config.GetConfigInt("PermitLimit", sectionCfg) ?? 10,
                         _config.GetConfigInt("QueueLimit", sectionCfg) ?? 10,
                         _config.GetConfigBool("OldestFirst", sectionCfg, true));
                 }
