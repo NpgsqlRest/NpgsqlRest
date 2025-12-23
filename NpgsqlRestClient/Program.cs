@@ -293,4 +293,9 @@ if (builder.BearerTokenConfig is not null)
     new TokenRefreshAuth(builder.BearerTokenConfig, app, builder.Logger);
 }
 
+if (builder.JwtTokenConfig is not null)
+{
+    new JwtRefreshAuth(builder.JwtTokenConfig, app, builder.Logger);
+}
+
 app.Run();

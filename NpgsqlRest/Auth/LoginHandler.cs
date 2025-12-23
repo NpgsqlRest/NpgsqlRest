@@ -241,13 +241,24 @@ public static class LoginHandler
         if (context.Response.StatusCode == (int)HttpStatusCode.OK)
         {
             var principal = new ClaimsPrincipal(new ClaimsIdentity(
-                claims, 
+                claims,
                 scheme ?? Options.AuthenticationOptions?.DefaultAuthenticationType,
                 nameType: Options.AuthenticationOptions?.DefaultNameClaimType,
                 roleType: Options.AuthenticationOptions?.DefaultRoleClaimType));
 
             if (assignUserPrincipalToContext is false)
             {
+                // Check if a custom login handler is configured
+                if (Options.AuthenticationOptions?.CustomLoginHandler is not null)
+                {
+                    var handled = await Options.AuthenticationOptions.CustomLoginHandler(context, principal, scheme);
+                    if (handled)
+                    {
+                        // Custom handler handled the response, skip default SignIn
+                        return;
+                    }
+                }
+
                 if (Results.SignIn(principal: principal, authenticationScheme: scheme) is not SignInHttpResult result)
                 {
                     Logger?.LogError("Failed in constructing user identity for authentication.");

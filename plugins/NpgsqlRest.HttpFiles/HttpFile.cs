@@ -88,6 +88,7 @@ public class HttpFile(HttpFileOptions httpFileOptions) : IEndpointCreateHandler
                     .Parameters
                     .Where((p, i) =>
                     {
+                        // Skip body parameter
                         if (endpoint.BodyParameterName is not null)
                         {
                             if (string.Equals(p.ConvertedName, endpoint.BodyParameterName, StringComparison.Ordinal) ||
@@ -96,7 +97,20 @@ public class HttpFile(HttpFileOptions httpFileOptions) : IEndpointCreateHandler
                                 return false;
                             }
                         }
-                        
+
+                        // Skip path parameters - they are already in the URL path
+                        if (endpoint.HasPathParameters)
+                        {
+                            foreach (var pathParam in endpoint.PathParameters!)
+                            {
+                                if (string.Equals(p.ConvertedName, pathParam, StringComparison.OrdinalIgnoreCase) ||
+                                    string.Equals(p.ActualName, pathParam, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    return false;
+                                }
+                            }
+                        }
+
                         return true;
                     })
                     .Select((p, i) =>
@@ -129,18 +143,42 @@ public class HttpFile(HttpFileOptions httpFileOptions) : IEndpointCreateHandler
 
         if (endpoint.Routine.Parameters.Length > 0 && endpoint.RequestParamType == RequestParamType.BodyJson)
         {
-            sb.AppendLine("content-type: application/json");
-            sb.AppendLine();
-            sb.AppendLine("{");
-            for (int i = 0; i < endpoint.Routine.Parameters.Length; i++)
+            // Filter out path parameters from body
+            var bodyParams = endpoint.Routine.Parameters
+                .Select((p, i) => (param: p, index: i))
+                .Where(x =>
+                {
+                    if (endpoint.HasPathParameters)
+                    {
+                        foreach (var pathParam in endpoint.PathParameters!)
+                        {
+                            if (string.Equals(x.param.ConvertedName, pathParam, StringComparison.OrdinalIgnoreCase) ||
+                                string.Equals(x.param.ActualName, pathParam, StringComparison.OrdinalIgnoreCase))
+                            {
+                                return false;
+                            }
+                        }
+                    }
+                    return true;
+                })
+                .ToList();
+
+            if (bodyParams.Count > 0)
             {
-                sb.AppendLine(string.Concat(
-                    "    \"", endpoint.Routine.Parameters[i].ConvertedName,
-                    "\": ",
-                    SampleValue(i, endpoint.Routine.Parameters[i].TypeDescriptor),
-                    i == endpoint.Routine.Parameters.Length - 1 ? "" : ","));
+                sb.AppendLine("content-type: application/json");
+                sb.AppendLine();
+                sb.AppendLine("{");
+                for (int i = 0; i < bodyParams.Count; i++)
+                {
+                    var (param, originalIndex) = bodyParams[i];
+                    sb.AppendLine(string.Concat(
+                        "    \"", param.ConvertedName,
+                        "\": ",
+                        SampleValue(originalIndex, param.TypeDescriptor),
+                        i == bodyParams.Count - 1 ? "" : ","));
+                }
+                sb.AppendLine("}");
             }
-            sb.AppendLine("}");
         }
 
         sb.AppendLine();
