@@ -4,7 +4,132 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
-## Version [3.2.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/) (2025-12-22)
+## Version [3.2.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.2.1) (2025-12-23)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.2.0...3.2.1)
+
+### JWT (JSON Web Token) Authentication Support
+
+Added standard JWT Bearer authentication as a third authentication scheme alongside Cookie and Microsoft Bearer Token authentication. All three schemes can be used together.
+
+**Configuration:**
+
+```json
+{
+  "Auth": {
+    "JwtAuth": true,
+    "JwtSecret": "your-secret-key-at-least-32-characters-long",
+    "JwtIssuer": "your-app",
+    "JwtAudience": "your-api",
+    "JwtExpireMinutes": 60,
+    "JwtRefreshExpireDays": 7,
+    "JwtValidateIssuer": true,
+    "JwtValidateAudience": true,
+    "JwtValidateLifetime": true,
+    "JwtValidateIssuerSigningKey": true,
+    "JwtClockSkew": "5 minutes",
+    "JwtRefreshPath": "/api/jwt/refresh"
+  }
+}
+```
+
+**Login Response:**
+
+When JWT authentication is enabled and a login endpoint returns successfully, the response includes:
+
+```json
+{
+  "accessToken": "eyJhbG...",
+  "refreshToken": "eyJhbG...",
+  "tokenType": "Bearer",
+  "expiresIn": 3600,
+  "refreshExpiresIn": 604800
+}
+```
+
+**Token Refresh:**
+
+POST to the configured refresh path (default: `/api/jwt/refresh`) with:
+
+```json
+{ "refreshToken": "eyJhbG..." }
+```
+
+Returns a new access token and refresh token pair.
+
+**Key Differences from Microsoft Bearer Token:**
+
+| Feature | Microsoft Bearer Token | JWT |
+|---------|----------------------|-----|
+| Token Format | Proprietary, encrypted | Industry-standard (RFC 7519) |
+| Interoperability | ASP.NET Core only | Any system supporting JWT |
+| Token Inspection | Opaque | Can be decoded at jwt.io |
+| Use Case | Single ASP.NET app | Cross-service, microservices |
+
+**New Configuration Options:**
+
+- `JwtAuth` - Enable JWT authentication (default: false)
+- `JwtAuthScheme` - Custom scheme name (default: "Bearer")
+- `JwtSecret` - Signing key (minimum 32 characters for HS256)
+- `JwtIssuer` - Token issuer claim
+- `JwtAudience` - Token audience claim
+- `JwtExpireMinutes` - Access token expiration (default: 60)
+- `JwtRefreshExpireDays` - Refresh token expiration (default: 7)
+- `JwtValidateIssuer` - Validate issuer claim (default: false)
+- `JwtValidateAudience` - Validate audience claim (default: false)
+- `JwtValidateLifetime` - Validate token expiration (default: true)
+- `JwtValidateIssuerSigningKey` - Validate signing key (default: true)
+- `JwtClockSkew` - Clock tolerance for expiration (default: 5 minutes)
+- `JwtRefreshPath` - Refresh endpoint path (default: "/api/jwt/refresh")
+
+**Custom Login Handler:**
+
+Added `CustomLoginHandler` callback to `NpgsqlRestAuthenticationOptions` allowing custom token generation during login. This enables JWT tokens to be generated and returned instead of using the default SignIn behavior.
+
+### Path Parameters Support for HttpFiles and OpenApi Plugins
+
+Added path parameters support to the HttpFiles and OpenApi plugins, matching the functionality added to the core library and TsClient in version 3.1.3.
+
+**HttpFiles Plugin:**
+
+Path parameters are now properly handled in generated HTTP files:
+- Path parameters are excluded from query strings (they're already in the URL path)
+- Path parameters are excluded from JSON request bodies
+
+Before (broken):
+```http
+GET {{host}}/api/products/{p_id}?pId=1
+```
+
+After (fixed):
+```http
+GET {{host}}/api/products/{p_id}
+```
+
+**OpenApi Plugin:**
+
+Path parameters are now properly documented in the OpenAPI specification:
+- Path parameters are added with `"in": "path"` and `"required": true`
+- Path parameters are excluded from query parameters
+- Path parameters are excluded from request body schemas
+
+Example generated OpenAPI for `/api/products/{p_id}`:
+```json
+{
+  "parameters": [
+    {
+      "name": "pId",
+      "in": "path",
+      "required": true,
+      "schema": { "type": "integer", "format": "int32" }
+    }
+  ]
+}
+```
+
+---
+
+## Version [3.2.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.2.0) (2025-12-22)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.1.3...3.2.0)
 
@@ -180,7 +305,7 @@ Added new Docker image variant with pre-installed [Bun](https://bun.sh/) runtime
 This image includes the Bun JavaScript runtime alongside NpgsqlRest, enabling proxy endpoints to execute Bun scripts within the same container. Useful for scenarios where you need lightweight proxy handlers without external service calls.
 
 **Available tags:**
-- `vbilopav/npgsqlrest:3.2.0-bun` - specific version with Bun
+- `vbilopav/npgsqlrest:3.2.1-bun` - specific version with Bun
 - `vbilopav/npgsqlrest:latest-bun` - latest version with Bun
 
 ### Configuration Default Fixes
@@ -211,7 +336,7 @@ Fixed multiple configuration default mismatches where code fallback values did n
 
 ---
 
-## Version [3.1.3](https://github.com/NpgsqlRest/NpgsqlRest/tree/) (2025-12-21)
+## Version [3.1.3](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.1.3) (2025-12-21)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.1.2...3.1.3)
 
@@ -295,7 +420,7 @@ HybridCache-specific configuration keys in the `CacheOptions` section have been 
 
 ---
 
-## Version [3.1.2](https://github.com/NpgsqlRest/NpgsqlRest/tree/ ) (2025-12-20)
+## Version [3.1.2](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.1.2) (2025-12-20)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.1.1...3.1.2)
 

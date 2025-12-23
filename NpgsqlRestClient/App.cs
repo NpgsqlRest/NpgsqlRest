@@ -206,8 +206,32 @@ public class App
             IpAddressParameterName = _config.GetConfigStr("IpAddressParameterName", authCfg) ?? "_ip_address",
             
             BasicAuth = basicAuth,
-            DefaultDataProtector = protector
+            DefaultDataProtector = protector,
+            CustomLoginHandler = CreateJwtLoginHandler()
         }, authCfg);
+    }
+
+    private Func<HttpContext, ClaimsPrincipal, string?, Task<bool>>? CreateJwtLoginHandler()
+    {
+        if (_builder.JwtTokenConfig is null)
+        {
+            return null;
+        }
+
+        // Initialize the static JWT login handler
+        JwtLoginHandler.Initialize(_builder.JwtTokenConfig);
+        var jwtScheme = _builder.JwtTokenConfig.Scheme;
+
+        return async (context, principal, scheme) =>
+        {
+            // Only handle if the scheme matches JWT scheme or if no scheme specified and JWT is the default
+            if (scheme is not null && !string.Equals(scheme, jwtScheme, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            return await JwtLoginHandler.HandleLoginAsync(context, principal);
+        };
     }
 
     public Action<RoutineEndpoint?>? CreateEndpointCreatedHandler(IConfigurationSection authCfg)
