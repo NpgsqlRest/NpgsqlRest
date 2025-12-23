@@ -1,5 +1,6 @@
-﻿
+using System.Security.Claims;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Http;
 
 namespace NpgsqlRest.Auth;
 
@@ -182,4 +183,20 @@ public class NpgsqlRestAuthenticationOptions
     /// Default data protector used to encrypt and decrypt data.
     /// </summary>
     public IDataProtector? DefaultDataProtector { get; set; } = null;
+
+    /// <summary>
+    /// Custom login handler callback. When set, this callback is invoked for login operations
+    /// instead of the default SignIn behavior. This allows custom token generation (e.g., JWT).
+    ///
+    /// The callback receives the HttpContext and ClaimsPrincipal, and should return true if it handled
+    /// the login response, or false to fall back to the default SignIn behavior.
+    ///
+    /// Parameters:
+    /// - HttpContext: The current HTTP context
+    /// - ClaimsPrincipal: The authenticated user's claims principal
+    /// - string?: The authentication scheme (from the scheme column, may be null)
+    ///
+    /// Returns: Task&lt;bool&gt; - true if the login was handled, false to use default SignIn
+    /// </summary>
+    public Func<HttpContext, ClaimsPrincipal, string?, Task<bool>>? CustomLoginHandler { get; set; } = null;
 }

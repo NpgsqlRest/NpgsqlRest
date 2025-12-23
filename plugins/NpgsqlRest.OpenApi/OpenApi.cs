@@ -107,6 +107,38 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
         // Add parameters
         var parameters = new JsonArray();
 
+        // Add path parameters first (if any)
+        if (endpoint.HasPathParameters)
+        {
+            foreach (var pathParamName in endpoint.PathParameters!)
+            {
+                // Find the matching routine parameter to get its type
+                var routineParam = endpoint.Routine.Parameters
+                    .FirstOrDefault(p =>
+                        string.Equals(p.ConvertedName, pathParamName, StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(p.ActualName, pathParamName, StringComparison.OrdinalIgnoreCase));
+
+                var pathParameter = new JsonObject
+                {
+                    ["name"] = routineParam?.ConvertedName ?? pathParamName,
+                    ["in"] = "path",
+                    ["required"] = true // Path parameters are always required in OpenAPI
+                };
+
+                if (routineParam != null)
+                {
+                    pathParameter["schema"] = GetSchemaForType(routineParam.TypeDescriptor);
+                }
+                else
+                {
+                    // Default to string if parameter not found
+                    pathParameter["schema"] = new JsonObject { ["type"] = "string" };
+                }
+
+                parameters.Add((JsonNode)pathParameter);
+            }
+        }
+
         if (endpoint.Routine.Parameters.Length > 0)
         {
             if (endpoint.RequestParamType == RequestParamType.QueryString)
@@ -119,6 +151,25 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
                          string.Equals(param.ActualName, endpoint.BodyParameterName, StringComparison.Ordinal)))
                     {
                         continue;
+                    }
+
+                    // Skip path parameters - they are already added above
+                    if (endpoint.HasPathParameters)
+                    {
+                        var isPathParam = false;
+                        foreach (var pathParam in endpoint.PathParameters!)
+                        {
+                            if (string.Equals(param.ConvertedName, pathParam, StringComparison.OrdinalIgnoreCase) ||
+                                string.Equals(param.ActualName, pathParam, StringComparison.OrdinalIgnoreCase))
+                            {
+                                isPathParam = true;
+                                break;
+                            }
+                        }
+                        if (isPathParam)
+                        {
+                            continue;
+                        }
                     }
 
                     var parameter = new JsonObject
@@ -134,7 +185,7 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
             }
             else if (endpoint.RequestParamType == RequestParamType.BodyJson)
             {
-                // Add request body for JSON
+                // Add request body for JSON, excluding path parameters
                 var requestSchema = new JsonObject
                 {
                     ["type"] = "object",
@@ -146,6 +197,25 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
 
                 foreach (var param in endpoint.Routine.Parameters)
                 {
+                    // Skip path parameters - they should not be in the request body
+                    if (endpoint.HasPathParameters)
+                    {
+                        var isPathParam = false;
+                        foreach (var pathParam in endpoint.PathParameters!)
+                        {
+                            if (string.Equals(param.ConvertedName, pathParam, StringComparison.OrdinalIgnoreCase) ||
+                                string.Equals(param.ActualName, pathParam, StringComparison.OrdinalIgnoreCase))
+                            {
+                                isPathParam = true;
+                                break;
+                            }
+                        }
+                        if (isPathParam)
+                        {
+                            continue;
+                        }
+                    }
+
                     properties![param.ConvertedName] = GetSchemaForType(param.TypeDescriptor);
                     if (!param.TypeDescriptor.HasDefault)
                     {
@@ -158,17 +228,21 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
                     requestSchema["required"] = required;
                 }
 
-                operation["requestBody"] = new JsonObject
+                // Only add requestBody if there are non-path parameters
+                if (properties!.Count > 0)
                 {
-                    ["required"] = true,
-                    ["content"] = new JsonObject
+                    operation["requestBody"] = new JsonObject
                     {
-                        ["application/json"] = new JsonObject
+                        ["required"] = true,
+                        ["content"] = new JsonObject
                         {
-                            ["schema"] = requestSchema
+                            ["application/json"] = new JsonObject
+                            {
+                                ["schema"] = requestSchema
+                            }
                         }
-                    }
-                };
+                    };
+                }
             }
         }
 

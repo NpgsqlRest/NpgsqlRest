@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.BearerToken;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption;
 using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption.ConfigurationModel;
@@ -37,6 +38,7 @@ public class Builder
     public bool UseHttpsRedirection { get; private set; } = false;
     public bool UseHsts { get; private set; } = false;
     public BearerTokenConfig? BearerTokenConfig { get; private set; } = null;
+    public JwtTokenConfig? JwtTokenConfig { get; private set; } = null;
     public string? ConnectionString { get; private set; } = null;
     public string? ConnectionName { get; private set; } = null;
     public ExternalAuthConfig? ExternalAuthConfig { get; private set; } = null;
@@ -496,88 +498,189 @@ public class Builder
         var authCfg = _config.Cfg.GetSection("Auth");
         bool cookieAuth = false;
         bool bearerTokenAuth = false;
+        bool jwtAuth = false;
+
         if (_config.Exists(authCfg) is true)
         {
             cookieAuth = _config.GetConfigBool("CookieAuth", authCfg);
             bearerTokenAuth = _config.GetConfigBool("BearerTokenAuth", authCfg);
+            jwtAuth = _config.GetConfigBool("JwtAuth", authCfg);
         }
 
-        if (cookieAuth is true || bearerTokenAuth is true)
+        if (cookieAuth is false && bearerTokenAuth is false && jwtAuth is false)
         {
-            var cookieScheme = _config.GetConfigStr("CookieAuthScheme", authCfg) ?? CookieAuthenticationDefaults.AuthenticationScheme;
-            var tokenScheme = _config.GetConfigStr("BearerTokenAuthScheme", authCfg) ?? BearerTokenDefaults.AuthenticationScheme;
-            string defaultScheme = (cookieAuth, bearerTokenAuth) switch
-            {
-                (true, true) => string.Concat(cookieScheme, "_and_", tokenScheme),
-                (true, false) => cookieScheme,
-                (false, true) => tokenScheme,
-                _ => throw new NotImplementedException(),
-            };
-            var auth = Instance.Services.AddAuthentication(defaultScheme);
+            return;
+        }
 
-            if (cookieAuth is true)
+        var cookieScheme = _config.GetConfigStr("CookieAuthScheme", authCfg) ?? CookieAuthenticationDefaults.AuthenticationScheme;
+        var tokenScheme = _config.GetConfigStr("BearerTokenAuthScheme", authCfg) ?? BearerTokenDefaults.AuthenticationScheme;
+        var jwtScheme = _config.GetConfigStr("JwtAuthScheme", authCfg) ?? JwtBearerDefaults.AuthenticationScheme;
+
+        // Build default scheme name based on enabled auth methods
+        var enabledSchemes = new List<string>();
+        if (cookieAuth) enabledSchemes.Add(cookieScheme);
+        if (bearerTokenAuth) enabledSchemes.Add(tokenScheme);
+        if (jwtAuth) enabledSchemes.Add(jwtScheme);
+
+        string defaultScheme = enabledSchemes.Count switch
+        {
+            1 => enabledSchemes[0],
+            _ => string.Join("_and_", enabledSchemes)
+        };
+
+        var auth = Instance.Services.AddAuthentication(defaultScheme);
+
+        if (cookieAuth is true)
+        {
+            var days = _config.GetConfigInt("CookieValidDays", authCfg) ?? 14;
+            auth.AddCookie(cookieScheme, options =>
             {
-                var days = _config.GetConfigInt("CookieValidDays", authCfg) ?? 14;
-                auth.AddCookie(cookieScheme, options =>
+                options.ExpireTimeSpan = TimeSpan.FromDays(days);
+                var name = _config.GetConfigStr("CookieName", authCfg);
+                if (string.IsNullOrEmpty(name) is false)
                 {
-                    options.ExpireTimeSpan = TimeSpan.FromDays(days);
-                    var name = _config.GetConfigStr("CookieName", authCfg);
-                    if (string.IsNullOrEmpty(name) is false)
-                    {
-                        options.Cookie.Name = _config.GetConfigStr("CookieName", authCfg);
-                    }
-                    options.Cookie.Path = _config.GetConfigStr("CookiePath", authCfg);
-                    options.Cookie.Domain = _config.GetConfigStr("CookieDomain", authCfg);
-                    options.Cookie.MaxAge = _config.GetConfigBool("CookieMultiSessions", authCfg, true) is true ? TimeSpan.FromDays(days) : null;
-                    options.Cookie.HttpOnly = _config.GetConfigBool("CookieHttpOnly", authCfg, true) is true;
-                });
-                Logger?.LogDebug("Using Cookie Authentication with scheme {cookieScheme}. Cookie expires in {days} days.", cookieScheme, days);
+                    options.Cookie.Name = _config.GetConfigStr("CookieName", authCfg);
+                }
+                options.Cookie.Path = _config.GetConfigStr("CookiePath", authCfg);
+                options.Cookie.Domain = _config.GetConfigStr("CookieDomain", authCfg);
+                options.Cookie.MaxAge = _config.GetConfigBool("CookieMultiSessions", authCfg, true) is true ? TimeSpan.FromDays(days) : null;
+                options.Cookie.HttpOnly = _config.GetConfigBool("CookieHttpOnly", authCfg, true) is true;
+            });
+            Logger?.LogDebug("Using Cookie Authentication with scheme {cookieScheme}. Cookie expires in {days} days.", cookieScheme, days);
+        }
+
+        if (bearerTokenAuth is true)
+        {
+            var hours = _config.GetConfigInt("BearerTokenExpireHours", authCfg) ?? 1;
+            BearerTokenConfig = new()
+            {
+                Scheme = tokenScheme,
+                RefreshPath = _config.GetConfigStr("BearerTokenRefreshPath", authCfg)
+            };
+            auth.AddBearerToken(tokenScheme, options =>
+            {
+                options.BearerTokenExpiration = TimeSpan.FromHours(hours);
+                options.RefreshTokenExpiration = TimeSpan.FromHours(hours);
+                options.Validate();
+            });
+            Logger?.LogDebug(
+                "Using Bearer Token Authentication with scheme {tokenScheme}. Token expires in {hours} hours. Refresh path is {RefreshPath}",
+                tokenScheme,
+                hours,
+                BearerTokenConfig.RefreshPath);
+        }
+
+        if (jwtAuth is true)
+        {
+            var jwtSecret = _config.GetConfigStr("JwtSecret", authCfg);
+            if (string.IsNullOrEmpty(jwtSecret))
+            {
+                throw new InvalidOperationException("JwtSecret must be configured when JwtAuth is enabled. The secret must be at least 32 characters for HS256.");
             }
-            if (bearerTokenAuth is true)
+            if (jwtSecret.Length < 32)
             {
-                var hours = _config.GetConfigInt("BearerTokenExpireHours", authCfg) ?? 1;
-                BearerTokenConfig = new()
-                {
-                    Scheme = tokenScheme,
-                    RefreshPath = _config.GetConfigStr("BearerTokenRefreshPath", authCfg)
-                };
-                auth.AddBearerToken(tokenScheme, options =>
-                {
-                    options.BearerTokenExpiration = TimeSpan.FromHours(hours);
-                    options.RefreshTokenExpiration = TimeSpan.FromHours(hours);
-                    options.Validate();
-                });
-                Logger?.LogDebug(
-                    "Using Bearer Token Authentication with scheme {tokenScheme}. Token expires in {hours} hours. Refresh path is {RefreshPath}", 
-                    tokenScheme, 
-                    hours, 
-                    BearerTokenConfig.RefreshPath);
+                throw new InvalidOperationException("JwtSecret must be at least 32 characters long for HS256 algorithm.");
             }
-            if (cookieAuth is true && bearerTokenAuth is true)
+
+            var expireMinutes = _config.GetConfigInt("JwtExpireMinutes", authCfg) ?? 60;
+            var refreshExpireDays = _config.GetConfigInt("JwtRefreshExpireDays", authCfg) ?? 7;
+            var clockSkew = Parser.ParsePostgresInterval(_config.GetConfigStr("JwtClockSkew", authCfg)) ?? TimeSpan.FromMinutes(5);
+
+            JwtTokenConfig = new()
             {
-                auth.AddPolicyScheme(defaultScheme, defaultScheme, options =>
+                Scheme = jwtScheme,
+                Secret = jwtSecret,
+                Issuer = _config.GetConfigStr("JwtIssuer", authCfg),
+                Audience = _config.GetConfigStr("JwtAudience", authCfg),
+                ExpireMinutes = expireMinutes,
+                RefreshExpireDays = refreshExpireDays,
+                ValidateIssuer = _config.GetConfigBool("JwtValidateIssuer", authCfg),
+                ValidateAudience = _config.GetConfigBool("JwtValidateAudience", authCfg),
+                ValidateLifetime = _config.GetConfigBool("JwtValidateLifetime", authCfg, true),
+                ValidateIssuerSigningKey = _config.GetConfigBool("JwtValidateIssuerSigningKey", authCfg, true),
+                ClockSkew = clockSkew,
+                RefreshPath = _config.GetConfigStr("JwtRefreshPath", authCfg)
+            };
+
+            auth.AddJwtBearer(jwtScheme, options =>
+            {
+                options.TokenValidationParameters = JwtTokenConfig.GetTokenValidationParameters();
+                options.SaveToken = true;
+            });
+
+            Logger?.LogDebug(
+                "Using JWT Authentication with scheme {jwtScheme}. Access token expires in {expireMinutes} minutes. Refresh token expires in {refreshExpireDays} days. Refresh path is {RefreshPath}",
+                jwtScheme,
+                expireMinutes,
+                refreshExpireDays,
+                JwtTokenConfig.RefreshPath);
+        }
+
+        // Create policy scheme if multiple auth methods are enabled
+        if (enabledSchemes.Count > 1)
+        {
+            auth.AddPolicyScheme(defaultScheme, defaultScheme, options =>
+            {
+                // runs on each request
+                options.ForwardDefaultSelector = context =>
                 {
-                    // runs on each request
-                    options.ForwardDefaultSelector = context =>
+                    string? authorization = context.Request.Headers[HeaderNames.Authorization];
+
+                    if (string.IsNullOrEmpty(authorization) is false && authorization.StartsWith("Bearer "))
                     {
-                        // filter by auth type
-                        string? authorization = context.Request.Headers[HeaderNames.Authorization];
-                        if (string.IsNullOrEmpty(authorization) is false && authorization.StartsWith("Bearer "))
+                        // For Bearer tokens, we need to determine if it's JWT or Microsoft Bearer Token
+                        // JWT tokens are in format: xxxxx.yyyyy.zzzzz (three Base64 parts separated by dots)
+                        var token = authorization["Bearer ".Length..].Trim();
+
+                        if (jwtAuth && IsJwtToken(token))
+                        {
+                            return jwtScheme;
+                        }
+
+                        if (bearerTokenAuth)
                         {
                             return tokenScheme;
                         }
-                        // otherwise always check for cookie auth
-                        return cookieScheme;
-                    };
-                });
-            }
+                    }
 
-            if (cookieAuth || bearerTokenAuth)
+                    // Default to cookie auth if enabled
+                    if (cookieAuth)
+                    {
+                        return cookieScheme;
+                    }
+
+                    // Fallback to first enabled scheme
+                    return enabledSchemes[0];
+                };
+            });
+        }
+
+        if (cookieAuth || bearerTokenAuth || jwtAuth)
+        {
+            ExternalAuthConfig = new ExternalAuthConfig();
+            ExternalAuthConfig.Build(authCfg, _config, this);
+        }
+    }
+
+    private static bool IsJwtToken(string token)
+    {
+        // JWT tokens have exactly 3 parts separated by dots
+        var parts = token.Split('.');
+        if (parts.Length != 3)
+        {
+            return false;
+        }
+
+        // Each part should be valid Base64Url
+        foreach (var part in parts)
+        {
+            if (string.IsNullOrEmpty(part))
             {
-                ExternalAuthConfig = new ExternalAuthConfig();
-                ExternalAuthConfig.Build(authCfg, _config, this);
+                return false;
             }
         }
+
+        return true;
     }
 
     public bool BuildCors()

@@ -7,6 +7,8 @@ using Microsoft.Extensions.DependencyInjection;
 using NpgsqlRest.Auth;
 using NpgsqlRest.CrudSource;
 using NpgsqlRest.TsClient;
+using NpgsqlRest.HttpFiles;
+using NpgsqlRest.OpenAPI;
 using NpgsqlRest.UploadHandlers;
 
 namespace NpgsqlRestTests.Setup;
@@ -17,6 +19,16 @@ public class Program
     /// Output path for TsClient generated files (used by tests)
     /// </summary>
     public static string TsClientOutputPath { get; } = Path.Combine(Path.GetTempPath(), "NpgsqlRestTests", "TsClient");
+
+    /// <summary>
+    /// Output path for HttpFiles generated files (used by tests)
+    /// </summary>
+    public static string HttpFilesOutputPath { get; } = Path.Combine(Path.GetTempPath(), "NpgsqlRestTests", "HttpFiles");
+
+    /// <summary>
+    /// Output path for OpenApi generated files (used by tests)
+    /// </summary>
+    public static string OpenApiOutputPath { get; } = Path.Combine(Path.GetTempPath(), "NpgsqlRestTests", "OpenApi");
 
     static async Task ValidateAsync(ParameterValidationValues p)
     {
@@ -164,6 +176,22 @@ public class Program
                     // Only process tsclient_test schema to avoid issues with custom sources that have null definitions
                     SkipSchemas = ["public", "custom_param_schema", "my_schema", "custom_table_param_schema", ""],
                     IncludeStatusCode = false
+                }),
+                // HttpFiles configuration for testing path parameters
+                new HttpFile(new HttpFileOptions
+                {
+                    Option = HttpFileOption.File,
+                    NamePattern = Path.Combine(HttpFilesOutputPath, "{0}"),
+                    FileOverwrite = true,
+                    CommentHeader = CommentHeader.None
+                }),
+                // OpenApi configuration for testing path parameters
+                new OpenApi(new OpenApiOptions
+                {
+                    FileName = Path.Combine(OpenApiOutputPath, "openapi.json"),
+                    FileOverwrite = true,
+                    DocumentTitle = "NpgsqlRest Test API",
+                    AddCurrentServer = false
                 }),
             ],
             CommentsMode = CommentsMode.ParseAll,
