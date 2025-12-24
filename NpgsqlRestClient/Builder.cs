@@ -287,7 +287,14 @@ public class Builder
         if (errConfig.Exists() is false)
         {
             // Always register ProblemDetails for AOT compatibility
-            Instance.Services.AddProblemDetails();
+            // Apply default behavior: remove traceId (matches default when config exists)
+            Instance.Services.AddProblemDetails(options =>
+            {
+                options.CustomizeProblemDetails = ctx =>
+                {
+                    ctx.ProblemDetails.Extensions.Remove("traceId");
+                };
+            });
             var defaultTimeoutLog = defaults.TimeoutErrorMapping?.ToString() ?? "disabled";
             var defaultPoliciesLog = defaults.ErrorCodePolicies.Count > 0
                 ? string.Join("; ", defaults.ErrorCodePolicies.Select(p =>

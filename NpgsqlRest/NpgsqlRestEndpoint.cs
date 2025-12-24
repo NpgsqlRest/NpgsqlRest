@@ -2185,11 +2185,11 @@ public class NpgsqlRestEndpoint(
         }
     }
     
-    private async Task<bool> PrepareCommand(
+    private async ValueTask<bool> PrepareCommand(
         NpgsqlConnection connection,
         NpgsqlCommand command,
         string commandText,
-        HttpContext context, 
+        HttpContext context,
         RoutineEndpoint endpoint,
         bool unknownResults)
     {
@@ -2227,7 +2227,7 @@ public class NpgsqlRestEndpoint(
         return true;
     }
     
-    private async Task OpenConnectionAsync(NpgsqlConnection connection, HttpContext context, RoutineEndpoint endpoint)
+    private async ValueTask OpenConnectionAsync(NpgsqlConnection connection, HttpContext context, RoutineEndpoint endpoint)
     {
         if (connection.State != ConnectionState.Open)
         {
@@ -2342,7 +2342,7 @@ public class NpgsqlRestEndpoint(
         }
     }
 
-    private async Task ReturnErrorAsync(
+    private async ValueTask ReturnErrorAsync(
         string message,
         bool log, HttpContext context,
         int statusCode = (int)HttpStatusCode.InternalServerError)

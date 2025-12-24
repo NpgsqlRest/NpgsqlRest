@@ -11,6 +11,18 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 ### Bug Fixes
 
 - Fixed sensitive data exposure in command logs for auth endpoints. When `ObfuscateAuthParameterLogValues` is enabled (default), query string parameters are now stripped from the logged URL to prevent credentials from appearing in logs.
+- Fixed `traceId` being included in ProblemDetails error responses when `ErrorHandlingOptions` config section is missing. Now correctly removes `traceId` by default to match the behavior when the config section exists.
+- Fixed SSL config key mismatch: renamed `HttpsRedirection` to `UseHttpsRedirection` for consistency with `UseHsts`.
+- Fixed missing `TokensPerPeriod` property in TokenBucket rate limiter configuration.
+- Fixed `MetadataQuerySchema` comment to accurately describe behavior (when null, no search path is set).
+
+### Performance Improvements
+
+- Replaced `Task` with `ValueTask` for frequently-called private async methods to reduce heap allocations in hot paths:
+  - `PrepareCommand` - called before every query execution
+  - `OpenConnectionAsync` - often completes synchronously when connection is already open
+  - `ReturnErrorAsync` - error handling path
+  - `Challenge` (BasicAuthHandler) - authentication challenge response
 
 ## Version [3.2.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.2.1) (2025-12-23)
 

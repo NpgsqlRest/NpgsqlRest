@@ -216,7 +216,7 @@ public static class BasicAuthHandler
         }
     }
 
-    private static async Task Challenge(HttpContext context, string realm)
+    private static async ValueTask Challenge(HttpContext context, string realm)
     {
         context.Response.Headers.Append("WWW-Authenticate", string.Concat("Basic realm=\"", realm, "\""));
         await Results.Problem(
