@@ -4,6 +4,14 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [3.2.2](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.2.2) (2025-12-24)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.2.1...3.2.2)
+
+### Bug Fixes
+
+- Fixed sensitive data exposure in command logs for auth endpoints. When `ObfuscateAuthParameterLogValues` is enabled (default), query string parameters are now stripped from the logged URL to prevent credentials from appearing in logs.
+
 ## Version [3.2.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.2.1) (2025-12-23)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.2.0...3.2.1)

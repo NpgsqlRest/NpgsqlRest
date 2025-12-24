@@ -134,7 +134,11 @@ public class NpgsqlRestEndpoint(
 
             var shouldLog = Options.LogCommands && Logger != null;
             StringBuilder? cmdLog = shouldLog ?
-                new(string.Concat("-- ", context.Request.Method, " ", context.Request.GetDisplayUrl(), Environment.NewLine)) :
+                new(string.Concat("-- ", context.Request.Method, " ",
+                    (Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth)
+                        ? string.Concat(context.Request.Scheme, "://", context.Request.Host, context.Request.Path)
+                        : context.Request.GetDisplayUrl(),
+                    Environment.NewLine)) :
                 null;
 
             if (formatter.IsFormattable is false)
