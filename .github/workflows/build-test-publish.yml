@@ -16,146 +16,140 @@ permissions:
   packages: read
 
 jobs:
-  # TEMPORARILY DISABLED - uncomment after docker builds complete
-  # build-test-publish:
-  #   runs-on: ubuntu-22.04
-  #   steps:
-  #   - name: Install PosgtreSQL
-  #     uses: vb-consulting/postgresql-action@v1
-  #     with:
-  #       postgresql version: '17'
-  #       postgresql user: 'postgres'
-  #       postgresql password: 'postgres'
-  #   - uses: actions/checkout@v4  # Updated from v2
-  #   - name: Setup .NET10
-  #     uses: actions/setup-dotnet@v4
-  #     with:
-  #       dotnet-version: 10.0.x
-  #   - name: Install dependencies
-  #     run: dotnet restore
-  #   - name: Build
-  #     run: dotnet build --configuration Release --no-restore
-  #   - name: Test
-  #     run: dotnet test --no-restore --verbosity m
-  #   - name: Publish
-  #     run: dotnet nuget push **\*.nupkg --source https://api.nuget.org/v3/index.json --api-key ${{secrets.NUGET_API_KEY}} --skip-duplicate
+  build-test-publish:
+    runs-on: ubuntu-22.04
+    steps:
+    - name: Install PosgtreSQL
+      uses: vb-consulting/postgresql-action@v1
+      with:
+        postgresql version: '17'
+        postgresql user: 'postgres'
+        postgresql password: 'postgres'
+    - uses: actions/checkout@v4  # Updated from v2
+    - name: Setup .NET10
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.0.x
+    - name: Install dependencies
+      run: dotnet restore
+    - name: Build
+      run: dotnet build --configuration Release --no-restore
+    - name: Test
+      run: dotnet test --no-restore --verbosity m
+    - name: Publish
+      run: dotnet nuget push **\*.nupkg --source https://api.nuget.org/v3/index.json --api-key ${{secrets.NUGET_API_KEY}} --skip-duplicate
 
-  # TEMPORARILY DISABLED
-  # create-release:
-  #   needs: build-test-publish
-  #   runs-on: ubuntu-22.04
-  #   # Explicit permissions for this job
-  #   permissions:
-  #     contents: write
-  #   outputs:
-  #     upload_url: ${{ steps.create_release.outputs.upload_url }}
-  #   steps:
-  #   - name: Create Release
-  #     id: create_release
-  #     uses: actions/create-release@v1
-  #     env:
-  #       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  #     with:
-  #       tag_name: ${{ env.RELEASE_VERSION }}
-  #       release_name: "NpgsqlRest Client ${{ env.RELEASE_VERSION }}"
-  #       draft: false
-  #       prerelease: false
+  create-release:
+    needs: build-test-publish
+    runs-on: ubuntu-22.04
+    # Explicit permissions for this job
+    permissions:
+      contents: write
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+    steps:
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ env.RELEASE_VERSION }}
+        release_name: "NpgsqlRest Client ${{ env.RELEASE_VERSION }}"
+        draft: false
+        prerelease: false
 
-  # TEMPORARILY DISABLED
-  # upload-assets:
-  #   needs: create-release
-  #   runs-on: ubuntu-22.04
-  #   # Explicit permissions for this job
-  #   permissions:
-  #     contents: write
-  #   steps:
-  #   - name: Checkout code
-  #     uses: actions/checkout@v4  # Updated from v2
-  #
-  #   - name: Upload appsettings.json to release
-  #     uses: actions/upload-release-asset@v1
-  #     env:
-  #       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  #     with:
-  #       upload_url: ${{ needs.create-release.outputs.upload_url }}
-  #       asset_path: ./NpgsqlRestClient/appsettings.json
-  #       asset_name: appsettings.json
-  #       asset_content_type: application/json
+  upload-assets:
+    needs: create-release
+    runs-on: ubuntu-22.04
+    # Explicit permissions for this job
+    permissions:
+      contents: write
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4  # Updated from v2
 
-  # TEMPORARILY DISABLED
-  # build-windows:
-  #   needs: create-release
-  #   runs-on: windows-2022
-  #   permissions:
-  #     contents: write
-  #   steps:
-  #   - uses: actions/checkout@v4
-  #   - name: Setup .NET10
-  #     uses: actions/setup-dotnet@v4
-  #     with:
-  #       dotnet-version: 10.0.x
-  #   - name: Build Windows AOT
-  #     run: dotnet publish ./NpgsqlRestClient/NpgsqlRestClient.csproj -r win-x64 -c Release
-  #   - name: Upload Windows executable
-  #     uses: actions/upload-release-asset@v1
-  #     env:
-  #       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  #     with:
-  #       upload_url: ${{ needs.create-release.outputs.upload_url }}
-  #       asset_path: ./NpgsqlRestClient/bin/Release/net10.0/win-x64/publish/NpgsqlRestClient.exe
-  #       asset_name: npgsqlrest-win64.exe
-  #       asset_content_type: application/octet-stream
+    - name: Upload appsettings.json to release
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: ./NpgsqlRestClient/appsettings.json
+        asset_name: appsettings.json
+        asset_content_type: application/json
 
-  # TEMPORARILY DISABLED
-  # build-linux:
-  #   needs: create-release
-  #   runs-on: ubuntu-22.04
-  #   permissions:
-  #     contents: write
-  #   steps:
-  #   - uses: actions/checkout@v4
-  #   - name: Setup .NET10
-  #     uses: actions/setup-dotnet@v4
-  #     with:
-  #       dotnet-version: 10.0.x
-  #   - name: Build Linux AOT
-  #     run: dotnet publish ./NpgsqlRestClient/NpgsqlRestClient.csproj -r linux-x64 -c Release
-  #   - name: Upload Linux executable
-  #     uses: actions/upload-release-asset@v1
-  #     env:
-  #       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  #     with:
-  #       upload_url: ${{ needs.create-release.outputs.upload_url }}
-  #       asset_path: ./NpgsqlRestClient/bin/Release/net10.0/linux-x64/publish/NpgsqlRestClient
-  #       asset_name: npgsqlrest-linux64
-  #       asset_content_type: application/octet-stream
+  build-windows:
+    needs: create-release
+    runs-on: windows-2022
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup .NET10
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.0.x
+    - name: Build Windows AOT
+      run: dotnet publish ./NpgsqlRestClient/NpgsqlRestClient.csproj -r win-x64 -c Release
+    - name: Upload Windows executable
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: ./NpgsqlRestClient/bin/Release/net10.0/win-x64/publish/NpgsqlRestClient.exe
+        asset_name: npgsqlrest-win64.exe
+        asset_content_type: application/octet-stream
 
-  # TEMPORARILY DISABLED
-  # build-macos:
-  #   needs: create-release
-  #   runs-on: macos-latest
-  #   permissions:
-  #     contents: write
-  #   steps:
-  #   - uses: actions/checkout@v4
-  #   - name: Setup .NET10
-  #     uses: actions/setup-dotnet@v4
-  #     with:
-  #       dotnet-version: 10.0.x
-  #   - name: Build macOS ARM64 AOT
-  #     run: dotnet publish ./NpgsqlRestClient/NpgsqlRestClient.csproj -r osx-arm64 -c Release
-  #   - name: Upload macOS executable
-  #     uses: actions/upload-release-asset@v1
-  #     env:
-  #       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  #     with:
-  #       upload_url: ${{ needs.create-release.outputs.upload_url }}
-  #       asset_path: ./NpgsqlRestClient/bin/Release/net10.0/osx-arm64/publish/NpgsqlRestClient
-  #       asset_name: npgsqlrest-osx-arm64
-  #       asset_content_type: application/octet-stream
+  build-linux:
+    needs: create-release
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup .NET10
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.0.x
+    - name: Build Linux AOT
+      run: dotnet publish ./NpgsqlRestClient/NpgsqlRestClient.csproj -r linux-x64 -c Release
+    - name: Upload Linux executable
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: ./NpgsqlRestClient/bin/Release/net10.0/linux-x64/publish/NpgsqlRestClient
+        asset_name: npgsqlrest-linux64
+        asset_content_type: application/octet-stream
+
+  build-macos:
+    needs: create-release
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup .NET10
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.0.x
+    - name: Build macOS ARM64 AOT
+      run: dotnet publish ./NpgsqlRestClient/NpgsqlRestClient.csproj -r osx-arm64 -c Release
+    - name: Upload macOS executable
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: ./NpgsqlRestClient/bin/Release/net10.0/osx-arm64/publish/NpgsqlRestClient
+        asset_name: npgsqlrest-osx-arm64
+        asset_content_type: application/octet-stream
 
   build-docker-aot:
-    # Removed: needs: build-linux - binary already exists on GitHub releases
+    needs: build-linux
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -185,7 +179,7 @@ jobs:
           vbilopav/npgsqlrest:latest-aot
 
   build-docker-jit:
-    # Removed: needs: create-release
+    needs: create-release
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -213,7 +207,7 @@ jobs:
           vbilopav/npgsqlrest:latest-jit
 
   build-docker-bun:
-    # Removed: needs: build-linux - binary already exists on GitHub releases
+    needs: build-linux
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -240,23 +234,22 @@ jobs:
           vbilopav/npgsqlrest:${{ env.RELEASE_VERSION }}-bun
           vbilopav/npgsqlrest:latest-bun
 
-  # TEMPORARILY DISABLED
-  # npm-publish:
-  #   needs: create-release
-  #   runs-on: ubuntu-22.04
-  #   permissions:
-  #     contents: read
-  #     id-token: write  # Required for NPM OIDC trusted publishing
-  #   steps:
-  #   - name: Checkout code
-  #     uses: actions/checkout@v4
-  #   - name: Setup Node.js
-  #     uses: actions/setup-node@v4
-  #     with:
-  #       node-version: '24'
-  #   - name: Publish to npm with OIDC
-  #     uses: JS-DevTools/npm-publish@v4
-  #     with:
-  #       package: ./npm/package.json
-  #       access: public
-  #       provenance: true
+  npm-publish:
+    needs: create-release
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      id-token: write  # Required for NPM OIDC trusted publishing
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+    - name: Publish to npm with OIDC
+      uses: JS-DevTools/npm-publish@v4
+      with:
+        package: ./npm/package.json
+        access: public
+        provenance: true
