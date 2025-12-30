@@ -113,8 +113,8 @@ export async function tsclientTestGreetStatus(
     });
     return {
         status: response.status,
-        response: response.status === 200 ? await response.text() : undefined!,
-        error: response.status !== 200 ? await response.json() as {status: number; title: string; detail?: string | null} : undefined
+        response: response.ok ? await response.text() : undefined!,
+        error: !response.ok ? await response.json() as {status: number; title: string; detail?: string | null} : undefined
     };
 }
 

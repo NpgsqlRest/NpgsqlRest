@@ -457,11 +457,11 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                         Environment.NewLine,
                         "        response: ",
                         (responseExp == "await response.text()" ?
-                            "response.status === 200 ? " + responseExp + " : undefined!" :
-                            string.Concat("response.status === 200 ? ", responseExp, " : undefined!")),
+                            "response.ok ? " + responseExp + " : undefined!" :
+                            string.Concat("response.ok ? ", responseExp, " : undefined!")),
                         ",",
                         Environment.NewLine,
-                        $"        error: response.status !== 200 ? {options.ErrorExpression} as {errorType} : undefined",
+                        $"        error: !response.ok ? {options.ErrorExpression} as {errorType} : undefined",
                         Environment.NewLine,
                         "    };");
                 }
@@ -607,7 +607,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                         Environment.NewLine,
                         "        status: response.status,",
                         Environment.NewLine,
-                        $"        error: response.status !== 200 ? {options.ErrorExpression} as {errorType} : undefined",
+                        $"        error: !response.ok ? {options.ErrorExpression} as {errorType} : undefined",
                         Environment.NewLine,
                         "    };");
                 }

@@ -4,6 +4,14 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [3.2.3](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.2.3) (2025-12-30)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.2.2...3.2.3)
+
+### TsClient Plugin
+
+- Changed generated TypeScript/JavaScript response checks from `response.status === 200` to `response.ok` and `response.status !== 200` to `!response.ok` for more idiomatic fetch API usage.
+
 ## Version [3.2.2](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.2.2) (2025-12-24)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.2.1...3.2.2)

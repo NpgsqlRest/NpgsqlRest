@@ -93,8 +93,8 @@ export async function tsclientTestIsActiveStatus() : Promise<{status: number, re
     });
     return {
         status: response.status,
-        response: response.status === 200 ? await response.text() == "t" : undefined!,
-        error: response.status !== 200 ? await response.json() as {status: number; title: string; detail?: string | null} : undefined
+        response: response.ok ? await response.text() == "t" : undefined!,
+        error: !response.ok ? await response.json() as {status: number; title: string; detail?: string | null} : undefined
     };
 }
 
