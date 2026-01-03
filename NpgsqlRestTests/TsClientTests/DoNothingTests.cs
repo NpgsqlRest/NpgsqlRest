@@ -92,7 +92,7 @@ export async function tsclientTestDoNothingStatus() : Promise<{status: number, e
     });
     return {
         status: response.status,
-        error: !response.ok ? await response.json() as {status: number; title: string; detail?: string | null} : undefined
+        error: !response.ok && response.headers.get("content-length") !== "0" ? await response.json() as {status: number; title: string; detail?: string | null} : undefined
     };
 }
 

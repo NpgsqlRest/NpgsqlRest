@@ -100,7 +100,7 @@ export async function tsclientTestGetNamesStatus() : Promise<{status: number, re
     return {
         status: response.status,
         response: response.ok ? await response.json() as string[] : undefined!,
-        error: !response.ok ? await response.json() as {status: number; title: string; detail?: string | null} : undefined
+        error: !response.ok && response.headers.get("content-length") !== "0" ? await response.json() as {status: number; title: string; detail?: string | null} : undefined
     };
 }
 

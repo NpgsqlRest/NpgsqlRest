@@ -461,7 +461,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                             string.Concat("response.ok ? ", responseExp, " : undefined!")),
                         ",",
                         Environment.NewLine,
-                        $"        error: !response.ok ? {options.ErrorExpression} as {errorType} : undefined",
+                        $"        error: !response.ok && response.headers.get(\"content-length\") !== \"0\" ? {options.ErrorExpression} as {errorType} : undefined",
                         Environment.NewLine,
                         "    };");
                 }
@@ -607,7 +607,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                         Environment.NewLine,
                         "        status: response.status,",
                         Environment.NewLine,
-                        $"        error: !response.ok ? {options.ErrorExpression} as {errorType} : undefined",
+                        $"        error: !response.ok && response.headers.get(\"content-length\") !== \"0\" ? {options.ErrorExpression} as {errorType} : undefined",
                         Environment.NewLine,
                         "    };");
                 }

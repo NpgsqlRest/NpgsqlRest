@@ -94,7 +94,7 @@ export async function tsclientTestGetAnswerStatus() : Promise<{status: number, r
     return {
         status: response.status,
         response: response.ok ? Number(await response.text()) : undefined!,
-        error: !response.ok ? await response.json() as {status: number; title: string; detail?: string | null} : undefined
+        error: !response.ok && response.headers.get("content-length") !== "0" ? await response.json() as {status: number; title: string; detail?: string | null} : undefined
     };
 }
 
