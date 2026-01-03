@@ -425,6 +425,13 @@ public class Builder
         Database
     }
 
+    public enum KeyEncryptionMethod
+    {
+        None,
+        Certificate,
+        Dpapi // Windows only
+    }
+
     public string? BuildDataProtection(RetryStrategy? cmdRetryStrategy)
     {
         var dataProtectionCfg = _config.Cfg.GetSection("DataProtection");
@@ -471,6 +478,38 @@ public class Builder
                     cmdRetryStrategy,
                     Logger);
             });
+        }
+
+        var keyEncryption = _config.GetConfigEnum<KeyEncryptionMethod?>("KeyEncryption", dataProtectionCfg) ?? KeyEncryptionMethod.None;
+        if (keyEncryption == KeyEncryptionMethod.Certificate)
+        {
+            var certPath = _config.GetConfigStr("CertificatePath", dataProtectionCfg);
+            if (string.IsNullOrEmpty(certPath))
+            {
+                throw new ArgumentException("CertificatePath value in DataProtection can't be null or empty when using Certificate KeyEncryption");
+            }
+            var certPassword = _config.GetConfigStr("CertificatePassword", dataProtectionCfg);
+            if (string.IsNullOrEmpty(certPassword))
+            {
+                dataProtectionBuilder.ProtectKeysWithCertificate(System.Security.Cryptography.X509Certificates.X509CertificateLoader.LoadPkcs12FromFile(certPath, null));
+            }
+            else
+            {
+                dataProtectionBuilder.ProtectKeysWithCertificate(System.Security.Cryptography.X509Certificates.X509CertificateLoader.LoadPkcs12FromFile(certPath, certPassword));
+            }
+            Logger?.LogDebug("Data Protection keys encrypted with certificate from {certPath}", certPath);
+        }
+        else if (keyEncryption == KeyEncryptionMethod.Dpapi)
+        {
+            if (OperatingSystem.IsWindows() is false)
+            {
+                throw new PlatformNotSupportedException("DPAPI key encryption is only supported on Windows");
+            }
+            var protectToLocalMachine = _config.GetConfigBool("DpapiLocalMachine", dataProtectionCfg);
+#pragma warning disable CA1416 // Validate platform compatibility - already checked above
+            dataProtectionBuilder.ProtectKeysWithDpapi(protectToLocalMachine);
+#pragma warning restore CA1416
+            Logger?.LogDebug("Data Protection keys encrypted with DPAPI (LocalMachine: {protectToLocalMachine})", protectToLocalMachine);
         }
 
         var expiresInDays = _config.GetConfigInt("DefaultKeyLifetimeDays", dataProtectionCfg) ?? 90;

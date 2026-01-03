@@ -4,6 +4,64 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [3.2.4](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.2.4) (2025-01-03)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.2.3...3.2.4)
+
+### DataProtection Key Encryption Options
+
+Added support for encrypting data protection keys at rest using X.509 certificates or Windows DPAPI.
+
+**New Configuration Options:**
+
+```json
+{
+  "DataProtection": {
+    "KeyEncryption": "None",
+    "CertificatePath": null,
+    "CertificatePassword": null,
+    "DpapiLocalMachine": false
+  }
+}
+```
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `KeyEncryption` | Encryption method: `"None"` (default), `"Certificate"`, or `"Dpapi"` (Windows only) |
+| `CertificatePath` | Path to X.509 certificate file (.pfx) when using Certificate encryption |
+| `CertificatePassword` | Password for the certificate file (can be null for passwordless certificates) |
+| `DpapiLocalMachine` | When using DPAPI, set to `true` to protect keys to the local machine instead of current user |
+
+**Example with Certificate:**
+
+```json
+{
+  "DataProtection": {
+    "Enabled": true,
+    "Storage": "Database",
+    "KeyEncryption": "Certificate",
+    "CertificatePath": "/path/to/cert.pfx",
+    "CertificatePassword": "${CERT_PASSWORD}"
+  }
+}
+```
+
+**Example with DPAPI (Windows only):**
+
+```json
+{
+  "DataProtection": {
+    "Enabled": true,
+    "Storage": "FileSystem",
+    "FileSystemPath": "./keys",
+    "KeyEncryption": "Dpapi",
+    "DpapiLocalMachine": true
+  }
+}
+```
+
 ## Version [3.2.3](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.2.3) (2025-12-30)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.2.2...3.2.3)
