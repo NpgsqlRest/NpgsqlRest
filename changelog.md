@@ -66,6 +66,10 @@ Added support for encrypting data protection keys at rest using X.509 certificat
 
 - Fixed error parsing in generated TypeScript/JavaScript code to skip `response.json()` when the response has no body (e.g., 404 responses). The generated code now checks `response.headers.get("content-length") !== "0"` before attempting to parse the error response.
 
+### NpgsqlRestClient
+
+- Added `Microsoft.Extensions.Caching.StackExchangeRedis` and `Microsoft.AspNetCore.Authentication.JwtBearer` packages to the version display output (`--version` / `-v`).
+
 ## Version [3.2.3](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.2.3) (2025-12-30)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.2.2...3.2.3)

@@ -70,6 +70,8 @@ if (args.Length >= 1 && (string.Equals(args[0], "-v", StringComparison.CurrentCu
         ("System.Text.Json", System.Reflection.Assembly.GetAssembly(typeof(System.Text.Json.JsonCommentHandling))?.GetName().Version?.ToString() ?? "-"),
         ("StackExchange.Redis", System.Reflection.Assembly.GetAssembly(typeof(StackExchange.Redis.ConnectionMultiplexer))?.GetName().Version?.ToString() ?? "-"),
         ("Microsoft.Extensions.Caching.Hybrid", System.Reflection.Assembly.GetAssembly(typeof(Microsoft.Extensions.Caching.Hybrid.HybridCache))?.GetName().Version?.ToString() ?? "-"),
+        ("Microsoft.Extensions.Caching.StackExchangeRedis", System.Reflection.Assembly.GetAssembly(typeof(Microsoft.Extensions.Caching.StackExchangeRedis.RedisCache))?.GetName().Version?.ToString() ?? "-"),
+        ("Microsoft.AspNetCore.Authentication.JwtBearer", System.Reflection.Assembly.GetAssembly(typeof(Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions))?.GetName().Version?.ToString() ?? "-"),
         (" ", " "),
         ("CurrentDirectory", Directory.GetCurrentDirectory()),
         ("BaseDirectory", AppContext.BaseDirectory)
