@@ -4,6 +4,13 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [3.2.6](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.2.6) (2025-01-04)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.2.5...3.2.6)
+
+- Fixed issue for Upload endpoint code generation in TsClient.
+- Skipped version 3.2.5 because of a packaging issue.
+
 ## Version [3.2.4](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.2.4) (2025-01-03)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.2.3...3.2.4)

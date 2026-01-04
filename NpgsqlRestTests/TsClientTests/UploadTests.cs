@@ -46,13 +46,13 @@ interface ITsclientTestUploadFileRequest {
 }
 
 interface ITsclientTestUploadFileResponse {
-      type: string;
-      fileName: string;
-      contentType: string;
-      size: number;
-      success: boolean;
-      status: string;
-      [key: string]: string | number | boolean;
+    type: string;
+    fileName: string;
+    contentType: string;
+    size: number;
+    success: boolean;
+    status: string;
+    [key: string]: string | number | boolean;
 }
 
 
@@ -96,9 +96,9 @@ export async function tsclientTestUploadFile(
         }
         xhr.onload = function () {
             if (this.status >= 200 && this.status < 300) {
-                resolve();
+                resolve(JSON.parse(this.responseText) as ITsclientTestUploadFileResponse[]);
             } else {
-                resolve({status: this.status, response: undefined!, error: JSON.parse(this.responseText) as {{status: number; title: string; detail?: string | null}}});
+                throw new Error(this.responseText);
             }
         };
         xhr.onerror = function () {

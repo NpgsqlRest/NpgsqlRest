@@ -476,17 +476,27 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                     StringBuilder resp = new();
 
                     resp.AppendLine($"interface {responseName} {{");
-                    resp.AppendLine("      type: string;");
-                    resp.AppendLine("      fileName: string;");
-                    resp.AppendLine("      contentType: string;");
-                    resp.AppendLine("      size: number;");
-                    resp.AppendLine("      success: boolean;");
-                    resp.AppendLine("      status: string;");
-                    resp.AppendLine("      [key: string]: string | number | boolean;");
+                    resp.AppendLine("    type: string;");
+                    resp.AppendLine("    fileName: string;");
+                    resp.AppendLine("    contentType: string;");
+                    resp.AppendLine("    size: number;");
+                    resp.AppendLine("    success: boolean;");
+                    resp.AppendLine("    status: string;");
+                    resp.AppendLine("    [key: string]: string | number | boolean;");
                     resp.AppendLine("}");
                     resp.AppendLine();
                     interfaces.Append(resp);
                     responseName = string.Concat(responseName, "[]");
+                    // Note: Don't set json = true here because upload endpoints use FormData,
+                    // and the Content-Type header should be set automatically by the browser
+                    if (!options.SkipTypes)
+                    {
+                        returnExp = GetReturnExp($"await response.json() as {responseName}");
+                    }
+                    else
+                    {
+                        returnExp = GetReturnExp("await response.json()");
+                    }
                 }
                 else if (returnsSet == false && columnCount == 1 && !returnsRecordType)
                 {
@@ -891,18 +901,62 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                     var uploadErrorType = options.ErrorType.EndsWith(" | undefined")
                         ? options.ErrorType[..^12]  // Remove " | undefined" suffix for inline use
                         : options.ErrorType;
-                    // Need to escape braces in the error type for string.Format
-                    var escapedErrorType = uploadErrorType.Replace("{", "{{").Replace("}", "}}");
-                    onloadExp =string.Format(
-                        """
-                            xhr.onload = function () {{
-                                if (this.status >= 200 && this.status < 300) {{
-                                    resolve({0});
-                                }} else {{
-                                    resolve({{status: this.status, response: undefined!, error: JSON.parse(this.responseText) as {1}}});
-                                }}
-                            }};
-                    """, returnExp, escapedErrorType);
+                    if (includeStatusCode)
+                    {
+                        if (!options.SkipTypes)
+                        {
+                            onloadExp = $$"""
+                                    xhr.onload = function () {
+                                        if (this.status >= 200 && this.status < 300) {
+                                            resolve({status: this.status, response: JSON.parse(this.responseText) as {{responseName}}, error: undefined});
+                                        } else {
+                                            resolve({status: this.status, response: [], error: JSON.parse(this.responseText) as {{uploadErrorType}}});
+                                        }
+                                    };
+                            """;
+                        }
+                        else
+                        {
+                            onloadExp =
+                                """
+                                    xhr.onload = function () {
+                                        if (this.status >= 200 && this.status < 300) {
+                                            resolve({status: this.status, response: JSON.parse(this.responseText), error: undefined});
+                                        } else {
+                                            resolve({status: this.status, response: [], error: JSON.parse(this.responseText)});
+                                        }
+                                    };
+                            """;
+                        }
+                    }
+                    else
+                    {
+                        if (!options.SkipTypes)
+                        {
+                            onloadExp = $$"""
+                                    xhr.onload = function () {
+                                        if (this.status >= 200 && this.status < 300) {
+                                            resolve(JSON.parse(this.responseText) as {{responseName}});
+                                        } else {
+                                            throw new Error(this.responseText);
+                                        }
+                                    };
+                            """;
+                        }
+                        else
+                        {
+                            onloadExp =
+                                """
+                                    xhr.onload = function () {
+                                        if (this.status >= 200 && this.status < 300) {
+                                            resolve(JSON.parse(this.responseText));
+                                        } else {
+                                            throw new Error(this.responseText);
+                                        }
+                                    };
+                            """;
+                        }
+                    }
                 }
                 else
                 {

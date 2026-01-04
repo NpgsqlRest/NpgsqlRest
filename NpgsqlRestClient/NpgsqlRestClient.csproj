@@ -10,7 +10,7 @@
     <PublishAot>true</PublishAot>
     <PublishTrimmed>true</PublishTrimmed>
     <TrimMode>full</TrimMode>
-    <Version>3.2.4</Version>
+    <Version>3.2.6</Version>
   </PropertyGroup>
 
   <ItemGroup>
@@ -32,7 +32,13 @@
   </ItemGroup>
   
   <ItemGroup>
+    <_ContentIncludedByDefault Remove="build\appsettings.Development.json" />
+    <_ContentIncludedByDefault Remove="build\appsettings.json" />
+    <_ContentIncludedByDefault Remove="build\NpgsqlRestClient.staticwebassets.endpoints.json" />
+  </ItemGroup>
+  
+  <ItemGroup>
     <Folder Include="src\" />
-    <Folder Include="src\app\api\" />
+    <Folder Include="wwwroot\" />
   </ItemGroup>
 </Project>
