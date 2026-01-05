@@ -4,6 +4,57 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [3.2.7](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.2.7) (2025-01-05)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.2.6...3.2.7)
+
+Note: NpgsqlRest core library version jumped from 3.2.2 to 3.2.7 to align with the client application version.
+
+### Upload Handlers: User Context and Claims Support
+
+Fixed issue where `user_context` and `user_params` were not properly available for CSV/Excel upload endpoints:
+
+- **`user_context`**: `SET LOCAL` session variables (e.g., `request.user_id`) are now set before upload, making them accessible in `row_command` via `current_setting()`.
+- **`user_params`**: Claim values are now correctly bound to upload function parameters (e.g., `_user_id`, `_user_name`).
+
+**New Feature:** Added `RowCommandUserClaimsKey` option to include authenticated user claims in the row metadata JSON parameter (`$4`) passed to `row_command`.
+
+**Configuration:**
+
+```json
+{
+  "UploadHandlers": {
+    "RowCommandUserClaimsKey": "claims"
+  }
+}
+```
+
+- Set to a key name (default: `"claims"`) to include claims in metadata JSON
+- Set to `null` or empty string to disable
+
+**SQL Usage:**
+
+```sql
+-- Access claims from metadata JSON in row_command
+create function process_row(
+  _index int, 
+  _row text[], 
+  _prev int, 
+  _meta json
+  )
+returns int 
+as $$
+begin
+    insert into my_table (user_id, data)
+    values (
+        (_meta->'claims'->>'name_identifier')::int,
+        _row[1]
+    );
+    return _index;
+end;
+$$ language plpgsql;
+```
+
 ## Version [3.2.6](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.2.6) (2025-01-04)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.2.5...3.2.6)

@@ -591,6 +591,7 @@ public class App
                 CsvUploadHasFieldsEnclosedInQuotes = _config.GetConfigBool("CsvUploadHasFieldsEnclosedInQuotes", uploadHandlersCfg, true),
                 CsvUploadSetWhiteSpaceToNull = _config.GetConfigBool("CsvUploadSetWhiteSpaceToNull", uploadHandlersCfg, true),
                 CsvUploadRowCommand = _config.GetConfigStr("CsvUploadRowCommand", uploadHandlersCfg) ?? "call process_csv_row($1,$2,$3,$4)",
+                RowCommandUserClaimsKey = _config.GetConfigStr("RowCommandUserClaimsKey", uploadHandlersCfg) ?? "claims",
             };
             var imageTypes = _config.GetConfigStr("AllowedImageTypes", uploadHandlersCfg)?.ParseImageTypes(null);
             if (imageTypes is not null)

@@ -41,4 +41,10 @@ public class UploadHandlerOptions
     public bool CsvUploadHasFieldsEnclosedInQuotes { get; set; } = true;
     public bool CsvUploadSetWhiteSpaceToNull { get; set; } = true;
     public string CsvUploadRowCommand { get; set; } = "call process_csv_row($1,$2,$3,$4)";
+
+    // Row command user claims settings.
+    // When set, authenticated user claims are included in the row metadata JSON parameter
+    // under this key name. Set to null to disable. Example: "claims" adds {"claims": {...}} to metadata.
+
+    public string? RowCommandUserClaimsKey { get; set; } = "claims";
 }

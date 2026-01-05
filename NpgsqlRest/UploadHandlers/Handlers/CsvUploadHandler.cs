@@ -84,6 +84,15 @@ public class CsvUploadHandler(RetryStrategy? retryStrategy) : BaseUploadHandler,
         if (paramCount >= 3) command.Parameters.Add(new NpgsqlParameter());
         if (paramCount >= 4) command.Parameters.Add(NpgsqlRestParameter.CreateParamWithType(NpgsqlDbType.Json));
 
+        // Build user claims JSON once (reused for all rows)
+        string? userClaimsJson = null;
+        var claimsKey = Options.UploadOptions.DefaultUploadHandlerOptions.RowCommandUserClaimsKey;
+        if (string.IsNullOrEmpty(claimsKey) is false && context.User?.Identity?.IsAuthenticated == true)
+        {
+            var claimsDict = context.User.BuildClaimsDictionary(Options.AuthenticationOptions);
+            userClaimsJson = $",{SerializeString(claimsKey)}:{context.User.GetUserClaimsDbParam(claimsDict)}";
+        }
+
         StringBuilder result = new(context.Request.Form.Files.Count*100);
         result.Append('[');
         int fileId = 0;
@@ -129,6 +138,10 @@ public class CsvUploadHandler(RetryStrategy? retryStrategy) : BaseUploadHandler,
             fileJson.Append(status == UploadFileStatus.Ok ? "true" : "false");
             fileJson.Append(",\"status\":");
             fileJson.Append(SerializeString(status.ToString()));
+            if (userClaimsJson is not null)
+            {
+                fileJson.Append(userClaimsJson);
+            }
             fileJson.Append('}');
             if (status != UploadFileStatus.Ok)
             {

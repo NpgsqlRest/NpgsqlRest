@@ -1512,43 +1512,15 @@ public class NpgsqlRestEndpoint(
                 }
             }
 
-            object? uploadMetadata = null;
-            if (endpoint.Upload is true && uploadHandler is not null)
-            {
-                if (connection.State != ConnectionState.Open)
-                {
-                    if (Options.BeforeConnectionOpen is not null)
-                    {
-                        Options.BeforeConnectionOpen(connection, endpoint, context);
-                    }
-                    await connection.OpenRetryAsync(Options.ConnectionRetryOptions, cancellationToken);
-                }
-                if (uploadHandler.RequiresTransaction is true)
-                {
-                    transaction = await connection.BeginTransactionAsync();
-                }
-                uploadMetadata = await uploadHandler.UploadAsync(connection, context, endpoint.CustomParameters);
-                uploadMetadata ??= DBNull.Value;
-                if (uploadMetaParamIndex > -1)
-                {
-                    command.Parameters[uploadMetaParamIndex].Value = uploadMetadata;
-                }
-            }
-
+            // Set user context BEFORE upload so that upload row commands can access user claims
             if (
-                (endpoint.RequestHeadersMode == RequestHeadersMode.Context && headers is not null && Options.RequestHeadersContextKey is not null) 
+                (endpoint.RequestHeadersMode == RequestHeadersMode.Context && headers is not null && Options.RequestHeadersContextKey is not null)
                 ||
                 (endpoint.UserContext is true && Options.AuthenticationOptions.IpAddressContextKey is not null)
                 ||
                 (endpoint.UserContext is true && context.User?.Identity?.IsAuthenticated is true &&
                     (Options.AuthenticationOptions.ClaimsJsonContextKey is not null || Options.AuthenticationOptions.ContextKeyClaimsMapping.Count > 0)
                     )
-                ||
-                (Options.UploadOptions.UseDefaultUploadMetadataContextKey && 
-                    Options.UploadOptions.DefaultUploadMetadataContextKey is not null && 
-                    endpoint.Upload is true && 
-                    uploadHandler is not null && 
-                    uploadMetadata is not null)
                 )
             {
                 if (connection.State != ConnectionState.Open)
@@ -1599,17 +1571,52 @@ public class NpgsqlRestEndpoint(
                     }
                 }
 
-                if (Options.UploadOptions.UseDefaultUploadMetadataContextKey &&
-                    Options.UploadOptions.DefaultUploadMetadataContextKey is not null &&
-                    endpoint.Upload is true &&
-                    uploadHandler is not null &&
-                    uploadMetadata is not null)
+                await batch.ExecuteBatchWithRetryAsync(endpoint.RetryStrategy, cancellationToken);
+            }
+
+            object? uploadMetadata = null;
+            if (endpoint.Upload is true && uploadHandler is not null)
+            {
+                if (connection.State != ConnectionState.Open)
                 {
-                    var cmd = new NpgsqlBatchCommand(Consts.SetContext);
-                    cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(Options.UploadOptions.DefaultUploadMetadataContextKey));
-                    cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(uploadMetadata));
-                    batch.BatchCommands.Add(cmd);
+                    if (Options.BeforeConnectionOpen is not null)
+                    {
+                        Options.BeforeConnectionOpen(connection, endpoint, context);
+                    }
+                    await connection.OpenRetryAsync(Options.ConnectionRetryOptions, cancellationToken);
                 }
+                if (uploadHandler.RequiresTransaction is true)
+                {
+                    transaction = await connection.BeginTransactionAsync();
+                }
+                uploadMetadata = await uploadHandler.UploadAsync(connection, context, endpoint.CustomParameters);
+                uploadMetadata ??= DBNull.Value;
+                if (uploadMetaParamIndex > -1)
+                {
+                    command.Parameters[uploadMetaParamIndex].Value = uploadMetadata;
+                }
+            }
+
+            // Set upload metadata context AFTER upload (since it depends on uploadMetadata)
+            if (Options.UploadOptions.UseDefaultUploadMetadataContextKey &&
+                Options.UploadOptions.DefaultUploadMetadataContextKey is not null &&
+                endpoint.Upload is true &&
+                uploadHandler is not null &&
+                uploadMetadata is not null)
+            {
+                if (connection.State != ConnectionState.Open)
+                {
+                    if (Options.BeforeConnectionOpen is not null)
+                    {
+                        Options.BeforeConnectionOpen(connection, endpoint, context);
+                    }
+                    await connection.OpenRetryAsync(Options.ConnectionRetryOptions, cancellationToken);
+                }
+                await using var batch = NpgsqlRestBatch.Create(connection);
+                var cmd = new NpgsqlBatchCommand(Consts.SetContext);
+                cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(Options.UploadOptions.DefaultUploadMetadataContextKey));
+                cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(uploadMetadata));
+                batch.BatchCommands.Add(cmd);
                 await batch.ExecuteBatchWithRetryAsync(endpoint.RetryStrategy, cancellationToken);
             }
             
