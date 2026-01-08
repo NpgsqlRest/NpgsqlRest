@@ -275,6 +275,55 @@ public class Program
             {
                 Enabled = true,
                 Host = "http://localhost:50954" // ProxyWireMockFixture.Port
+            },
+            ValidationOptions = new()
+            {
+                Rules = new()
+                {
+                    // NotNull - checks for null/DBNull values
+                    ["not_null"] = new ValidationRule
+                    {
+                        Type = ValidationType.NotNull,
+                        Message = "Parameter '{0}' cannot be null",
+                        StatusCode = 400
+                    },
+                    // NotEmpty - checks for empty string (null values pass)
+                    ["not_empty"] = new ValidationRule
+                    {
+                        Type = ValidationType.NotEmpty,
+                        Message = "Parameter '{0}' cannot be empty",
+                        StatusCode = 400
+                    },
+                    // Required - combines NotNull and NotEmpty
+                    ["required"] = new ValidationRule
+                    {
+                        Type = ValidationType.Required,
+                        Message = "Parameter '{0}' is required",
+                        StatusCode = 400
+                    },
+                    ["email"] = new ValidationRule
+                    {
+                        Type = ValidationType.Regex,
+                        Pattern = @"^[^@\s]+@[^@\s]+\.[^@\s]+$",
+                        Message = "Parameter '{0}' must be a valid email address",
+                        StatusCode = 400
+                    },
+                    // Custom rule for testing custom messages
+                    ["product_code"] = new ValidationRule
+                    {
+                        Type = ValidationType.Regex,
+                        Pattern = @"^[A-Z]{3}-\d{4}$",
+                        Message = "Product code must be in format XXX-0000 (3 uppercase letters, dash, 4 digits)",
+                        StatusCode = 400
+                    },
+                    // Rule for testing message format placeholders: {0}=original, {1}=converted, {2}=rule name
+                    ["format_test"] = new ValidationRule
+                    {
+                        Type = ValidationType.NotNull,
+                        Message = "Original: {0}, Converted: {1}, Rule: {2}",
+                        StatusCode = 400
+                    }
+                }
             }
         });
         app.Run();

@@ -140,4 +140,10 @@ public class RoutineEndpoint(
     /// Set of parameter names that receive proxy response data.
     /// </summary>
     internal HashSet<string>? ProxyResponseParameterNames { get; set; } = null;
+
+    /// <summary>
+    /// Dictionary of parameter validations. Key is the parameter name, value is the list of validation rules to apply.
+    /// Configured via comment annotations using "validate _param using rule_name" syntax.
+    /// </summary>
+    public Dictionary<string, List<ValidationRule>>? ParameterValidations { get; set; } = null;
 }

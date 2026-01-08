@@ -352,6 +352,13 @@ internal static partial class DefaultCommentParser
                     HandleErrorCodePolicy(routineEndpoint, words, description);
                 }
 
+                // validate _param_name using rule_name
+                // validation _param_name using rule_name
+                else if (haveTag is true && len >= 4 && StrEqualsToArray(wordsLower[0], ValidateKey))
+                {
+                    HandleValidate(routine, routineEndpoint, words, len, description);
+                }
+
                 // proxy
                 // proxy [ GET | POST | PUT | DELETE | PATCH ]
                 // proxy host_url

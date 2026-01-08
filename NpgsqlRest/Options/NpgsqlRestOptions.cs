@@ -352,4 +352,10 @@ public class NpgsqlRestOptions
     /// When enabled, endpoints marked with 'proxy' annotation will forward requests to another URL.
     /// </summary>
     public ProxyOptions ProxyOptions { get; set; } = new();
+
+    /// <summary>
+    /// Options for parameter validation rules.
+    /// Define named validation rules that can be referenced in comment annotations using "validate _param using rule_name" syntax.
+    /// </summary>
+    public ValidationOptions ValidationOptions { get; set; } = new();
 }

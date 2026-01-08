@@ -4,6 +4,136 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [3.3.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.3.0) (2025-01-05)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.2.7...3.3.0)
+
+### Parameter Validation
+
+New feature for validating endpoint parameters before database execution. Validation is performed immediately after parameters are parsed, before any database connection is opened, authorization checks, or proxy handling.
+
+**Comment Annotation Syntax:**
+
+```sql
+comment on function my_function(text) is '
+HTTP POST
+validate _param_name using rule_name
+validate _param_name using rule1, rule2, rule3
+';
+```
+
+- Parameter names can use either original PostgreSQL names (`_email`) or converted names (`email`)
+- Multiple rules can be specified as comma-separated values or on separate lines
+- Rules are evaluated in order; validation stops on first failure
+
+**Built-in Validation Types:**
+
+| Type | Description |
+|------|-------------|
+| `NotNull` | Parameter value cannot be null (DBNull.Value) |
+| `NotEmpty` | Parameter value cannot be an empty string (null values pass) |
+| `Required` | Combines NotNull and NotEmpty - value cannot be null or empty |
+| `Regex` | Parameter value must match the specified regular expression pattern |
+| `MinLength` | Parameter value must have at least N characters |
+| `MaxLength` | Parameter value must have at most N characters |
+
+**Default Rules:**
+
+Four validation rules are available by default: `not_null`, `not_empty`, `required`, and `email`.
+
+**Configuration (NpgsqlRestClient):**
+
+```json
+{
+  "ValidationOptions": {
+    "Enabled": true,
+    "Rules": {
+      "not_null": {
+        "Type": "NotNull",
+        "Message": "Parameter '{0}' cannot be null",
+        "StatusCode": 400
+      },
+      "not_empty": {
+        "Type": "NotEmpty",
+        "Message": "Parameter '{0}' cannot be empty",
+        "StatusCode": 400
+      },
+      "required": {
+        "Type": "Required",
+        "Message": "Parameter '{0}' is required",
+        "StatusCode": 400
+      },
+      "email": {
+        "Type": "Regex",
+        "Pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+        "Message": "Parameter '{0}' must be a valid email address",
+        "StatusCode": 400
+      }
+    }
+  }
+}
+```
+
+**Rule Properties:**
+
+| Property | Required | Description |
+|----------|----------|-------------|
+| `Type` | Yes | Validation type: `NotNull`, `NotEmpty`, `Required`, `Regex`, `MinLength`, `MaxLength` |
+| `Pattern` | For Regex | Regular expression pattern |
+| `MinLength` | For MinLength | Minimum character length |
+| `MaxLength` | For MaxLength | Maximum character length |
+| `Message` | No | Error message with placeholders: `{0}`=original name, `{1}`=converted name, `{2}`=rule name. Default: `"Validation failed for parameter '{0}'"` |
+| `StatusCode` | No | HTTP status code on failure. Default: `400` |
+
+**Programmatic Configuration:**
+
+```csharp
+var options = new NpgsqlRestOptions
+{
+    ValidationOptions = new ValidationOptions
+    {
+        Rules = new Dictionary<string, ValidationRule>
+        {
+            ["required"] = new ValidationRule
+            {
+                Type = ValidationType.Required,
+                Message = "Parameter '{0}' is required",
+                StatusCode = 400
+            },
+            ["phone"] = new ValidationRule
+            {
+                Type = ValidationType.Regex,
+                Pattern = @"^\+?[1-9]\d{1,14}$",
+                Message = "Parameter '{0}' must be a valid phone number"
+            }
+        }
+    }
+};
+```
+
+**Example Usage:**
+
+```sql
+create function register_user(_email text, _password text, _name text)
+returns json
+language plpgsql
+as $$
+begin
+    -- validation already passed, safe to use parameters
+    insert into users (email, password_hash, name)
+    values (_email, crypt(_password, gen_salt('bf')), _name);
+    return json_build_object('success', true);
+end;
+$$;
+
+comment on function register_user(text, text, text) is '
+HTTP POST
+validate _email using required, email
+validate _password using required
+validate _name using not_empty
+';
+```
+
 ## Version [3.2.7](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.2.7) (2025-01-05)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.2.6...3.2.7)

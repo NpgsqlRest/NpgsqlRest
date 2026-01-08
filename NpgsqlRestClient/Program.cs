@@ -275,6 +275,7 @@ NpgsqlRestOptions options = new()
     DefaultRateLimitingPolicy = rateLimiterDefaultPolicy,
     HttpClientOptions = builder.BuildHttpClientOptions(),
     ProxyOptions = builder.BuildProxyOptions(),
+    ValidationOptions = builder.BuildValidationOptions(),
 };
 
 app.UseNpgsqlRest(options);

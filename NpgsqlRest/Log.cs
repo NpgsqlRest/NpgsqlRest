@@ -250,4 +250,19 @@ public static partial class Log
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has set ERROR CODE POLICY NAME to {name} by the comment annotation.")]
     public static partial void ErrorCodePolicySet(this ILogger logger, string description, string name);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has set VALIDATION RULE '{ruleName}' for parameter '{paramName}' by the comment annotation.")]
+    public static partial void ValidationRuleSet(this ILogger logger, string description, string paramName, string ruleName);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "{description} has failed to set VALIDATION RULE by the comment annotation. {error}")]
+    public static partial void ValidationInvalidSyntax(this ILogger logger, string description, string error);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "{description} has failed to set VALIDATION RULE by the comment annotation. Parameter '{paramName}' not found in routine parameters.")]
+    public static partial void ValidationParameterNotFound(this ILogger logger, string description, string paramName);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "{description} has failed to set VALIDATION RULE by the comment annotation. Rule '{ruleName}' not found in ValidationOptions.Rules.")]
+    public static partial void ValidationRuleNotFound(this ILogger logger, string description, string ruleName);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "{endpoint} validation failed for parameter '{paramName}': {message}")]
+    public static partial void ValidationFailed(this ILogger logger, string endpoint, string paramName, string message);
 }

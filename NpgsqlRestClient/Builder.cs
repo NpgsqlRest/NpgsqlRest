@@ -1583,4 +1583,84 @@ public class Builder
         }
         return new NpgsqlDataSourceBuilder(connectionString).Build();
     }
+
+    public ValidationOptions BuildValidationOptions()
+    {
+        var validationCfg = _config.Cfg.GetSection("ValidationOptions");
+        var defaults = new ValidationOptions();
+
+        if (validationCfg.Exists() is false || _config.GetConfigBool("Enabled", validationCfg) is false)
+        {
+            Logger?.LogDebug("Validation options disabled or not configured. Using defaults.");
+            return defaults;
+        }
+
+        var result = new ValidationOptions
+        {
+            Rules = new Dictionary<string, ValidationRule>()
+        };
+
+        var rulesCfg = validationCfg.GetSection("Rules");
+        foreach (var ruleSection in rulesCfg.GetChildren())
+        {
+            var ruleName = ruleSection.Key;
+            if (string.IsNullOrEmpty(ruleName))
+            {
+                continue;
+            }
+
+            var type = _config.GetConfigEnum<ValidationType?>("Type", ruleSection);
+            if (type is null)
+            {
+                Logger?.LogWarning("Validation rule '{RuleName}' has no valid Type specified, skipping.", ruleName);
+                continue;
+            }
+
+            var pattern = _config.GetConfigStr("Pattern", ruleSection);
+            var minLength = _config.GetConfigInt("MinLength", ruleSection);
+            var maxLength = _config.GetConfigInt("MaxLength", ruleSection);
+
+            // Skip rules with missing required properties for specific types
+            if (type == ValidationType.Regex && string.IsNullOrEmpty(pattern))
+            {
+                Logger?.LogWarning("Validation rule '{RuleName}' has Type 'Regex' but no Pattern specified, skipping.", ruleName);
+                continue;
+            }
+            if (type == ValidationType.MinLength && minLength is null)
+            {
+                Logger?.LogWarning("Validation rule '{RuleName}' has Type 'MinLength' but no MinLength specified, skipping.", ruleName);
+                continue;
+            }
+            if (type == ValidationType.MaxLength && maxLength is null)
+            {
+                Logger?.LogWarning("Validation rule '{RuleName}' has Type 'MaxLength' but no MaxLength specified, skipping.", ruleName);
+                continue;
+            }
+
+            var rule = new ValidationRule
+            {
+                Type = type.Value,
+                Pattern = pattern,
+                MinLength = minLength,
+                MaxLength = maxLength,
+                Message = _config.GetConfigStr("Message", ruleSection) ?? $"Validation failed for parameter '{{0}}'",
+                StatusCode = _config.GetConfigInt("StatusCode", ruleSection) ?? 400
+            };
+
+            result.Rules[ruleName] = rule;
+            Logger?.LogDebug("Registered validation rule '{RuleName}': {Rule}", ruleName, rule);
+        }
+
+        if (result.Rules.Count == 0)
+        {
+            Logger?.LogDebug("No validation rules configured, using defaults.");
+            return defaults;
+        }
+
+        Logger?.LogDebug("Using {Count} validation rules: {Rules}",
+            result.Rules.Count,
+            string.Join(", ", result.Rules.Keys));
+
+        return result;
+    }
 }
