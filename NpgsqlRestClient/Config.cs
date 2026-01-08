@@ -280,8 +280,10 @@ public class Config
 
     public string Serialize()
     {
-        var json = SerializeConfig(Cfg);
-        return json?.ToJsonString(new JsonSerializerOptions() { WriteIndented = true }) ?? "{}";
+        var defaults = ConfigDefaults.GetDefaults();
+        var actual = SerializeConfig(Cfg);
+        var merged = ConfigDefaults.MergeWithDefaults(defaults, actual);
+        return merged?.ToJsonString(new JsonSerializerOptions() { WriteIndented = true }) ?? "{}";
     }
 
     private JsonNode? SerializeConfig(IConfiguration config)

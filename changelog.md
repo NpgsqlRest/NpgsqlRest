@@ -151,6 +151,18 @@ The ARM64 build is compiled natively on GitHub's ARM64 runners for optimal perfo
 
 Refactored Docker build pipeline to use GitHub Actions artifacts instead of downloading binaries from release URLs. This eliminates potential race conditions with release asset propagation and removes hardcoded version numbers from Dockerfiles.
 
+### Config Command Shows Default Values
+
+The `--config` command now displays the complete configuration including all default values, not just explicitly set values.
+
+**Before:** Only showed values explicitly set in configuration files, leaving users to guess what defaults the application would use.
+
+**After:** Shows the full merged configuration with all defaults visible, making it useful for:
+- Understanding what values the application will use at runtime
+- Creating a starting point configuration file
+- Debugging configuration issues
+- Self-documenting reference of all available options
+
 ## Version [3.2.7](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.2.7) (2025-01-05)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.2.6...3.2.7)

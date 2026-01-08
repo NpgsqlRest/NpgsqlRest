@@ -5,8 +5,6 @@ using NpgsqlRest;
 using NpgsqlRest.HttpFiles;
 using NpgsqlRest.TsClient;
 using Serilog;
-
-using Microsoft.Extensions.Primitives;
 using NpgsqlRest.CrudSource;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.DataProtection;
