@@ -1,13 +1,6 @@
-FROM ubuntu:25.04 AS builder
-WORKDIR /app
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends wget ca-certificates && \
-    wget https://github.com/NpgsqlRest/NpgsqlRest/releases/download/v3.2.7/npgsqlrest-linux64 -O npgsqlrest && \
-    chmod +x npgsqlrest
-
 FROM ubuntu:25.04
 WORKDIR /app
-COPY --from=builder /app/npgsqlrest /usr/local/bin/npgsqlrest
+COPY NpgsqlRestClient /usr/local/bin/npgsqlrest
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends libssl3 libgssapi-krb5-2 ca-certificates curl unzip && \

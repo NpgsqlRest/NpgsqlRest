@@ -9,58 +9,38 @@
 
 > Transform your PostgreSQL database into a production-ready REST API server with automatic TypeScript code generation and end-to-end type safety.
 
+<p align="center">
+  <img src="clean.png" alt="NpgsqlRest Architecture" width="500">
+</p>
+
 **[Documentation](https://npgsqlrest.github.io/)** | **[Getting Started](https://npgsqlrest.github.io/getting-started/)** | **[Configuration Reference](https://npgsqlrest.github.io/config-reference/)** | **[Annotation Guide](https://npgsqlrest.github.io/comment-annotations/)**
 
 ## Key Features
 
 - **Instant API Generation** - Automatically creates REST endpoints from PostgreSQL functions, procedures, tables, and views
 - **Declarative Configuration** - Configure endpoints directly in your database using comment annotations
-- **TypeScript Code Generation** - Auto-generate type-safe frontend code with full static type checking
+- **Code Generation** - Auto-generate frontend TypeScript/JavaScript code and .http files for testing
+- **High Performance** - check out [benchmarks](https://npgsqlrest.github.io/blog/postgresql-rest-api-benchmark-2025.html) showing low latency and high throughput. Latest benchmark show that it is 6.1x faster than PostgREST at 100 concurrent users, 
 - **Native Executables** - AOT-compiled binaries with zero dependencies and instant startup
 - **RESTful Path Parameters** - Define routes like `/products/{id}` with parameters extracted from URL paths
 - **Reverse Proxy Endpoints** - Forward requests to upstream services with passthrough or transform modes
 - **HTTP Custom Types** - Enable PostgreSQL functions to call external APIs via annotated composite types
 - **Enterprise Ready** - Authentication, authorization, rate limiting, caching, SSE streaming, OpenAPI 3.0, and more
 
-## Quick Start
+## Clean Architecture Done Right
 
-### 1. Annotate a PostgreSQL Function
+Clean Architecture tells us to keep business logic independent of frameworks, databases, and delivery mechanisms. In practice, this often means layers upon layers of abstractions, DTOs, mappers, and repositories - all trying to "protect" the domain from the database.
 
-```sql
-create function hello(_name text)
-returns text
-language sql as $$
-select 'Hello, ' || _name
-$$;
+But what if the database *is* the best place for your business logic?
 
-comment on function hello(text) is 'HTTP GET /hello';
-```
+PostgreSQL is not just storage. It's a powerful computation engine with transactions, constraints, triggers, functions, and decades of optimization. NpgsqlRest flips the script: instead of abstracting away the database, it puts PostgreSQL at the center and generates everything else.
 
-### 2. Configure Connection
+- **Schema as contract** - Your tables, views, and functions become REST endpoints. One source of truth, zero drift.
+- **SQL comments as config** - Routes, auth rules, caching - all declared where the logic lives.
+- **Types flow outward** - PostgreSQL types generate TypeScript clients automatically. No manual mappings.
+- **No middle tier** - No ORM impedance mismatch, no N+1 queries, no controller boilerplate.
 
-Create `appsettings.json`:
-
-```json
-{
-  "ConnectionStrings": {
-    "Default": "Host=localhost;Port=5432;Database=my_db;Username=postgres;Password=postgres"
-  }
-}
-```
-
-### 3. Run
-
-```bash
-# Download from releases, or:
-npm i npgsqlrest && npx npgsqlrest
-
-# Or with Docker:
-docker run -p 8080:8080 -v ./appsettings.json:/app/appsettings.json vbilopav/npgsqlrest:latest
-```
-
-Your API is now live at `http://localhost:8080/hello?name=World`
-
-## Installation Options
+## Installation
 
 | Method | Command |
 |--------|---------|
