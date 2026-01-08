@@ -4,7 +4,7 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
-## Version [3.3.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.3.0) (2025-01-05)
+## Version [3.3.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.3.0) (2025-01-08)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.2.7...3.3.0)
 
@@ -133,6 +133,23 @@ validate _password using required
 validate _name using not_empty
 ';
 ```
+
+### Linux ARM64 Build and Docker Image
+
+Added Linux ARM64 native build and Docker image support:
+
+**New Release Assets:**
+- `npgsqlrest-linux-arm64` - Native ARM64 executable for Linux ARM systems (Raspberry Pi, AWS Graviton, Apple Silicon Linux VMs, etc.)
+
+**New Docker Image Tags:**
+- `vbilopav/npgsqlrest:3.3.0-arm` - ARM64 Docker image
+- `vbilopav/npgsqlrest:latest-arm` - Latest ARM64 Docker image
+
+The ARM64 build is compiled natively on GitHub's ARM64 runners for optimal performance on ARM-based systems.
+
+**Docker Build Improvements:**
+
+Refactored Docker build pipeline to use GitHub Actions artifacts instead of downloading binaries from release URLs. This eliminates potential race conditions with release asset propagation and removes hardcoded version numbers from Dockerfiles.
 
 ## Version [3.2.7](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.2.7) (2025-01-05)
 
