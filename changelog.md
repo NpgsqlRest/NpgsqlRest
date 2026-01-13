@@ -56,6 +56,45 @@ This is useful for:
 
 ---
 
+### Optional `@` Prefix for Comment Annotations
+
+Added support for optional `@` prefix on all NpgsqlRest-specific comment annotations. This provides better visual distinction and consistency with `.http` file conventions.
+
+Both syntaxes are equivalent and can be mixed freely:
+
+```sql
+-- Without @ prefix (existing syntax - still works)
+comment on function my_func() is '
+HTTP GET
+authorize
+cached
+raw
+';
+
+-- With @ prefix (new syntax)
+comment on function my_func() is '
+HTTP GET
+@authorize
+@cached
+@raw
+';
+
+-- Mixed (both work together)
+comment on function my_func() is '
+HTTP GET
+@authorize
+cached
+@timeout 30s
+';
+```
+
+**Notes:**
+- The `@` prefix is optional - existing code without `@` continues to work unchanged
+- HTTP RFC standard annotations (headers with `Name: value` syntax) do not use the `@` prefix
+- This applies to all NpgsqlRest-specific annotations: `authorize`, `cached`, `raw`, `disabled`, `login`, `logout`, `proxy`, `upload`, `validate`, etc.
+
+---
+
 ### Added a logo on client app commands
 
 ## Version [3.3.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.3.0) (2025-01-08)

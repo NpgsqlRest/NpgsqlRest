@@ -33,14 +33,20 @@ internal static partial class DefaultCommentParser
         return result;
     }
 
-    public static bool StrEquals(string str1, string str2) =>
-        str1.Equals(str2, StringComparison.OrdinalIgnoreCase);
+    public static bool StrEquals(string str1, string str2)
+    {
+        // Support optional @ prefix for annotations (e.g., "@authorize" == "authorize")
+        var s1 = str1.Length > 0 && str1[0] == '@' ? str1[1..] : str1;
+        return s1.Equals(str2, StringComparison.OrdinalIgnoreCase);
+    }
 
     public static bool StrEqualsToArray(string str, params string[] arr)
     {
+        // Support optional @ prefix for annotations (e.g., "@authorize" matches "authorize")
+        var s = str.Length > 0 && str[0] == '@' ? str[1..] : str;
         for (var i = 0; i < arr.Length; i++)
         {
-            if (str.Equals(arr[i], StringComparison.OrdinalIgnoreCase))
+            if (s.Equals(arr[i], StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }
