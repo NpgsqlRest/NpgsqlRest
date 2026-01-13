@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-  RELEASE_VERSION: v3.3.0
+  RELEASE_VERSION: v3.3.1
 
 # Add workflow-level permissions
 permissions:
@@ -48,6 +48,31 @@ jobs:
     outputs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}
     steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    - name: Extract changelog for this version
+      id: changelog
+      run: |
+        # Extract the changelog section for this version
+        # Looks for ## Version [X.X.X] and captures until the next ## Version
+        VERSION_NUM="${RELEASE_VERSION#v}"
+        CHANGELOG=$(awk -v ver="$VERSION_NUM" '
+          /^## Version \[/ {
+            if (found) exit
+            if (index($0, ver)) found=1
+          }
+          found {print}
+        ' changelog.md | tail -n +2)
+
+        # If changelog extraction failed, use a default message
+        if [ -z "$CHANGELOG" ]; then
+          CHANGELOG="See [full changelog](https://github.com/NpgsqlRest/NpgsqlRest/blob/master/changelog.md) for details."
+        fi
+
+        # Write to file to preserve formatting
+        echo "$CHANGELOG" > release_notes.md
+      env:
+        RELEASE_VERSION: ${{ env.RELEASE_VERSION }}
     - name: Create Release
       id: create_release
       uses: actions/create-release@v1
@@ -55,7 +80,8 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         tag_name: ${{ env.RELEASE_VERSION }}
-        release_name: "NpgsqlRest Client ${{ env.RELEASE_VERSION }}"
+        release_name: "NpgsqlRest ${{ env.RELEASE_VERSION }}"
+        body_path: release_notes.md
         draft: false
         prerelease: false
 
