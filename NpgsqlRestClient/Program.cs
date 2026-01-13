@@ -18,6 +18,7 @@ if (args.Length >= 1 && (string.Equals(args[0], "-h", StringComparison.CurrentCu
     string.Equals(args[0], "/?", StringComparison.CurrentCultureIgnoreCase)))
 {
     var _ = new Out();
+    _.Logo();
     _.Line("Usage:");
     _.Line([
         ("npgsqlrest", "Run with the optional default configuration files: appsettings.json and appsettings.Development.json. If these file are not found, default configuration setting is used (see https://github.com/NpgsqlRest/NpgsqlRest/blob/master/NpgsqlRestClient/appsettings.json)."),
@@ -51,6 +52,7 @@ if (args.Length >= 1 && (string.Equals(args[0], "-v", StringComparison.CurrentCu
     string.Equals(args[0], "/v", StringComparison.CurrentCultureIgnoreCase)))
 {
     var _ = new Out();
+    _.Logo();
     var versions = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription.Split(' ');
     _.Line("Versions:");
     _.Line([
@@ -82,6 +84,7 @@ if (args.Length >= 1 && (string.Equals(args[0], "-v", StringComparison.CurrentCu
 
 if (args.Length >= 2 && string.Equals(args[0], "--hash", StringComparison.CurrentCultureIgnoreCase))
 {
+    new Out().Logo();
     Console.ForegroundColor = ConsoleColor.Red;
     var hasher = new NpgsqlRest.Auth.PasswordHasher();
     Console.WriteLine(hasher.HashPassword(args[1]));
@@ -91,6 +94,7 @@ if (args.Length >= 2 && string.Equals(args[0], "--hash", StringComparison.Curren
 
 if (args.Length >= 3 && string.Equals(args[0], "--basic_auth", StringComparison.CurrentCultureIgnoreCase))
 {
+    new Out().Logo();
     Console.ForegroundColor = ConsoleColor.Red;
     Console.WriteLine(string.Concat("Authorization: Basic ", Convert.ToBase64String(Encoding.UTF8.GetBytes($"{args[1]}:{args[2]}"))));
     Console.ResetColor();
@@ -105,6 +109,7 @@ config.Build(args,["--encrypt"]);
 
 if (args.Length >= 1 && string.Equals(args[0], "--config", StringComparison.CurrentCultureIgnoreCase))
 {
+    new Out().Logo();
     Console.ForegroundColor = ConsoleColor.Yellow;
     Console.WriteLine(config.Serialize());
     return;
@@ -152,6 +157,7 @@ if (rateLimiterEnabled)
 // dump encrypted text and exit
 if (args.Length >= 1 && string.Equals(args[0], "--encrypt", StringComparison.CurrentCultureIgnoreCase))
 {
+    new Out().Logo();
     Console.ForegroundColor = ConsoleColor.Red;
     if (dataProtectionName is null)
     {

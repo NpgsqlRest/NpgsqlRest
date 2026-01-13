@@ -1465,6 +1465,28 @@ public class NpgsqlRestEndpoint(
             // Handle reverse proxy endpoints
             if (endpoint.IsProxy && Options.ProxyOptions.Enabled)
             {
+                // Check cache for passthrough proxy endpoints (those without proxy response parameters)
+                bool isPassthroughProxy = !endpoint.HasProxyResponseParameters;
+                if (isPassthroughProxy &&
+                    endpoint.Cached is true &&
+                    Options.CacheOptions.DefaultRoutineCache is not null)
+                {
+                    if (Options.CacheOptions.DefaultRoutineCache.Get(endpoint, cacheKeys?.ToString()!, out var cachedProxyResponse))
+                    {
+                        // Cache hit - return cached proxy response
+                        if (cachedProxyResponse is Proxy.ProxyResponse cached)
+                        {
+                            if (shouldLog)
+                            {
+                                cmdLog?.AppendLine("/* proxy response from cache */");
+                                NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", commandText);
+                            }
+                            await Proxy.ProxyRequestHandler.WriteResponseAsync(context, cached, Options.ProxyOptions);
+                            return;
+                        }
+                    }
+                }
+
                 // Build user context headers if UserContext is enabled
                 Dictionary<string, string>? userContextHeaders = null;
                 if (endpoint.UserContext is true)
@@ -1516,6 +1538,11 @@ public class NpgsqlRestEndpoint(
                 else
                 {
                     // No proxy parameters - return proxy response directly without invoking PostgreSQL
+                    // Cache the proxy response if caching is enabled
+                    if (endpoint.Cached is true && Options.CacheOptions.DefaultRoutineCache is not null)
+                    {
+                        Options.CacheOptions.DefaultRoutineCache.AddOrUpdate(endpoint, cacheKeys?.ToString()!, proxyResponse);
+                    }
                     await Proxy.ProxyRequestHandler.WriteResponseAsync(context, proxyResponse, Options.ProxyOptions);
                     return;
                 }

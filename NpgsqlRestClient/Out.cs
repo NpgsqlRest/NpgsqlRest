@@ -11,6 +11,20 @@ public class Out
 {
     public void NL() => Console.WriteLine();
 
+    public void Logo()
+    {
+        Console.ForegroundColor = ConsoleColor.Cyan;
+        Console.WriteLine(@"
+    _   __                   __  ____            __
+   / | / /___  ____ ________/ / / __ \___  _____/ /_
+  /  |/ / __ \/ __ `/ ___/ __ \/ /_/ / _ \/ ___/ __/
+ / /|  / /_/ / /_/ (__  ) /_/ / _, _/  __(__  ) /_
+/_/ |_/ .___/\__, /____/\__, /_/ |_|\___/____/\__/
+     /_/    /____/        /_/
+");
+        Console.ResetColor();
+    }
+
     public void Line(string line, ConsoleColor? color = null)
     {
         if (color is not null)

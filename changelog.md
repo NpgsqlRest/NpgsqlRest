@@ -4,6 +4,60 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [3.3.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.3.1) (2025-01-14)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.3.0...3.3.1)
+
+### Proxy Response Caching
+
+Added support for caching responses from passthrough proxy endpoints. Previously, caching only worked with endpoints that executed database functions. Now, proxy endpoints that forward requests to upstream services can also leverage the caching system.
+
+**Usage:**
+
+```sql
+create function get_external_data()
+returns void
+language plpgsql as $$ begin null; end; $$;
+
+comment on function get_external_data() is '
+HTTP GET
+proxy
+cached
+cache_expires_in 5 minutes
+';
+```
+
+**Features:**
+- Cache lookup happens before proxy request is sent
+- On cache hit, response is returned immediately without calling upstream service
+- Cached proxy responses preserve: status code, body, content type, and headers
+- Supports cache key parameters for parameter-based caching
+- Supports cache expiration with `cache_expires_in` annotation
+
+**Example with cache key:**
+
+```sql
+create function get_user_profile(_user_id text)
+returns void
+language plpgsql as $$ begin null; end; $$;
+
+comment on function get_user_profile(text) is '
+HTTP GET
+proxy https://api.example.com/users
+cached _user_id
+cache_expires_in 1 hour
+';
+```
+
+This is useful for:
+- Reducing load on upstream services
+- Improving response times for frequently accessed data
+- Rate limiting protection for external API calls
+
+---
+
+### Added a logo on client app commands
+
 ## Version [3.3.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.3.0) (2025-01-08)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.2.7...3.3.0)
