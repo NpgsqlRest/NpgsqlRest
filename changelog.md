@@ -58,9 +58,29 @@ This feature is automatic and requires no annotations. It works with:
 - Empty arrays and NULL arrays
 - Multiple array columns in the same result set
 
-#### 2. Nested JSON for Composite Type Columns
+#### 2. Nested JSON for Composite Type Columns (Opt-in)
 
-When a function returns a composite type column and is annotated with `nested`, the composite type fields are serialized as a nested JSON object instead of being expanded into separate columns.
+When a function returns a composite type column, by default the composite type fields are expanded into separate columns (existing behavior preserved for backward compatibility).
+
+To serialize composite type columns as nested JSON objects, you can either:
+
+1. **Enable globally** via configuration option `NestedJsonForCompositeTypes` (default is `false`):
+
+```json
+{
+  "NpgsqlRest": {
+    "NestedJsonForCompositeTypes": true
+  }
+}
+```
+
+2. **Enable per-endpoint** via comment annotation (`nested`, `nested_json`, or `nested_composite`):
+
+```sql
+comment on function get_user_with_address() is 'nested';
+-- or: 'nested_json'
+-- or: 'nested_composite'
+```
 
 **Example:**
 
@@ -84,12 +104,12 @@ $$;
 comment on function get_user_with_address() is 'nested';
 ```
 
-**Without `nested` annotation (previous behavior):**
+**Default behavior (expanded columns):**
 ```json
 [{"userId":1,"userName":"Alice","street":"123 Main St","city":"New York","zipCode":"10001"}]
 ```
 
-**With `nested` annotation:**
+**With `nested` annotation or `NestedJsonForCompositeTypes: true`:**
 ```json
 [{"userId":1,"userName":"Alice","address":{"street":"123 Main St","city":"New York","zipCode":"10001"}}]
 ```
