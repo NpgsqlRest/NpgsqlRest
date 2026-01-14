@@ -265,4 +265,7 @@ public static partial class Log
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "{endpoint} validation failed for parameter '{paramName}': {message}")]
     public static partial void ValidationFailed(this ILogger logger, string endpoint, string paramName, string message);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has set NESTED JSON FOR COMPOSITE TYPES by the comment annotation.")]
+    public static partial void CommentSetNestedJson(this ILogger logger, string description);
 }

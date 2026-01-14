@@ -97,9 +97,13 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
 
         Dictionary<string, string> modelsDict = [];
         Dictionary<string, int> names = [];
+        // Track generated composite type interfaces to avoid duplicates
+        // Key: composite type identifier (schema.typename), Value: generated interface name
+        Dictionary<string, string> compositeTypeInterfaces = [];
         StringBuilder contentHeader = new();
         StringBuilder content = new();
         StringBuilder interfaces = new();
+        StringBuilder compositeInterfaces = new();
 
         foreach (var import in options.CustomImports)
         {
@@ -232,6 +236,12 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
         {
             Directory.CreateDirectory(dir);
         }
+        // Insert composite type interfaces at the beginning of interfaces
+        if (compositeInterfaces.Length > 0)
+        {
+            interfaces.Insert(0, compositeInterfaces.ToString());
+        }
+
         if (!options.CreateSeparateTypeFile)
         {
             if (!options.SkipTypes)
@@ -558,8 +568,58 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                         StringBuilder resp = new();
                         responseName = $"I{pascal}Response";
 
+                        // Collect column indices to skip (expanded composite columns)
+                        HashSet<int> skipIndices = [];
+                        if (routine.CompositeColumnInfo is not null)
+                        {
+                            foreach (var kvp in routine.CompositeColumnInfo)
+                            {
+                                // Skip all expanded column indices except the first one (which becomes the composite property)
+                                foreach (var idx in kvp.Value.ExpandedColumnIndices.Skip(1))
+                                {
+                                    skipIndices.Add(idx);
+                                }
+                            }
+                        }
+
                         for (var i = 0; i < columnCount; i++)
                         {
+                            // Skip expanded composite columns
+                            if (skipIndices.Contains(i))
+                            {
+                                continue;
+                            }
+
+                            // Check if this is a nested composite column
+                            if (routine.CompositeColumnInfo is not null &&
+                                routine.CompositeColumnInfo.TryGetValue(i, out var compositeInfo))
+                            {
+                                // Generate interface for this composite type if not already done
+                                var compositeInterfaceName = GetOrCreateCompositeInterface(
+                                    compositeInfo.FieldNames,
+                                    compositeInfo.FieldDescriptors,
+                                    compositeInfo.ConvertedColumnName,
+                                    compositeTypeInterfaces,
+                                    compositeInterfaces);
+                                resp.AppendLine($"    {compositeInfo.ConvertedColumnName}: {compositeInterfaceName} | null;");
+                                continue;
+                            }
+
+                            // Check if this is an array of composite types
+                            if (routine.ArrayCompositeColumnInfo is not null &&
+                                routine.ArrayCompositeColumnInfo.TryGetValue(i, out var arrayCompositeInfo))
+                            {
+                                // Generate interface for this composite type if not already done
+                                var compositeInterfaceName = GetOrCreateCompositeInterface(
+                                    arrayCompositeInfo.FieldNames,
+                                    arrayCompositeInfo.FieldDescriptors,
+                                    routine.ColumnNames[i],
+                                    compositeTypeInterfaces,
+                                    compositeInterfaces);
+                                resp.AppendLine($"    {routine.ColumnNames[i]}: {compositeInterfaceName}[] | null;");
+                                continue;
+                            }
+
                             var descriptor = columnsTypeDescriptor[i];
                             var type = GetTsType(descriptor, false);
                             if (descriptor.IsJson)
@@ -1561,5 +1621,47 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
 
         var destructured = string.Join(", ", excludeParams.Select((p, i) => $"[\"{p}\"]: _{i + 1}"));
         return $"({{ {destructured}, ...rest }}) => rest)(request)";
+    }
+
+    /// <summary>
+    /// Gets or creates a TypeScript interface for a composite type.
+    /// Returns the interface name to use in type declarations.
+    /// </summary>
+    private string GetOrCreateCompositeInterface(
+        string[] fieldNames,
+        TypeDescriptor[] fieldDescriptors,
+        string columnName,
+        Dictionary<string, string> compositeTypeInterfaces,
+        StringBuilder compositeInterfaces)
+    {
+        // Create a unique key based on field names and types
+        var key = string.Join(",", fieldNames.Zip(fieldDescriptors, (n, d) => $"{n}:{d.Type}"));
+
+        if (compositeTypeInterfaces.TryGetValue(key, out var existingName))
+        {
+            return existingName;
+        }
+
+        // Generate interface name from column name
+        var interfaceName = $"I{ConvertToPascalCase(columnName)}";
+
+        // Build the interface
+        StringBuilder interfaceBuilder = new();
+        interfaceBuilder.AppendLine($"interface {interfaceName} {{");
+
+        for (var i = 0; i < fieldNames.Length; i++)
+        {
+            var fieldName = ConvertToCamelCase(fieldNames[i]);
+            var tsType = GetTsType(fieldDescriptors[i], false);
+            interfaceBuilder.AppendLine($"    {fieldName}: {tsType} | null;");
+        }
+
+        interfaceBuilder.AppendLine("}");
+        interfaceBuilder.AppendLine();
+
+        compositeInterfaces.Append(interfaceBuilder);
+        compositeTypeInterfaces[key] = interfaceName;
+
+        return interfaceName;
     }
 }

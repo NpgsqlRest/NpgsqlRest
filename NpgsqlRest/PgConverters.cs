@@ -310,6 +310,236 @@ public static class PgConverters
         return result.ToString().AsSpan();
     }
 
+    /// <summary>
+    /// Converts a PostgreSQL array of composite types to a JSON array of objects.
+    /// Input format: {"(field1,field2,...)","(field1,field2,...)"}
+    /// Output format: [{"name1":field1,"name2":field2,...},...]
+    /// </summary>
+    internal static ReadOnlySpan<char> PgCompositeArrayToJsonArray(
+        ReadOnlySpan<char> value,
+        string[] fieldNames,
+        TypeDescriptor[] fieldDescriptors)
+    {
+        var len = value.Length;
+
+        // Handle empty or null arrays
+        if (value.IsEmpty || len < 2)
+        {
+            return Consts.EmptyArray.AsSpan();
+        }
+
+        // Check for empty array: {}
+        if (len == 2 && value[0] == Consts.OpenBrace && value[1] == Consts.CloseBrace)
+        {
+            return Consts.EmptyArray.AsSpan();
+        }
+
+        // Must start with { and end with }
+        if (value[0] != Consts.OpenBrace || value[^1] != Consts.CloseBrace)
+        {
+            return value;
+        }
+
+        var result = new StringBuilder(len * 3);
+        result.Append(Consts.OpenBracket);
+
+        bool firstElement = true;
+        int i = 1; // Skip opening {
+
+        while (i < len - 1) // Stop before closing }
+        {
+            // Skip whitespace and commas between elements
+            while (i < len - 1 && (value[i] == Consts.Comma || value[i] == Consts.Space))
+            {
+                i++;
+            }
+
+            if (i >= len - 1)
+                break;
+
+            // Each element should be quoted: "(...)"
+            if (value[i] != Consts.DoubleQuote)
+            {
+                // Handle NULL element (unquoted NULL)
+                if (i + 4 <= len && value.Slice(i, 4).SequenceEqual("NULL".AsSpan()))
+                {
+                    if (!firstElement)
+                        result.Append(Consts.Comma);
+                    firstElement = false;
+                    result.Append(Consts.Null);
+                    i += 4;
+                    continue;
+                }
+                break; // Unexpected format
+            }
+
+            i++; // Skip opening quote
+
+            // Element should start with (
+            if (i >= len - 1 || value[i] != Consts.OpenParenthesis)
+            {
+                break; // Unexpected format
+            }
+
+            i++; // Skip (
+
+            if (!firstElement)
+                result.Append(Consts.Comma);
+            firstElement = false;
+
+            result.Append(Consts.OpenBrace);
+
+            // Parse fields within the tuple
+            int fieldIndex = 0;
+            var fieldValue = new StringBuilder();
+            bool insideFieldQuotes = false;
+            bool fieldHasValue = false;
+
+            while (i < len - 1 && fieldIndex < fieldNames.Length)
+            {
+                char c = value[i];
+
+                // Check for end of tuple
+                if (c == Consts.CloseParenthesis && !insideFieldQuotes)
+                {
+                    // Output current field
+                    OutputField(result, fieldNames, fieldDescriptors, fieldIndex, fieldValue, fieldHasValue);
+                    i++; // Skip )
+
+                    // Skip closing quote of the element
+                    if (i < len && value[i] == Consts.DoubleQuote)
+                        i++;
+
+                    break;
+                }
+
+                // Field separator
+                if (c == Consts.Comma && !insideFieldQuotes)
+                {
+                    OutputField(result, fieldNames, fieldDescriptors, fieldIndex, fieldValue, fieldHasValue);
+                    result.Append(Consts.Comma);
+
+                    fieldIndex++;
+                    fieldValue.Clear();
+                    fieldHasValue = false;
+                    i++;
+                    continue;
+                }
+
+                // Handle quotes within field values
+                if (c == Consts.DoubleQuote)
+                {
+                    // Check for escaped quote (double quote "")
+                    if (i + 1 < len && value[i + 1] == Consts.DoubleQuote)
+                    {
+                        fieldValue.Append(Consts.DoubleQuote);
+                        fieldHasValue = true;
+                        i += 2;
+                        continue;
+                    }
+                    else
+                    {
+                        // Toggle quote state
+                        insideFieldQuotes = !insideFieldQuotes;
+                        i++;
+                        continue;
+                    }
+                }
+
+                // Handle backslash escapes
+                if (c == Consts.Backslash && i + 1 < len)
+                {
+                    char nextChar = value[i + 1];
+                    if (nextChar == Consts.Backslash)
+                    {
+                        // Escaped backslash -> single backslash
+                        fieldValue.Append(Consts.Backslash);
+                        fieldHasValue = true;
+                        i += 2;
+                        continue;
+                    }
+                    else if (nextChar == Consts.DoubleQuote)
+                    {
+                        // \"\" (4 chars) = literal quote character inside quoted field
+                        // \" (2 chars) = quote delimiter (start/end of quoted field)
+                        if (i + 3 < len && value[i + 2] == Consts.Backslash && value[i + 3] == Consts.DoubleQuote)
+                        {
+                            // \"\" -> literal quote character
+                            fieldValue.Append(Consts.DoubleQuote);
+                            fieldHasValue = true;
+                            i += 4;
+                            continue;
+                        }
+                        else
+                        {
+                            // \" -> quote delimiter, toggle quote state
+                            insideFieldQuotes = !insideFieldQuotes;
+                            i += 2;
+                            continue;
+                        }
+                    }
+                }
+
+                // Regular character
+                fieldValue.Append(c);
+                fieldHasValue = true;
+                i++;
+            }
+
+            result.Append(Consts.CloseBrace);
+        }
+
+        result.Append(Consts.CloseBracket);
+        return result.ToString().AsSpan();
+    }
+
+    private static void OutputField(
+        StringBuilder result,
+        string[] fieldNames,
+        TypeDescriptor[] fieldDescriptors,
+        int fieldIndex,
+        StringBuilder fieldValue,
+        bool fieldHasValue)
+    {
+        result.Append(Consts.DoubleQuote);
+        result.Append(fieldNames[fieldIndex]);
+        result.Append(Consts.DoubleQuoteColon);
+
+        if (!fieldHasValue || fieldValue.Length == 0)
+        {
+            // NULL field
+            result.Append(Consts.Null);
+        }
+        else
+        {
+            var descriptor = fieldDescriptors[fieldIndex];
+            var valueStr = fieldValue.ToString();
+
+            if (descriptor.IsNumeric)
+            {
+                result.Append(valueStr);
+            }
+            else if (descriptor.IsBoolean)
+            {
+                if (valueStr == "t" || valueStr == "true")
+                    result.Append(Consts.True);
+                else if (valueStr == "f" || valueStr == "false")
+                    result.Append(Consts.False);
+                else
+                    result.Append(valueStr);
+            }
+            else if (descriptor.IsJson)
+            {
+                result.Append(valueStr);
+            }
+            else
+            {
+                // String type - needs JSON escaping
+                result.Append(SerializeString(valueStr));
+            }
+        }
+    }
+
     internal static string QuoteText(ReadOnlySpan<char> value)
     {
         // Use SIMD-accelerated count of quotes

@@ -1937,6 +1937,35 @@ public class NpgsqlRestEndpoint(
                     StringBuilder row = new();
                     ulong rowCount = 0;
 
+                    // Precompute nested JSON composite column mapping
+                    // Maps column index to: (compositeColumnName, fieldName, isFirstField, isLastField, fieldCount)
+                    Dictionary<int, (string CompositeColumnName, string FieldName, bool IsFirstField, bool IsLastField, int FieldCount)>? nestedJsonColumnMap = null;
+                    if (endpoint.NestedJsonForCompositeTypes == true && routine.CompositeColumnInfo is not null)
+                    {
+                        nestedJsonColumnMap = new();
+                        foreach (var (_, compositeInfo) in routine.CompositeColumnInfo)
+                        {
+                            var indices = compositeInfo.ExpandedColumnIndices;
+                            var fieldCount = indices.Length;
+                            for (int fieldIdx = 0; fieldIdx < fieldCount; fieldIdx++)
+                            {
+                                var colIdx = indices[fieldIdx];
+                                nestedJsonColumnMap[colIdx] = (
+                                    compositeInfo.ConvertedColumnName,
+                                    compositeInfo.FieldNames[fieldIdx],
+                                    fieldIdx == 0,
+                                    fieldIdx == indices.Length - 1,
+                                    fieldCount
+                                );
+                            }
+                        }
+                    }
+
+                    // Buffer for composite fields to detect all-NULL composites
+                    StringBuilder? compositeBuffer = nestedJsonColumnMap is not null ? new() : null;
+                    bool compositeHasNonNullValue = false;
+                    string? currentCompositeName = null;
+
                     if (endpoint.Raw is true && endpoint.RawColumnNames is true && binary is false)
                     {
                         StringBuilder columns = new();
@@ -2017,76 +2046,155 @@ public class NpgsqlRestEndpoint(
                                 }
                                 else
                                 {
+                                    // Handle nested JSON composite types
+                                    (string CompositeColumnName, string FieldName, bool IsFirstField, bool IsLastField, int FieldCount) compositeMapping = default;
+                                    bool isInComposite = nestedJsonColumnMap is not null && nestedJsonColumnMap.TryGetValue(i, out compositeMapping);
+
+                                    // Determine which buffer to write to
+                                    StringBuilder outputBuffer = (isInComposite && compositeBuffer is not null) ? compositeBuffer : row;
+
                                     if (routine.ReturnsUnnamedSet == false)
                                     {
                                         if (i == 0)
                                         {
                                             row.Append(Consts.OpenBrace);
                                         }
-                                        row.Append(Consts.DoubleQuote);
-                                        row.Append(routine.ColumnNames[i]);
-                                        row.Append(Consts.DoubleQuoteColon);
+
+                                        if (isInComposite)
+                                        {
+                                            if (compositeMapping.IsFirstField)
+                                            {
+                                                // Start of composite: reset buffer and track column name
+                                                compositeBuffer!.Clear();
+                                                compositeHasNonNullValue = false;
+                                                currentCompositeName = compositeMapping.CompositeColumnName;
+
+                                                // Write field name/value to buffer
+                                                outputBuffer.Append(Consts.DoubleQuote);
+                                                outputBuffer.Append(compositeMapping.FieldName);
+                                                outputBuffer.Append(Consts.DoubleQuoteColon);
+                                            }
+                                            else
+                                            {
+                                                // Middle or end field in composite: just output field name
+                                                outputBuffer.Append(Consts.DoubleQuote);
+                                                outputBuffer.Append(compositeMapping.FieldName);
+                                                outputBuffer.Append(Consts.DoubleQuoteColon);
+                                            }
+                                        }
+                                        else
+                                        {
+                                            row.Append(Consts.DoubleQuote);
+                                            row.Append(routine.ColumnNames[i]);
+                                            row.Append(Consts.DoubleQuoteColon);
+                                        }
                                     }
 
                                     var descriptor = routine.ColumnsTypeDescriptor[i];
                                     if (value == DBNull.Value)
                                     {
-                                        row.Append(Consts.Null);
+                                        outputBuffer.Append(Consts.Null);
                                     }
                                     else if (descriptor.IsArray && value is not null)
                                     {
-                                        row.Append(PgArrayToJsonArray(raw, descriptor));
+                                        if (isInComposite) compositeHasNonNullValue = true;
+                                        // Check if this is an array of composite types - always serialize as nested JSON objects
+                                        if (routine.ArrayCompositeColumnInfo is not null &&
+                                            routine.ArrayCompositeColumnInfo.TryGetValue(i, out var arrayCompositeInfo))
+                                        {
+                                            outputBuffer.Append(PgCompositeArrayToJsonArray(raw, arrayCompositeInfo.FieldNames, arrayCompositeInfo.FieldDescriptors));
+                                        }
+                                        else
+                                        {
+                                            outputBuffer.Append(PgArrayToJsonArray(raw, descriptor));
+                                        }
                                     }
                                     else if ((descriptor.IsNumeric || descriptor.IsBoolean || descriptor.IsJson) && value is not null)
                                     {
+                                        if (isInComposite) compositeHasNonNullValue = true;
                                         if (descriptor.IsBoolean)
                                         {
                                             if (raw.Length == 1 && raw[0] == 't')
                                             {
-                                                row.Append(Consts.True);
+                                                outputBuffer.Append(Consts.True);
                                             }
                                             else if (raw.Length == 1 && raw[0] == 'f')
                                             {
-                                                row.Append(Consts.False);
+                                                outputBuffer.Append(Consts.False);
                                             }
                                             else
                                             {
-                                                row.Append(raw);
+                                                outputBuffer.Append(raw);
                                             }
                                         }
                                         else
                                         {
                                             // numeric and json
-                                            row.Append(raw);
+                                            outputBuffer.Append(raw);
                                         }
                                     }
                                     else
                                     {
+                                        if (isInComposite) compositeHasNonNullValue = true;
                                         if (descriptor.ActualDbType == NpgsqlDbType.Unknown)
                                         {
-                                            row.Append(PgUnknownToJsonArray(ref raw));
+                                            outputBuffer.Append(PgUnknownToJsonArray(ref raw));
                                         }
                                         else if (descriptor.NeedsEscape)
                                         {
-                                            row.Append(SerializeString(ref raw));
+                                            outputBuffer.Append(SerializeString(ref raw));
                                         }
                                         else
                                         {
                                             if (descriptor.IsDateTime)
                                             {
-                                                row.Append(QuoteDateTime(ref raw));
+                                                outputBuffer.Append(QuoteDateTime(ref raw));
                                             }
                                             else
                                             {
-                                                row.Append(Quote(ref raw));
+                                                outputBuffer.Append(Quote(ref raw));
                                             }
                                         }
                                     }
+
+                                    // Handle closing braces and commas for nested JSON composite types
+                                    if (isInComposite && compositeMapping.IsLastField)
+                                    {
+                                        // End of composite: decide whether to output null or the buffered object
+                                        row.Append(Consts.DoubleQuote);
+                                        row.Append(currentCompositeName);
+                                        row.Append(Consts.DoubleQuoteColon);
+
+                                        if (compositeHasNonNullValue)
+                                        {
+                                            // At least one field has a value, output as object
+                                            row.Append(Consts.OpenBrace);
+                                            row.Append(compositeBuffer);
+                                            row.Append(Consts.CloseBrace);
+                                        }
+                                        else
+                                        {
+                                            // All fields are NULL, output null
+                                            row.Append(Consts.Null);
+                                        }
+                                    }
+                                    else if (isInComposite)
+                                    {
+                                        // Add comma between composite fields
+                                        outputBuffer.Append(Consts.Comma);
+                                    }
+
                                     if (routine.ReturnsUnnamedSet == false && i == routine.ColumnCount - 1)
                                     {
                                         row.Append(Consts.CloseBrace);
                                     }
-                                    if (i < routine.ColumnCount - 1)
+
+                                    // Add comma between columns (but not within composite fields which are handled above)
+                                    if (!isInComposite && i < routine.ColumnCount - 1)
+                                    {
+                                        row.Append(Consts.Comma);
+                                    }
+                                    else if (isInComposite && compositeMapping.IsLastField && i < routine.ColumnCount - 1)
                                     {
                                         row.Append(Consts.Comma);
                                     }

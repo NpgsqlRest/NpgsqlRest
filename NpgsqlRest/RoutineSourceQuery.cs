@@ -21,6 +21,24 @@ internal class RoutineSourceQuery
             and has_schema_privilege(current_user, n.nspname, 'USAGE')
             and a.attnum > 0
 
+    ), _array_element_types as (
+        -- For arrays of composite types, get the element type's field information
+        select
+            (quote_ident(n.nspname) || '.' || quote_ident(arr_t.typname))::regtype::text as array_type_name,
+            array_agg(quote_ident(a.attname) order by a.attnum) as field_names,
+            array_agg(pg_catalog.format_type(a.atttypid, a.atttypmod) order by a.attnum) as field_types
+        from
+            pg_catalog.pg_type arr_t
+            join pg_catalog.pg_namespace n on arr_t.typnamespace = n.oid
+            join pg_catalog.pg_type elem_t on arr_t.typelem = elem_t.oid
+            join pg_catalog.pg_class c on elem_t.typrelid = c.oid and c.relkind in ('r', 'c')
+            join pg_catalog.pg_attribute a on elem_t.typrelid = a.attrelid and a.attisdropped is false and a.attnum > 0
+        where
+            n.nspname not like 'pg_%'
+            and n.nspname <> 'information_schema'
+            and arr_t.typelem <> 0
+        group by n.nspname, arr_t.typname
+
     ), _schemas as (
 
         select
@@ -99,7 +117,10 @@ internal class RoutineSourceQuery
             coalesce(array_agg(r.custom_type_type order by r.param_position) filter(where r.is_in_param), '{}'::text[]) as custom_param_type_types,
             coalesce(array_agg(r.custom_type_pos order by r.param_position) filter(where r.is_in_param), '{}'::smallint[]) as custom_param_type_positions,
             coalesce(array_agg(r.custom_type_name order by r.param_position) filter(where r.is_out_param), '{}'::text[]) as custom_rec_type_names,
-            coalesce(array_agg(r.custom_type_type order by r.param_position) filter(where r.is_out_param), '{}'::text[]) as custom_rec_type_types
+            coalesce(array_agg(r.custom_type_type order by r.param_position) filter(where r.is_out_param), '{}'::text[]) as custom_rec_type_types,
+            -- Distinct OUT param names and types (without expansion from composite type fields)
+            coalesce(array_agg(distinct r.param_name order by r.param_name) filter(where r.is_out_param), '{}'::text[]) as distinct_out_param_names,
+            coalesce(array_agg(distinct r.param_type order by r.param_type) filter(where r.is_out_param), '{}'::text[]) as distinct_out_param_types
         from
             _routines r
             join pg_catalog.pg_proc proc on r.specific_name = proc.proname || '_' || proc.oid
@@ -149,12 +170,31 @@ internal class RoutineSourceQuery
         custom_param_type_types,
         custom_param_type_positions,
         case when custom_types.col_name is not null then null else custom_rec_type_names end as custom_rec_type_names,
-        case when custom_types.col_name is not null then null else custom_rec_type_types end as custom_rec_type_types
+        case when custom_types.col_name is not null then null else custom_rec_type_types end as custom_rec_type_types,
+        -- For nested JSON: when return is composite type, pass the distinct OUT param names separately
+        case when custom_types.col_name is not null and array_length(r1.distinct_out_param_names, 1) > 0
+             then r1.distinct_out_param_names else null end as composite_out_param_names,
+        case when custom_types.col_name is not null and array_length(r1.distinct_out_param_types, 1) > 0
+             then r1.distinct_out_param_types else null end as composite_out_param_types,
+        -- For arrays of composite types: field names and types for each array column (as JSON to avoid 2D array issues)
+        array_composite_info.array_column_indices,
+        array_composite_info.array_field_names_json,
+        array_composite_info.array_field_types_json
     from _routine_aggs r1
     left join lateral (
         select array_agg(t.att_name order by t.att_pos) as col_name, array_agg(t.att_type order by t.att_pos) as col_type
-        from _types t 
+        from _types t
         where t.name = r1.return_type
     ) custom_types on true
+    left join lateral (
+        -- Get array composite type info for each OUT param that is an array of composite type
+        -- Use json_agg to return as JSON array, avoiding PostgreSQL 2D array limitations
+        select
+            array_agg(idx::int order by idx) as array_column_indices,
+            json_agg(aet.field_names order by idx)::text as array_field_names_json,
+            json_agg(aet.field_types order by idx)::text as array_field_types_json
+        from unnest(r1.out_param_types) with ordinality as u(param_type, idx)
+        join _array_element_types aet on aet.array_type_name = u.param_type
+    ) array_composite_info on true
     """;
 }

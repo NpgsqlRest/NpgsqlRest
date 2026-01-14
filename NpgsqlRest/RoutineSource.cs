@@ -5,19 +5,20 @@ using NpgsqlTypes;
 namespace NpgsqlRest;
 
 public class RoutineSource(
-        string? schemaSimilarTo = null,
-        string? schemaNotSimilarTo = null,
-        string[]? includeSchemas = null,
-        string[]? excludeSchemas = null,
-        string? nameSimilarTo = null,
-        string? nameNotSimilarTo = null,
-        string[]? includeNames = null,
-        string[]? excludeNames = null,
-        string? query = null,
-        CommentsMode? commentsMode = null,
-        string? customTypeParameterSeparator = "_",
-        string[]? includeLanguages = null,
-        string[]? excludeLanguages = null) : IRoutineSource
+    string? schemaSimilarTo = null,
+    string? schemaNotSimilarTo = null,
+    string[]? includeSchemas = null,
+    string[]? excludeSchemas = null,
+    string? nameSimilarTo = null,
+    string? nameNotSimilarTo = null,
+    string[]? includeNames = null,
+    string[]? excludeNames = null,
+    string? query = null,
+    CommentsMode? commentsMode = null,
+    string? customTypeParameterSeparator = "_",
+    string[]? includeLanguages = null,
+    string[]? excludeLanguages = null,
+    bool nestedJsonForCompositeTypes = false) : IRoutineSource
 {
     public string? SchemaSimilarTo { get; set; } = schemaSimilarTo;
     public string? SchemaNotSimilarTo { get; set; } = schemaNotSimilarTo;
@@ -32,6 +33,7 @@ public class RoutineSource(
     public string? CustomTypeParameterSeparator { get; set; } = customTypeParameterSeparator;
     public string[]? IncludeLanguages { get; set; } = includeLanguages;
     public string[]? ExcludeLanguages { get; set; } = excludeLanguages;
+    public bool NestedJsonForCompositeTypes { get; set; } = nestedJsonForCompositeTypes;
 
     public IEnumerable<(Routine, IRoutineSourceParameterFormatter)> Read(IServiceProvider? serviceProvider, RetryStrategy? retryStrategy)
     {
@@ -101,23 +103,140 @@ public class RoutineSource(
                 var returnRecordTypes = reader.Get<string[]>(10);//"return_record_types");
 
                 string[] expNames = new string[returnRecordNames.Length];
+                Dictionary<int, (string[] FieldNames, TypeDescriptor[] FieldDescriptors, string OriginalColumnName, int[] ExpandedColumnIndices)>? compositeColumnInfo = null;
                 var customRecTypeNames = reader.Get<string?[]>(21); //custom_rec_type_names
+                var compositeOutParamNames = reader.Get<string[]?>(23); //composite_out_param_names
+
                 if (customRecTypeNames is not null && customRecTypeNames.Length > 0)
                 {
                     var customRecTypeTypes = reader.Get<string?[]>(22); //custom_rec_type_types
+
+                    // Track composite column metadata for potential nested JSON serialization
+                    // Group fields by their original column (they share the same returnRecordNames prefix)
+                    Dictionary<string, List<(int OriginalIndex, string FieldName, string FieldType)>>? fieldsByColumn = null;
+
                     for (var i = 0; i < convertedRecordNames.Length; i++)
                     {
                         var customName = customRecTypeNames[i];
                         if (customName is not null)
                         {
-                            //expNames[i] = string.Concat("(", returnRecordNames[i], "::", returnRecordTypes[i], ").", customName);
                             expNames[i] = string.Concat("(", returnRecordNames[i], ").", customName);
                             convertedRecordNames[i] = Options.NameConverter(customName) ?? customName;
                             returnRecordTypes[i] = customRecTypeTypes[i] ?? returnRecordTypes[i];
+
+                            // Build composite metadata in single pass
+                            fieldsByColumn ??= new();
+                            var columnName = returnRecordNames[i];
+                            if (!fieldsByColumn.TryGetValue(columnName, out var fieldList))
+                            {
+                                fieldList = new List<(int, string, string)>();
+                                fieldsByColumn[columnName] = fieldList;
+                            }
+                            fieldList.Add((i, customName, customRecTypeTypes[i] ?? returnRecordTypes[i]));
                         }
                         else
                         {
                             expNames[i] = returnRecordNames[i];
+                        }
+                    }
+
+                    if (fieldsByColumn is not null)
+                    {
+                        // Build composite info without LINQ allocations
+                        compositeColumnInfo = new(fieldsByColumn.Count);
+                        foreach (var (columnName, fields) in fieldsByColumn)
+                        {
+                            var count = fields.Count;
+                            var fieldNames = new string[count];
+                            var fieldDescriptors = new TypeDescriptor[count];
+                            var expandedIndices = new int[count];
+
+                            for (var j = 0; j < count; j++)
+                            {
+                                var field = fields[j];
+                                fieldNames[j] = Options.NameConverter(field.FieldName) ?? field.FieldName;
+                                fieldDescriptors[j] = new TypeDescriptor(field.FieldType);
+                                expandedIndices[j] = field.OriginalIndex;
+                            }
+
+                            compositeColumnInfo[fields[0].OriginalIndex] = (
+                                fieldNames,
+                                fieldDescriptors,
+                                Options.NameConverter(columnName) ?? columnName,
+                                expandedIndices
+                            );
+                        }
+                    }
+                }
+                else if (compositeOutParamNames is not null && compositeOutParamNames.Length > 0)
+                {
+                    // Handle case where return is composite type with named OUT params
+                    // e.g., returns table (req nested_request) - all columns belong to one composite
+                    // returnRecordNames contains the composite field names, compositeOutParamNames has the column name
+                    for (var i = 0; i < returnRecordNames.Length; i++)
+                    {
+                        expNames[i] = returnRecordNames[i];
+                    }
+
+                    // Group all fields under each OUT param name
+                    // For single composite column: compositeOutParamNames = ['req'], returnRecordNames = ['id', 'text_value', 'flag']
+                    if (compositeOutParamNames.Length == 1)
+                    {
+                        // All fields belong to single composite column
+                        var columnName = compositeOutParamNames[0];
+                        var count = returnRecordNames.Length;
+                        var fieldNames = new string[count];
+                        var fieldDescriptors = new TypeDescriptor[count];
+                        var expandedIndices = new int[count];
+
+                        for (var j = 0; j < count; j++)
+                        {
+                            fieldNames[j] = convertedRecordNames[j];
+                            fieldDescriptors[j] = new TypeDescriptor(returnRecordTypes[j]);
+                            expandedIndices[j] = j;
+                        }
+
+                        compositeColumnInfo = new(1)
+                        {
+                            [0] = (fieldNames, fieldDescriptors, Options.NameConverter(columnName) ?? columnName, expandedIndices)
+                        };
+                    }
+                }
+
+                // Read array composite type info (columns 25, 26, 27)
+                // These are populated when OUT params include arrays of composite types
+                Dictionary<int, (string[] FieldNames, TypeDescriptor[] FieldDescriptors)>? arrayCompositeColumnInfo = null;
+                var arrayColumnIndices = reader.Get<int[]?>(25); // array_column_indices (1-based from SQL)
+                if (arrayColumnIndices is not null && arrayColumnIndices.Length > 0)
+                {
+                    var arrayFieldNamesJson = reader.Get<string?>(26); // array_field_names_json (JSON string)
+                    var arrayFieldTypesJson = reader.Get<string?>(27); // array_field_types_json (JSON string)
+
+                    if (arrayFieldNamesJson is not null && arrayFieldTypesJson is not null)
+                    {
+                        // Parse JSON arrays: [["field1","field2"],["field1","field2"]]
+                        var arrayFieldNames = System.Text.Json.JsonSerializer.Deserialize<string[][]>(arrayFieldNamesJson);
+                        var arrayFieldTypes = System.Text.Json.JsonSerializer.Deserialize<string[][]>(arrayFieldTypesJson);
+
+                        if (arrayFieldNames is not null && arrayFieldTypes is not null)
+                        {
+                            arrayCompositeColumnInfo = new(arrayColumnIndices.Length);
+                            for (var i = 0; i < arrayColumnIndices.Length; i++)
+                            {
+                                var colIndex = arrayColumnIndices[i] - 1; // Convert to 0-based
+                                var fieldNames = arrayFieldNames[i];
+                                var fieldTypes = arrayFieldTypes[i];
+
+                                var convertedFieldNames = new string[fieldNames.Length];
+                                var fieldDescriptors = new TypeDescriptor[fieldNames.Length];
+                                for (var j = 0; j < fieldNames.Length; j++)
+                                {
+                                    convertedFieldNames[j] = Options.NameConverter(fieldNames[j]) ?? fieldNames[j];
+                                    fieldDescriptors[j] = new TypeDescriptor(fieldTypes[j]);
+                                }
+
+                                arrayCompositeColumnInfo[colIndex] = (convertedFieldNames, fieldDescriptors);
+                            }
                         }
                     }
                 }
@@ -174,7 +293,7 @@ public class RoutineSource(
                     }
                 }
 
-                var returnRecordCount = reader.Get<int>(8);// "return_record_count");
+                var returnRecordCount = returnRecordNames.Length; // Use actual array length (may have changed for nested JSON)
                 var variadic = reader.Get<bool>(16);// "has_variadic");
                 string from;
                 if (isVoid || returnRecordCount == 1)
@@ -351,7 +470,9 @@ public class RoutineSource(
 
                         FormatUrlPattern = null,
                         EndpointHandler = null,
-                        Metadata = null
+                        Metadata = null,
+                        CompositeColumnInfo = compositeColumnInfo,
+                        ArrayCompositeColumnInfo = arrayCompositeColumnInfo
                     },
                     formatter);
             }

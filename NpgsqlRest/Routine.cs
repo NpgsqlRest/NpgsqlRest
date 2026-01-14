@@ -134,4 +134,21 @@ public class Routine
     public required object? Metadata { get; init; }
 
     internal bool[]? UnknownResultTypeList { get; set; } = null;
+
+    /// <summary>
+    /// When NestedJsonForCompositeTypes is enabled via comment annotation, this contains information
+    /// about which columns are composite types and their field names/types for nested JSON serialization.
+    /// Key: first expanded column index for the composite type
+    /// Value: (fieldNames, fieldDescriptors, convertedColumnName, expandedColumnIndices)
+    /// </summary>
+    internal Dictionary<int, (string[] FieldNames, TypeDescriptor[] FieldDescriptors, string ConvertedColumnName, int[] ExpandedColumnIndices)>? CompositeColumnInfo { get; set; } = null;
+
+    /// <summary>
+    /// When NestedJsonForCompositeTypes is enabled, this contains information about columns that are
+    /// arrays of composite types. These arrays need special serialization to convert from PostgreSQL
+    /// tuple format {"(f1,f2,f3)"} to JSON array of objects [{"field1":f1,"field2":f2}].
+    /// Key: column index (0-based)
+    /// Value: (fieldNames for the composite element type, fieldDescriptors for each field)
+    /// </summary>
+    internal Dictionary<int, (string[] FieldNames, TypeDescriptor[] FieldDescriptors)>? ArrayCompositeColumnInfo { get; set; } = null;
 }

@@ -368,6 +368,14 @@ internal static partial class DefaultCommentParser
                 {
                     HandleProxy(routine, routineEndpoint, wordsLower, words, len, description);
                 }
+
+                // nested
+                // nested_json
+                // nested_composite
+                else if (haveTag is true && StrEqualsToArray(wordsLower[0], NestedJsonKey))
+                {
+                    HandleNestedJson(routineEndpoint, description);
+                }
             }
             if (disabled)
             {

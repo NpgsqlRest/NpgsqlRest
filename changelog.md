@@ -4,6 +4,136 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [3.4.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.4.0) (2025-01-16)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.3.1...3.4.0)
+
+### Composite Type Support
+
+Added automatic JSON serialization support for PostgreSQL composite types in two scenarios:
+
+#### 1. Arrays of Composite Types
+
+When a function returns a column that is an array of a composite type (or table type), the array elements are now automatically serialized as JSON arrays of objects instead of PostgreSQL's text representation.
+
+**Example:**
+
+```sql
+create type book_item as (
+    book_id int,
+    title text,
+    author_id int
+);
+
+create function get_authors_with_books()
+returns table(
+    author_id int,
+    author_name text,
+    books book_item[]
+)
+language sql as $$
+select * from (values
+    (1, 'George Orwell', array[
+        row(1, '1984', 1)::book_item,
+        row(2, 'Animal Farm', 1)::book_item
+    ])
+) as t(author_id, author_name, books);
+$$;
+```
+
+**Previous behavior:**
+```json
+[{"authorId":1,"authorName":"George Orwell","books":["(1,1984,1)","(2,Animal Farm,1)"]}]
+```
+
+**New behavior:**
+```json
+[{"authorId":1,"authorName":"George Orwell","books":[{"bookId":1,"title":"1984","authorId":1},{"bookId":2,"title":"Animal Farm","authorId":1}]}]
+```
+
+This feature is automatic and requires no annotations. It works with:
+- Custom composite types (`create type`)
+- Table types (arrays of table row types)
+- Composite types containing NULL values
+- Empty arrays and NULL arrays
+- Multiple array columns in the same result set
+
+#### 2. Nested JSON for Composite Type Columns
+
+When a function returns a composite type column and is annotated with `nested`, the composite type fields are serialized as a nested JSON object instead of being expanded into separate columns.
+
+**Example:**
+
+```sql
+create type address_type as (
+    street text,
+    city text,
+    zip_code text
+);
+
+create function get_user_with_address()
+returns table(
+    user_id int,
+    user_name text,
+    address address_type
+)
+language sql as $$
+select 1, 'Alice', row('123 Main St', 'New York', '10001')::address_type;
+$$;
+
+comment on function get_user_with_address() is 'nested';
+```
+
+**Without `nested` annotation (previous behavior):**
+```json
+[{"userId":1,"userName":"Alice","street":"123 Main St","city":"New York","zipCode":"10001"}]
+```
+
+**With `nested` annotation:**
+```json
+[{"userId":1,"userName":"Alice","address":{"street":"123 Main St","city":"New York","zipCode":"10001"}}]
+```
+
+### TsClient Plugin: Composite Type Interface Generation
+
+The TsClient plugin now generates proper TypeScript interfaces for composite types:
+
+**Generated TypeScript:**
+
+```typescript
+interface IBooks {
+    bookId: number | null;
+    title: string | null;
+    authorId: number | null;
+}
+
+interface IAddress {
+    street: string | null;
+    city: string | null;
+    zipCode: string | null;
+}
+
+interface IGetAuthorsWithBooksResponse {
+    authorId: number | null;
+    authorName: string | null;
+    books: IBooks[] | null;  // Array of composite type
+}
+
+interface IGetUserWithAddressResponse {
+    userId: number | null;
+    userName: string | null;
+    address: IAddress | null;  // Nested composite type
+}
+```
+
+**Features:**
+- Separate interfaces generated for each unique composite type structure
+- Array composite columns typed as `InterfaceName[]`
+- Nested composite columns typed as `InterfaceName`
+- Interfaces are deduplicated when the same composite structure appears in multiple functions
+
+---
+
 ## Version [3.3.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.3.1) (2025-01-14)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.3.0...3.3.1)
