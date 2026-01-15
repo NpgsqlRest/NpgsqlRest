@@ -161,6 +161,7 @@ public static class PgConverters
         var quoted = !(descriptor.IsNumeric || descriptor.IsBoolean || descriptor.IsJson);
         bool insideQuotes = false;
         bool hasQuotes = false;
+        int braceDepth = 1; // We've already consumed the opening brace
 
         bool IsNull()
         {
@@ -246,7 +247,73 @@ public static class PgConverters
                 hasQuotes = true;
                 i++;
             }
-            else if ((currentChar == Consts.Comma && !insideQuotes) || currentChar == Consts.CloseBrace)
+            else if (currentChar == Consts.OpenBrace && !insideQuotes)
+            {
+                // Handle multidimensional arrays - nested opening brace
+                // Flush any pending content first
+                if (current.Length > 0)
+                {
+                    var currentIsNull = IsNull() && !hasQuotes;
+                    if (quoted && !currentIsNull)
+                    {
+                        result.Append(Consts.DoubleQuote);
+                    }
+                    if (currentIsNull)
+                    {
+                        result.Append(Consts.Null);
+                    }
+                    else
+                    {
+                        result.Append(current);
+                    }
+                    if (quoted && !currentIsNull)
+                    {
+                        result.Append(Consts.DoubleQuote);
+                    }
+                    result.Append(Consts.Comma);
+                    current.Clear();
+                    hasQuotes = false;
+                }
+                result.Append(Consts.OpenBracket);
+                braceDepth++;
+                i++;
+            }
+            else if (currentChar == Consts.CloseBrace && !insideQuotes)
+            {
+                // Handle closing brace
+                var currentIsNull = IsNull() && !hasQuotes;
+                if (current.Length > 0 || hasQuotes)
+                {
+                    if (quoted && !currentIsNull)
+                    {
+                        result.Append(Consts.DoubleQuote);
+                    }
+                    if (currentIsNull)
+                    {
+                        result.Append(Consts.Null);
+                    }
+                    else
+                    {
+                        result.Append(current);
+                    }
+                    if (quoted && !currentIsNull)
+                    {
+                        result.Append(Consts.DoubleQuote);
+                    }
+                    current.Clear();
+                    hasQuotes = false;
+                }
+                result.Append(Consts.CloseBracket);
+                braceDepth--;
+                i++;
+                // Add comma after closing bracket if not at the end
+                if (braceDepth > 0 && i < len && value[i] == Consts.Comma)
+                {
+                    result.Append(Consts.Comma);
+                    i++; // Skip the comma
+                }
+            }
+            else if (currentChar == Consts.Comma && !insideQuotes)
             {
                 var currentIsNull = IsNull() && !hasQuotes;
                 if (quoted && !currentIsNull)
@@ -267,10 +334,7 @@ public static class PgConverters
                 {
                     result.Append(Consts.DoubleQuote);
                 }
-                if (currentChar != Consts.CloseBrace)
-                {
-                    result.Append(Consts.Comma);
-                }
+                result.Append(Consts.Comma);
                 current.Clear();
                 hasQuotes = false;
                 i++;
@@ -306,7 +370,6 @@ public static class PgConverters
             }
         }
 
-        result.Append(Consts.CloseBracket);
         return result.ToString().AsSpan();
     }
 
@@ -332,6 +395,16 @@ public static class PgConverters
         if (len == 2 && value[0] == Consts.OpenBrace && value[1] == Consts.CloseBrace)
         {
             return Consts.EmptyArray.AsSpan();
+        }
+
+        // Check for multidimensional array: {{...},{...}}
+        // Multidimensional composite arrays are not fully supported - fall back to treating
+        // composite elements as strings to preserve the data
+        if (len >= 4 && value[0] == Consts.OpenBrace && value[1] == Consts.OpenBrace)
+        {
+            // Use PgArrayToJsonArray which handles multidimensional arrays and will
+            // serialize composite tuples as quoted strings
+            return PgArrayToJsonArray(value, new TypeDescriptor("text"));
         }
 
         // Must start with { and end with }
@@ -515,7 +588,13 @@ public static class PgConverters
             var descriptor = fieldDescriptors[fieldIndex];
             var valueStr = fieldValue.ToString();
 
-            if (descriptor.IsNumeric)
+            if (descriptor.IsArray)
+            {
+                // Array field inside composite - convert PostgreSQL array format to JSON array
+                // e.g., {1,2,3} -> [1,2,3]
+                result.Append(PgArrayToJsonArray(valueStr.AsSpan(), descriptor));
+            }
+            else if (descriptor.IsNumeric)
             {
                 result.Append(valueStr);
             }

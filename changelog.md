@@ -57,6 +57,18 @@ This feature is automatic and requires no annotations. It works with:
 - Composite types containing NULL values
 - Empty arrays and NULL arrays
 - Multiple array columns in the same result set
+- Primitive arrays inside composite types (e.g., `int[]` field) - properly serialized as JSON arrays
+
+**Limitations:**
+
+The array composite serialization works for **one level only**. Nested structures have the following behavior:
+
+| Scenario | Output |
+|----------|--------|
+| **Nested composite** (composite inside composite) | Inner composite serialized as PostgreSQL tuple string: `"(1,x)"` instead of `{"id":1,"name":"x"}` |
+| **Array of composites inside composite** | Array of tuple strings: `["(1,a)","(2,b)"]` instead of `[{"id":1,"name":"a"},...]` |
+
+For complex nested structures, use PostgreSQL's `json_build_object`/`json_agg` functions to construct the JSON directly in your query.
 
 #### 2. Nested JSON for Composite Type Columns (Opt-in)
 
@@ -113,6 +125,41 @@ comment on function get_user_with_address() is 'nested';
 ```json
 [{"userId":1,"userName":"Alice","address":{"street":"123 Main St","city":"New York","zipCode":"10001"}}]
 ```
+
+### Multidimensional Array Support
+
+Added proper JSON serialization for multidimensional PostgreSQL arrays. Previously, multidimensional arrays were serialized incorrectly, producing invalid JSON. Now they are properly converted to nested JSON arrays.
+
+**Example:**
+
+```sql
+create function get_2d_int_array()
+returns table(
+    matrix int[][]
+)
+language sql as $$
+select array[[1,2,3],[4,5,6]];
+$$;
+```
+
+**Previous behavior (invalid JSON):**
+```
+[{"matrix":[{1,2,3,{4,5,6]}]
+```
+
+**New behavior:**
+```json
+[{"matrix":[[1,2,3],[4,5,6]]}]
+```
+
+This feature is automatic and requires no configuration. It works with:
+- 2D arrays: `{{1,2},{3,4}}` → `[[1,2],[3,4]]`
+- 3D arrays: `{{{1,2},{3,4}},{{5,6},{7,8}}}` → `[[[1,2],[3,4]],[[5,6],[7,8]]]`
+- Higher dimensional arrays
+- All primitive types (int, text, boolean, numeric, etc.)
+- NULL values within multidimensional arrays
+
+**Limitation:** Multidimensional arrays of composite types are serialized as nested arrays of PostgreSQL tuple strings, not as fully expanded JSON objects. For example, a 2D array of composites `{{"(1,a)","(2,b)"},{"(3,c)","(4,d)"}}` becomes `[["(1,a)","(2,b)"],["(3,c)","(4,d)"]]`. The data is preserved but not fully parsed. For complex nested structures, consider using PostgreSQL's `json_build_object`/`json_agg` functions instead.
 
 ### TsClient Plugin: Composite Type Interface Generation
 
