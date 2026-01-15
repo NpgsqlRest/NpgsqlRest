@@ -560,16 +560,18 @@ internal static partial class DefaultCommentParser
         
         else
         {
+            // Strip @ prefix from custom parameter names for consistency
+            var paramName = name.Length > 0 && name[0] == '@' ? name[1..] : name;
             if (endpoint.CustomParameters is null)
             {
                 endpoint.CustomParameters = new()
                 {
-                    [name] = value
+                    [paramName] = value
                 };
             }
             else
             {
-                endpoint.CustomParameters[name] = value;
+                endpoint.CustomParameters[paramName] = value;
             }
         }
     }

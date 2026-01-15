@@ -25,6 +25,12 @@ create function comment_at_mixed1() returns text language sql as 'select ''mixed
 comment on function comment_at_mixed1() is 'HTTP
 @authorize
 raw';
+
+-- Test @ prefix for annotation parameters (key = value syntax)
+create function comment_at_param1() returns text language sql as 'select ''param_result''';
+comment on function comment_at_param1() is 'HTTP
+@raw = true';
+
 ");
     }
 }
@@ -72,5 +78,15 @@ public class CommentAtPrefixTests(TestFixture test)
         // Mixed @authorize and raw should both work
         using var response = await test.Client.PostAsync("/api/comment-at-mixed1/", null);
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task Test_at_prefix_annotation_parameter()
+    {
+        // @raw = true should work the same as raw = true
+        using var response = await test.Client.PostAsync("/api/comment-at-param1/", null);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Be("param_result");
     }
 }

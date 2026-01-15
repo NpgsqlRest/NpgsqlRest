@@ -105,7 +105,8 @@ internal static partial class DefaultCommentParser
     {
         foreach (char c in input)
         {
-            if (char.IsLetterOrDigit(c) is false && c != '-' && c != '_')
+            // Allow @ as first character for annotation prefix (e.g., "@timeout = 30s")
+            if (char.IsLetterOrDigit(c) is false && c != '-' && c != '_' && c != '@')
             {
                 return true;
             }

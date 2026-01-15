@@ -251,6 +251,34 @@ PostgreSQL normalizes multidimensional array types (`int[][]`, `int[][][]`) to s
 
 The runtime JSON is always correct (e.g., `[[1,2],[3,4]]`), but the TypeScript type won't match. For strict TypeScript projects, manually cast the response type when using multidimensional arrays.
 
+### Optional `@` Prefix Extended to Annotation Parameters
+
+The optional `@` prefix for comment annotations (introduced in 3.3.1) now also works with annotation parameters using the `key = value` syntax.
+
+**Both syntaxes are now equivalent:**
+
+```sql
+-- Without @ prefix
+comment on function my_func() is '
+HTTP GET
+raw = true
+timeout = 30s
+my_custom_param = custom_value
+';
+
+-- With @ prefix
+comment on function my_func() is '
+HTTP GET
+@raw = true
+@timeout = 30s
+@my_custom_param = custom_value
+';
+```
+
+This applies to all annotation parameters including `raw`, `timeout`, `buffer`, `connection`, `user_context`, `user_parameters`, SSE settings, basic auth settings, and custom parameters.
+
+Custom parameters with `@` prefix are stored without the prefix (e.g., `@my_param = value` is stored as `my_param`).
+
 ---
 
 ## Version [3.3.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.3.1) (2025-01-14)
