@@ -4,6 +4,16 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [3.4.2](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.4.2) (2025-01-15)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.4.1...3.4.2)
+
+### Bug Fixes
+
+- Fixed AOT compatibility issue with JSON deserialization. When running with Native AOT or with reflection-based serialization disabled, parsing composite type metadata for nested array columns would fail with `InvalidOperationException: Reflection-based serialization has been disabled`. Added `string[][]` to the source-generated `NpgsqlRestSerializerContext` to support AOT compilation.
+
+---
+
 ## Version [3.4.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.4.1) (2025-01-15)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.4.0...3.4.1)

@@ -8,6 +8,7 @@ using System.Text.RegularExpressions;
 namespace NpgsqlRest;
 
 [JsonSerializable(typeof(string))]
+[JsonSerializable(typeof(string[][]))]
 internal partial class NpgsqlRestSerializerContext : JsonSerializerContext;
 
 internal static partial class ParameterPattern

@@ -215,8 +215,8 @@ public class RoutineSource(
                     if (arrayFieldNamesJson is not null && arrayFieldTypesJson is not null)
                     {
                         // Parse JSON arrays: [["field1","field2"],["field1","field2"]]
-                        var arrayFieldNames = System.Text.Json.JsonSerializer.Deserialize<string[][]>(arrayFieldNamesJson);
-                        var arrayFieldTypes = System.Text.Json.JsonSerializer.Deserialize<string[][]>(arrayFieldTypesJson);
+                        var arrayFieldNames = System.Text.Json.JsonSerializer.Deserialize(arrayFieldNamesJson, NpgsqlRestSerializerContext.Default.StringArrayArray);
+                        var arrayFieldTypes = System.Text.Json.JsonSerializer.Deserialize(arrayFieldTypesJson, NpgsqlRestSerializerContext.Default.StringArrayArray);
 
                         if (arrayFieldNames is not null && arrayFieldTypes is not null)
                         {
