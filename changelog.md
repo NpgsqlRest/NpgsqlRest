@@ -161,6 +161,48 @@ This feature is automatic and requires no configuration. It works with:
 
 **Limitation:** Multidimensional arrays of composite types are serialized as nested arrays of PostgreSQL tuple strings, not as fully expanded JSON objects. For example, a 2D array of composites `{{"(1,a)","(2,b)"},{"(3,c)","(4,d)"}}` becomes `[["(1,a)","(2,b)"],["(3,c)","(4,d)"]]`. The data is preserved but not fully parsed. For complex nested structures, consider using PostgreSQL's `json_build_object`/`json_agg` functions instead.
 
+### JSON Escaping Fix for Arrays and Tuple Strings
+
+Fixed JSON escaping issues that could produce invalid JSON output when PostgreSQL arrays or composite types contain special characters. The fix ensures all special characters are properly escaped:
+
+**Characters now properly escaped:**
+- Quotes (`"`) - escaped as `\"`
+- Backslashes (`\`) - escaped as `\\`
+- Newlines - escaped as `\n`
+- Tabs - escaped as `\t`
+- Carriage returns - escaped as `\r`
+- Combined special characters in the same string
+
+**Example:**
+
+```sql
+create function get_text_array()
+returns text[]
+language sql as $$
+select array['hello "world"', 'path\to\file', E'line1\nline2'];
+$$;
+```
+
+**Previous behavior (could produce invalid JSON):**
+```json
+["hello \"world\"", "path\to\file", "line1
+line2"]
+```
+
+**New behavior (valid JSON):**
+```json
+["hello \"world\"","path\\to\\file","line1\nline2"]
+```
+
+This fix applies to:
+- Simple text arrays with special characters
+- Multidimensional arrays (2D, 3D, etc.)
+- Nested composite types serialized as tuple strings
+- Arrays of composite types with special characters in field values
+- Unicode characters and emoji (preserved correctly)
+- Empty strings and whitespace-only strings
+- JSON-like string content (properly escaped, not parsed)
+
 ### TsClient Plugin: Composite Type Interface Generation
 
 The TsClient plugin now generates proper TypeScript interfaces for composite types:
@@ -198,6 +240,16 @@ interface IGetUserWithAddressResponse {
 - Array composite columns typed as `InterfaceName[]`
 - Nested composite columns typed as `InterfaceName`
 - Interfaces are deduplicated when the same composite structure appears in multiple functions
+
+**TsClient Limitation - Multidimensional Arrays:**
+
+PostgreSQL normalizes multidimensional array types (`int[][]`, `int[][][]`) to single-dimensional (`integer[]`) in all catalog views. This is a PostgreSQL limitation—there is no way to retrieve the original array dimensionality from metadata.
+
+**Consequence:** Multidimensional arrays are typed as single-dimensional in TypeScript:
+- `int[][]` → `number[]` (instead of `number[][]`)
+- `int[][][]` → `number[]` (instead of `number[][][]`)
+
+The runtime JSON is always correct (e.g., `[[1,2],[3,4]]`), but the TypeScript type won't match. For strict TypeScript projects, manually cast the response type when using multidimensional arrays.
 
 ---
 

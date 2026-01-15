@@ -250,7 +250,7 @@ public class RoutineSource(
                 {
                     returnTypeDescriptor = [.. returnRecordTypes.Select(x => new TypeDescriptor(x))];
                 }
-                
+
                 bool isUnnamedRecord = reader.Get<bool>(11);// "is_unnamed_record");
                 var routineType = type.GetEnum<RoutineType>();
                 var callIdent = routineType == RoutineType.Procedure ? "call " : "select ";

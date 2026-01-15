@@ -215,26 +215,7 @@ public static class PgConverters
                 }
                 else
                 {
-                    // Check for escape sequences in the segment
-                    int escapeIdx = segment.IndexOfAny('\n', '\t', '\r');
-                    if (escapeIdx == -1)
-                    {
-                        current.Append(segment);
-                    }
-                    else
-                    {
-                        foreach (var ch in segment)
-                        {
-                            if (ch == '\n')
-                                current.Append("\\n");
-                            else if (ch == '\t')
-                                current.Append("\\t");
-                            else if (ch == '\r')
-                                current.Append("\\r");
-                            else
-                                current.Append(ch);
-                        }
-                    }
+                    current.Append(segment);
                 }
                 i += nextDelimiterOffset;
             }
@@ -254,21 +235,17 @@ public static class PgConverters
                 if (current.Length > 0)
                 {
                     var currentIsNull = IsNull() && !hasQuotes;
-                    if (quoted && !currentIsNull)
-                    {
-                        result.Append(Consts.DoubleQuote);
-                    }
                     if (currentIsNull)
                     {
                         result.Append(Consts.Null);
                     }
+                    else if (quoted)
+                    {
+                        result.Append(SerializeString(current.ToString()));
+                    }
                     else
                     {
                         result.Append(current);
-                    }
-                    if (quoted && !currentIsNull)
-                    {
-                        result.Append(Consts.DoubleQuote);
                     }
                     result.Append(Consts.Comma);
                     current.Clear();
@@ -284,21 +261,17 @@ public static class PgConverters
                 var currentIsNull = IsNull() && !hasQuotes;
                 if (current.Length > 0 || hasQuotes)
                 {
-                    if (quoted && !currentIsNull)
-                    {
-                        result.Append(Consts.DoubleQuote);
-                    }
                     if (currentIsNull)
                     {
                         result.Append(Consts.Null);
                     }
+                    else if (quoted)
+                    {
+                        result.Append(SerializeString(current.ToString()));
+                    }
                     else
                     {
                         result.Append(current);
-                    }
-                    if (quoted && !currentIsNull)
-                    {
-                        result.Append(Consts.DoubleQuote);
                     }
                     current.Clear();
                     hasQuotes = false;
@@ -316,23 +289,17 @@ public static class PgConverters
             else if (currentChar == Consts.Comma && !insideQuotes)
             {
                 var currentIsNull = IsNull() && !hasQuotes;
-                if (quoted && !currentIsNull)
-                {
-                    result.Append(Consts.DoubleQuote);
-                }
-
                 if (currentIsNull)
                 {
                     result.Append(Consts.Null);
                 }
+                else if (quoted)
+                {
+                    result.Append(SerializeString(current.ToString()));
+                }
                 else
                 {
                     result.Append(current);
-                }
-
-                if (quoted && !currentIsNull)
-                {
-                    result.Append(Consts.DoubleQuote);
                 }
                 result.Append(Consts.Comma);
                 current.Clear();
@@ -350,23 +317,41 @@ public static class PgConverters
                         current.Append(Consts.False);
                     else
                         current.Append(currentChar);
+                    i++;
                 }
                 else if (descriptor.IsDateTime)
                 {
                     current.Append(currentChar == Consts.Space ? 'T' : currentChar);
+                    i++;
+                }
+                else if (currentChar == Consts.Backslash && i + 1 < len)
+                {
+                    // Handle PostgreSQL escape sequences
+                    char nextChar = value[i + 1];
+                    if (nextChar == Consts.Backslash)
+                    {
+                        // \\ -> single backslash
+                        current.Append(Consts.Backslash);
+                        i += 2;
+                    }
+                    else if (nextChar == Consts.DoubleQuote)
+                    {
+                        // \" -> literal quote
+                        current.Append(Consts.DoubleQuote);
+                        i += 2;
+                    }
+                    else
+                    {
+                        // Other escape - keep as-is (shouldn't happen in well-formed input)
+                        current.Append(currentChar);
+                        i++;
+                    }
                 }
                 else
                 {
-                    if (currentChar == '\n')
-                        current.Append("\\n");
-                    else if (currentChar == '\t')
-                        current.Append("\\t");
-                    else if (currentChar == '\r')
-                        current.Append("\\r");
-                    else
-                        current.Append(currentChar);
+                    current.Append(currentChar);
+                    i++;
                 }
-                i++;
             }
         }
 
