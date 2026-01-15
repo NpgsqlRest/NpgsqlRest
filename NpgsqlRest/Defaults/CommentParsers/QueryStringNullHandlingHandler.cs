@@ -36,7 +36,7 @@ internal static partial class DefaultCommentParser
         {
             Logger?.InvalidQueryStringNullHandlingComment(wordsLower[1], description, endpoint.QueryStringNullHandling);
         }
-        if (endpoint.TextResponseNullHandling != Options.TextResponseNullHandling)
+        if (endpoint.QueryStringNullHandling != Options.QueryStringNullHandling)
         {
             Logger?.CommentSetQueryStringNullHandling(description, endpoint.QueryStringNullHandling);
         }

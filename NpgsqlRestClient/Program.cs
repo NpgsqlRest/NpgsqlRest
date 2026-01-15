@@ -258,6 +258,8 @@ NpgsqlRestOptions options = new()
     
     DefaultHttpMethod = config.GetConfigEnum<Method?>("DefaultHttpMethod", config.NpgsqlRestCfg),
     DefaultRequestParamType = config.GetConfigEnum<RequestParamType?>("DefaultRequestParamType", config.NpgsqlRestCfg),
+    QueryStringNullHandling = config.GetConfigEnum<QueryStringNullHandling?>("QueryStringNullHandling", config.NpgsqlRestCfg) ?? QueryStringNullHandling.Ignore,
+    TextResponseNullHandling = config.GetConfigEnum<TextResponseNullHandling?>("TextResponseNullHandling", config.NpgsqlRestCfg) ?? TextResponseNullHandling.EmptyString,
     CommentsMode = config.GetConfigEnum<CommentsMode?>("CommentsMode", config.NpgsqlRestCfg) ?? CommentsMode.OnlyWithHttpTag,
     RequestHeadersMode = config.GetConfigEnum<RequestHeadersMode?>("RequestHeadersMode", config.NpgsqlRestCfg) ?? RequestHeadersMode.Parameter,
     RequestHeadersContextKey = config.GetConfigStr("RequestHeadersContextKey", config.NpgsqlRestCfg) ?? "request.headers",

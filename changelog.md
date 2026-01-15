@@ -4,6 +4,61 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [3.4.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.4.1) (2025-01-15)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.4.0...3.4.1)
+
+### Configuration Options for Null Handling
+
+Added global configuration options for `QueryStringNullHandling` and `TextResponseNullHandling` in `appsettings.json`.
+
+#### QueryStringNullHandling
+
+Sets the default behavior for handling NULL values in query string parameters:
+
+- `Ignore` (default): No special handling - empty strings stay as empty strings, "null" literal stays as "null" string.
+- `EmptyString`: Empty query string values are interpreted as NULL values.
+- `NullLiteral`: Literal string "null" (case insensitive) is interpreted as NULL value.
+
+```json
+{
+  "NpgsqlRest": {
+    "QueryStringNullHandling": "EmptyString"
+  }
+}
+```
+
+#### TextResponseNullHandling
+
+Sets the default behavior for plain text responses when the execution returns NULL from the database:
+
+- `EmptyString` (default): Returns an empty string response with status code 200 OK.
+- `NullLiteral`: Returns a string literal "NULL" with status code 200 OK.
+- `NoContent`: Returns status code 204 NO CONTENT.
+
+```json
+{
+  "NpgsqlRest": {
+    "TextResponseNullHandling": "NoContent"
+  }
+}
+```
+
+Both options can also be overridden per-endpoint using comment annotations:
+
+```sql
+comment on function my_func(text) is '
+query_string_null_handling empty_string
+text_response_null_handling no_content
+';
+```
+
+### Bug Fixes
+
+- Fixed logging condition in `QueryStringNullHandlingHandler` that was incorrectly checking `TextResponseNullHandling` instead of `QueryStringNullHandling` when determining whether to log annotation changes.
+
+---
+
 ## Version [3.4.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.4.0) (2025-01-16)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.3.1...3.4.0)
