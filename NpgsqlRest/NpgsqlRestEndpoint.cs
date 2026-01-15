@@ -40,6 +40,8 @@ public class NpgsqlRestEndpoint(
         bool shouldDispose = true;
         bool shouldCommit = true;
         IUploadHandler? uploadHandler = null;
+        var shouldLog = Options.LogCommands && Logger != null;
+        StringBuilder? cmdLog = null;
 
         var writer = PipeWriter.Create(context.Response.Body);
         try
@@ -132,8 +134,7 @@ public class NpgsqlRestEndpoint(
             
             await using var command = NpgsqlRestCommand.Create(connection);
 
-            var shouldLog = Options.LogCommands && Logger != null;
-            StringBuilder? cmdLog = shouldLog ?
+            cmdLog = shouldLog ?
                 new(string.Concat("-- ", context.Request.Method, " ",
                     (Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth)
                         ? string.Concat(context.Request.Scheme, "://", context.Request.Host, context.Request.Path)
@@ -230,6 +231,10 @@ public class NpgsqlRestEndpoint(
                         routine = overload.Endpoint.Routine;
                         endpoint = overload.Endpoint;
                         formatter = overload.Formatter;
+                        if (formatter.IsFormattable is false)
+                        {
+                            commandText = routine.Expression;
+                        }
                     }
                 }
 
@@ -865,6 +870,10 @@ public class NpgsqlRestEndpoint(
                         routine = overload.Endpoint.Routine;
                         endpoint = overload.Endpoint;
                         formatter = overload.Formatter;
+                        if (formatter.IsFormattable is false)
+                        {
+                            commandText = routine.Expression;
+                        }
                     }
                 }
 
@@ -2312,7 +2321,14 @@ public class NpgsqlRestEndpoint(
 
             if (context.Response.StatusCode != 200 && context.Response.StatusCode != 205 && context.Response.StatusCode != 400)
             {
-                Logger?.LogError(exception, "Error executing command: {commandText} mapped to endpoint: {Url}", commandText, endpoint.Path);
+                if (shouldLog && cmdLog is not null)
+                {
+                    Logger?.LogError(exception, "Error executing command: {commandText} mapped to endpoint: {Url}{NewLine}{cmdLog}", commandText, endpoint.Path, Environment.NewLine, cmdLog.ToString());
+                }
+                else
+                {
+                    Logger?.LogError(exception, "Error executing command: {commandText} mapped to endpoint: {Url}", commandText, endpoint.Path);
+                }
             }
         }
         finally

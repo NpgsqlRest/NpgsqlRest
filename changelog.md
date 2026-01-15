@@ -56,6 +56,8 @@ text_response_null_handling no_content
 ### Bug Fixes
 
 - Fixed logging condition in `QueryStringNullHandlingHandler` that was incorrectly checking `TextResponseNullHandling` instead of `QueryStringNullHandling` when determining whether to log annotation changes.
+- Fixed overloaded function resolution not updating the SQL command text. When multiple PostgreSQL functions with the same name but different parameter types (e.g., one with `int` and one with a custom composite type) were mapped to the same endpoint, selecting an overload based on parameter count would use the wrong SQL expression, causing syntax errors.
+- Fixed error logging to include command parameters. When command execution failed, the error log now includes the request URL and parameter values (when `LogCommands` and `LogCommandParameters` are enabled) for easier debugging.
 
 ---
 
