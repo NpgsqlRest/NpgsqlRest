@@ -225,9 +225,19 @@ public static class PgConverters
 
             if (currentChar == Consts.DoubleQuote && (i == 1 || value[i - 1] != Consts.Backslash))
             {
-                insideQuotes = !insideQuotes;
-                hasQuotes = true;
-                i++;
+                // Check for doubled quote "" which is PostgreSQL's escape for a literal quote
+                if (insideQuotes && i + 1 < len && value[i + 1] == Consts.DoubleQuote)
+                {
+                    // "" inside quotes means a literal quote character
+                    current.Append(Consts.DoubleQuote);
+                    i += 2;
+                }
+                else
+                {
+                    insideQuotes = !insideQuotes;
+                    hasQuotes = true;
+                    i++;
+                }
             }
             else if (currentChar == Consts.OpenBrace && !insideQuotes)
             {
@@ -402,6 +412,13 @@ public static class PgConverters
         var result = new StringBuilder(len * 3);
         result.Append(Consts.OpenBracket);
 
+        // Pre-allocate element buffer outside the loop to avoid stack overflow
+        // Use ArrayPool for large inputs, stackalloc for small ones
+        char[]? rentedBuffer = null;
+        Span<char> elementBuffer = len <= 512
+            ? stackalloc char[len]
+            : (rentedBuffer = ArrayPool<char>.Shared.Rent(len));
+
         bool firstElement = true;
         int i = 1; // Skip opening {
 
@@ -434,13 +451,58 @@ public static class PgConverters
 
             i++; // Skip opening quote
 
-            // Element should start with (
-            if (i >= len - 1 || value[i] != Consts.OpenParenthesis)
+            // First, extract and unescape the entire array element content
+            // Array elements use \" for literal quotes and \\ for literal backslashes
+            int elementLen = 0;
+
+            while (i < len - 1)
             {
-                break; // Unexpected format
+                char c = value[i];
+
+                if (c == Consts.DoubleQuote)
+                {
+                    // End of quoted element (unescaped quote)
+                    i++; // Skip closing quote
+                    break;
+                }
+                else if (c == Consts.Backslash && i + 1 < len)
+                {
+                    char nextChar = value[i + 1];
+                    if (nextChar == Consts.Backslash)
+                    {
+                        // \\ -> single backslash
+                        elementBuffer[elementLen++] = Consts.Backslash;
+                        i += 2;
+                    }
+                    else if (nextChar == Consts.DoubleQuote)
+                    {
+                        // \" -> literal quote
+                        elementBuffer[elementLen++] = Consts.DoubleQuote;
+                        i += 2;
+                    }
+                    else
+                    {
+                        // Other escape - keep as-is
+                        elementBuffer[elementLen++] = c;
+                        i++;
+                    }
+                }
+                else
+                {
+                    elementBuffer[elementLen++] = c;
+                    i++;
+                }
             }
 
-            i++; // Skip (
+            // Now parse the unescaped tuple content
+            var tupleContent = elementBuffer.Slice(0, elementLen);
+            int tupleLen = tupleContent.Length;
+
+            // Element should start with (
+            if (tupleLen < 2 || tupleContent[0] != Consts.OpenParenthesis)
+            {
+                continue; // Skip malformed element
+            }
 
             if (!firstElement)
                 result.Append(Consts.Comma);
@@ -448,27 +510,22 @@ public static class PgConverters
 
             result.Append(Consts.OpenBrace);
 
-            // Parse fields within the tuple
+            // Parse fields within the tuple (now using standard tuple escaping: "" for quotes)
             int fieldIndex = 0;
             var fieldValue = new StringBuilder();
             bool insideFieldQuotes = false;
             bool fieldHasValue = false;
+            int j = 1; // Skip opening (
 
-            while (i < len - 1 && fieldIndex < fieldNames.Length)
+            while (j < tupleLen && fieldIndex < fieldNames.Length)
             {
-                char c = value[i];
+                char c = tupleContent[j];
 
                 // Check for end of tuple
                 if (c == Consts.CloseParenthesis && !insideFieldQuotes)
                 {
                     // Output current field
                     OutputField(result, fieldNames, fieldDescriptors, fieldIndex, fieldValue, fieldHasValue);
-                    i++; // Skip )
-
-                    // Skip closing quote of the element
-                    if (i < len && value[i] == Consts.DoubleQuote)
-                        i++;
-
                     break;
                 }
 
@@ -481,71 +538,52 @@ public static class PgConverters
                     fieldIndex++;
                     fieldValue.Clear();
                     fieldHasValue = false;
-                    i++;
+                    j++;
                     continue;
                 }
 
-                // Handle quotes within field values
+                // Handle quotes within field values (tuple format uses "" for literal quote)
                 if (c == Consts.DoubleQuote)
                 {
                     // Check for escaped quote (double quote "")
-                    if (i + 1 < len && value[i + 1] == Consts.DoubleQuote)
+                    if (j + 1 < tupleLen && tupleContent[j + 1] == Consts.DoubleQuote)
                     {
                         fieldValue.Append(Consts.DoubleQuote);
                         fieldHasValue = true;
-                        i += 2;
+                        j += 2;
                         continue;
                     }
                     else
                     {
                         // Toggle quote state
                         insideFieldQuotes = !insideFieldQuotes;
-                        i++;
+                        j++;
                         continue;
                     }
                 }
 
-                // Handle backslash escapes
-                if (c == Consts.Backslash && i + 1 < len)
+                // Handle backslash in tuple content (tuple format uses \\ for literal backslash)
+                if (c == Consts.Backslash && j + 1 < tupleLen && tupleContent[j + 1] == Consts.Backslash)
                 {
-                    char nextChar = value[i + 1];
-                    if (nextChar == Consts.Backslash)
-                    {
-                        // Escaped backslash -> single backslash
-                        fieldValue.Append(Consts.Backslash);
-                        fieldHasValue = true;
-                        i += 2;
-                        continue;
-                    }
-                    else if (nextChar == Consts.DoubleQuote)
-                    {
-                        // \"\" (4 chars) = literal quote character inside quoted field
-                        // \" (2 chars) = quote delimiter (start/end of quoted field)
-                        if (i + 3 < len && value[i + 2] == Consts.Backslash && value[i + 3] == Consts.DoubleQuote)
-                        {
-                            // \"\" -> literal quote character
-                            fieldValue.Append(Consts.DoubleQuote);
-                            fieldHasValue = true;
-                            i += 4;
-                            continue;
-                        }
-                        else
-                        {
-                            // \" -> quote delimiter, toggle quote state
-                            insideFieldQuotes = !insideFieldQuotes;
-                            i += 2;
-                            continue;
-                        }
-                    }
+                    fieldValue.Append(Consts.Backslash);
+                    fieldHasValue = true;
+                    j += 2;
+                    continue;
                 }
 
                 // Regular character
                 fieldValue.Append(c);
                 fieldHasValue = true;
-                i++;
+                j++;
             }
 
             result.Append(Consts.CloseBrace);
+        }
+
+        // Return rented buffer if we used one
+        if (rentedBuffer is not null)
+        {
+            ArrayPool<char>.Shared.Return(rentedBuffer);
         }
 
         result.Append(Consts.CloseBracket);

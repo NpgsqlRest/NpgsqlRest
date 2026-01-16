@@ -135,11 +135,15 @@ public class TupleStringEscapingTests(TestFixture test)
         response?.StatusCode.Should().Be(HttpStatusCode.OK);
 
         // The JSON must be valid - try to parse it
-        var action = () => System.Text.Json.JsonDocument.Parse(content);
-        action.Should().NotThrow("JSON with quotes in tuple string should be valid");
+        var doc = System.Text.Json.JsonDocument.Parse(content);
 
-        // Verify the tuple string contains the expected escaped content
-        content.Should().Contain("nested");
+        // Verify the nested field decodes correctly
+        // PostgreSQL SQL input: 'hello ""world""' - this is the literal string hello ""world"" (with two quotes)
+        // In tuple format: (1,"hello """"world""""") - text field is quoted, each " becomes ""
+        // Expected decoded tuple string: (1,"hello ""world""")
+        var nested = doc.RootElement[0].GetProperty("data")[0].GetProperty("nested").GetString();
+        nested.Should().Be("(1,\"hello \"\"world\"\"\")",
+            $"the decoded tuple string should have proper tuple format with doubled quotes. Raw JSON: {content}");
     }
 
     /// <summary>
@@ -234,8 +238,23 @@ public class TupleStringEscapingTests(TestFixture test)
 
         response?.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        var action = () => System.Text.Json.JsonDocument.Parse(content);
-        action.Should().NotThrow("JSON with special chars in array of tuple strings should be valid");
+        var doc = System.Text.Json.JsonDocument.Parse(content);
+
+        // The items field should be an array of tuple strings
+        // Each element like (1,"hello ""quoted""") when decoded from JSON should have:
+        // - Proper tuple format with quotes for the text field
+        // - Doubled quotes "" representing literal " in the value
+        var items = doc.RootElement[0].GetProperty("data")[0].GetProperty("items");
+        items.GetArrayLength().Should().Be(2);
+
+        var firstItem = items[0].GetString();
+        // Original value: hello "quoted"
+        // In tuple: (1,"hello ""quoted""")
+        // The decoded string should NOT have backslash escaping like \"
+        firstItem.Should().NotBeNull();
+        firstItem.Should().NotContain("\\\"", "decoded tuple string should not contain backslash-escaped quotes");
+        // It should have the proper tuple format with doubled quotes for literal "
+        firstItem.Should().Be("(1,\"hello \"\"quoted\"\"\")");
     }
 
     /// <summary>

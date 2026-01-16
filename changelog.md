@@ -4,6 +4,20 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [3.4.3](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.4.3) (2025-01-16)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.4.2...3.4.3)
+
+### Bug Fixes
+
+- Fixed double-escaping bug in PostgreSQL tuple string serialization. When composite types contain arrays of other composites (e.g., nested composite types with array fields), the JSON output now correctly escapes quotes instead of double-escaping them (`\"` instead of `\\\"`). This fix ensures that decoded tuple strings contain proper PostgreSQL tuple format with doubled quotes (`""`) for literal quote characters, rather than backslash-escaped quotes.
+
+### Performance Improvements
+
+- Optimized `PgCompositeArrayToJsonArray` to use stack allocation (`stackalloc`) for small inputs (≤512 chars) and `ArrayPool<char>` for larger inputs, eliminating per-element `StringBuilder` allocations and reducing GC pressure.
+
+---
+
 ## Version [3.4.2](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.4.2) (2025-01-15)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.4.1...3.4.2)
