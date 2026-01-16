@@ -162,7 +162,9 @@ To serialize composite type columns as nested JSON objects, you can either:
 ```json
 {
   "NpgsqlRest": {
-    "NestedJsonForCompositeTypes": true
+      "RoutineOptions": {
+        "NestedJsonForCompositeTypes": true
+    }
   }
 }
 ```
