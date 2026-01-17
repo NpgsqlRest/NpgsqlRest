@@ -160,7 +160,7 @@ public class Program
         {
             //NameSimilarTo = "get_conn1_connection_name_p",
             //SchemaSimilarTo = "custom_param_schema",
-            IncludeSchemas = ["public", "custom_param_schema", "my_schema", "custom_table_param_schema", "tsclient_test"],
+            IncludeSchemas = ["public", "custom_param_schema", "my_schema", "custom_table_param_schema", "tsclient_test", "polp_schema"],
 
             // TsClient configuration for testing - uses tsclient_module annotations for per-function files
             EndpointCreateHandlers = [
@@ -199,7 +199,8 @@ public class Program
             ConnectionStrings = new Dictionary<string, string>()
             {
                 { "conn1", Database.CreateAdditional("conn1") },
-                { "conn2", Database.CreateAdditional("conn2") }
+                { "conn2", Database.CreateAdditional("conn2") },
+                { "polp_conn", Database.CreatePolpConnection() }
             },
             CommandCallbackAsync = async (endpoint, command, context) =>
             {

@@ -60,6 +60,21 @@ public static partial class Database
         return builder.ConnectionString;
     }
 
+    /// <summary>
+    /// Creates a connection string for the test_user with minimal privileges (PoLP testing).
+    /// </summary>
+    public static string CreatePolpConnection()
+    {
+        var builder = new NpgsqlConnectionStringBuilder(InitialConnectionString)
+        {
+            Database = Dbname,
+            Username = "test_user",
+            Password = "test_pass"
+        };
+
+        return builder.ConnectionString;
+    }
+
     public static void DropIfExists()
     {
         using NpgsqlConnection connection = new(InitialConnectionString);

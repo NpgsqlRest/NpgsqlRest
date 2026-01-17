@@ -4,6 +4,19 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [3.4.4](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.4.4) (2025-01-17)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.4.3...3.4.4)
+
+### Bug Fixes
+
+- Fixed "permission denied for schema" error in the metadata query when a database user with limited privileges runs the routine discovery. The error occurred when a user with only `USAGE` permission on specific schemas tried to discover routines, but the database contained other schemas with composite types that the user couldn't access. The `::regtype` cast in the metadata query would fail when attempting to resolve type names from unauthorized schemas. Added `has_schema_privilege` checks to filter out:
+  - Array element types from schemas the user cannot access
+  - Schemas the user cannot access from the schema aggregation
+  - Routines that return types from schemas the user cannot access
+
+---
+
 ## Version [3.4.3](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.4.3) (2025-01-16)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.4.2...3.4.3)

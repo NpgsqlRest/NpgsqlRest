@@ -22,7 +22,6 @@ internal class RoutineSourceQuery
             and a.attnum > 0
 
     ), _array_element_types as (
-        -- For arrays of composite types, get the element type's field information
         select
             (quote_ident(n.nspname) || '.' || quote_ident(arr_t.typname))::regtype::text as array_type_name,
             array_agg(quote_ident(a.attname) order by a.attnum) as field_names,
@@ -36,6 +35,7 @@ internal class RoutineSourceQuery
         where
             n.nspname not like 'pg_%'
             and n.nspname <> 'information_schema'
+            and has_schema_privilege(current_user, n.nspname, 'USAGE')
             and arr_t.typelem <> 0
         group by n.nspname, arr_t.typname
 
@@ -48,6 +48,7 @@ internal class RoutineSourceQuery
         where
             nspname not like 'pg_%'
             and nspname <> 'information_schema'
+            and has_schema_privilege(current_user, nspname, 'USAGE')
             and ($1 is null or nspname similar to $1)
             and ($2 is null or nspname not similar to $2)
             and ($3 is null or nspname = any($3))
@@ -82,6 +83,7 @@ internal class RoutineSourceQuery
         where
             coalesce(r.type_udt_name, '') <> 'trigger'
             and r.routine_type in ('FUNCTION', 'PROCEDURE')
+            and (r.type_udt_schema is null or has_schema_privilege(current_user, r.type_udt_schema, 'USAGE'))
             and ($5 is null or r.routine_name similar to $5)
             and ($6 is null or r.routine_name not similar to $6)
             and ($7 is null or r.routine_name = any($7))
