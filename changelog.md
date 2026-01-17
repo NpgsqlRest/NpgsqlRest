@@ -8,6 +8,87 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.4.3...3.4.4)
 
+### Deep Nested Composite Type Resolution (ResolveNestedCompositeTypes)
+
+By default, NpgsqlRest resolves nested composite types to any depth. When a composite type contains another composite type (or an array of composites), the inner composites are serialized as proper JSON objects/arrays instead of PostgreSQL tuple strings.
+
+**Example:**
+
+```sql
+create type inner_type as (id int, name text);
+create type outer_type as (label text, inner_val inner_type);
+create type with_array as (group_name text, members inner_type[]);
+
+create function get_nested_data()
+returns table(data outer_type, items with_array)
+language sql as $$
+select
+    row('outer', row(1, 'inner')::inner_type)::outer_type,
+    row('group1', array[row(1,'a')::inner_type, row(2,'b')::inner_type])::with_array;
+$$;
+```
+
+**Output:**
+```json
+[{
+  "data": {"label":"outer","innerVal":{"id":1,"name":"inner"}},
+  "items": {"groupName":"group1","members":[{"id":1,"name":"a"},{"id":2,"name":"b"}]}
+}]
+```
+
+**Configuration:**
+
+```json
+{
+  "NpgsqlRest": {
+    "RoutineOptions": {
+      "ResolveNestedCompositeTypes": true
+    }
+  }
+}
+```
+
+**Default:** `true` - nested composites are fully resolved.
+
+**How it works:**
+
+At application startup, when `ResolveNestedCompositeTypes` is enabled:
+
+1. **Type Cache Initialization**: Queries `pg_catalog` to build a cache of all composite types in the database, including their field names, field types, and nested relationships.
+
+2. **Metadata Enrichment**: For each routine that returns composite types, the field descriptors are enriched with nested type information from the cache.
+
+3. **Runtime Serialization**: During request processing, the serializer checks each field's metadata. If the field is marked as a composite type (or array of composites), it recursively parses the PostgreSQL tuple string and outputs a proper JSON object/array.
+
+**When to disable (`ResolveNestedCompositeTypes: false`):**
+
+| Scenario | Reason |
+|----------|--------|
+| **Large schemas with thousands of composite types** | Reduces startup time by skipping the type cache initialization query |
+| **No nested composites in your schema** | If your composites don't contain other composites, the cache provides no benefit |
+| **Memory-constrained environments** | The type cache consumes memory proportional to the number of composite types |
+| **Backward compatibility** | If you depend on the old tuple string format `"(1,x)"` in your client code |
+
+**Performance considerations:**
+
+- **Startup cost**: One additional query to `pg_catalog` at startup to build the type cache
+- **Memory**: Cache size is proportional to: (number of composite types) × (average fields per type)
+- **Runtime**: Negligible - just a dictionary lookup per composite field
+
+**PostgreSQL version compatibility:**
+
+Tested and works on PostgreSQL 13 through 17. The feature uses standard `pg_catalog` views that are stable across PostgreSQL versions.
+
+**Edge cases handled:**
+
+- Empty arrays of composites → `[]`
+- NULL composite elements in arrays → `[{"id":1},null,{"id":2}]`
+- Composites with all NULL fields → `{"id":null,"name":null}`
+- Empty string vs NULL distinction → `""` vs `null`
+- Unicode characters (emoji, Chinese, Arabic) → preserved correctly
+- Deeply nested structures (4+ levels) → fully resolved
+- Self-referencing types → cycle detection prevents infinite loops
+
 ### Bug Fixes
 
 - Fixed "permission denied for schema" error in the metadata query when a database user with limited privileges runs the routine discovery. The error occurred when a user with only `USAGE` permission on specific schemas tried to discover routines, but the database contained other schemas with composite types that the user couldn't access. The `::regtype` cast in the metadata query would fail when attempting to resolve type names from unauthorized schemas. Added `has_schema_privilege` checks to filter out:
@@ -153,16 +234,18 @@ This feature is automatic and requires no annotations. It works with:
 - Multiple array columns in the same result set
 - Primitive arrays inside composite types (e.g., `int[]` field) - properly serialized as JSON arrays
 
-**Limitations:**
+**Limitations (with `ResolveNestedCompositeTypes: false`):**
 
-The array composite serialization works for **one level only**. Nested structures have the following behavior:
+When `ResolveNestedCompositeTypes` is disabled, the array composite serialization works for **one level only**. Nested structures have the following behavior:
 
 | Scenario | Output |
 |----------|--------|
 | **Nested composite** (composite inside composite) | Inner composite serialized as PostgreSQL tuple string: `"(1,x)"` instead of `{"id":1,"name":"x"}` |
 | **Array of composites inside composite** | Array of tuple strings: `["(1,a)","(2,b)"]` instead of `[{"id":1,"name":"a"},...]` |
 
-For complex nested structures, use PostgreSQL's `json_build_object`/`json_agg` functions to construct the JSON directly in your query.
+**Note:** These limitations do not apply when `ResolveNestedCompositeTypes: true` (the default). See the `ResolveNestedCompositeTypes` documentation in version 3.4.4 for full nested composite support.
+
+For complex nested structures with the option disabled, use PostgreSQL's `json_build_object`/`json_agg` functions to construct the JSON directly in your query.
 
 #### 2. Nested JSON for Composite Type Columns (Opt-in)
 

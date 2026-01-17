@@ -18,7 +18,8 @@ public class RoutineSource(
     string? customTypeParameterSeparator = "_",
     string[]? includeLanguages = null,
     string[]? excludeLanguages = null,
-    bool nestedJsonForCompositeTypes = false) : IRoutineSource
+    bool nestedJsonForCompositeTypes = false,
+    bool resolveNestedCompositeTypes = true) : IRoutineSource
 {
     public string? SchemaSimilarTo { get; set; } = schemaSimilarTo;
     public string? SchemaNotSimilarTo { get; set; } = schemaNotSimilarTo;
@@ -35,6 +36,16 @@ public class RoutineSource(
     public string[]? ExcludeLanguages { get; set; } = excludeLanguages;
     public bool NestedJsonForCompositeTypes { get; set; } = nestedJsonForCompositeTypes;
 
+    /// <summary>
+    /// When true, nested composite types and arrays of composite types within composite fields
+    /// are serialized as JSON objects/arrays instead of PostgreSQL tuple strings.
+    /// For example, a nested composite "(1,x)" becomes {"id":1,"name":"x"}.
+    /// Default: true (nested composites are serialized as proper JSON objects).
+    /// Set to false for backwards compatibility or to reduce startup overhead for schemas
+    /// with thousands of composite types.
+    /// </summary>
+    public bool ResolveNestedCompositeTypes { get; set; } = resolveNestedCompositeTypes;
+
     public IEnumerable<(Routine, IRoutineSourceParameterFormatter)> Read(IServiceProvider? serviceProvider, RetryStrategy? retryStrategy)
     {
         bool shouldDispose = true;
@@ -46,6 +57,12 @@ public class RoutineSource(
             if (connection is null)
             {
                 yield break;
+            }
+
+            // Initialize composite type cache if deep nested type resolution is enabled
+            if (ResolveNestedCompositeTypes)
+            {
+                CompositeTypeCache.Initialize(connection, Options.NameConverter);
             }
 
             using var command = connection.CreateCommand();
@@ -233,6 +250,12 @@ public class RoutineSource(
                                 {
                                     convertedFieldNames[j] = Options.NameConverter(fieldNames[j]) ?? fieldNames[j];
                                     fieldDescriptors[j] = new TypeDescriptor(fieldTypes[j]);
+
+                                    // Resolve nested composite types if option is enabled
+                                    if (ResolveNestedCompositeTypes)
+                                    {
+                                        ResolveNestedTypesForDescriptor(fieldDescriptors[j]);
+                                    }
                                 }
 
                                 arrayCompositeColumnInfo[colIndex] = (convertedFieldNames, fieldDescriptors);
@@ -482,6 +505,34 @@ public class RoutineSource(
             if (connection is not null && shouldDispose is true)
             {
                 connection.Dispose();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Resolves nested composite type metadata for a field descriptor.
+    /// Looks up the field type in the CompositeTypeCache and populates
+    /// nested field names and descriptors if the field is a composite type.
+    /// </summary>
+    private static void ResolveNestedTypesForDescriptor(TypeDescriptor descriptor)
+    {
+        // Check if this is a composite type
+        var compositeMetadata = CompositeTypeCache.GetType(descriptor.OriginalType);
+        if (compositeMetadata != null)
+        {
+            descriptor.CompositeFieldNames = compositeMetadata.ConvertedFieldNames;
+            descriptor.CompositeFieldDescriptors = compositeMetadata.FieldDescriptors;
+            return;
+        }
+
+        // Check if this is an array of composite types
+        if (descriptor.IsArray)
+        {
+            var elementMetadata = CompositeTypeCache.GetArrayElementType(descriptor.OriginalType);
+            if (elementMetadata != null)
+            {
+                descriptor.ArrayCompositeFieldNames = elementMetadata.ConvertedFieldNames;
+                descriptor.ArrayCompositeFieldDescriptors = elementMetadata.FieldDescriptors;
             }
         }
     }

@@ -9,6 +9,8 @@ public static partial class Database
     private const string Dbname = "npgsql_rest_test";
     private const string InitialConnectionString = "Host=localhost;Port=5432;Database=postgres;Username=postgres;Password=postgres";
     private static readonly StringBuilder script = new();
+    private static readonly object _createLock = new();
+    private static volatile bool _created = false;
 
     static Database()
     {
@@ -20,9 +22,9 @@ public static partial class Database
             }
         }
     }
-    
+
     public static string GetIinitialConnectionString() => InitialConnectionString;
-    
+
     public static NpgsqlConnection CreateConnection()
     {
         var builder = new NpgsqlConnectionStringBuilder(InitialConnectionString)
@@ -34,19 +36,42 @@ public static partial class Database
 
     public static string Create()
     {
-        DropIfExists();
-        var builder = new NpgsqlConnectionStringBuilder(InitialConnectionString)
+        // Thread-safe singleton pattern - only create database once per test run
+        if (_created)
         {
-            Database = Dbname
-        };
+            var builder = new NpgsqlConnectionStringBuilder(InitialConnectionString)
+            {
+                Database = Dbname
+            };
+            return builder.ConnectionString;
+        }
 
-        using NpgsqlConnection test = new(builder.ConnectionString);
-        test.Open();
-        using var command = test.CreateCommand();
-        command.CommandText = script.ToString();
-        command.ExecuteNonQuery();
+        lock (_createLock)
+        {
+            if (_created)
+            {
+                var builder = new NpgsqlConnectionStringBuilder(InitialConnectionString)
+                {
+                    Database = Dbname
+                };
+                return builder.ConnectionString;
+            }
 
-        return builder.ConnectionString;
+            DropIfExists();
+            var connBuilder = new NpgsqlConnectionStringBuilder(InitialConnectionString)
+            {
+                Database = Dbname
+            };
+
+            using NpgsqlConnection test = new(connBuilder.ConnectionString);
+            test.Open();
+            using var command = test.CreateCommand();
+            command.CommandText = script.ToString();
+            command.ExecuteNonQuery();
+
+            _created = true;
+            return connBuilder.ConnectionString;
+        }
     }
 
     public static string CreateAdditional(string appName)

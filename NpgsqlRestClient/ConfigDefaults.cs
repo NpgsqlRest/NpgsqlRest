@@ -520,7 +520,8 @@ public static class ConfigDefaults
                 ["CustomTypeParameterSeparator"] = null,
                 ["IncludeLanguages"] = null,
                 ["ExcludeLanguages"] = null,
-                ["NestedJsonForCompositeTypes"] = false
+                ["NestedJsonForCompositeTypes"] = false,
+                ["ResolveNestedCompositeTypes"] = true
             },
 
             ["UploadOptions"] = GetUploadOptionsDefaults(),

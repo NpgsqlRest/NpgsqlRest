@@ -4,7 +4,6 @@ internal class RoutineSourceQuery
 {
     public const string Query = """
     with _types as (
-
         select
             (quote_ident(n.nspname) || '.' || quote_ident(t.typname))::regtype::text as name,
             a.attnum as att_pos,
@@ -20,7 +19,6 @@ internal class RoutineSourceQuery
             and nspname <> 'information_schema'
             and has_schema_privilege(current_user, n.nspname, 'USAGE')
             and a.attnum > 0
-
     ), _array_element_types as (
         select
             (quote_ident(n.nspname) || '.' || quote_ident(arr_t.typname))::regtype::text as array_type_name,
@@ -38,9 +36,7 @@ internal class RoutineSourceQuery
             and has_schema_privilege(current_user, n.nspname, 'USAGE')
             and arr_t.typelem <> 0
         group by n.nspname, arr_t.typname
-
     ), _schemas as (
-
         select
             array_agg(nspname) as schemas
         from
@@ -53,9 +49,7 @@ internal class RoutineSourceQuery
             and ($2 is null or nspname not similar to $2)
             and ($3 is null or nspname = any($3))
             and ($4 is null or not nspname = any($4))
-
     ), _routines as (
-
         select
             r.routine_type, 
             r.specific_schema, 
@@ -92,9 +86,7 @@ internal class RoutineSourceQuery
             and ($10 is null or lower(r.external_language) = any($10) is false)
         order by 
             r.specific_schema, r.specific_name, p.ordinal_position, t.att_pos
-
     ), _routine_aggs as (
-
         select
             lower(r.routine_type) as type,
             quote_ident(r.specific_schema) as schema,
@@ -120,7 +112,6 @@ internal class RoutineSourceQuery
             coalesce(array_agg(r.custom_type_pos order by r.param_position) filter(where r.is_in_param), '{}'::smallint[]) as custom_param_type_positions,
             coalesce(array_agg(r.custom_type_name order by r.param_position) filter(where r.is_out_param), '{}'::text[]) as custom_rec_type_names,
             coalesce(array_agg(r.custom_type_type order by r.param_position) filter(where r.is_out_param), '{}'::text[]) as custom_rec_type_types,
-            -- Distinct OUT param names and types (without expansion from composite type fields)
             coalesce(array_agg(distinct r.param_name order by r.param_name) filter(where r.is_out_param), '{}'::text[]) as distinct_out_param_names,
             coalesce(array_agg(distinct r.param_type order by r.param_type) filter(where r.is_out_param), '{}'::text[]) as distinct_out_param_types
         from
@@ -156,11 +147,9 @@ internal class RoutineSourceQuery
         volatility_option,
         returns_set,
         case when custom_types.col_name is not null then 'record' else coalesce(return_type, 'void') end as return_type,
-
         array_length(coalesce(custom_types.col_name, case when array_length(r1.out_params, 1) is null then array[r1.name]::text[] else r1.out_params end), 1) as return_record_count,
         coalesce(custom_types.col_name, case when array_length(r1.out_params, 1) is null then array[r1.name]::text[] else r1.out_params end) as return_record_names,
         coalesce(custom_types.col_type, case when array_length(r1.out_param_types, 1) is null then array[return_type]::text[] else r1.out_param_types end) as return_record_types,
-
         coalesce(custom_types.col_type, r1.out_params) = '{}' as is_unnamed_record,
         array_length(in_params, 1) as param_count,
         in_params as param_names,
@@ -173,12 +162,10 @@ internal class RoutineSourceQuery
         custom_param_type_positions,
         case when custom_types.col_name is not null then null else custom_rec_type_names end as custom_rec_type_names,
         case when custom_types.col_name is not null then null else custom_rec_type_types end as custom_rec_type_types,
-        -- For nested JSON: when return is composite type, pass the distinct OUT param names separately
         case when custom_types.col_name is not null and array_length(r1.distinct_out_param_names, 1) > 0
              then r1.distinct_out_param_names else null end as composite_out_param_names,
         case when custom_types.col_name is not null and array_length(r1.distinct_out_param_types, 1) > 0
              then r1.distinct_out_param_types else null end as composite_out_param_types,
-        -- For arrays of composite types: field names and types for each array column (as JSON to avoid 2D array issues)
         array_composite_info.array_column_indices,
         array_composite_info.array_field_names_json,
         array_composite_info.array_field_types_json
@@ -189,8 +176,6 @@ internal class RoutineSourceQuery
         where t.name = r1.return_type
     ) custom_types on true
     left join lateral (
-        -- Get array composite type info for each OUT param that is an array of composite type
-        -- Use json_agg to return as JSON array, avoiding PostgreSQL 2D array limitations
         select
             array_agg(idx::int order by idx) as array_column_indices,
             json_agg(aet.field_names order by idx)::text as array_field_names_json,

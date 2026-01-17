@@ -27,6 +27,41 @@ public class TypeDescriptor
     public bool IsBinary { get; }
     internal bool ShouldRenderAsUnknownType => IsBinary is false;
 
+    // Properties for nested composite type support
+    /// <summary>
+    /// For fields that are composite types, the converted field names of the nested type.
+    /// Null if this is not a composite type field.
+    /// </summary>
+    public string[]? CompositeFieldNames { get; internal set; }
+
+    /// <summary>
+    /// For fields that are composite types, the type descriptors for each nested field.
+    /// Null if this is not a composite type field.
+    /// </summary>
+    public TypeDescriptor[]? CompositeFieldDescriptors { get; internal set; }
+
+    /// <summary>
+    /// For fields that are arrays of composite types, the converted field names of the element type.
+    /// Null if this is not an array of composite type field.
+    /// </summary>
+    public string[]? ArrayCompositeFieldNames { get; internal set; }
+
+    /// <summary>
+    /// For fields that are arrays of composite types, the type descriptors for each element field.
+    /// Null if this is not an array of composite type field.
+    /// </summary>
+    public TypeDescriptor[]? ArrayCompositeFieldDescriptors { get; internal set; }
+
+    /// <summary>
+    /// True if this field is a composite type with resolved nested field metadata.
+    /// </summary>
+    public bool IsCompositeType => CompositeFieldNames != null;
+
+    /// <summary>
+    /// True if this field is an array of composite types with resolved nested field metadata.
+    /// </summary>
+    public bool IsArrayOfCompositeType => ArrayCompositeFieldNames != null;
+
     public TypeDescriptor(
         string type, 
         bool hasDefault = false, 

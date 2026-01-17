@@ -501,6 +501,7 @@ public class App
                 source.ExcludeLanguages = [.. excludeLanguages];
             }
             source.NestedJsonForCompositeTypes = _config.GetConfigBool("NestedJsonForCompositeTypes", routineOptionsCfg);
+            source.ResolveNestedCompositeTypes = _config.GetConfigBool("ResolveNestedCompositeTypes", routineOptionsCfg, true);
         }
         sources.Add(source);
         _builder.Logger?.LogDebug("Using {name} PostrgeSQL Source", nameof(RoutineSource));

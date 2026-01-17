@@ -612,7 +612,24 @@ public static class PgConverters
             var descriptor = fieldDescriptors[fieldIndex];
             var valueStr = fieldValue.ToString();
 
-            if (descriptor.IsArray)
+            // Check for nested composite types first (requires ResolveNestedCompositeTypes option)
+            if (descriptor.IsCompositeType)
+            {
+                // Nested composite type - parse tuple and convert to JSON object recursively
+                result.Append(PgTupleToJsonObject(
+                    valueStr.AsSpan(),
+                    descriptor.CompositeFieldNames!,
+                    descriptor.CompositeFieldDescriptors!));
+            }
+            else if (descriptor.IsArrayOfCompositeType)
+            {
+                // Array of composite types - convert to JSON array of objects
+                result.Append(PgCompositeArrayToJsonArray(
+                    valueStr.AsSpan(),
+                    descriptor.ArrayCompositeFieldNames!,
+                    descriptor.ArrayCompositeFieldDescriptors!));
+            }
+            else if (descriptor.IsArray)
             {
                 // Array field inside composite - convert PostgreSQL array format to JSON array
                 // e.g., {1,2,3} -> [1,2,3]
@@ -641,6 +658,153 @@ public static class PgConverters
                 result.Append(SerializeString(valueStr));
             }
         }
+    }
+
+    /// <summary>
+    /// Converts a PostgreSQL tuple string to a JSON object.
+    /// Input format: (field1,field2,"quoted field")
+    /// Output format: {"name1":value1,"name2":value2}
+    /// Handles nested composites recursively.
+    /// </summary>
+    internal static ReadOnlySpan<char> PgTupleToJsonObject(
+        ReadOnlySpan<char> value,
+        string[] fieldNames,
+        TypeDescriptor[] fieldDescriptors)
+    {
+        var len = value.Length;
+
+        // Handle empty or null values
+        if (value.IsEmpty || len < 2)
+        {
+            return Consts.Null.AsSpan();
+        }
+
+        // Must start with ( and end with )
+        if (value[0] != Consts.OpenParenthesis || value[^1] != Consts.CloseParenthesis)
+        {
+            // Not a tuple format - return as quoted string
+            return SerializeString(value.ToString()).AsSpan();
+        }
+
+        var result = new StringBuilder(len * 2);
+        result.Append(Consts.OpenBrace);
+
+        int fieldIndex = 0;
+        var fieldValue = new StringBuilder();
+        bool insideQuotes = false;
+        bool fieldHasValue = false;
+        int parenDepth = 0;  // Track nested parentheses for nested tuples
+        int braceDepth = 0;  // Track nested braces for arrays
+
+        int i = 1; // Skip opening (
+
+        while (i < len - 1 && fieldIndex < fieldNames.Length) // Stop before closing )
+        {
+            char c = value[i];
+
+            // Track nested parentheses (for nested composite tuples)
+            if (!insideQuotes)
+            {
+                if (c == Consts.OpenParenthesis)
+                {
+                    parenDepth++;
+                    fieldValue.Append(c);
+                    fieldHasValue = true;
+                    i++;
+                    continue;
+                }
+                else if (c == Consts.CloseParenthesis && parenDepth > 0)
+                {
+                    parenDepth--;
+                    fieldValue.Append(c);
+                    fieldHasValue = true;
+                    i++;
+                    continue;
+                }
+            }
+
+            // Track nested braces (for array fields)
+            if (!insideQuotes)
+            {
+                if (c == Consts.OpenBrace)
+                {
+                    braceDepth++;
+                    fieldValue.Append(c);
+                    fieldHasValue = true;
+                    i++;
+                    continue;
+                }
+                else if (c == Consts.CloseBrace && braceDepth > 0)
+                {
+                    braceDepth--;
+                    fieldValue.Append(c);
+                    fieldHasValue = true;
+                    i++;
+                    continue;
+                }
+            }
+
+            // Field separator (only at top level)
+            if (c == Consts.Comma && !insideQuotes && parenDepth == 0 && braceDepth == 0)
+            {
+                OutputField(result, fieldNames, fieldDescriptors, fieldIndex, fieldValue, fieldHasValue);
+                result.Append(Consts.Comma);
+
+                fieldIndex++;
+                fieldValue.Clear();
+                fieldHasValue = false;
+                i++;
+                continue;
+            }
+
+            // Handle quotes
+            if (c == Consts.DoubleQuote)
+            {
+                // Check for escaped quote (double quote "")
+                if (insideQuotes && i + 1 < len - 1 && value[i + 1] == Consts.DoubleQuote)
+                {
+                    fieldValue.Append(Consts.DoubleQuote);
+                    fieldHasValue = true;
+                    i += 2;
+                    continue;
+                }
+                else
+                {
+                    // Toggle quote state
+                    insideQuotes = !insideQuotes;
+                    i++;
+                    continue;
+                }
+            }
+
+            // Handle backslash escapes
+            if (c == Consts.Backslash && i + 1 < len - 1)
+            {
+                char nextChar = value[i + 1];
+                if (nextChar == Consts.Backslash)
+                {
+                    // \\ -> single backslash
+                    fieldValue.Append(Consts.Backslash);
+                    fieldHasValue = true;
+                    i += 2;
+                    continue;
+                }
+            }
+
+            // Regular character
+            fieldValue.Append(c);
+            fieldHasValue = true;
+            i++;
+        }
+
+        // Output the last field
+        if (fieldIndex < fieldNames.Length)
+        {
+            OutputField(result, fieldNames, fieldDescriptors, fieldIndex, fieldValue, fieldHasValue);
+        }
+
+        result.Append(Consts.CloseBrace);
+        return result.ToString().AsSpan();
     }
 
     internal static string QuoteText(ReadOnlySpan<char> value)
