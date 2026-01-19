@@ -1626,6 +1626,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
     /// <summary>
     /// Gets or creates a TypeScript interface for a composite type.
     /// Returns the interface name to use in type declarations.
+    /// Handles nested composite types recursively.
     /// </summary>
     private string GetOrCreateCompositeInterface(
         string[] fieldNames,
@@ -1634,8 +1635,24 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
         Dictionary<string, string> compositeTypeInterfaces,
         StringBuilder compositeInterfaces)
     {
-        // Create a unique key based on field names and types
-        var key = string.Join(",", fieldNames.Zip(fieldDescriptors, (n, d) => $"{n}:{d.Type}"));
+        // Create a unique key based on field names and types (including nested composite info)
+        var keyParts = new List<string>();
+        for (var i = 0; i < fieldNames.Length; i++)
+        {
+            var descriptor = fieldDescriptors[i];
+            var typePart = descriptor.Type;
+            // Include nested composite info in key for uniqueness
+            if (descriptor.CompositeFieldNames != null)
+            {
+                typePart += $"[composite:{string.Join(";", descriptor.CompositeFieldNames)}]";
+            }
+            if (descriptor.ArrayCompositeFieldNames != null)
+            {
+                typePart += $"[array_composite:{string.Join(";", descriptor.ArrayCompositeFieldNames)}]";
+            }
+            keyParts.Add($"{fieldNames[i]}:{typePart}");
+        }
+        var key = string.Join(",", keyParts);
 
         if (compositeTypeInterfaces.TryGetValue(key, out var existingName))
         {
@@ -1645,6 +1662,17 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
         // Generate interface name from column name
         var interfaceName = $"I{ConvertToPascalCase(columnName)}";
 
+        // Ensure unique interface name
+        var baseName = interfaceName;
+        var counter = 1;
+        while (compositeTypeInterfaces.ContainsValue(interfaceName))
+        {
+            interfaceName = $"{baseName}{counter++}";
+        }
+
+        // Register the interface name early to handle circular references
+        compositeTypeInterfaces[key] = interfaceName;
+
         // Build the interface
         StringBuilder interfaceBuilder = new();
         interfaceBuilder.AppendLine($"interface {interfaceName} {{");
@@ -1652,7 +1680,38 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
         for (var i = 0; i < fieldNames.Length; i++)
         {
             var fieldName = ConvertToCamelCase(fieldNames[i]);
-            var tsType = GetTsType(fieldDescriptors[i], false);
+            var descriptor = fieldDescriptors[i];
+            string tsType;
+
+            // Check if this field is a nested composite type
+            if (descriptor.CompositeFieldNames != null && descriptor.CompositeFieldDescriptors != null)
+            {
+                // Recursively create interface for nested composite
+                var nestedInterfaceName = GetOrCreateCompositeInterface(
+                    descriptor.CompositeFieldNames,
+                    descriptor.CompositeFieldDescriptors,
+                    fieldNames[i],
+                    compositeTypeInterfaces,
+                    compositeInterfaces);
+                tsType = nestedInterfaceName;
+            }
+            // Check if this field is an array of composite types
+            else if (descriptor.ArrayCompositeFieldNames != null && descriptor.ArrayCompositeFieldDescriptors != null)
+            {
+                // Recursively create interface for the array element composite type
+                var elementInterfaceName = GetOrCreateCompositeInterface(
+                    descriptor.ArrayCompositeFieldNames,
+                    descriptor.ArrayCompositeFieldDescriptors,
+                    fieldNames[i],
+                    compositeTypeInterfaces,
+                    compositeInterfaces);
+                tsType = $"{elementInterfaceName}[]";
+            }
+            else
+            {
+                tsType = GetTsType(descriptor, false);
+            }
+
             interfaceBuilder.AppendLine($"    {fieldName}: {tsType} | null;");
         }
 
@@ -1660,7 +1719,6 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
         interfaceBuilder.AppendLine();
 
         compositeInterfaces.Append(interfaceBuilder);
-        compositeTypeInterfaces[key] = interfaceName;
 
         return interfaceName;
     }

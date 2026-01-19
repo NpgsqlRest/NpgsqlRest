@@ -4,6 +4,52 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [3.4.5](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.4.5) (2025-01-19)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.4.4...3.4.5)
+
+### NpgsqlRest.TsClient: Deep Nested Composite Type Support
+
+Fixed the TypeScript client generator (`NpgsqlRest.TsClient`) to properly handle deeply nested composite types when `NestedJsonForCompositeTypes` is enabled.
+
+**Before (incorrect):**
+```typescript
+interface IBooks {
+    bookId: number | null;
+    title: string | null;
+    reviews: string[] | null;  // Wrong: should be IReviews[]
+}
+```
+
+**After (correct):**
+```typescript
+interface IReviews {
+    reviewId: number | null;
+    bookId: number | null;
+    reviewerName: string | null;
+    rating: number | null;
+    reviewText: string | null;
+}
+
+interface IBooks {
+    bookId: number | null;
+    title: string | null;
+    reviews: IReviews[] | null;  // Correct: properly typed array
+}
+```
+
+**Supported scenarios:**
+
+- **Arrays of composites containing arrays**: `books[]` where each book has `reviews[]`
+- **Deep nesting (4+ levels)**: `level4 → level3 → level2 → level1`
+- **Mixed nesting**: Composite containing nested composite that contains array of composites
+
+The fix recursively processes `TypeDescriptor.CompositeFieldNames`, `TypeDescriptor.CompositeFieldDescriptors`, `TypeDescriptor.ArrayCompositeFieldNames`, and `TypeDescriptor.ArrayCompositeFieldDescriptors` to generate proper TypeScript interfaces for all nested types.
+
+**Note:** This only applies when `NestedJsonForCompositeTypes` is enabled (via `nested` annotation or global config). When disabled, arrays of composite types correctly remain as `string[]` to match the PostgreSQL tuple string format returned by the API.
+
+---
+
 ## Version [3.4.4](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.4.4) (2025-01-17)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.4.3...3.4.4)
