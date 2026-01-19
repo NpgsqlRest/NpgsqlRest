@@ -1,0 +1,32 @@
+name: Test
+
+on:
+  push:
+    branches-ignore:
+      - master
+  pull_request:
+    branches-ignore:
+      - master
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+    - name: Install PostgreSQL
+      uses: vb-consulting/postgresql-action@v1
+      with:
+        postgresql version: '17'
+        postgresql user: 'postgres'
+        postgresql password: 'postgres'
+    - uses: actions/checkout@v4
+    - name: Setup .NET10
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.0.x
+    - name: Install dependencies
+      run: dotnet restore
+    - name: Build
+      run: dotnet build --configuration Release --no-restore
+    - name: Test
+      run: dotnet test --no-restore --verbosity m
