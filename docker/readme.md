@@ -31,7 +31,7 @@ Your REST API is now live at `http://localhost:8080`
 | `latest-jit` | .NET 10 JIT runtime | ~250 MB |
 | `latest-bun` | AOT executable + Bun runtime | ~120 MB |
 
-Version-specific tags are also available (e.g., `3.4.4`, `3.4.4-arm`, `3.4.4-jit`, `3.4.4-bun`).
+Version-specific tags are also available (e.g., `3.4.5`, `3.4.5-arm`, `3.4.5-jit`, `3.4.5-bun`).
 
 ### Which tag should I use?
 

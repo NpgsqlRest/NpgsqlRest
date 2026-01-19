@@ -10,7 +10,7 @@
     <PublishAot>true</PublishAot>
     <PublishTrimmed>true</PublishTrimmed>
     <TrimMode>full</TrimMode>
-    <Version>3.4.4</Version>
+    <Version>3.4.5</Version>
   </PropertyGroup>
 
   <ItemGroup>
