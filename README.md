@@ -20,7 +20,7 @@
 - **Instant API Generation** - Automatically creates REST endpoints from PostgreSQL functions, procedures, tables, and views
 - **Declarative Configuration** - Configure endpoints directly in your database using comment annotations
 - **Code Generation** - Auto-generate frontend TypeScript/JavaScript code and .http files for testing
-- **High Performance** - check out [benchmarks](https://npgsqlrest.github.io/blog/postgresql-rest-api-benchmark-2025.html) showing low latency and high throughput. Latest benchmark show that it is 6.1x faster than PostgREST at 100 concurrent users, 
+- **High Performance** - check out [benchmarks](https://npgsqlrest.github.io/blog/postgresql-rest-api-benchmark-2026.html) showing low latency and high throughput. Latest benchmark show that it is 6.1x faster than PostgREST at 100 concurrent users, 
 - **Native Executables** - AOT-compiled binaries with zero dependencies and instant startup
 - **RESTful Path Parameters** - Define routes like `/products/{id}` with parameters extracted from URL paths
 - **Reverse Proxy Endpoints** - Forward requests to upstream services with passthrough or transform modes
