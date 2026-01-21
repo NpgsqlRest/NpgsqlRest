@@ -391,12 +391,9 @@ public class NpgsqlRestEndpoint(
                                 var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
                                     "***" :
                                     FormatParameterForLog(parameter);
-                                cmdLog!.AppendLine(string.Concat(
-                                    "-- $",
-                                    paramIndex.ToString(),
-                                    " ", parameter.TypeDescriptor.OriginalType,
-                                    " = ",
-                                    p));
+                                cmdLog!.Append("-- $").Append(paramIndex).Append(' ')
+                                    .Append(parameter.TypeDescriptor.OriginalType)
+                                    .Append(" = ").AppendLine(p);
                             }
                         }
                         else
@@ -475,12 +472,9 @@ public class NpgsqlRestEndpoint(
                                     var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
                                         "***" :
                                         FormatParameterForLog(parameter);
-                                    cmdLog!.AppendLine(string.Concat(
-                                        "-- $",
-                                        paramIndex.ToString(),
-                                        " ", parameter.TypeDescriptor.OriginalType,
-                                        " = ",
-                                        p));
+                                    cmdLog!.Append("-- $").Append(paramIndex).Append(' ')
+                                        .Append(parameter.TypeDescriptor.OriginalType)
+                                        .Append(" = ").AppendLine(p);
                                 }
                             }
                         }
@@ -575,12 +569,9 @@ public class NpgsqlRestEndpoint(
                                 var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
                                     "***" :
                                     FormatParameterForLog(parameter);
-                                cmdLog!.AppendLine(string.Concat(
-                                    "-- $",
-                                    paramIndex.ToString(),
-                                    " ", parameter.TypeDescriptor.OriginalType,
-                                    " = ",
-                                    p));
+                                cmdLog!.Append("-- $").Append(paramIndex).Append(' ')
+                                    .Append(parameter.TypeDescriptor.OriginalType)
+                                    .Append(" = ").AppendLine(p);
                             }
 
                             continue;
@@ -671,12 +662,9 @@ public class NpgsqlRestEndpoint(
                                     var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
                                         "***" :
                                         FormatParameterForLog(parameter);
-                                    cmdLog!.AppendLine(string.Concat(
-                                        "-- $",
-                                        paramIndex.ToString(),
-                                        " ", parameter.TypeDescriptor.OriginalType,
-                                        " = ",
-                                        p));
+                                    cmdLog!.Append("-- $").Append(paramIndex).Append(' ')
+                                        .Append(parameter.TypeDescriptor.OriginalType)
+                                        .Append(" = ").AppendLine(p);
                                 }
 
                                 continue;
@@ -832,12 +820,9 @@ public class NpgsqlRestEndpoint(
                         var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
                             "***" :
                             FormatParameterForLog(parameter);
-                        cmdLog!.AppendLine(string.Concat(
-                            "-- $",
-                            paramIndex.ToString(),
-                            " ", parameter.TypeDescriptor.OriginalType,
-                            " = ",
-                            p));
+                        cmdLog!.Append("-- $").Append(paramIndex).Append(' ')
+                            .Append(parameter.TypeDescriptor.OriginalType)
+                            .Append(" = ").AppendLine(p);
                     }
                 }
 
@@ -1021,12 +1006,9 @@ public class NpgsqlRestEndpoint(
                                 var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
                                     "***" :
                                     FormatParameterForLog(parameter);
-                                cmdLog!.AppendLine(string.Concat(
-                                    "-- $",
-                                    paramIndex.ToString(),
-                                    " ", parameter.TypeDescriptor.OriginalType,
-                                    " = ",
-                                    p));
+                                cmdLog!.Append("-- $").Append(paramIndex).Append(' ')
+                                    .Append(parameter.TypeDescriptor.OriginalType)
+                                    .Append(" = ").AppendLine(p);
                             }
 
                             continue;
@@ -1117,12 +1099,9 @@ public class NpgsqlRestEndpoint(
                                     var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
                                         "***" :
                                         FormatParameterForLog(parameter);
-                                    cmdLog!.AppendLine(string.Concat(
-                                        "-- $",
-                                        paramIndex.ToString(),
-                                        " ", parameter.TypeDescriptor.OriginalType,
-                                        " = ",
-                                        p));
+                                    cmdLog!.Append("-- $").Append(paramIndex).Append(' ')
+                                        .Append(parameter.TypeDescriptor.OriginalType)
+                                        .Append(" = ").AppendLine(p);
                                 }
 
                                 continue;
@@ -1277,12 +1256,9 @@ public class NpgsqlRestEndpoint(
                         var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
                             "***" :
                             FormatParameterForLog(parameter);
-                        cmdLog!.AppendLine(string.Concat(
-                            "-- $",
-                            paramIndex.ToString(),
-                            " ", parameter.TypeDescriptor.OriginalType,
-                            " = ",
-                            p));
+                        cmdLog!.Append("-- $").Append(paramIndex).Append(' ')
+                            .Append(parameter.TypeDescriptor.OriginalType)
+                            .Append(" = ").AppendLine(p);
                     }
                 }
 
@@ -1474,6 +1450,9 @@ public class NpgsqlRestEndpoint(
                 await HttpClientTypeHandler.InvokeAllAsync(customHttpTypes, lookup, command.Parameters, cancellationToken);
             }
 
+            // Cache the cache key string once to avoid repeated ToString() allocations
+            string? cacheKeyString = cacheKeys?.ToString();
+
             // Handle reverse proxy endpoints
             if (endpoint.IsProxy && Options.ProxyOptions.Enabled)
             {
@@ -1483,7 +1462,7 @@ public class NpgsqlRestEndpoint(
                     endpoint.Cached is true &&
                     Options.CacheOptions.DefaultRoutineCache is not null)
                 {
-                    if (Options.CacheOptions.DefaultRoutineCache.Get(endpoint, cacheKeys?.ToString()!, out var cachedProxyResponse))
+                    if (Options.CacheOptions.DefaultRoutineCache.Get(endpoint, cacheKeyString!, out var cachedProxyResponse))
                     {
                         // Cache hit - return cached proxy response
                         if (cachedProxyResponse is Proxy.ProxyResponse cached)
@@ -1553,7 +1532,7 @@ public class NpgsqlRestEndpoint(
                     // Cache the proxy response if caching is enabled
                     if (endpoint.Cached is true && Options.CacheOptions.DefaultRoutineCache is not null)
                     {
-                        Options.CacheOptions.DefaultRoutineCache.AddOrUpdate(endpoint, cacheKeys?.ToString()!, proxyResponse);
+                        Options.CacheOptions.DefaultRoutineCache.AddOrUpdate(endpoint, cacheKeyString!, proxyResponse);
                     }
                     await Proxy.ProxyRequestHandler.WriteResponseAsync(context, proxyResponse, Options.ProxyOptions, cancellationToken);
                     return;
@@ -1750,7 +1729,7 @@ public class NpgsqlRestEndpoint(
                     object? valueResult;
                     if (Options.CacheOptions.DefaultRoutineCache is not null && endpoint.Cached is true)
                     {
-                        if (Options.CacheOptions.DefaultRoutineCache.Get(endpoint, cacheKeys?.ToString()!, out valueResult) is false)
+                        if (Options.CacheOptions.DefaultRoutineCache.Get(endpoint, cacheKeyString!, out valueResult) is false)
                         {
                             if (await PrepareCommand(connection, command, commandText, context, endpoint, true, cancellationToken) is false)
                             {
@@ -1769,7 +1748,7 @@ public class NpgsqlRestEndpoint(
                             if (await reader.ReadAsync(cancellationToken))
                             {
                                 valueResult = descriptor.IsBinary ? reader.GetFieldValue<byte[]>(0) : reader.GetValue(0) as string;
-                                Options.CacheOptions.DefaultRoutineCache.AddOrUpdate(endpoint, cacheKeys?.ToString()!, valueResult);
+                                Options.CacheOptions.DefaultRoutineCache.AddOrUpdate(endpoint, cacheKeyString!, valueResult);
                             }
                             else
                             {
@@ -1886,7 +1865,7 @@ public class NpgsqlRestEndpoint(
 
                     if (canCacheRecordsAndSets)
                     {
-                        if (Options.CacheOptions.DefaultRoutineCache!.Get(endpoint, cacheKeys?.ToString()!, out var cachedResult))
+                        if (Options.CacheOptions.DefaultRoutineCache!.Get(endpoint, cacheKeyString!, out var cachedResult))
                         {
                             if (shouldLog)
                             {
@@ -2266,7 +2245,7 @@ public class NpgsqlRestEndpoint(
                         // Store in cache if within limits
                         if (shouldCache && cacheBuffer is not null)
                         {
-                            Options.CacheOptions.DefaultRoutineCache?.AddOrUpdate(endpoint, cacheKeys?.ToString()!, cacheBuffer.ToString());
+                            Options.CacheOptions.DefaultRoutineCache?.AddOrUpdate(endpoint, cacheKeyString!, cacheBuffer.ToString());
                         }
                     }
                     return;

@@ -8,7 +8,59 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.4.6...3.4.7)
 
-...
+### Type Category Lookup Optimization
+
+Introduced `TypeCategory` flags enum and pre-computed lookup table for O(1) type dispatch, replacing sequential if-chain conditionals in hot paths.
+
+**New Files:**
+- `TypeCategory.cs` - Flags enum (`Numeric`, `Boolean`, `Json`, `Text`, `DateTime`, `Date`, `NeedsEscape`, `CastToText`, `Binary`, `Time`) and `TypeCategoryLookup` static class with 128-element array for instant type classification
+- `ParameterParsers.cs` - Delegate array for O(1) parameter parser lookup by `NpgsqlDbType`
+
+**Changes:**
+- `TypeDescriptor` now has a `Category` property computed once at construction via lookup table
+- Boolean properties (`IsNumeric`, `IsJson`, `IsText`, etc.) are now computed from `Category` using bitwise operations
+- `NpgsqlRestEndpoint.cs` and `PgConverters.cs` use bitwise category checks for type dispatch
+
+**Benchmark Results:**
+
+| Operation | Before | After | Improvement |
+|-----------|--------|-------|-------------|
+| Type category lookup (18 types) | 22.6 ns | 6.6 ns | **70% faster** |
+| TypeDescriptor construction | 232.8 ns | 164.2 ns | **29% faster** |
+| Parser delegate lookup | 7.6 ns | 5.9 ns | **23% faster** |
+| Combined type check (bitwise vs properties) | 7.97 ns | 4.94 ns | **38% faster** |
+| Serialization type check (1000 rows) | 5,572 ns | 4,060 ns | **27% faster** |
+
+**Note:** While micro-benchmarks show significant improvements, real-world endpoint throughput gains are modest (1-5%) since type dispatch is a small fraction of total request time compared to database I/O and serialization.
+
+### Additional Allocation Optimizations
+
+**Parameter Logging String Allocations**
+
+Replaced `string.Concat()` with `paramIndex.ToString()` in 8 logging paths with direct `StringBuilder.Append(int)` calls, eliminating intermediate string allocations for each logged parameter.
+
+Before:
+```csharp
+cmdLog!.AppendLine(string.Concat("-- $", paramIndex.ToString(), " ", ...));
+```
+
+After:
+```csharp
+cmdLog!.Append("-- $").Append(paramIndex).Append(' ').Append(...).AppendLine(p);
+```
+
+**Cache Key String Reuse**
+
+Cache key string (`cacheKeys.ToString()`) was being called 3-6 times per cached request. Now computed once and reused:
+
+```csharp
+string? cacheKeyString = cacheKeys?.ToString();
+// Reused in all cache Get/AddOrUpdate calls
+```
+
+**Impact:** Eliminates 8+ string allocations per parameter-heavy request (logging) and 2-5 allocations per cached request (cache keys).
+
+---
 
 ## Version [3.4.6](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.4.6) (2025-01-21)
 
