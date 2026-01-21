@@ -4,27 +4,27 @@ namespace NpgsqlRest.Auth;
 
 public static class LogoutHandler
 {
-    public static async Task HandleAsync(NpgsqlCommand command, RoutineEndpoint endpoint, HttpContext context)
+    public static async Task HandleAsync(NpgsqlCommand command, RoutineEndpoint endpoint, HttpContext context, CancellationToken cancellationToken = default)
     {
         var path = string.Concat(endpoint.Method.ToString(), " ", endpoint.Path);
         command.TraceCommand(path);
-        
+
         if (endpoint.Routine.IsVoid)
         {
-            await command.ExecuteNonQueryAsync();
+            await command.ExecuteNonQueryAsync(cancellationToken);
             await Results.SignOut().ExecuteAsync(context);
             await context.Response.CompleteAsync();
             return;
         }
 
         List<string> schemes = new(5);
-        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
 
-        while (await reader!.ReadAsync())
+        while (await reader!.ReadAsync(cancellationToken))
         {
             for (int i = 0; i < reader?.FieldCount; i++)
             {
-                if (await reader.IsDBNullAsync(i) is true)
+                if (await reader.IsDBNullAsync(i, cancellationToken) is true)
                 {
                     continue;
                 }
@@ -55,5 +55,4 @@ public static class LogoutHandler
         await Results.SignOut(authenticationSchemes: schemes.Count == 0 ? null : schemes).ExecuteAsync(context);
         await context.Response.CompleteAsync();
     }
-    
 }

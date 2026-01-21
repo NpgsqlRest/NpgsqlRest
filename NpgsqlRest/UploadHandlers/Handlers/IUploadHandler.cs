@@ -19,11 +19,12 @@ public interface IUploadHandler
     /// <param name="connection">Opened connection object</param>
     /// <param name="context">Http context</param>
     /// <param name="parameters">Upload parameters, specific for each type</param>
+    /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>
-    /// JSON string with upload metadata that is passed to the upload metadata parameter. 
+    /// JSON string with upload metadata that is passed to the upload metadata parameter.
     /// It can be array of filename, mime type, size, etc. It depends on implementation.
     /// </returns>
-    Task<string> UploadAsync(NpgsqlConnection connection, HttpContext context, Dictionary<string, string>? parameters);
+    Task<string> UploadAsync(NpgsqlConnection connection, HttpContext context, Dictionary<string, string>? parameters, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Connection in Upload call will be under transaction yes or no.

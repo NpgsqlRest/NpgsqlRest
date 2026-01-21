@@ -10,9 +10,10 @@ namespace NpgsqlRest.Auth;
 public static class BasicAuthHandler
 {
     public static async Task HandleAsync(
-        HttpContext context, 
+        HttpContext context,
         RoutineEndpoint endpoint,
-        NpgsqlConnection connection)
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken = default)
     {
         var realm =
             string.IsNullOrEmpty(endpoint.BasicAuth?.Realm) ? 
@@ -170,11 +171,12 @@ public static class BasicAuthHandler
             }
 
             await LoginHandler.HandleAsync(
-                command, 
-                context, 
+                command,
+                context,
                 endpoint.RetryStrategy,
+                cancellationToken,
                 tracePath: string.Concat(endpoint.Method.ToString(), " ", endpoint.Path),
-                performHashVerification: false, 
+                performHashVerification: false,
                 assignUserPrincipalToContext: true);
 
             if (context.Response.StatusCode == (int)HttpStatusCode.OK)

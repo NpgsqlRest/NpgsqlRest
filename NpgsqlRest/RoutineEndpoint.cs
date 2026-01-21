@@ -107,9 +107,64 @@ public class RoutineEndpoint(
     public string[]? PathParameters { get; set; } = null;
 
     /// <summary>
+    /// HashSet for O(1) case-insensitive lookup of path parameter names.
+    /// Lazily initialized when PathParameters is set and first accessed.
+    /// </summary>
+    internal HashSet<string>? PathParametersHashSet { get; private set; } = null;
+
+    /// <summary>
     /// Returns true if this endpoint has any path parameters defined.
     /// </summary>
     public bool HasPathParameters => PathParameters is not null && PathParameters.Length > 0;
+
+    /// <summary>
+    /// Ensures the PathParametersHashSet is initialized for fast lookups.
+    /// Call this after setting PathParameters.
+    /// </summary>
+    internal void EnsurePathParametersHashSet()
+    {
+        if (PathParameters is not null && PathParametersHashSet is null)
+        {
+            PathParametersHashSet = new HashSet<string>(PathParameters, StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    /// <summary>
+    /// Finds the matching path parameter name for a given parameter name (case-insensitive).
+    /// Returns null if no match is found.
+    /// </summary>
+    internal string? FindMatchingPathParameter(string convertedName, string? actualName)
+    {
+        if (PathParameters is null) return null;
+
+        // Use HashSet for O(1) contains check, then find exact match for the return value
+        EnsurePathParametersHashSet();
+
+        if (PathParametersHashSet!.Contains(convertedName))
+        {
+            // Find the exact string from the array to use as route key
+            foreach (var pathParam in PathParameters)
+            {
+                if (string.Equals(pathParam, convertedName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return pathParam;
+                }
+            }
+        }
+
+        if (actualName is not null && PathParametersHashSet.Contains(actualName))
+        {
+            foreach (var pathParam in PathParameters)
+            {
+                if (string.Equals(pathParam, actualName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return pathParam;
+                }
+            }
+        }
+
+        return null;
+    }
 
     /// <summary>
     /// When true, this endpoint acts as a reverse proxy.

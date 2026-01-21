@@ -28,7 +28,7 @@ public class CsvUploadHandler(RetryStrategy? retryStrategy) : BaseUploadHandler,
 
     public bool RequiresTransaction => true;
 
-    public async Task<string> UploadAsync(NpgsqlConnection connection, HttpContext context, Dictionary<string, string>? parameters)
+    public async Task<string> UploadAsync(NpgsqlConnection connection, HttpContext context, Dictionary<string, string>? parameters, CancellationToken cancellationToken = default)
     {
         bool checkFileStatus = Options.UploadOptions.DefaultUploadHandlerOptions.CsvUploadCheckFileStatus;
         int testBufferSize = Options.UploadOptions.DefaultUploadHandlerOptions.TextTestBufferSize;
@@ -160,12 +160,12 @@ public class CsvUploadHandler(RetryStrategy? retryStrategy) : BaseUploadHandler,
 
             int rowIndex = 1;
             object? commandResult = null;
-            while (await streamReader.ReadLineAsync() is { } line)
+            while (await streamReader.ReadLineAsync(cancellationToken) is { } line)
             {
                 using var parser = new TextFieldParser(new StringReader(line));
                 parser.SetDelimiters(delimitersArr);
                 parser.HasFieldsEnclosedInQuotes = hasFieldsEnclosedInQuotes;
-                string?[]? values = setWhiteSpaceToNull ? 
+                string?[]? values = setWhiteSpaceToNull ?
                     parser.ReadFields()?.Select(field => string.IsNullOrWhiteSpace(field) ? null : field).ToArray() :
                     parser.ReadFields()?.ToArray();
 
@@ -185,7 +185,7 @@ public class CsvUploadHandler(RetryStrategy? retryStrategy) : BaseUploadHandler,
                 {
                     command.Parameters[3].Value = fileJson.ToString();
                 }
-                commandResult = await command.ExecuteScalarWithRetryAsync(retryStrategy);
+                commandResult = await command.ExecuteScalarWithRetryAsync(retryStrategy, cancellationToken);
 
                 rowIndex++;
             }

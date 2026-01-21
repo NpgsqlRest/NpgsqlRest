@@ -13,6 +13,7 @@ public static class LoginHandler
         NpgsqlCommand command,
         HttpContext context,
         RetryStrategy? retryStrategy,
+        CancellationToken cancellationToken = default,
         string tracePath = "HandleLoginAsync",
         bool performHashVerification = true,
         bool assignUserPrincipalToContext = false)
@@ -27,9 +28,9 @@ public static class LoginHandler
         var verificationFailed = false;
         
         command.TraceCommand(tracePath);
-        await using (NpgsqlDataReader reader = await command.ExecuteReaderWithRetryAsync(retryStrategy))
+        await using (NpgsqlDataReader reader = await command.ExecuteReaderWithRetryAsync(retryStrategy, cancellationToken))
         {
-            if (await reader.ReadAsync() is false)
+            if (await reader.ReadAsync(cancellationToken) is false)
             {
                 await Results.Problem(
                     type: null,
@@ -204,7 +205,7 @@ public static class LoginHandler
                             failedCommand.Parameters.Add(NpgsqlRestParameter.CreateTextParam(userName));
                         }
                         failedCommand.TraceCommand(tracePath);
-                        await failedCommand.ExecuteNonQueryWithRetryAsync(retryStrategy);
+                        await failedCommand.ExecuteNonQueryWithRetryAsync(retryStrategy, cancellationToken);
                     }
                 }
                 return;
@@ -232,7 +233,7 @@ public static class LoginHandler
                             succeededCommand.Parameters.Add(NpgsqlRestParameter.CreateTextParam(userName));
                         }
                         succeededCommand.TraceCommand(tracePath);
-                        await succeededCommand.ExecuteNonQueryWithRetryAsync(retryStrategy);
+                        await succeededCommand.ExecuteNonQueryWithRetryAsync(retryStrategy, cancellationToken);
                     }
                 }
             }
@@ -282,7 +283,7 @@ public static class LoginHandler
             if (body is not null)
             {
                 context.Response.ContentType = Options.AuthenticationOptions?.ResponseTypeColumnName ?? "application/json";
-                await context.Response.WriteAsync(body);
+                await context.Response.WriteAsync(body, cancellationToken);
             }
         }
     }

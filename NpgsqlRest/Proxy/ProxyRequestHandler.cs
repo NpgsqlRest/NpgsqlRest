@@ -306,7 +306,8 @@ public static class ProxyRequestHandler
     public static async Task WriteResponseAsync(
         HttpContext context,
         ProxyResponse proxyResponse,
-        ProxyOptions proxyOptions)
+        ProxyOptions proxyOptions,
+        CancellationToken cancellationToken = default)
     {
         context.Response.StatusCode = proxyResponse.StatusCode;
 
@@ -339,7 +340,7 @@ public static class ProxyRequestHandler
         // Write body
         if (proxyResponse.RawBody is not null && proxyResponse.RawBody.Length > 0)
         {
-            await context.Response.Body.WriteAsync(proxyResponse.RawBody);
+            await context.Response.Body.WriteAsync(proxyResponse.RawBody, cancellationToken);
         }
     }
 }

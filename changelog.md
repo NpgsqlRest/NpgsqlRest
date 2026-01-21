@@ -4,6 +4,64 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [3.4.6](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.4.6) (2025-01-21)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.4.5...3.4.6)
+
+### Endpoint Execution Performance Optimizations
+
+Reduced memory allocations and CPU overhead in the hot path of endpoint execution through several optimizations:
+
+**StringBuilder Pooling**
+
+Added a thread-safe `StringBuilderPool` to reuse `StringBuilder` instances across requests instead of allocating new ones:
+
+- `cmdLog` - command logging
+- `cacheKeys` - cache key building
+- `rowBuilder` - response row building
+- `compositeFieldBuffer` - nested JSON composite handling
+- `commandTextBuilder` - SQL command text building
+
+The pool maintains up to 64 instances with lock-free rent/return operations.
+
+**Avoid Query String Dictionary Allocation**
+
+Changed from `context.Request.Query.ToDictionary()` to using `IQueryCollection` directly, eliminating a dictionary allocation on every request. The `IQueryCollection` interface already provides `TryGetValue()`, `Count`, and `ContainsKey()` methods.
+
+**StringBuilder for Command Text Building**
+
+Replaced ~18 `string.Concat(commandText, ...)` calls with `StringBuilder.Append()` operations, reducing intermediate string allocations when building SQL commands for non-formattable routines.
+
+**HashSet for Path Parameter Lookup**
+
+Added `FindMatchingPathParameter()` method with lazy-initialized `HashSet<string>` for O(1) case-insensitive lookups instead of O(n) array iteration when matching path parameters.
+
+---
+
+### Comprehensive CancellationToken Propagation
+
+Improved cancellation token propagation throughout the entire request pipeline. The `CancellationToken` parameter is now properly passed to all async operations, enabling proper request cancellation and resource cleanup when clients disconnect or requests are aborted.
+
+**Changes:**
+
+- **NpgsqlRestEndpoint**: Fixed missing cancellation token propagation to `ReadToEndAsync`, `ReadAsync`, `WriteAsync`, `FlushAsync`, `BeginTransactionAsync`, `CommitAsync`, and helper methods (`PrepareCommand`, `OpenConnectionAsync`, `ValidateParametersAsync`, `ReturnErrorAsync`).
+
+- **Auth Handlers**: Added `CancellationToken` parameter to `BasicAuthHandler.HandleAsync`, `LoginHandler.HandleAsync`, and `LogoutHandler.HandleAsync`. All database operations and response writes now respect cancellation.
+
+- **Upload Handlers**: Updated `IUploadHandler.UploadAsync` interface and all implementations (`DefaultUploadHandler`, `FileSystemUploadHandler`, `LargeObjectUploadHandler`, `CsvUploadHandler`, `ExcelUploadHandler`) to accept and propagate cancellation tokens to file I/O and database operations.
+
+- **Proxy Handler**: Added `CancellationToken` parameter to `ProxyRequestHandler.WriteResponseAsync` for cancellable response body writes.
+
+**Benefits:**
+
+- Immediate cleanup when HTTP clients disconnect mid-request
+- Proper cancellation of long-running database queries
+- Reduced resource consumption from abandoned requests
+- Better handling of upload/download operations that can be cancelled
+- **Prevents request storms**: When users repeatedly refresh the browser during slow endpoint execution, each refresh creates a new request while the previous one continues running. Without proper cancellation token propagation, these abandoned requests continue executing database queries, potentially choking the database. With this fix, abandoned requests are properly cancelled, freeing up database connections immediately.
+
+---
+
 ## Version [3.4.5](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.4.5) (2025-01-19)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.4.4...3.4.5)

@@ -54,7 +54,7 @@ public class ExcelUploadHandler(
     private string _dateFormat = default!;
     private string _dateTimeFormat = default!;
 
-    public async Task<string> UploadAsync(NpgsqlConnection connection, HttpContext context, Dictionary<string, string>? parameters)
+    public async Task<string> UploadAsync(NpgsqlConnection connection, HttpContext context, Dictionary<string, string>? parameters, CancellationToken cancellationToken = default)
     {
         string? targetSheetName = ExcelUploadOptions.Instance.ExcelSheetName;
         bool allSheets = ExcelUploadOptions.Instance.ExcelAllSheets;
@@ -237,7 +237,7 @@ public class ExcelUploadHandler(
                             command.Parameters[3].Value = string.Concat(rowMeta, ",\"rowIndex\":", excelRowIndex, '}');
                         }
 
-                        commandResult = await command.ExecuteScalarWithRetryAsync(cmdRetryStrategy);
+                        commandResult = await command.ExecuteScalarWithRetryAsync(cmdRetryStrategy, cancellationToken);
                     }
 
                     var finalJson = string.Concat(rowMeta,

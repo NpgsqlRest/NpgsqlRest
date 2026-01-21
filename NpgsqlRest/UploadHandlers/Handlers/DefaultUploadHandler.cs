@@ -19,7 +19,7 @@ public class DefaultUploadHandler(NpgsqlRestUploadOptions options, IUploadHandle
         }
     }
 
-    public async Task<string> UploadAsync(NpgsqlConnection connection, HttpContext context, Dictionary<string, string>? parameters)
+    public async Task<string> UploadAsync(NpgsqlConnection connection, HttpContext context, Dictionary<string, string>? parameters, CancellationToken cancellationToken = default)
     {
         StringBuilder result = new(100);
         for (int i = 0; i < _handlers.Length; i++)
@@ -34,7 +34,7 @@ public class DefaultUploadHandler(NpgsqlRestUploadOptions options, IUploadHandle
                 }
             }
 
-            var segment = await handler.UploadAsync(connection, context, parameters);
+            var segment = await handler.UploadAsync(connection, context, parameters, cancellationToken);
 
             if (i == 0 && _handlers.Length == 1)
             {

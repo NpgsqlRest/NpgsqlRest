@@ -21,7 +21,7 @@ public class LargeObjectUploadHandler(RetryStrategy? retryStrategy) : BaseUpload
 
     public bool RequiresTransaction => true;
 
-    public async Task<string> UploadAsync(NpgsqlConnection connection, HttpContext context, Dictionary<string, string>? parameters)
+    public async Task<string> UploadAsync(NpgsqlConnection connection, HttpContext context, Dictionary<string, string>? parameters, CancellationToken cancellationToken = default)
     {
         long? oid = null;
         bool checkText = Options.UploadOptions.DefaultUploadHandlerOptions.LargeObjectCheckText;
@@ -137,8 +137,8 @@ public class LargeObjectUploadHandler(RetryStrategy? retryStrategy) : BaseUpload
 
             result.Append(",\"oid\":");
             using var command = new NpgsqlCommand(oid is null ? "select lo_create(0)" : string.Concat("select lo_create(", oid.ToString(), ")"), connection);
-            var resultOid = await command.ExecuteScalarWithRetryAsync(retryStrategy);
-            
+            var resultOid = await command.ExecuteScalarWithRetryAsync(retryStrategy, cancellationToken);
+
             result.Append(resultOid);
             result.Append('}');
 
@@ -152,11 +152,11 @@ public class LargeObjectUploadHandler(RetryStrategy? retryStrategy) : BaseUpload
             byte[] buffer = new byte[BufferSize];
             int bytesRead;
             long offset = 0;
-            while ((bytesRead = await fileStream.ReadAsync(buffer)) > 0)
+            while ((bytesRead = await fileStream.ReadAsync(buffer, cancellationToken)) > 0)
             {
                 command.Parameters[1].Value = offset;
                 command.Parameters[2].Value = buffer.Take(bytesRead).ToArray();
-                await command.ExecuteNonQueryWithRetryAsync(retryStrategy);
+                await command.ExecuteNonQueryWithRetryAsync(retryStrategy, cancellationToken);
                 offset += bytesRead;
             }
             if (Options.UploadOptions.LogUploadEvent)

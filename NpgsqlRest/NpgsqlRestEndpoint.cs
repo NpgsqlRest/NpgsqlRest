@@ -2,6 +2,7 @@
 using System.Data;
 using System.IO.Pipelines;
 using System.Net;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -41,7 +42,13 @@ public class NpgsqlRestEndpoint(
         bool shouldCommit = true;
         IUploadHandler? uploadHandler = null;
         var shouldLog = Options.LogCommands && Logger != null;
+
+        // Pooled StringBuilders - declared at top level to enable pooling in finally block
         StringBuilder? cmdLog = null;
+        StringBuilder? cacheKeys = null;
+        StringBuilder? commandTextBuilder = null;
+        StringBuilder? rowBuilder = null;
+        StringBuilder? compositeFieldBuffer = null;
 
         var writer = PipeWriter.Create(context.Response.Body);
         try
@@ -59,7 +66,7 @@ public class NpgsqlRestEndpoint(
                 }
                 else
                 {
-                    await ReturnErrorAsync($"Connection name {endpoint.ConnectionName} could not be found in options DataSources or ConnectionStrings dictionaries.", true, context);
+                    await ReturnErrorAsync($"Connection name {endpoint.ConnectionName} could not be found in options DataSources or ConnectionStrings dictionaries.", true, context, cancellationToken);
                     return;
                 }
             }
@@ -67,7 +74,7 @@ public class NpgsqlRestEndpoint(
             {
                 if (serviceProvider is null)
                 {
-                    await ReturnErrorAsync($"ServiceProvider must be provided when ServiceProviderMode is set to {Options.ServiceProviderMode}.", true, context);
+                    await ReturnErrorAsync($"ServiceProvider must be provided when ServiceProviderMode is set to {Options.ServiceProviderMode}.", true, context, cancellationToken);
                     return;
                 }
                 if (Options.ServiceProviderMode == ServiceProviderObject.NpgsqlDataSource)
@@ -95,7 +102,7 @@ public class NpgsqlRestEndpoint(
 
             if (connection is null)
             {
-                await ReturnErrorAsync("Connection did not initialize!", log: true, context);
+                await ReturnErrorAsync("Connection did not initialize!", log: true, context, cancellationToken);
                 return;
             }
 
@@ -123,9 +130,9 @@ public class NpgsqlRestEndpoint(
             {
                 if (Options.AuthenticationOptions.BasicAuth.ChallengeCommand is not null || endpoint.BasicAuth?.ChallengeCommand is not null)
                 {
-                    await OpenConnectionAsync(connection, context, endpoint);
+                    await OpenConnectionAsync(connection, context, endpoint, cancellationToken);
                 }
-                await BasicAuthHandler.HandleAsync(context, endpoint, connection);
+                await BasicAuthHandler.HandleAsync(context, endpoint, connection, cancellationToken);
                 if (context.Response.HasStarted is true)
                 {
                     return;
@@ -134,17 +141,31 @@ public class NpgsqlRestEndpoint(
             
             await using var command = NpgsqlRestCommand.Create(connection);
 
-            cmdLog = shouldLog ?
-                new(string.Concat("-- ", context.Request.Method, " ",
-                    (Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth)
-                        ? string.Concat(context.Request.Scheme, "://", context.Request.Host, context.Request.Path)
-                        : context.Request.GetDisplayUrl(),
-                    Environment.NewLine)) :
-                null;
+            if (shouldLog)
+            {
+                cmdLog = StringBuilderPool.Rent();
+                cmdLog.Append("-- ");
+                cmdLog.Append(context.Request.Method);
+                cmdLog.Append(' ');
+                if (Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth)
+                {
+                    cmdLog.Append(context.Request.Scheme);
+                    cmdLog.Append("://");
+                    cmdLog.Append(context.Request.Host);
+                    cmdLog.Append(context.Request.Path);
+                }
+                else
+                {
+                    cmdLog.Append(context.Request.GetDisplayUrl());
+                }
+                cmdLog.Append(Environment.NewLine);
+            }
 
             if (formatter.IsFormattable is false)
             {
-                commandText = routine.Expression;
+                // Use pooled StringBuilder for non-formattable commands to avoid string.Concat allocations
+                commandTextBuilder = StringBuilderPool.Rent(routine.Expression.Length + routine.ParamCount * 16);
+                commandTextBuilder.Append(routine.Expression);
             }
             
             // paramsList
@@ -153,8 +174,8 @@ public class NpgsqlRestEndpoint(
             JsonObject? jsonObj = null;
             Dictionary<string, JsonNode?>? bodyDict = null;
             string? body = null;
-            Dictionary<string, StringValues>? queryDict = null;
-            StringBuilder? cacheKeys = null;
+            // Use IQueryCollection directly to avoid ToDictionary() allocation
+            IQueryCollection? queryCollection = null;
             // Skip local upload handling if proxy will forward the upload content
             var skipUploadForProxy = endpoint.Upload is true &&
                                      endpoint.IsProxy &&
@@ -164,16 +185,16 @@ public class NpgsqlRestEndpoint(
             int uploadMetaParamIndex = -1;
             Dictionary<string, object?>? claimsDict = null;
             List<string> customHttpTypes = Options.HttpClientOptions.Enabled ? new(routine.Parameters.Length) : null!;
-            
+
             if (endpoint.Cached is true)
             {
-                cacheKeys = new(endpoint.CachedParams?.Count ?? 0 + 1);
+                cacheKeys = StringBuilderPool.Rent(routine.Expression.Length + (endpoint.CachedParams?.Count ?? 0) * 32);
                 cacheKeys.Append(routine.Expression);
             }
 
             if (endpoint.RequestParamType == RequestParamType.QueryString)
             {
-                queryDict = context.Request.Query.ToDictionary();
+                queryCollection = context.Request.Query;
             }
             if (endpoint.HasBodyParameter || endpoint.RequestParamType == RequestParamType.BodyJson)
             {
@@ -182,7 +203,7 @@ public class NpgsqlRestEndpoint(
 
                 using (var reader = new StreamReader(context.Request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true))
                 {
-                    body = await reader.ReadToEndAsync();
+                    body = await reader.ReadToEndAsync(cancellationToken);
                 }
                 if (endpoint.RequestParamType == RequestParamType.BodyJson)
                 {
@@ -215,7 +236,7 @@ public class NpgsqlRestEndpoint(
             // start query string parameters
             if (endpoint.RequestParamType == RequestParamType.QueryString)
             {
-                if (queryDict is null)
+                if (queryCollection is null)
                 {
                     shouldCommit = false;
                     uploadHandler?.OnError(connection, context, null);
@@ -224,16 +245,22 @@ public class NpgsqlRestEndpoint(
                     return;
                 }
 
-                if (queryDict.Count != routine.ParamCount && overloads.Count > 0)
+                if (queryCollection.Count != routine.ParamCount && overloads.Count > 0)
                 {
-                    if (overloads.TryGetValue(string.Concat(entry.Key, queryDict.Count), out var overload))
+                    if (overloads.TryGetValue(string.Concat(entry.Key, queryCollection.Count), out var overload))
                     {
                         routine = overload.Endpoint.Routine;
                         endpoint = overload.Endpoint;
                         formatter = overload.Formatter;
                         if (formatter.IsFormattable is false)
                         {
-                            commandText = routine.Expression;
+                            // Reinitialize commandTextBuilder for the new routine
+                            commandTextBuilder?.Clear();
+                            if (commandTextBuilder is null)
+                            {
+                                commandTextBuilder = StringBuilderPool.Rent(routine.Expression.Length + routine.ParamCount * 16);
+                            }
+                            commandTextBuilder.Append(routine.Expression);
                         }
                     }
                 }
@@ -244,14 +271,14 @@ public class NpgsqlRestEndpoint(
 
                     if (parameter.HashOf is not null)
                     {
-                        var hashValueQueryDict = queryDict.GetValueOrDefault(parameter.HashOf.ConvertedName).ToString();
-                        if (string.IsNullOrEmpty(hashValueQueryDict) is true)
+                        var hashValueQueryCollection = queryCollection.TryGetValue(parameter.HashOf.ConvertedName, out var hashQsValue) ? hashQsValue.ToString() : null;
+                        if (string.IsNullOrEmpty(hashValueQueryCollection) is true)
                         {
                             parameter.Value = DBNull.Value;
                         }
                         else
                         {
-                            parameter.Value = Options.AuthenticationOptions.PasswordHasher?.HashPassword(hashValueQueryDict) as object ?? DBNull.Value;
+                            parameter.Value = Options.AuthenticationOptions.PasswordHasher?.HashPassword(hashValueQueryCollection) as object ?? DBNull.Value;
                         }
                     }
                     if (endpoint.UseUserParameters is true)
@@ -347,8 +374,7 @@ public class NpgsqlRestEndpoint(
                             {
                                 if (formatter.RefContext)
                                 {
-                                    commandText = string.Concat(commandText,
-                                        formatter.AppendCommandParameter(parameter, paramIndex, context));
+                                    commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex, context));
                                     if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
                                     {
                                         return;
@@ -356,8 +382,7 @@ public class NpgsqlRestEndpoint(
                                 }
                                 else
                                 {
-                                    commandText = string.Concat(commandText,
-                                        formatter.AppendCommandParameter(parameter, paramIndex));
+                                    commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex));
                                 }
                             }
                             paramIndex++;
@@ -433,8 +458,7 @@ public class NpgsqlRestEndpoint(
                                 {
                                     if (formatter.RefContext)
                                     {
-                                        commandText = string.Concat(commandText,
-                                            formatter.AppendCommandParameter(parameter, paramIndex, context));
+                                        commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex, context));
                                         if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
                                         {
                                             return;
@@ -442,8 +466,7 @@ public class NpgsqlRestEndpoint(
                                     }
                                     else
                                     {
-                                        commandText = string.Concat(commandText,
-                                            formatter.AppendCommandParameter(parameter, paramIndex));
+                                        commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex));
                                     }
                                 }
                                 paramIndex++;
@@ -474,7 +497,7 @@ public class NpgsqlRestEndpoint(
                         )
                     )
                     {
-                        if (queryDict.ContainsKey(parameter.ConvertedName) is false)
+                        if (queryCollection.ContainsKey(parameter.ConvertedName) is false)
                         {
                             if (headers is null)
                             {
@@ -535,8 +558,7 @@ public class NpgsqlRestEndpoint(
                             {
                                 if (formatter.RefContext)
                                 {
-                                    commandText = string.Concat(commandText,
-                                        formatter.AppendCommandParameter(parameter, paramIndex, context));
+                                    commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex, context));
                                     if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
                                     {
                                         return;
@@ -544,8 +566,7 @@ public class NpgsqlRestEndpoint(
                                 }
                                 else
                                 {
-                                    commandText = string.Concat(commandText,
-                                        formatter.AppendCommandParameter(parameter, paramIndex));
+                                    commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex));
                                 }
                             }
                             paramIndex++;
@@ -569,16 +590,8 @@ public class NpgsqlRestEndpoint(
                     // path parameter - extract from RouteValues
                     if (parameter.Value is null && endpoint.HasPathParameters)
                     {
-                        string? matchedPathParam = null;
-                        foreach (var pathParam in endpoint.PathParameters!)
-                        {
-                            if (string.Equals(pathParam, parameter.ConvertedName, StringComparison.OrdinalIgnoreCase) ||
-                                string.Equals(pathParam, parameter.ActualName, StringComparison.OrdinalIgnoreCase))
-                            {
-                                matchedPathParam = pathParam;
-                                break;
-                            }
-                        }
+                        // Use optimized O(1) lookup via HashSet
+                        string? matchedPathParam = endpoint.FindMatchingPathParameter(parameter.ConvertedName, parameter.ActualName);
 
                         // Try to get route value using the path parameter name from the template
                         if (matchedPathParam is not null && context.Request.RouteValues.TryGetValue(matchedPathParam, out var routeValue))
@@ -641,8 +654,7 @@ public class NpgsqlRestEndpoint(
                                 {
                                     if (formatter.RefContext)
                                     {
-                                        commandText = string.Concat(commandText,
-                                            formatter.AppendCommandParameter(parameter, paramIndex, context));
+                                        commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex, context));
                                         if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
                                         {
                                             return;
@@ -650,8 +662,7 @@ public class NpgsqlRestEndpoint(
                                     }
                                     else
                                     {
-                                        commandText = string.Concat(commandText,
-                                            formatter.AppendCommandParameter(parameter, paramIndex));
+                                        commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex));
                                     }
                                 }
                                 paramIndex++;
@@ -673,7 +684,7 @@ public class NpgsqlRestEndpoint(
                         }
                     }
 
-                    if (queryDict.TryGetValue(parameter.ConvertedName, out var qsValue) is false)
+                    if (queryCollection.TryGetValue(parameter.ConvertedName, out var qsValue) is false)
                     {
                         if (parameter.Value is null)
                         {
@@ -804,8 +815,7 @@ public class NpgsqlRestEndpoint(
                     {
                         if (formatter.RefContext)
                         {
-                            commandText = string.Concat(commandText,
-                                formatter.AppendCommandParameter(parameter, paramIndex, context));
+                            commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex, context));
                             if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
                             {
                                 return;
@@ -813,8 +823,7 @@ public class NpgsqlRestEndpoint(
                         }
                         else
                         {
-                            commandText = string.Concat(commandText,
-                                formatter.AppendCommandParameter(parameter, paramIndex));
+                            commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex));
                         }
                     }
                     paramIndex++;
@@ -835,7 +844,7 @@ public class NpgsqlRestEndpoint(
                 // Skip query string validation for passthrough proxy endpoints - query will be forwarded as-is
                 if (!(endpoint.IsProxy && Options.ProxyOptions.Enabled && !endpoint.HasProxyResponseParameters))
                 {
-                    foreach (var queryKey in queryDict.Keys)
+                    foreach (var queryKey in queryCollection.Keys)
                     {
                         if (routine.ParamsHash.Contains(queryKey) is false)
                         {
@@ -872,7 +881,13 @@ public class NpgsqlRestEndpoint(
                         formatter = overload.Formatter;
                         if (formatter.IsFormattable is false)
                         {
-                            commandText = routine.Expression;
+                            // Reinitialize commandTextBuilder for the new routine
+                            commandTextBuilder?.Clear();
+                            if (commandTextBuilder is null)
+                            {
+                                commandTextBuilder = StringBuilderPool.Rent(routine.Expression.Length + routine.ParamCount * 16);
+                            }
+                            commandTextBuilder.Append(routine.Expression);
                         }
                     }
                 }
@@ -989,8 +1004,7 @@ public class NpgsqlRestEndpoint(
                             {
                                 if (formatter.RefContext)
                                 {
-                                    commandText = string.Concat(commandText,
-                                        formatter.AppendCommandParameter(parameter, paramIndex, context));
+                                    commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex, context));
                                     if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
                                     {
                                         return;
@@ -998,8 +1012,7 @@ public class NpgsqlRestEndpoint(
                                 }
                                 else
                                 {
-                                    commandText = string.Concat(commandText,
-                                        formatter.AppendCommandParameter(parameter, paramIndex));
+                                    commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex));
                                 }
                             }
                             paramIndex++;
@@ -1023,16 +1036,8 @@ public class NpgsqlRestEndpoint(
                     // path parameter - extract from RouteValues (for JSON body mode)
                     if (parameter.Value is null && endpoint.HasPathParameters)
                     {
-                        string? matchedPathParam = null;
-                        foreach (var pathParam in endpoint.PathParameters!)
-                        {
-                            if (string.Equals(pathParam, parameter.ConvertedName, StringComparison.OrdinalIgnoreCase) ||
-                                string.Equals(pathParam, parameter.ActualName, StringComparison.OrdinalIgnoreCase))
-                            {
-                                matchedPathParam = pathParam;
-                                break;
-                            }
-                        }
+                        // Use optimized O(1) lookup via HashSet
+                        string? matchedPathParam = endpoint.FindMatchingPathParameter(parameter.ConvertedName, parameter.ActualName);
 
                         // Try to get route value using the path parameter name from the template
                         if (matchedPathParam is not null && context.Request.RouteValues.TryGetValue(matchedPathParam, out var routeValue))
@@ -1095,8 +1100,7 @@ public class NpgsqlRestEndpoint(
                                 {
                                     if (formatter.RefContext)
                                     {
-                                        commandText = string.Concat(commandText,
-                                            formatter.AppendCommandParameter(parameter, paramIndex, context));
+                                        commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex, context));
                                         if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
                                         {
                                             return;
@@ -1104,8 +1108,7 @@ public class NpgsqlRestEndpoint(
                                     }
                                     else
                                     {
-                                        commandText = string.Concat(commandText,
-                                            formatter.AppendCommandParameter(parameter, paramIndex));
+                                        commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex));
                                     }
                                 }
                                 paramIndex++;
@@ -1257,8 +1260,7 @@ public class NpgsqlRestEndpoint(
                     {
                         if (formatter.RefContext)
                         {
-                            commandText = string.Concat(commandText,
-                                formatter.AppendCommandParameter(parameter, paramIndex, context));
+                            commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex, context));
                             if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
                             {
                                 return;
@@ -1266,8 +1268,7 @@ public class NpgsqlRestEndpoint(
                         }
                         else
                         {
-                            commandText = string.Concat(commandText,
-                                formatter.AppendCommandParameter(parameter, paramIndex));
+                            commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex));
                         }
                     }
                     paramIndex++;
@@ -1314,7 +1315,7 @@ public class NpgsqlRestEndpoint(
             // Validate parameters before any further processing (authorization, proxy, etc.)
             if (endpoint.ParameterValidations is not null)
             {
-                if (!await ValidateParametersAsync(command.Parameters, endpoint, context))
+                if (!await ValidateParametersAsync(command.Parameters, endpoint, context, cancellationToken))
                 {
                     return;
                 }
@@ -1378,7 +1379,7 @@ public class NpgsqlRestEndpoint(
             {
                 if (formatter.RefContext)
                 {
-                    commandText = string.Concat(commandText, formatter.AppendEmpty(context));
+                    commandTextBuilder!.Append(formatter.AppendEmpty(context));
                     if (formatter.IsFormattable)
                     {
                         if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
@@ -1389,8 +1390,10 @@ public class NpgsqlRestEndpoint(
                 }
                 else
                 {
-                    commandText = string.Concat(commandText, formatter.AppendEmpty());
+                    commandTextBuilder!.Append(formatter.AppendEmpty());
                 }
+                // Convert StringBuilder to string for final commandText
+                commandText = commandTextBuilder.ToString();
             }
 
             if (commandText is null)
@@ -1490,7 +1493,7 @@ public class NpgsqlRestEndpoint(
                                 cmdLog?.AppendLine("/* proxy response from cache */");
                                 NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", commandText);
                             }
-                            await Proxy.ProxyRequestHandler.WriteResponseAsync(context, cached, Options.ProxyOptions);
+                            await Proxy.ProxyRequestHandler.WriteResponseAsync(context, cached, Options.ProxyOptions, cancellationToken);
                             return;
                         }
                     }
@@ -1552,7 +1555,7 @@ public class NpgsqlRestEndpoint(
                     {
                         Options.CacheOptions.DefaultRoutineCache.AddOrUpdate(endpoint, cacheKeys?.ToString()!, proxyResponse);
                     }
-                    await Proxy.ProxyRequestHandler.WriteResponseAsync(context, proxyResponse, Options.ProxyOptions);
+                    await Proxy.ProxyRequestHandler.WriteResponseAsync(context, proxyResponse, Options.ProxyOptions, cancellationToken);
                     return;
                 }
             }
@@ -1632,9 +1635,9 @@ public class NpgsqlRestEndpoint(
                 }
                 if (uploadHandler.RequiresTransaction is true)
                 {
-                    transaction = await connection.BeginTransactionAsync();
+                    transaction = await connection.BeginTransactionAsync(cancellationToken);
                 }
-                uploadMetadata = await uploadHandler.UploadAsync(connection, context, endpoint.CustomParameters);
+                uploadMetadata = await uploadHandler.UploadAsync(connection, context, endpoint.CustomParameters, cancellationToken);
                 uploadMetadata ??= DBNull.Value;
                 if (uploadMetaParamIndex > -1)
                 {
@@ -1667,7 +1670,7 @@ public class NpgsqlRestEndpoint(
             
             if (endpoint.Login is true)
             {
-                if (await PrepareCommand(connection, command, commandText, context, endpoint, false) is false)
+                if (await PrepareCommand(connection, command, commandText, context, endpoint, false, cancellationToken) is false)
                 {
                     return;
                 }
@@ -1679,6 +1682,7 @@ public class NpgsqlRestEndpoint(
                     command,
                     context,
                     endpoint.RetryStrategy,
+                    cancellationToken,
                     tracePath: context.Request.Path.ToString(),
                     performHashVerification: true,
                     assignUserPrincipalToContext: false);
@@ -1692,7 +1696,7 @@ public class NpgsqlRestEndpoint(
 
             if (endpoint.Logout is true)
             {
-                if (await PrepareCommand(connection, command, commandText, context, endpoint, true) is false)
+                if (await PrepareCommand(connection, command, commandText, context, endpoint, true, cancellationToken) is false)
                 {
                     return;
                 }
@@ -1700,7 +1704,7 @@ public class NpgsqlRestEndpoint(
                 {
                     NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", command.CommandText);
                 }
-                await LogoutHandler.HandleAsync(command, endpoint, context);
+                await LogoutHandler.HandleAsync(command, endpoint, context, cancellationToken);
                 return;
             }
 
@@ -1722,7 +1726,7 @@ public class NpgsqlRestEndpoint(
 
             if (routine.IsVoid)
             {
-                if (await PrepareCommand(connection, command, commandText, context, endpoint, true) is false)
+                if (await PrepareCommand(connection, command, commandText, context, endpoint, true, cancellationToken) is false)
                 {
                     return;
                 }
@@ -1748,7 +1752,7 @@ public class NpgsqlRestEndpoint(
                     {
                         if (Options.CacheOptions.DefaultRoutineCache.Get(endpoint, cacheKeys?.ToString()!, out valueResult) is false)
                         {
-                            if (await PrepareCommand(connection, command, commandText, context, endpoint, true) is false)
+                            if (await PrepareCommand(connection, command, commandText, context, endpoint, true, cancellationToken) is false)
                             {
                                 return;
                             }
@@ -1762,7 +1766,7 @@ public class NpgsqlRestEndpoint(
                             {
                                 NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", command.CommandText);
                             }
-                            if (await reader.ReadAsync())
+                            if (await reader.ReadAsync(cancellationToken))
                             {
                                 valueResult = descriptor.IsBinary ? reader.GetFieldValue<byte[]>(0) : reader.GetValue(0) as string;
                                 Options.CacheOptions.DefaultRoutineCache.AddOrUpdate(endpoint, cacheKeys?.ToString()!, valueResult);
@@ -1784,8 +1788,8 @@ public class NpgsqlRestEndpoint(
                         }
                     }
                     else
-                    { 
-                        if (await PrepareCommand(connection, command, commandText, context, endpoint, true) is false)
+                    {
+                        if (await PrepareCommand(connection, command, commandText, context, endpoint, true, cancellationToken) is false)
                         {
                             return;
                         }
@@ -1798,7 +1802,7 @@ public class NpgsqlRestEndpoint(
                         {
                             NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", command.CommandText);
                         }
-                        if (await reader.ReadAsync())
+                        if (await reader.ReadAsync(cancellationToken))
                         {
                             valueResult = descriptor.IsBinary ? reader.GetFieldValue<byte[]>(0) : reader.GetValue(0) as string;
                         }
@@ -1831,8 +1835,8 @@ public class NpgsqlRestEndpoint(
                     {
                         if (descriptor.IsBinary)
                         {
-                            await writer.WriteAsync(valueResult as byte[]);
-                            await writer.FlushAsync();
+                            await writer.WriteAsync(valueResult as byte[], cancellationToken);
+                            await writer.FlushAsync(cancellationToken);
                         }
                         else
                         {
@@ -1857,8 +1861,8 @@ public class NpgsqlRestEndpoint(
                         }
                         if (descriptor.IsBinary)
                         {
-                            await writer.WriteAsync(valueResult as byte[]);
-                            await writer.FlushAsync();
+                            await writer.WriteAsync(valueResult as byte[], cancellationToken);
+                            await writer.FlushAsync(cancellationToken);
                         }
                         else
                         {
@@ -1901,7 +1905,7 @@ public class NpgsqlRestEndpoint(
                         }
                     }
 
-                    if (await PrepareCommand(connection, command, commandText, context, endpoint, true) is false)
+                    if (await PrepareCommand(connection, command, commandText, context, endpoint, true, cancellationToken) is false)
                     {
                         return;
                     }
@@ -1943,7 +1947,7 @@ public class NpgsqlRestEndpoint(
                     bool first = true;
                     var routineReturnRecordCount = routine.ColumnCount;
 
-                    StringBuilder row = new();
+                    rowBuilder = StringBuilderPool.Rent(512);
                     ulong rowCount = 0;
 
                     // Precompute nested JSON composite column mapping
@@ -1971,7 +1975,10 @@ public class NpgsqlRestEndpoint(
                     }
 
                     // Buffer for composite fields to detect all-NULL composites
-                    StringBuilder? compositeBuffer = nestedJsonColumnMap is not null ? new() : null;
+                    if (nestedJsonColumnMap is not null)
+                    {
+                        compositeFieldBuffer = StringBuilderPool.Rent(256);
+                    }
                     bool compositeHasNonNullValue = false;
                     string? currentCompositeName = null;
 
@@ -1990,11 +1997,11 @@ public class NpgsqlRestEndpoint(
                         {
                             columns.Append(endpoint.RawNewLineSeparator);
                         }
-                        row.Append(columns);
+                        rowBuilder.Append(columns);
                     }
 
                     var bufferRows = endpoint.BufferRows ?? Options.BufferRows;
-                    while (await reader.ReadAsync())
+                    while (await reader.ReadAsync(cancellationToken))
                     {
                         rowCount++;
                         if (!first)
@@ -2004,11 +2011,11 @@ public class NpgsqlRestEndpoint(
                                 // if raw
                                 if (endpoint.Raw is false)
                                 {
-                                    row.Append(Consts.Comma);
+                                    rowBuilder.Append(Consts.Comma);
                                 }
                                 else if (endpoint.RawNewLineSeparator is not null)
                                 {
-                                    row.Append(endpoint.RawNewLineSeparator);
+                                    rowBuilder.Append(endpoint.RawNewLineSeparator);
                                 }
                             }
                         }
@@ -2021,7 +2028,7 @@ public class NpgsqlRestEndpoint(
                         {
                             if (binary is true)
                             {
-                                await writer.WriteAsync(reader.GetFieldValue<byte[]>(0));
+                                await writer.WriteAsync(reader.GetFieldValue<byte[]>(0), cancellationToken);
                             }
                             else
                             {
@@ -2037,20 +2044,20 @@ public class NpgsqlRestEndpoint(
                                         var descriptor = routine.ColumnsTypeDescriptor[i];
                                         if (descriptor.IsText || descriptor.IsDate || descriptor.IsDateTime)
                                         {
-                                            row.Append(QuoteText(raw));
+                                            rowBuilder.Append(QuoteText(raw));
                                         }
                                         else
                                         {
-                                            row.Append(raw);
+                                            rowBuilder.Append(raw);
                                         }
                                         if (i < routineReturnRecordCount - 1)
                                         {
-                                            row.Append(endpoint.RawValueSeparator);
+                                            rowBuilder.Append(endpoint.RawValueSeparator);
                                         }
                                     }
                                     else
                                     {
-                                        row.Append(raw);
+                                        rowBuilder.Append(raw);
                                     }
                                 }
                                 else
@@ -2060,13 +2067,13 @@ public class NpgsqlRestEndpoint(
                                     bool isInComposite = nestedJsonColumnMap is not null && nestedJsonColumnMap.TryGetValue(i, out compositeMapping);
 
                                     // Determine which buffer to write to
-                                    StringBuilder outputBuffer = (isInComposite && compositeBuffer is not null) ? compositeBuffer : row;
+                                    StringBuilder outputBuffer = (isInComposite && compositeFieldBuffer is not null) ? compositeFieldBuffer : rowBuilder;
 
                                     if (routine.ReturnsUnnamedSet == false)
                                     {
                                         if (i == 0)
                                         {
-                                            row.Append(Consts.OpenBrace);
+                                            rowBuilder.Append(Consts.OpenBrace);
                                         }
 
                                         if (isInComposite)
@@ -2074,7 +2081,7 @@ public class NpgsqlRestEndpoint(
                                             if (compositeMapping.IsFirstField)
                                             {
                                                 // Start of composite: reset buffer and track column name
-                                                compositeBuffer!.Clear();
+                                                compositeFieldBuffer!.Clear();
                                                 compositeHasNonNullValue = false;
                                                 currentCompositeName = compositeMapping.CompositeColumnName;
 
@@ -2093,9 +2100,9 @@ public class NpgsqlRestEndpoint(
                                         }
                                         else
                                         {
-                                            row.Append(Consts.DoubleQuote);
-                                            row.Append(routine.ColumnNames[i]);
-                                            row.Append(Consts.DoubleQuoteColon);
+                                            rowBuilder.Append(Consts.DoubleQuote);
+                                            rowBuilder.Append(routine.ColumnNames[i]);
+                                            rowBuilder.Append(Consts.DoubleQuoteColon);
                                         }
                                     }
 
@@ -2170,21 +2177,21 @@ public class NpgsqlRestEndpoint(
                                     if (isInComposite && compositeMapping.IsLastField)
                                     {
                                         // End of composite: decide whether to output null or the buffered object
-                                        row.Append(Consts.DoubleQuote);
-                                        row.Append(currentCompositeName);
-                                        row.Append(Consts.DoubleQuoteColon);
+                                        rowBuilder.Append(Consts.DoubleQuote);
+                                        rowBuilder.Append(currentCompositeName);
+                                        rowBuilder.Append(Consts.DoubleQuoteColon);
 
                                         if (compositeHasNonNullValue)
                                         {
                                             // At least one field has a value, output as object
-                                            row.Append(Consts.OpenBrace);
-                                            row.Append(compositeBuffer);
-                                            row.Append(Consts.CloseBrace);
+                                            rowBuilder.Append(Consts.OpenBrace);
+                                            rowBuilder.Append(compositeFieldBuffer);
+                                            rowBuilder.Append(Consts.CloseBrace);
                                         }
                                         else
                                         {
                                             // All fields are NULL, output null
-                                            row.Append(Consts.Null);
+                                            rowBuilder.Append(Consts.Null);
                                         }
                                     }
                                     else if (isInComposite)
@@ -2195,17 +2202,17 @@ public class NpgsqlRestEndpoint(
 
                                     if (routine.ReturnsUnnamedSet == false && i == routine.ColumnCount - 1)
                                     {
-                                        row.Append(Consts.CloseBrace);
+                                        rowBuilder.Append(Consts.CloseBrace);
                                     }
 
                                     // Add comma between columns (but not within composite fields which are handled above)
                                     if (!isInComposite && i < routine.ColumnCount - 1)
                                     {
-                                        row.Append(Consts.Comma);
+                                        rowBuilder.Append(Consts.Comma);
                                     }
                                     else if (isInComposite && compositeMapping.IsLastField && i < routine.ColumnCount - 1)
                                     {
-                                        row.Append(Consts.Comma);
+                                        rowBuilder.Append(Consts.Comma);
                                     }
                                 }
                             }
@@ -2223,29 +2230,29 @@ public class NpgsqlRestEndpoint(
                             // Append to cache buffer before clearing row
                             if (shouldCache)
                             {
-                                cacheBuffer!.Append(row);
+                                cacheBuffer!.Append(rowBuilder);
                             }
-                            WriteStringBuilderToWriter(row, writer);
-                            await writer.FlushAsync();
-                            row.Clear();
+                            WriteStringBuilderToWriter(rowBuilder, writer);
+                            await writer.FlushAsync(cancellationToken);
+                            rowBuilder.Clear();
                         }
                     } // end while
 
                     if (binary is true)
                     {
-                        await writer.FlushAsync();
+                        await writer.FlushAsync(cancellationToken);
                     }
                     else
                     {
-                        if (row.Length > 0)
+                        if (rowBuilder.Length > 0)
                         {
                             // Append remaining rows to cache buffer
                             if (shouldCache)
                             {
-                                cacheBuffer!.Append(row);
+                                cacheBuffer!.Append(rowBuilder);
                             }
-                            WriteStringBuilderToWriter(row, writer);
-                            await writer.FlushAsync();
+                            WriteStringBuilderToWriter(rowBuilder, writer);
+                            await writer.FlushAsync(cancellationToken);
                         }
                         if (routine.ReturnsSet && endpoint.Raw is false)
                         {
@@ -2341,13 +2348,35 @@ public class NpgsqlRestEndpoint(
                 {
                     if (shouldCommit)
                     {
-                        await transaction.CommitAsync();
+                        await transaction.CommitAsync(cancellationToken);
                     }
                 }
             }
             if (connection is not null && shouldDispose is true)
             {
                 await connection.DisposeAsync();
+            }
+
+            // Return pooled StringBuilders
+            if (cmdLog is not null)
+            {
+                StringBuilderPool.Return(cmdLog);
+            }
+            if (cacheKeys is not null)
+            {
+                StringBuilderPool.Return(cacheKeys);
+            }
+            if (commandTextBuilder is not null)
+            {
+                StringBuilderPool.Return(commandTextBuilder);
+            }
+            if (rowBuilder is not null)
+            {
+                StringBuilderPool.Return(rowBuilder);
+            }
+            if (compositeFieldBuffer is not null)
+            {
+                StringBuilderPool.Return(compositeFieldBuffer);
             }
         }
     }
@@ -2358,9 +2387,10 @@ public class NpgsqlRestEndpoint(
         string commandText,
         HttpContext context,
         RoutineEndpoint endpoint,
-        bool unknownResults)
+        bool unknownResults,
+        CancellationToken cancellationToken)
     {
-        await OpenConnectionAsync(connection, context, endpoint);
+        await OpenConnectionAsync(connection, context, endpoint, cancellationToken);
         command.CommandText = commandText;
         
         if (endpoint.CommandTimeout.HasValue)
@@ -2394,7 +2424,7 @@ public class NpgsqlRestEndpoint(
         return true;
     }
     
-    private async ValueTask OpenConnectionAsync(NpgsqlConnection connection, HttpContext context, RoutineEndpoint endpoint)
+    private async ValueTask OpenConnectionAsync(NpgsqlConnection connection, HttpContext context, RoutineEndpoint endpoint, CancellationToken cancellationToken)
     {
         if (connection.State != ConnectionState.Open)
         {
@@ -2402,7 +2432,7 @@ public class NpgsqlRestEndpoint(
             {
                 Options.BeforeConnectionOpen(connection, endpoint, context);
             }
-            await connection.OpenRetryAsync(Options.ConnectionRetryOptions, context.RequestAborted);
+            await connection.OpenRetryAsync(Options.ConnectionRetryOptions, cancellationToken);
         }
     }
 
@@ -2512,6 +2542,7 @@ public class NpgsqlRestEndpoint(
     private async ValueTask ReturnErrorAsync(
         string message,
         bool log, HttpContext context,
+        CancellationToken cancellationToken,
         int statusCode = (int)HttpStatusCode.InternalServerError)
     {
         if (log)
@@ -2520,14 +2551,15 @@ public class NpgsqlRestEndpoint(
         }
         context.Response.StatusCode = statusCode;
         context.Response.ContentType = Text.Plain;
-        await context.Response.WriteAsync(message);
+        await context.Response.WriteAsync(message, cancellationToken);
         await context.Response.CompleteAsync();
     }
 
     private async ValueTask<bool> ValidateParametersAsync(
         NpgsqlParameterCollection parameters,
         RoutineEndpoint endpoint,
-        HttpContext context)
+        HttpContext context,
+        CancellationToken cancellationToken)
     {
         if (endpoint.ParameterValidations is null)
         {
@@ -2581,7 +2613,7 @@ public class NpgsqlRestEndpoint(
 
                     context.Response.StatusCode = rule.StatusCode;
                     context.Response.ContentType = Text.Plain;
-                    await context.Response.WriteAsync(message);
+                    await context.Response.WriteAsync(message, cancellationToken);
                     await context.Response.CompleteAsync();
                     return false;
                 }

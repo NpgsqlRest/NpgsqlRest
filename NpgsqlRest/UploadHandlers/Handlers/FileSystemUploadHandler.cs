@@ -28,7 +28,7 @@ public class FileSystemUploadHandler() : BaseUploadHandler, IUploadHandler
 
     public bool RequiresTransaction => false;
 
-    public async Task<string> UploadAsync(NpgsqlConnection connection, HttpContext context, Dictionary<string, string>? parameters)
+    public async Task<string> UploadAsync(NpgsqlConnection connection, HttpContext context, Dictionary<string, string>? parameters, CancellationToken cancellationToken = default)
     {
         var basePath = Options.UploadOptions.DefaultUploadHandlerOptions.FileSystemPath;
         var useUniqueFileName = Options.UploadOptions.DefaultUploadHandlerOptions.FileSystemUseUniqueFileName;
@@ -186,9 +186,9 @@ public class FileSystemUploadHandler() : BaseUploadHandler, IUploadHandler
                 int bytesRead;
                 using var sourceStream = formFile.OpenReadStream();
 
-                while ((bytesRead = await sourceStream.ReadAsync(buffer)) > 0)
+                while ((bytesRead = await sourceStream.ReadAsync(buffer, cancellationToken)) > 0)
                 {
-                    await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead));
+                    await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
                 }
             }
             _uploadedFiles[i] = currentFilePath;
