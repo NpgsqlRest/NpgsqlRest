@@ -1,0 +1,149 @@
+# NpgsqlRest Optimized Version Benchmark Results
+# Date: 2026-01-21
+# Platform: macOS Tahoe 26.2 (Darwin 25.2.0), Apple M4 Pro, 14 cores
+# Runtime: .NET 10.0.0, Arm64 RyuJIT armv8.0-a
+# BenchmarkDotNet v0.15.8
+
+## Summary
+
+This file contains benchmark results for the OPTIMIZED version of NpgsqlRest
+with TypeCategory lookup tables and delegate-based parameter parsing.
+
+---
+
+## 1. TypeCategory Benchmarks
+
+Tests the optimization of type dispatch using flags enum and lookup tables.
+
+| Method                                  | Mean       | Error     | StdDev    | Gen0   | Gen1   | Allocated |
+|---------------------------------------- |-----------:|----------:|----------:|-------:|-------:|----------:|
+| TypeCategoryLookup_AllTypes             |   6.626 ns | 0.0263 ns | 0.0246 ns |      - |      - |         - |
+| TypeDescriptor_Construction             | 164.232 ns | 0.5723 ns | 0.4779 ns | 0.1750 | 0.0007 |    1464 B |
+| TypeDescriptor_CategoryBitwiseChecks    |   9.450 ns | 0.0908 ns | 0.0849 ns |      - |      - |         - |
+| TypeDescriptor_BooleanPropertyAccess    |   9.613 ns | 0.1189 ns | 0.1112 ns |      - |      - |         - |
+| TypeDescriptor_CombinedCheck_Properties |   7.839 ns | 0.0865 ns | 0.0809 ns |      - |      - |         - |
+| TypeDescriptor_CombinedCheck_Bitwise    |   4.939 ns | 0.1087 ns | 0.1017 ns |      - |      - |         - |
+
+Key findings:
+- TypeCategoryLookup.GetCategory(): 6.6 ns per lookup (O(1) array access)
+- Bitwise category checks: 4.9 ns (37% faster than property access at 7.8 ns)
+- Boolean property access: 9.6 ns (wrapper around bitwise check)
+- TypeDescriptor construction: 164 ns (includes lookup initialization)
+
+---
+
+## 2. Parameter Parser Benchmarks
+
+Tests the delegate array lookup optimization for parameter parsing.
+
+| Method                              | Mean       | Error     | StdDev    | Gen0   | Allocated |
+|------------------------------------ |-----------:|----------:|----------:|-------:|----------:|
+| ParameterParsers_GetParser_AllTypes |   5.874 ns | 0.0388 ns | 0.0363 ns |      - |         - |
+| ParameterParsers_ParseValues        | 503.046 ns | 2.6785 ns | 2.2367 ns | 0.0362 |     304 B |
+
+Key findings:
+- GetParser() delegate lookup: 5.9 ns (O(1) array access)
+- Full parse operation (12 types): 503 ns (~42 ns per type including value parsing)
+- Zero allocations for lookup, only allocations from boxed parse results
+
+---
+
+## 3. Serialization Benchmarks
+
+Tests the combined effect of all optimizations in simulated serialization hot path.
+
+| Method                                | RowCount | Mean         | Error        | StdDev       | Gen0   | Allocated |
+|-------------------------------------- |--------- |-------------:|-------------:|-------------:|-------:|----------:|
+| Serialization_TypeDispatch_Simulation | 10       |    521.04 ns |     9.109 ns |     8.521 ns | 0.0858 |     720 B |
+| Serialization_CategoryLookup_Only     | 10       |     44.06 ns |     0.905 ns |     1.409 ns |      - |         - |
+| Serialization_TypeDispatch_Simulation | 100      |  6,736.49 ns |    86.124 ns |    80.560 ns | 0.8545 |    7200 B |
+| Serialization_CategoryLookup_Only     | 100      |    403.46 ns |     7.577 ns |    11.571 ns |      - |         - |
+| Serialization_TypeDispatch_Simulation | 1000     | 66,364.15 ns | 1,246.850 ns | 1,224.573 ns | 8.5449 |   72000 B |
+| Serialization_CategoryLookup_Only     | 1000     |  4,059.92 ns |    80.222 ns |   156.466 ns |      - |         - |
+
+Key findings:
+- Category lookup scales linearly: 44 ns (10 rows) -> 404 ns (100 rows) -> 4,060 ns (1000 rows)
+- Full serialization simulation: 521 ns (10 rows) -> 6.7 us (100 rows) -> 66.4 us (1000 rows)
+- Category lookup is ~12x faster than full dispatch (lookup-only vs full simulation)
+- Memory: 72 bytes per row in simulation (StringBuilder allocations)
+
+---
+
+## Performance Characteristics
+
+### Type Category Lookup
+- O(1) array-based lookup using NpgsqlDbType as index
+- 128-element array covers all base types
+- Range/Multirange types handled specially (return None)
+- Zero allocations after initialization
+
+### Parameter Parsing
+- O(1) delegate lookup by NpgsqlDbType
+- Pre-computed delegate array avoids if-chain overhead
+- Supports: Smallint, Integer, Bigint, Double, Real, Numeric, Boolean,
+  Timestamp, TimestampTz, Date, Time, TimeTz, Uuid
+
+### Bitwise Category Checks
+- TypeCategory flags enum enables combined checks in single operation
+- Example: (Category & (Numeric | Boolean | Json)) != 0
+- 37% faster than sequential property access
+
+---
+
+## Files Modified for Optimization
+
+| File | Change |
+|------|--------|
+| NpgsqlRest/TypeCategory.cs | NEW - TypeCategory flags enum and lookup table |
+| NpgsqlRest/ParameterParsers.cs | NEW - Type-specific parser delegates |
+| NpgsqlRest/TypeDescriptor.cs | Added Category property, compute in constructor |
+| NpgsqlRest/ParameterParser.cs | Use delegate lookup instead of if-chain |
+| NpgsqlRest/NpgsqlRestEndpoint.cs | Use Category bitwise checks in serialization |
+| NpgsqlRest/PgConverters.cs | Updated to use Category bitwise checks |
+
+---
+
+## HTTP Endpoint Benchmark Tests
+
+HTTP benchmarks require the NpgsqlRestTests server running on localhost:5000.
+Tests available in BenchmarkTests/HttpClientTests.cs:
+
+### HttpClientTests
+- PerfTest_AllTypes_10Rows: Full PostgreSQL type test (10 rows)
+- PerfTest_AllTypes_100Rows: Full PostgreSQL type test (100 rows)
+- PerfTest_AllTypes_1000Rows: Full PostgreSQL type test (1000 rows)
+- SimpleTable_100Rows: Simple int+text table (100 rows)
+- CachedSet_50Rows: Cached endpoint test
+- JsonRecord: JSON type serialization test
+
+### HttpScalingBenchmarks
+- PerfTest_AllTypes_Scaling: Parameterized row counts (10-1000)
+- SimpleTable_Scaling: Simple table scaling comparison
+
+### HttpTypeSerializationBenchmarks
+- SimpleTypes_IntText_100Rows: Baseline (int + text only)
+- AllTypes_100Rows: Full PostgreSQL type test
+- CachedIntText_100Rows: Cached response path
+- SetWithNulls_100Rows: Null handling test
+- JsonField: JSON type test
+
+Run HTTP benchmarks with: dotnet run --project BenchmarkTests -- --http
+
+---
+
+## Test Endpoint: public.perf_test
+
+The HTTP benchmarks use a comprehensive test function that covers all common PostgreSQL types:
+
+Parameters:
+- _records int, _text text, _int int, _bigint bigint, _numeric numeric
+- _real real, _double double precision, _bool bool
+- _date date, _timestamp timestamp, _timestamptz timestamptz
+- _uuid uuid, _json json, _jsonb jsonb
+- _int_array int[], _text_array text[]
+
+Returns 22 columns of various types including:
+- Text types: text, varchar, char
+- Integer types: smallint, int, bigint
+- Floating point: numeric, real, double precision
+- Boolean, date/time types, uuid, json/jsonb, arrays, nullable columns

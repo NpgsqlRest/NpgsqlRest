@@ -1820,7 +1820,7 @@ public class NpgsqlRestEndpoint(
                         {
                             context.Response.ContentType = Application.Octet;
                         }
-                        else if (descriptor.IsJson || descriptor.IsArray)
+                        else if ((descriptor.Category & TypeCategory.Json) != 0 || descriptor.IsArray)
                         {
                             context.Response.ContentType = Application.Json;
                         }
@@ -2042,7 +2042,7 @@ public class NpgsqlRestEndpoint(
                                     if (endpoint.RawValueSeparator is not null)
                                     {
                                         var descriptor = routine.ColumnsTypeDescriptor[i];
-                                        if (descriptor.IsText || descriptor.IsDate || descriptor.IsDateTime)
+                                        if ((descriptor.Category & (TypeCategory.Text | TypeCategory.Date | TypeCategory.DateTime)) != 0)
                                         {
                                             rowBuilder.Append(QuoteText(raw));
                                         }
@@ -2125,10 +2125,10 @@ public class NpgsqlRestEndpoint(
                                             outputBuffer.Append(PgArrayToJsonArray(raw, descriptor));
                                         }
                                     }
-                                    else if ((descriptor.IsNumeric || descriptor.IsBoolean || descriptor.IsJson) && value is not null)
+                                    else if ((descriptor.Category & (TypeCategory.Numeric | TypeCategory.Boolean | TypeCategory.Json)) != 0 && value is not null)
                                     {
                                         if (isInComposite) compositeHasNonNullValue = true;
-                                        if (descriptor.IsBoolean)
+                                        if ((descriptor.Category & TypeCategory.Boolean) != 0)
                                         {
                                             if (raw.Length == 1 && raw[0] == 't')
                                             {
@@ -2162,7 +2162,7 @@ public class NpgsqlRestEndpoint(
                                         }
                                         else
                                         {
-                                            if (descriptor.IsDateTime)
+                                            if ((descriptor.Category & TypeCategory.DateTime) != 0)
                                             {
                                                 outputBuffer.Append(QuoteDateTime(ref raw));
                                             }

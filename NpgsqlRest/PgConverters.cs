@@ -159,7 +159,7 @@ public static class PgConverters
         var result = new StringBuilder(len * 2);
         result.Append(Consts.OpenBracket);
         var current = new StringBuilder();
-        var quoted = !(descriptor.IsNumeric || descriptor.IsBoolean || descriptor.IsJson);
+        var quoted = (descriptor.Category & (TypeCategory.Numeric | TypeCategory.Boolean | TypeCategory.Json)) == 0;
         bool insideQuotes = false;
         bool hasQuotes = false;
         int braceDepth = 1; // We've already consumed the opening brace
@@ -194,7 +194,7 @@ public static class PgConverters
             if (nextDelimiterOffset > 0)
             {
                 var segment = remaining.Slice(0, nextDelimiterOffset);
-                if (descriptor.IsBoolean)
+                if ((descriptor.Category & TypeCategory.Boolean) != 0)
                 {
                     // For booleans, we only need the first char to determine true/false
                     foreach (var ch in segment)
@@ -207,7 +207,7 @@ public static class PgConverters
                             current.Append(ch);
                     }
                 }
-                else if (descriptor.IsDateTime)
+                else if ((descriptor.Category & TypeCategory.DateTime) != 0)
                 {
                     foreach (var ch in segment)
                     {
@@ -320,7 +320,7 @@ public static class PgConverters
             else
             {
                 // Handle backslash or other delimiter characters that are part of content
-                if (descriptor.IsBoolean)
+                if ((descriptor.Category & TypeCategory.Boolean) != 0)
                 {
                     if (currentChar == 't')
                         current.Append(Consts.True);
@@ -330,7 +330,7 @@ public static class PgConverters
                         current.Append(currentChar);
                     i++;
                 }
-                else if (descriptor.IsDateTime)
+                else if ((descriptor.Category & TypeCategory.DateTime) != 0)
                 {
                     current.Append(currentChar == Consts.Space ? 'T' : currentChar);
                     i++;
@@ -635,11 +635,11 @@ public static class PgConverters
                 // e.g., {1,2,3} -> [1,2,3]
                 result.Append(PgArrayToJsonArray(valueStr.AsSpan(), descriptor));
             }
-            else if (descriptor.IsNumeric)
+            else if ((descriptor.Category & TypeCategory.Numeric) != 0)
             {
                 result.Append(valueStr);
             }
-            else if (descriptor.IsBoolean)
+            else if ((descriptor.Category & TypeCategory.Boolean) != 0)
             {
                 if (valueStr == "t" || valueStr == "true")
                     result.Append(Consts.True);
@@ -648,7 +648,7 @@ public static class PgConverters
                 else
                     result.Append(valueStr);
             }
-            else if (descriptor.IsJson)
+            else if ((descriptor.Category & TypeCategory.Json) != 0)
             {
                 result.Append(valueStr);
             }

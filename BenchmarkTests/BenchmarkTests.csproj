@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\NpgsqlRestClient\NpgsqlRestClient.csproj" />
+    <ProjectReference Include="..\NpgsqlRest\NpgsqlRest.csproj" />
   </ItemGroup>
 
 </Project>

@@ -4,6 +4,12 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [3.4.7](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.4.7) (2025-01-21)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.4.6...3.4.7)
+
+...
+
 ## Version [3.4.6](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.4.6) (2025-01-21)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.4.5...3.4.6)

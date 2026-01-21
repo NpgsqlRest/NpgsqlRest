@@ -7,25 +7,33 @@ public class TypeDescriptor
     public string OriginalType { get; }
     public string Type { get; }
     public bool IsArray { get; }
-    public bool IsNumeric { get; }
-    public bool IsJson { get; }
-    public bool IsDate { get; }
-    public bool IsDateTime { get; }
-    public bool IsBoolean { get; }
-    public bool IsText { get; }
     public NpgsqlDbType DbType { get; }
     public NpgsqlDbType BaseDbType { get; }
     public NpgsqlDbType ActualDbType { get; }
     public bool HasDefault { get; private set; }
-    public bool NeedsEscape { get; }
     public bool IsPk { get; }
     public bool IsIdentity { get; }
     public string? CustomType { get; }
     public short? CustomTypePosition { get; }
     public string? OriginalParameterName { get; }
     public string? CustomTypeName { get; }
-    public bool IsBinary { get; }
     internal bool ShouldRenderAsUnknownType => IsBinary is false;
+
+    /// <summary>
+    /// Pre-computed type category flags for optimized type dispatch.
+    /// Use bitwise operations for fast type checking in hot paths.
+    /// </summary>
+    public TypeCategory Category { get; }
+
+    // Computed properties from Category for backward compatibility
+    public bool IsNumeric => (Category & TypeCategory.Numeric) != 0;
+    public bool IsJson => (Category & TypeCategory.Json) != 0;
+    public bool IsDate => (Category & TypeCategory.Date) != 0;
+    public bool IsDateTime => (Category & TypeCategory.DateTime) != 0;
+    public bool IsBoolean => (Category & TypeCategory.Boolean) != 0;
+    public bool IsText => (Category & TypeCategory.Text) != 0;
+    public bool NeedsEscape { get; }
+    public bool IsBinary => (Category & TypeCategory.Binary) != 0;
 
     // Properties for nested composite type support
     /// <summary>
@@ -63,13 +71,13 @@ public class TypeDescriptor
     public bool IsArrayOfCompositeType => ArrayCompositeFieldNames != null;
 
     public TypeDescriptor(
-        string type, 
-        bool hasDefault = false, 
-        bool isPk = false, 
+        string type,
+        bool hasDefault = false,
+        bool isPk = false,
         bool isIdentity = false,
         string? customType = null,
         short? customTypePosition = null,
-        string? originalParameterName = null, 
+        string? originalParameterName = null,
         string? customTypeName = null)
     {
         OriginalType = type;
@@ -81,7 +89,10 @@ public class TypeDescriptor
         DbType = GetDbType();
         BaseDbType = DbType;
 
-        ActualDbType = CastToText(BaseDbType) ? NpgsqlDbType.Text : BaseDbType;
+        // Use pre-computed lookup table for type category
+        Category = TypeCategoryLookup.GetCategory(BaseDbType);
+
+        ActualDbType = (Category & TypeCategory.CastToText) != 0 ? NpgsqlDbType.Text : BaseDbType;
 
         if (IsArray)
         {
@@ -89,60 +100,11 @@ public class TypeDescriptor
             ActualDbType |= NpgsqlDbType.Array;
         }
 
-        IsNumeric = BaseDbType switch
-        {
-            NpgsqlDbType.Smallint => true,
-            NpgsqlDbType.Integer => true,
-            NpgsqlDbType.Bigint => true,
-            NpgsqlDbType.Numeric => true,
-            NpgsqlDbType.Real => true,
-            NpgsqlDbType.Double => true,
-            NpgsqlDbType.Money => true,
-            _ => false
-        };
-
-        IsJson = BaseDbType switch
-        {
-            NpgsqlDbType.Jsonb => true,
-            NpgsqlDbType.Json => true,
-            _ => false
-        };
-        
-        IsDate = BaseDbType == NpgsqlDbType.Date;
-        
-        IsBoolean = BaseDbType == NpgsqlDbType.Boolean;
-
-        IsDateTime = BaseDbType == NpgsqlDbType.Timestamp || BaseDbType == NpgsqlDbType.TimestampTz;
-
-        IsText = BaseDbType == NpgsqlDbType.Text ||
-            BaseDbType == NpgsqlDbType.Xml ||
-            BaseDbType == NpgsqlDbType.Varchar ||
-            BaseDbType == NpgsqlDbType.Char ||
-            BaseDbType == NpgsqlDbType.Name ||
-            BaseDbType == NpgsqlDbType.Jsonb ||
-            BaseDbType == NpgsqlDbType.Json ||
-            BaseDbType == NpgsqlDbType.JsonPath;
-
-        NeedsEscape = BaseDbType == NpgsqlDbType.Xml ||
-            BaseDbType == NpgsqlDbType.Text ||
-            BaseDbType == NpgsqlDbType.Varchar ||
-            BaseDbType == NpgsqlDbType.Char ||
-            BaseDbType == NpgsqlDbType.Name ||
-            BaseDbType == NpgsqlDbType.JsonPath ||
-            BaseDbType == NpgsqlDbType.Bytea ||
-            BaseDbType == NpgsqlDbType.TsQuery ||
-            BaseDbType == NpgsqlDbType.TsVector ||
-            BaseDbType == NpgsqlDbType.Citext ||
-            BaseDbType == NpgsqlDbType.LQuery ||
-            BaseDbType == NpgsqlDbType.LTree ||
-            BaseDbType == NpgsqlDbType.LTxtQuery ||
-            BaseDbType == NpgsqlDbType.TsVector ||
-            BaseDbType == NpgsqlDbType.Hstore;
+        NeedsEscape = (Category & TypeCategory.NeedsEscape) != 0;
 
         CustomType = customType;
         CustomTypePosition = customTypePosition;
         OriginalParameterName = originalParameterName;
-        IsBinary = BaseDbType == NpgsqlDbType.Bytea;
         CustomTypeName = customTypeName;
     }
 
@@ -151,58 +113,7 @@ public class TypeDescriptor
         HasDefault = true;
     }
 
-    public bool IsCastToText() => CastToText(BaseDbType);
-
-    private static bool CastToText(NpgsqlDbType type) => type switch
-    {
-        NpgsqlDbType.Interval => true,
-        NpgsqlDbType.Bit => true,
-        NpgsqlDbType.Varbit => true,
-        NpgsqlDbType.Bytea => true,
-        NpgsqlDbType.Inet => true,
-        NpgsqlDbType.MacAddr => true,
-        NpgsqlDbType.Cidr => true,
-        NpgsqlDbType.MacAddr8 => true,
-        NpgsqlDbType.TsQuery => true,
-        NpgsqlDbType.TsVector => true,
-        NpgsqlDbType.Box => true,
-        NpgsqlDbType.Circle => true,
-        NpgsqlDbType.Line => true,
-        NpgsqlDbType.LSeg => true,
-        NpgsqlDbType.Path => true,
-        NpgsqlDbType.Point => true,
-        NpgsqlDbType.Polygon => true,
-        NpgsqlDbType.Oid => true,
-        NpgsqlDbType.Xid => true,
-        NpgsqlDbType.Xid8 => true,
-        NpgsqlDbType.Cid => true,
-        NpgsqlDbType.Regtype => true,
-        NpgsqlDbType.Regconfig => true,
-        NpgsqlDbType.IntegerRange => true,
-        NpgsqlDbType.BigIntRange => true,
-        NpgsqlDbType.NumericRange => true,
-        NpgsqlDbType.TimestampRange => true,
-        NpgsqlDbType.TimestampTzRange => true,
-        NpgsqlDbType.DateRange => true,
-        NpgsqlDbType.IntegerMultirange => true,
-        NpgsqlDbType.BigIntMultirange => true,
-        NpgsqlDbType.NumericMultirange => true,
-        NpgsqlDbType.TimestampMultirange => true,
-        NpgsqlDbType.TimestampTzMultirange => true,
-        NpgsqlDbType.DateMultirange => true,
-        NpgsqlDbType.Int2Vector => true,
-        NpgsqlDbType.Oidvector => true,
-        NpgsqlDbType.PgLsn => true,
-        NpgsqlDbType.Tid => true,
-        NpgsqlDbType.Citext => true,
-        NpgsqlDbType.LQuery => true,
-        NpgsqlDbType.LTree => true,
-        NpgsqlDbType.LTxtQuery => true,
-        NpgsqlDbType.Hstore => true,
-        NpgsqlDbType.Geometry => true,
-        NpgsqlDbType.Geography => true,
-        _ => false
-    };
+    public bool IsCastToText() => (Category & TypeCategory.CastToText) != 0;
 
     private NpgsqlDbType GetDbType()
     {

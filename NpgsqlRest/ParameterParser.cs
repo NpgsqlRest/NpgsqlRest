@@ -76,7 +76,7 @@ internal static class ParameterParser
         return true;
 
         bool TryGetValue(
-            string? value, 
+            string? value,
             out object? resultValue)
         {
             if (queryStringNullHandling == QueryStringNullHandling.NullLiteral)
@@ -86,7 +86,7 @@ internal static class ParameterParser
                     resultValue = DBNull.Value;
                     return true;
                 }
-            } 
+            }
             else if (queryStringNullHandling == QueryStringNullHandling.EmptyString)
             {
                 if (string.IsNullOrEmpty(value))
@@ -96,137 +96,28 @@ internal static class ParameterParser
                 }
             }
 
-            if (!parameter.TypeDescriptor.IsText && string.IsNullOrEmpty(value))
-            {
-                resultValue = DBNull.Value;
-                return true;
-            }
-
-            if (parameter.TypeDescriptor.BaseDbType == NpgsqlDbType.Smallint)
-            {
-                if (short.TryParse(value, CultureInfo.InvariantCulture.NumberFormat, out var shortValue))
-                {
-                    resultValue = shortValue;
-                    return true;
-                }
-                resultValue = null!;
-                return false;
-            }
-            if (parameter.TypeDescriptor.BaseDbType == NpgsqlDbType.Integer)
-            {
-                if (int.TryParse(value, CultureInfo.InvariantCulture.NumberFormat, out var intValue))
-                {
-                    resultValue = intValue;
-                    return true;
-                }
-                resultValue = null!;
-                return false;
-            }
-            if (parameter.TypeDescriptor.BaseDbType == NpgsqlDbType.Bigint)
-            {
-                if (long.TryParse(value, CultureInfo.InvariantCulture.NumberFormat, out var bigValue))
-                {
-                    resultValue = bigValue;
-                    return true;
-                }
-                resultValue = null!;
-                return false;
-            }
-            if (parameter.TypeDescriptor.BaseDbType == NpgsqlDbType.Double)
-            {
-                if (double.TryParse(value, CultureInfo.InvariantCulture.NumberFormat, out var doubleValue))
-                {
-                    resultValue = doubleValue;
-                    return true;
-                }
-                resultValue = null!;
-                return false;
-            }
-            if (parameter.TypeDescriptor.BaseDbType == NpgsqlDbType.Real)
-            {
-                if (float.TryParse(value, CultureInfo.InvariantCulture.NumberFormat, out var floatValue))
-                {
-                    resultValue = floatValue;
-                    return true;
-                }
-                resultValue = null!;
-                return false;
-            }
-            if (parameter.TypeDescriptor.BaseDbType == NpgsqlDbType.Numeric || parameter.TypeDescriptor.BaseDbType == NpgsqlDbType.Money)
-            {
-                if (decimal.TryParse(value, CultureInfo.InvariantCulture.NumberFormat, out var decimalValue))
-                {
-                    resultValue = decimalValue;
-                    return true;
-                }
-                resultValue = null!;
-                return false;
-            }
-            if (parameter.TypeDescriptor.BaseDbType == NpgsqlDbType.Boolean)
-            {
-                if (bool.TryParse(value, out var boolValue))
-                {
-                    resultValue = boolValue;
-                    return true;
-                }
-                resultValue = null!;
-                return false;
-            }
-            if (parameter.TypeDescriptor.BaseDbType == NpgsqlDbType.Timestamp || parameter.TypeDescriptor.BaseDbType == NpgsqlDbType.TimestampTz)
-            {
-                if (DateTime.TryParse(value, out var dateTimeValue))
-                {
-                    resultValue = parameter.TypeDescriptor.BaseDbType == NpgsqlDbType.TimestampTz ? DateTime.SpecifyKind(dateTimeValue, DateTimeKind.Utc) : dateTimeValue;
-                    return true;
-                }
-                resultValue = null!;
-                return false;
-            }
-            if (parameter.TypeDescriptor.BaseDbType == NpgsqlDbType.Date)
-            {
-                if (DateOnly.TryParse(value, out var dateTimeValue))
-                {
-                    resultValue = dateTimeValue;
-                    return true;
-                }
-                resultValue = null!;
-                return false;
-            }
-
-            if (parameter.TypeDescriptor.BaseDbType == NpgsqlDbType.Time || parameter.TypeDescriptor.BaseDbType == NpgsqlDbType.TimeTz)
-            {
-                if (DateTime.TryParse(value, out var dateTimeValue))
-                {
-                    if (parameter.TypeDescriptor.BaseDbType == NpgsqlDbType.TimeTz)
-                    {
-                        resultValue = new DateTimeOffset(DateTime.SpecifyKind(dateTimeValue, DateTimeKind.Utc));
-                    }
-                    else
-                    {
-                        resultValue = TimeOnly.FromDateTime(dateTimeValue);
-                    }
-                    return true;
-                }
-                resultValue = null!;
-                return false;
-            }
-            if (parameter.TypeDescriptor.BaseDbType == NpgsqlDbType.Uuid)
-            {
-                if (Guid.TryParse(value, out var guidValue))
-                {
-                    resultValue = guidValue;
-                    return true;
-                }
-                resultValue = null!;
-                return false;
-            }
+            // Fast path for text types
             if (parameter.TypeDescriptor.IsText)
             {
                 resultValue = value;
                 return true;
             }
 
-            // for all other cases, use raw string
+            // Empty check for non-text types
+            if (string.IsNullOrEmpty(value))
+            {
+                resultValue = DBNull.Value;
+                return true;
+            }
+
+            // Use delegate lookup for type-specific parsing
+            var parser = ParameterParsers.GetParser(parameter.TypeDescriptor.BaseDbType);
+            if (parser is not null)
+            {
+                return parser(value, out resultValue);
+            }
+
+            // Fallback for unknown types - use raw string
             resultValue = value;
             return true;
         }
@@ -366,54 +257,15 @@ internal static class ParameterParser
         }
 
         bool TryGetNonStringValueFromString(
-            string nonStrContent, 
+            string nonStrContent,
             out object result)
         {
-            if (parameter.TypeDescriptor.BaseDbType is NpgsqlDbType.Timestamp or NpgsqlDbType.TimestampTz)
+            // Use delegate lookup for type-specific parsing
+            var parser = ParameterParsers.GetParser(parameter.TypeDescriptor.BaseDbType);
+            if (parser is not null && parser(nonStrContent, out var parsed) && parsed is not null)
             {
-                if (DateTime.TryParse(nonStrContent, out var dateTimeValue))
-                {
-                    if (parameter.TypeDescriptor.BaseDbType == NpgsqlDbType.TimestampTz)
-                    {
-                        result = DateTime.SpecifyKind(dateTimeValue, DateTimeKind.Utc);
-                    }
-                    else
-                    {
-                        result = dateTimeValue;
-                    }
-                    return true;
-                }
-            }
-            else if (parameter.TypeDescriptor.BaseDbType == NpgsqlDbType.Date)
-            {
-                if (DateOnly.TryParse(nonStrContent, out var dateTimeValue))
-                {
-                    result = dateTimeValue;
-                    return true;
-                }
-            }
-            else if (parameter.TypeDescriptor.BaseDbType is NpgsqlDbType.Time or NpgsqlDbType.TimeTz)
-            {
-                if (DateTime.TryParse(nonStrContent, out var dateTimeValue))
-                {
-                    if (parameter.TypeDescriptor.BaseDbType == NpgsqlDbType.TimeTz)
-                    {
-                        result = new DateTimeOffset(DateTime.SpecifyKind(dateTimeValue, DateTimeKind.Utc));
-                    }
-                    else
-                    {
-                        result = TimeOnly.FromDateTime(dateTimeValue);
-                    };
-                    return true;
-                }
-            }
-            else if (parameter.TypeDescriptor.BaseDbType == NpgsqlDbType.Uuid)
-            {
-                if (Guid.TryParse(nonStrContent, out var guidValue))
-                {
-                    result = guidValue;
-                    return true;
-                }
+                result = parsed;
+                return true;
             }
             result = null!;
             return false;
