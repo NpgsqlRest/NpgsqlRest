@@ -118,6 +118,7 @@ public class RoutineSource(
                 }
 
                 var returnRecordTypes = reader.Get<string[]>(10);//"return_record_types");
+                var isUnnamedRecord = reader.Get<bool>(11);// "is_unnamed_record");
 
                 string[] expNames = new string[returnRecordNames.Length];
                 Dictionary<int, (string[] FieldNames, TypeDescriptor[] FieldDescriptors, string OriginalColumnName, int[] ExpandedColumnIndices)>? compositeColumnInfo = null;
@@ -219,6 +220,20 @@ public class RoutineSource(
                         };
                     }
                 }
+                else if (string.Equals(returnType, "record", StringComparison.OrdinalIgnoreCase) && !isUnnamedRecord && !returnsSet && returnRecordNames.Length >= 1)
+                {
+                    // Handle case where function returns a named composite type directly (not via OUT params)
+                    // e.g., CREATE FUNCTION get_single_bool_field_type() RETURNS single_bool_field_type
+                    // In this case, returnType is "record" and all returnRecordNames belong to the composite
+                    // We use the FROM syntax: select field1, field2 from schema.function()
+                    // This expands the composite fields so they can be serialized individually
+                    for (var i = 0; i < returnRecordNames.Length; i++)
+                    {
+                        expNames[i] = returnRecordNames[i];
+                    }
+                    // Note: We intentionally do NOT set compositeColumnInfo here because we want the fields
+                    // to be serialized directly as a flat JSON object, not nested under a composite column name
+                }
 
                 // Read array composite type info (columns 25, 26, 27)
                 // These are populated when OUT params include arrays of composite types
@@ -274,7 +289,6 @@ public class RoutineSource(
                     returnTypeDescriptor = [.. returnRecordTypes.Select(x => new TypeDescriptor(x))];
                 }
 
-                bool isUnnamedRecord = reader.Get<bool>(11);// "is_unnamed_record");
                 var routineType = type.GetEnum<RoutineType>();
                 var callIdent = routineType == RoutineType.Procedure ? "call " : "select ";
                 var paramCount = reader.Get<int>(12);// "param_count");
@@ -319,7 +333,11 @@ public class RoutineSource(
                 var returnRecordCount = returnRecordNames.Length; // Use actual array length (may have changed for nested JSON)
                 var variadic = reader.Get<bool>(16);// "has_variadic");
                 string from;
-                if (isVoid || returnRecordCount == 1)
+                // When function returns a named composite type (returnType == "record" but not unnamed),
+                // we need field expansion via FROM syntax even when there's only one field,
+                // otherwise PostgreSQL returns the composite representation like "(value)"
+                bool hasNamedCompositeReturn = string.Equals(returnType, "record", StringComparison.OrdinalIgnoreCase) && !isUnnamedRecord;
+                if (isVoid || (returnRecordCount == 1 && !hasNamedCompositeReturn))
                 {
                     from = callIdent;
                 }

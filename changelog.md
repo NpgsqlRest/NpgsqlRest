@@ -4,6 +4,17 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [3.4.8](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.4.8) (2025-01-26)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.4.7...3.4.8)
+
+### Fix: Single-Field Composite Type Returns
+
+Fixed functions returning single-field composite types returning `{"status":"(t)"}` instead of `{"status":true}`.
+
+
+---
+
 ## Version [3.4.7](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.4.7) (2025-01-21)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.4.6...3.4.7)
