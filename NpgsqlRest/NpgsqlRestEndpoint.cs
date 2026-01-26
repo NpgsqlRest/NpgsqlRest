@@ -298,7 +298,7 @@ public class NpgsqlRestEndpoint(
                         }
                         else if (context.User?.Identity?.IsAuthenticated is true && parameter.IsUserClaims is true)
                         {
-                            parameter.Value = context.User.GetUserClaimsDbParam(claimsDict!);
+                            parameter.Value = claimsDict?.GetUserClaimsDbParam() ?? DBNull.Value;
                         }
                     }
                     if (parameter.IsUploadMetadata is true)
@@ -909,7 +909,7 @@ public class NpgsqlRestEndpoint(
                         }
                         else if (context.User?.Identity?.IsAuthenticated is true && parameter.IsUserClaims is true)
                         {
-                            parameter.Value = context.User!.GetUserClaimsDbParam(claimsDict!);
+                            parameter.Value = claimsDict?.GetUserClaimsDbParam() ?? DBNull.Value;
                         }
                     }
                     if (parameter.IsUploadMetadata is true)
@@ -1500,7 +1500,7 @@ public class NpgsqlRestEndpoint(
                         // Add claims JSON header
                         if (Options.AuthenticationOptions.ClaimsJsonContextKey is not null)
                         {
-                            var claimsJson = context.User!.GetUserClaimsDbParam(claimsDict!);
+                            var claimsJson = claimsDict.GetUserClaimsDbParam();
                             if (claimsJson is string claimsJsonStr)
                             {
                                 userContextHeaders[Options.AuthenticationOptions.ClaimsJsonContextKey] = claimsJsonStr;
@@ -1583,7 +1583,7 @@ public class NpgsqlRestEndpoint(
                     {
                         var cmd = new NpgsqlBatchCommand(Consts.SetContext);
                         cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(Options.AuthenticationOptions.ClaimsJsonContextKey));
-                        cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(context.User!.GetUserClaimsDbParam(claimsDict!)));
+                        cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(claimsDict?.GetUserClaimsDbParam() ?? DBNull.Value));
                         batch.BatchCommands.Add(cmd);
                     }
                     if (context.User?.Identity?.IsAuthenticated is true)

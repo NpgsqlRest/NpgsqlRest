@@ -125,8 +125,7 @@ public class ExcelUploadHandler(
         var claimsKey = options.DefaultUploadHandlerOptions.RowCommandUserClaimsKey;
         if (string.IsNullOrEmpty(claimsKey) is false && context.User?.Identity?.IsAuthenticated == true)
         {
-            var claimsDict = context.User.BuildClaimsDictionary(Options.AuthenticationOptions);
-            userClaimsJson = $",{PgConverters.SerializeString(claimsKey)}:{context.User.GetUserClaimsDbParam(claimsDict)}";
+            userClaimsJson = $",{PgConverters.SerializeString(claimsKey)}:{context.User.BuildClaimsDictionary(Options.AuthenticationOptions).GetUserClaimsDbParam()}";
         }
 
         StringBuilder result = new(context.Request.Form.Files.Count * 100);

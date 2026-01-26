@@ -211,6 +211,50 @@ public static class ConfigDefaults
                     ["InfoUrl"] = "https://graph.facebook.com/me?fields=id,name,email",
                     ["EmailUrl"] = null
                 }
+            },
+            ["PasskeyAuth"] = new JsonObject
+            {
+                ["Enabled"] = false,
+                ["EnableRegister"] = false,
+                ["RelyingPartyId"] = null,
+                ["RelyingPartyName"] = null,
+                ["RelyingPartyOrigins"] = new JsonArray(),
+                ["AddPasskeyOptionsPath"] = "/api/passkey/add/options",
+                ["AddPasskeyPath"] = "/api/passkey/add",
+                ["RegistrationOptionsPath"] = "/api/passkey/register/options",
+                ["RegistrationPath"] = "/api/passkey/register",
+                ["LoginOptionsPath"] = "/api/passkey/login/options",
+                ["LoginPath"] = "/api/passkey/login",
+                ["ChallengeTimeoutMinutes"] = 5,
+                ["UserVerificationRequirement"] = "preferred",
+                ["ResidentKeyRequirement"] = "preferred",
+                ["AttestationConveyance"] = "none",
+                // GROUP 1: Challenge Commands
+                ["ChallengeAddExistingUserCommand"] = "select * from passkey_challenge_add_existing($1,$2)",
+                ["ChallengeRegistrationCommand"] = "select * from passkey_challenge_registration($1)",
+                ["ChallengeAuthenticationCommand"] = "select * from passkey_challenge_authentication($1,$2)",
+                // GROUP 2: Challenge Verify Command
+                ["ChallengeVerifyCommand"] = "select * from passkey_verify_challenge($1,$2)",
+                ["ValidateSignCount"] = true,
+                // GROUP 3: Authentication Data Command
+                ["AuthenticateDataCommand"] = "select * from passkey_authenticate_data($1)",
+                // GROUP 4: Complete Commands
+                ["AddExistingUserCompleteCommand"] = "select * from passkey_add_existing_complete($1,$2,$3,$4,$5,$6,$7,$8)",
+                ["RegistrationCompleteCommand"] = "select * from passkey_registration_complete($1,$2,$3,$4,$5,$6,$7,$8)",
+                ["AuthenticateCompleteCommand"] = "select * from passkey_authenticate_complete($1,$2,$3,$4)",
+                ["ClientAnalyticsIpKey"] = "ip",
+                ["StatusColumnName"] = "status",
+                ["MessageColumnName"] = "message",
+                ["ChallengeColumnName"] = "challenge",
+                ["ChallengeIdColumnName"] = "challenge_id",
+                ["UserNameColumnName"] = "user_name",
+                ["UserDisplayNameColumnName"] = "user_display_name",
+                ["UserHandleColumnName"] = "user_handle",
+                ["ExcludeCredentialsColumnName"] = "exclude_credentials",
+                ["AllowCredentialsColumnName"] = "allow_credentials",
+                ["PublicKeyColumnName"] = "public_key",
+                ["PublicKeyAlgorithmColumnName"] = "public_key_algorithm",
+                ["SignCountColumnName"] = "sign_count"
             }
         };
     }
@@ -602,6 +646,7 @@ public static class ConfigDefaults
             ["DefaultUserIdClaimType"] = "user_id",
             ["DefaultNameClaimType"] = "user_name",
             ["DefaultRoleClaimType"] = "user_roles",
+            ["DefaultDisplayNameClaimType"] = "display_name",
             ["SerializeAuthEndpointsResponse"] = false,
             ["ObfuscateAuthParameterLogValues"] = true,
             ["PasswordVerificationFailedCommand"] = null,

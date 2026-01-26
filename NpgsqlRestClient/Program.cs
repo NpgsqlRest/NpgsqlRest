@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.DataProtection;
 using NpgsqlRest;
 using NpgsqlRest.Defaults;
 using NpgsqlRestClient;
+using NpgsqlRestClient.Fido2;
 
 using Npgsql;
 using NpgsqlRest.CrudSource;
@@ -142,6 +143,7 @@ var connectionStrings =
 
 var dataProtectionName = builder.BuildDataProtection(cmdRetryStrategy);
 builder.BuildAuthentication();
+builder.BuildPasskeyAuthentication();
 var usingCors = builder.BuildCors();
 var compressionEnabled = builder.ConfigureResponseCompression();
 var antiForgeryUsed = builder.ConfigureAntiForgery();
@@ -291,9 +293,19 @@ app.UseNpgsqlRest(options);
 if (builder.ExternalAuthConfig?.Enabled is true)
 {
     new ExternalAuth(
-        builder.ExternalAuthConfig, 
+        builder.ExternalAuthConfig,
         connectionString,
         app,
+        options,
+        cmdRetryStrategy,
+        logConnectionNoticeEventsMode);
+}
+
+if (builder.PasskeyConfig?.Enabled is true)
+{
+    app.UsePasskeyAuth(
+        builder.PasskeyConfig,
+        connectionString,
         options,
         cmdRetryStrategy,
         logConnectionNoticeEventsMode);

@@ -186,7 +186,7 @@ public static class CompositeTypeCache
     {
         using var command = connection.CreateCommand();
         command.CommandText = TypeQuery;
-        command.TraceCommand(nameof(CompositeTypeCache));
+        command.LogCommand(nameof(CompositeTypeCache));
         using var reader = command.ExecuteReader();
 
         // Group rows by type name to build metadata

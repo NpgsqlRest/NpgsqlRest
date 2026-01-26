@@ -60,6 +60,11 @@ public class NpgsqlRestAuthenticationOptions
     public string DefaultRoleClaimType { get; set; } = "user_roles"; // ClaimTypes.Role;
 
     /// <summary>
+    /// Default claim type for user display name.
+    /// </summary>
+    public string DefaultDisplayNameClaimType { get; set; } = "display_name";
+
+    /// <summary>
     /// If true, return any response from auth endpoints (login and logout) if response hasn't been written by auth handler.
     /// For cookie auth, this will return full record to response as returned by the routine.
     /// For bearer token auth, this will be ignored because bearer token auth writes it's own response (with tokens).

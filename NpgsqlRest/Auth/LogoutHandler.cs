@@ -7,7 +7,7 @@ public static class LogoutHandler
     public static async Task HandleAsync(NpgsqlCommand command, RoutineEndpoint endpoint, HttpContext context, CancellationToken cancellationToken = default)
     {
         var path = string.Concat(endpoint.Method.ToString(), " ", endpoint.Path);
-        command.TraceCommand(path);
+        command.LogCommand(path);
 
         if (endpoint.Routine.IsVoid)
         {

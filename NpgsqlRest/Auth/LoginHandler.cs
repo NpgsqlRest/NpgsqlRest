@@ -27,7 +27,7 @@ public static class LoginHandler
         var verificationPerformed = false;
         var verificationFailed = false;
         
-        command.TraceCommand(tracePath);
+        command.LogCommand(tracePath);
         await using (NpgsqlDataReader reader = await command.ExecuteReaderWithRetryAsync(retryStrategy, cancellationToken))
         {
             if (await reader.ReadAsync(cancellationToken) is false)
@@ -204,7 +204,7 @@ public static class LoginHandler
                         {
                             failedCommand.Parameters.Add(NpgsqlRestParameter.CreateTextParam(userName));
                         }
-                        failedCommand.TraceCommand(tracePath);
+                        failedCommand.LogCommand(tracePath);
                         await failedCommand.ExecuteNonQueryWithRetryAsync(retryStrategy, cancellationToken);
                     }
                 }
@@ -232,7 +232,7 @@ public static class LoginHandler
                         {
                             succeededCommand.Parameters.Add(NpgsqlRestParameter.CreateTextParam(userName));
                         }
-                        succeededCommand.TraceCommand(tracePath);
+                        succeededCommand.LogCommand(tracePath);
                         await succeededCommand.ExecuteNonQueryWithRetryAsync(retryStrategy, cancellationToken);
                     }
                 }

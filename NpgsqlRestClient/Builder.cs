@@ -15,6 +15,7 @@ using Microsoft.Extensions.Primitives;
 using Microsoft.Net.Http.Headers;
 using Npgsql;
 using NpgsqlRest;
+using NpgsqlRestClient.Fido2;
 using Serilog;
 using Serilog.Extensions.Logging;
 using Serilog.Sinks.OpenTelemetry;
@@ -42,6 +43,7 @@ public class Builder
     public string? ConnectionString { get; private set; } = null;
     public string? ConnectionName { get; private set; } = null;
     public ExternalAuthConfig? ExternalAuthConfig { get; private set; } = null;
+    public PasskeyConfig? PasskeyConfig { get; private set; } = null;
     public bool SslEnabled { get; private set; } = false;
 
     public void BuildInstance()
@@ -727,6 +729,74 @@ public class Builder
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Builds the PasskeyConfig from configuration settings.
+    /// </summary>
+    public void BuildPasskeyAuthentication()
+    {
+        var authCfg = _config.Cfg.GetSection("Auth");
+        var passkeyCfg = authCfg?.GetSection("PasskeyAuth");
+
+        if (passkeyCfg is null || _config.GetConfigBool("Enabled", passkeyCfg) is not true)
+        {
+            return;
+        }
+
+        PasskeyConfig = new PasskeyConfig
+        {
+            Enabled = true,
+            EnableRegister = _config.GetConfigBool("EnableRegister", passkeyCfg, false),
+            RelyingPartyId = _config.GetConfigStr("RelyingPartyId", passkeyCfg),
+            RelyingPartyName = _config.GetConfigStr("RelyingPartyName", passkeyCfg) ?? Instance.Environment.ApplicationName,
+            RelyingPartyOrigins = _config.GetConfigEnumerable("RelyingPartyOrigins", passkeyCfg)?.ToArray() ?? [],
+            AddPasskeyOptionsPath = _config.GetConfigStr("AddPasskeyOptionsPath", passkeyCfg) ?? "/api/passkey/add/options",
+            AddPasskeyPath = _config.GetConfigStr("AddPasskeyPath", passkeyCfg) ?? "/api/passkey/add",
+            RegistrationOptionsPath = _config.GetConfigStr("RegistrationOptionsPath", passkeyCfg) ?? "/api/passkey/register/options",
+            RegistrationPath = _config.GetConfigStr("RegistrationPath", passkeyCfg) ?? "/api/passkey/register",
+            LoginOptionsPath = _config.GetConfigStr("LoginOptionsPath", passkeyCfg) ?? "/api/passkey/login/options",
+            LoginPath = _config.GetConfigStr("LoginPath", passkeyCfg) ?? "/api/passkey/login",
+            ChallengeTimeoutMinutes = _config.GetConfigInt("ChallengeTimeoutMinutes", passkeyCfg) ?? 5,
+            UserVerificationRequirement = _config.GetConfigStr("UserVerificationRequirement", passkeyCfg) ?? "preferred",
+            ResidentKeyRequirement = _config.GetConfigStr("ResidentKeyRequirement", passkeyCfg) ?? "preferred",
+            AttestationConveyance = _config.GetConfigStr("AttestationConveyance", passkeyCfg) ?? "none",
+            // GROUP 1: Challenge Commands
+            ChallengeAddExistingUserCommand = _config.GetConfigStr("ChallengeAddExistingUserCommand", passkeyCfg) ?? "select * from passkey_challenge_add_existing($1,$2)",
+            ChallengeRegistrationCommand = _config.GetConfigStr("ChallengeRegistrationCommand", passkeyCfg) ?? "select * from passkey_challenge_registration($1)",
+            ChallengeAuthenticationCommand = _config.GetConfigStr("ChallengeAuthenticationCommand", passkeyCfg) ?? "select * from passkey_challenge_authentication($1,$2)",
+            // GROUP 2: Challenge Verify Command
+            ChallengeVerifyCommand = _config.GetConfigStr("ChallengeVerifyCommand", passkeyCfg) ?? "select * from passkey_verify_challenge($1,$2)",
+            ValidateSignCount = _config.GetConfigBool("ValidateSignCount", passkeyCfg, true),
+            // GROUP 3: Authentication Data Command
+            AuthenticateDataCommand = _config.GetConfigStr("AuthenticateDataCommand", passkeyCfg) ?? "select * from passkey_authenticate_data($1)",
+            // GROUP 4: Complete Commands
+            AddExistingUserCompleteCommand = _config.GetConfigStr("AddExistingUserCompleteCommand", passkeyCfg) ?? "select * from passkey_add_existing_complete($1,$2,$3,$4,$5,$6,$7,$8)",
+            RegistrationCompleteCommand = _config.GetConfigStr("RegistrationCompleteCommand", passkeyCfg) ?? "select * from passkey_registration_complete($1,$2,$3,$4,$5,$6,$7,$8)",
+            AuthenticateCompleteCommand = _config.GetConfigStr("AuthenticateCompleteCommand", passkeyCfg) ?? "select * from passkey_authenticate_complete($1,$2,$3,$4)",
+            ClientAnalyticsIpKey = _config.GetConfigStr("ClientAnalyticsIpKey", passkeyCfg) ?? "ip",
+            StatusColumnName = _config.GetConfigStr("StatusColumnName", passkeyCfg) ?? "status",
+            MessageColumnName = _config.GetConfigStr("MessageColumnName", passkeyCfg) ?? "message",
+            ChallengeColumnName = _config.GetConfigStr("ChallengeColumnName", passkeyCfg) ?? "challenge",
+            ChallengeIdColumnName = _config.GetConfigStr("ChallengeIdColumnName", passkeyCfg) ?? "challenge_id",
+            UserNameColumnName = _config.GetConfigStr("UserNameColumnName", passkeyCfg) ?? "user_name",
+            UserDisplayNameColumnName = _config.GetConfigStr("UserDisplayNameColumnName", passkeyCfg) ?? "user_display_name",
+            UserHandleColumnName = _config.GetConfigStr("UserHandleColumnName", passkeyCfg) ?? "user_handle",
+            ExcludeCredentialsColumnName = _config.GetConfigStr("ExcludeCredentialsColumnName", passkeyCfg) ?? "exclude_credentials",
+            AllowCredentialsColumnName = _config.GetConfigStr("AllowCredentialsColumnName", passkeyCfg) ?? "allow_credentials",
+            PublicKeyColumnName = _config.GetConfigStr("PublicKeyColumnName", passkeyCfg) ?? "public_key",
+            PublicKeyAlgorithmColumnName = _config.GetConfigStr("PublicKeyAlgorithmColumnName", passkeyCfg) ?? "public_key_algorithm",
+            SignCountColumnName = _config.GetConfigStr("SignCountColumnName", passkeyCfg) ?? "sign_count"
+        };
+
+        Logger?.LogDebug(
+            "Using Passkey Authentication: RP ID={RelyingPartyId}, RP Name={RelyingPartyName}, Origins={Origins}, " +
+            "UV={UserVerification}, RK={ResidentKey}",
+            PasskeyConfig.RelyingPartyId ?? "(auto)",
+            PasskeyConfig.RelyingPartyName ?? "(app name)",
+            PasskeyConfig.RelyingPartyOrigins.Length > 0 ? string.Join(", ", PasskeyConfig.RelyingPartyOrigins) : "(any)",
+            PasskeyConfig.UserVerificationRequirement,
+            PasskeyConfig.ResidentKeyRequirement);
     }
 
     public bool BuildCors()

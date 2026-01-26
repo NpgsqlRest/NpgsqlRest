@@ -383,7 +383,7 @@ public static class Ext
         return claimValues;
     }
 
-    public static object GetUserClaimsDbParam(this ClaimsPrincipal user, Dictionary<string, object?> claimValues)
+    public static object GetUserClaimsDbParam(this Dictionary<string, object?> claimValues)
     {
         if (claimValues.Count == 0)
         {
@@ -513,25 +513,6 @@ public static class Ext
             return null;
         }
         return null;
-    }
-    
-    public static void TraceCommand(this NpgsqlCommand command, string name)
-    {
-        if (Logger?.IsEnabled(LogLevel.Trace) is true && Logger is not null)
-        {
-            StringBuilder sb = new();
-            for (int i = 0; i < command.Parameters.Count; i++)
-            {
-                sb.Append('$');
-                sb.Append(i+1);
-                sb.Append("=");
-                sb.Append(PgConverters.SerializeDatbaseObject(command.Parameters[i].Value));
-                sb.Append('\n');
-            }
-
-            sb.Append(command.CommandText);
-            Logger?.LogTrace("{name}:\n{query}", name, sb.ToString());
-        }
     }
 
     public static bool IsSsl(this HttpRequest request)

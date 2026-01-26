@@ -89,8 +89,7 @@ public class CsvUploadHandler(RetryStrategy? retryStrategy) : BaseUploadHandler,
         var claimsKey = Options.UploadOptions.DefaultUploadHandlerOptions.RowCommandUserClaimsKey;
         if (string.IsNullOrEmpty(claimsKey) is false && context.User?.Identity?.IsAuthenticated == true)
         {
-            var claimsDict = context.User.BuildClaimsDictionary(Options.AuthenticationOptions);
-            userClaimsJson = $",{SerializeString(claimsKey)}:{context.User.GetUserClaimsDbParam(claimsDict)}";
+            userClaimsJson = $",{SerializeString(claimsKey)}:{context.User.BuildClaimsDictionary(Options.AuthenticationOptions).GetUserClaimsDbParam()}";
         }
 
         StringBuilder result = new(context.Request.Form.Files.Count*100);

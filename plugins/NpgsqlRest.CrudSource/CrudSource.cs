@@ -249,7 +249,7 @@ public class CrudSource(
         AddParameter(command, IncludeNames ?? options.IncludeNames, true); // $7
         AddParameter(command, ExcludeNames ?? options.ExcludeNames, true); // $8
         
-        command.TraceCommand(nameof(CrudCommandType));
+        command.LogCommand(nameof(CrudCommandType));
         using NpgsqlDataReader reader = command.ExecuteReaderWithRetry(retryStrategy);
         while (reader.Read())
         {

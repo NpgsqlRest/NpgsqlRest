@@ -87,7 +87,7 @@ public class RoutineSource(
             command.AddParameter(IncludeLanguages, true); // $9
             command.AddParameter(ExcludeLanguages is null ? ["c", "internal"] : ExcludeLanguages, true); // $10
 
-            command.TraceCommand(nameof(RoutineSource));
+            command.LogCommand(nameof(RoutineSource));
             using NpgsqlDataReader reader = command.ExecuteReaderWithRetry(retryStrategy);
             while (reader.Read())
             {

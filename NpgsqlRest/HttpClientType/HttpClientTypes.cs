@@ -40,7 +40,7 @@ group by n.nspname, t.typname, des.description";
 
             using var command = connection.CreateCommand();
             command.CommandText = TypeQuery;
-            command.TraceCommand(nameof(HttpClientTypes));
+            command.LogCommand(nameof(HttpClientTypes));
             using NpgsqlDataReader reader = command.ExecuteReaderWithRetry(retryStrategy);
 
             var definitions = new Dictionary<string, HttpTypeDefinition>();

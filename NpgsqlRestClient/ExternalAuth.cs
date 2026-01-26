@@ -410,13 +410,15 @@ public class ExternalAuth
                 }
             }
         }
-        
+
+        CommandLogger.LogCommand(command, Logger, "ExternalAuth.Login");
+
         await LoginHandler.HandleAsync(
-            command, 
-            context, 
+            command,
+            context,
             retryStrategy,
             tracePath: "ExternalAuth.ProcessAsync",
-            performHashVerification: false, 
+            performHashVerification: false,
             assignUserPrincipalToContext: false);
     }
     
