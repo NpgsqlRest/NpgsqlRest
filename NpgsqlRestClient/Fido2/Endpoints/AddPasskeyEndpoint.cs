@@ -114,7 +114,7 @@ public sealed class AddPasskeyEndpoint(PasskeyEndpointContext ctx)
 
         CommandLogger.LogCommand(verifyCommand, ctx.Logger, LogChallengeVerify);
 
-        var challengeResult = await verifyCommand.ExecuteScalarAsync(context.RequestAborted);
+        var challengeResult = await verifyCommand.ExecuteScalarWithRetryAsync(ctx.RetryStrategy, context.RequestAborted, ctx.Logger);
         if (challengeResult == null || challengeResult == DBNull.Value)
         {
             await ExecuteTransactionCommandAsync(connection, "ROLLBACK", context.RequestAborted);
@@ -255,7 +255,7 @@ public sealed class AddPasskeyEndpoint(PasskeyEndpointContext ctx)
         int storeStatus = 200;
         string storeMessage = "Passkey added successfully";
 
-        await using (var storeReader = await storeCommand.ExecuteReaderAsync(context.RequestAborted))
+        await using (var storeReader = await storeCommand.ExecuteReaderWithRetryAsync(ctx.RetryStrategy, context.RequestAborted, ctx.Logger))
         {
             if (await storeReader.ReadAsync(context.RequestAborted))
             {

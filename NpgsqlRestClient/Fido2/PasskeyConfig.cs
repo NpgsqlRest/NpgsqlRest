@@ -8,6 +8,10 @@ public class PasskeyConfig
 
     public string? RateLimiterPolicy { get; set; }
 
+    public string? ConnectionName { get; set; }
+
+    public string? CommandRetryStrategy { get; set; } = "default";
+
     public string? RelyingPartyId { get; set; }
 
     public string? RelyingPartyName { get; set; }

@@ -58,18 +58,12 @@ internal static class PasskeyHelpers
         PasskeyEndpointContext ctx,
         CancellationToken cancellationToken)
     {
-        var connection = new NpgsqlConnection(ctx.ConnectionString);
-
-        if (ctx.Options.LogConnectionNoticeEvents)
-        {
-            connection.Notice += (sender, args) =>
-            {
-                NpgsqlRestLogger.LogConnectionNotice(args.Notice, ctx.LoggingMode);
-            };
-        }
-
-        await connection.OpenAsync(cancellationToken);
-        return connection;
+        return await ConnectionHelper.OpenConnectionAsync(
+            ctx.Options,
+            ctx.Config.ConnectionName,
+            ctx.LoggingMode,
+            cancellationToken,
+            ctx.Logger);
     }
 
     public static async Task ExecuteTransactionCommandAsync(

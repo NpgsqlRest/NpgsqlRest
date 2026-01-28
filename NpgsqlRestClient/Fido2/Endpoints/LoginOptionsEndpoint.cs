@@ -97,7 +97,7 @@ public sealed class LoginOptionsEndpoint(PasskeyEndpointContext ctx)
         string? challengeId = null;
         string? allowCredentialsJson = null;
 
-        await using (var reader = await command.ExecuteReaderAsync(context.RequestAborted))
+        await using (var reader = await command.ExecuteReaderWithRetryAsync(ctx.RetryStrategy, context.RequestAborted, ctx.Logger))
         {
             if (!await reader.ReadAsync(context.RequestAborted))
             {

@@ -305,9 +305,8 @@ if (builder.PasskeyConfig?.Enabled is true)
 {
     app.UsePasskeyAuth(
         builder.PasskeyConfig,
-        connectionString,
         options,
-        cmdRetryStrategy,
+        cmdRetryOpts,
         logConnectionNoticeEventsMode);
 }
 

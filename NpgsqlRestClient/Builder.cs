@@ -749,6 +749,8 @@ public class Builder
             Enabled = true,
             EnableRegister = _config.GetConfigBool("EnableRegister", passkeyCfg, false),
             RateLimiterPolicy = _config.GetConfigStr("RateLimiterPolicy", passkeyCfg),
+            ConnectionName = _config.GetConfigStr("ConnectionName", passkeyCfg),
+            CommandRetryStrategy = _config.GetConfigStr("CommandRetryStrategy", passkeyCfg) ?? "default",
             RelyingPartyId = _config.GetConfigStr("RelyingPartyId", passkeyCfg),
             RelyingPartyName = _config.GetConfigStr("RelyingPartyName", passkeyCfg) ?? Instance.Environment.ApplicationName,
             RelyingPartyOrigins = _config.GetConfigEnumerable("RelyingPartyOrigins", passkeyCfg)?.ToArray() ?? [],

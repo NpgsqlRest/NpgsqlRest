@@ -9,9 +9,8 @@ public static class PasskeyAuth
     public static void UsePasskeyAuth(
         this WebApplication app,
         PasskeyConfig? config,
-        string connectionString,
         NpgsqlRestOptions options,
-        RetryStrategy? retryStrategy,
+        CommandRetryOptions commandRetryOptions,
         PostgresConnectionNoticeLoggingMode loggingMode)
     {
         if (config?.Enabled != true)
@@ -21,11 +20,17 @@ public static class PasskeyAuth
 
         Logger = app.Services.GetService<ILoggerFactory>()?.CreateLogger("PasskeyAuth");
 
+        // Resolve command retry strategy from config
+        RetryStrategy? commandRetryStrategy = null;
+        if (commandRetryOptions.Enabled && !string.IsNullOrEmpty(config.CommandRetryStrategy))
+        {
+            commandRetryOptions.Strategies.TryGetValue(config.CommandRetryStrategy, out commandRetryStrategy);
+        }
+
         var ctx = new PasskeyEndpointContext(
             config,
-            connectionString,
             options,
-            retryStrategy,
+            commandRetryStrategy,
             loggingMode,
             Logger);
 

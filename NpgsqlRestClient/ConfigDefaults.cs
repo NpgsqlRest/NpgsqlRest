@@ -217,6 +217,8 @@ public static class ConfigDefaults
                 ["Enabled"] = false,
                 ["EnableRegister"] = false,
                 ["RateLimiterPolicy"] = null,
+                ["ConnectionName"] = null,
+                ["CommandRetryStrategy"] = "default",
                 ["RelyingPartyId"] = null,
                 ["RelyingPartyName"] = null,
                 ["RelyingPartyOrigins"] = new JsonArray(),

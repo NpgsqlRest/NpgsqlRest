@@ -131,7 +131,7 @@ public sealed class LoginEndpoint(PasskeyEndpointContext ctx)
 
         CommandLogger.LogCommand(verifyCommand, ctx.Logger, LogChallengeVerify);
 
-        var challengeResult = await verifyCommand.ExecuteScalarAsync(context.RequestAborted);
+        var challengeResult = await verifyCommand.ExecuteScalarWithRetryAsync(ctx.RetryStrategy, context.RequestAborted, ctx.Logger);
         if (challengeResult == null || challengeResult == DBNull.Value)
         {
             await ExecuteTransactionCommandAsync(connection, "ROLLBACK", context.RequestAborted);
@@ -155,7 +155,7 @@ public sealed class LoginEndpoint(PasskeyEndpointContext ctx)
         long storedSignCount = 0;
         string? userContext = null;
 
-        await using (var dataReader = await dataCommand.ExecuteReaderAsync(context.RequestAborted))
+        await using (var dataReader = await dataCommand.ExecuteReaderWithRetryAsync(ctx.RetryStrategy, context.RequestAborted, ctx.Logger))
         {
             if (!await dataReader.ReadAsync(context.RequestAborted))
             {

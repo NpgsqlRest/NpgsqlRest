@@ -127,7 +127,7 @@ public sealed class RegistrationOptionsEndpoint(PasskeyEndpointContext ctx)
         string? excludeCredentialsJson = null;
         string? userContextJson = null;
 
-        await using (var reader = await command.ExecuteReaderAsync(context.RequestAborted))
+        await using (var reader = await command.ExecuteReaderWithRetryAsync(ctx.RetryStrategy, context.RequestAborted, ctx.Logger))
         {
             if (!await reader.ReadAsync(context.RequestAborted))
             {
