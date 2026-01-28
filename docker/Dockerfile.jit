@@ -24,6 +24,7 @@ COPY NpgsqlRest/ NpgsqlRest/
 COPY NpgsqlRestClient/*.cs NpgsqlRestClient/
 COPY NpgsqlRestClient/*.csproj NpgsqlRestClient/
 COPY NpgsqlRestClient/appsettings.json NpgsqlRestClient/
+COPY NpgsqlRestClient/Fido2/ NpgsqlRestClient/Fido2/
 COPY plugins/ plugins/
 
 # Build and publish
