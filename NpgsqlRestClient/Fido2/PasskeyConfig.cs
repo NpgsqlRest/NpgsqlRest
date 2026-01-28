@@ -42,7 +42,7 @@ public class PasskeyConfig
 
     // GROUP 2: Challenge Verify Command (used by ALL scenarios)
 
-    public string ChallengeVerifyCommand { get; set; } = "select * from passkey_verify_challenge($1,$2)";
+    public string VerifyChallengeCommand { get; set; } = "select * from passkey_verify_challenge($1,$2)";
 
     public bool ValidateSignCount { get; set; } = true;
 
@@ -52,11 +52,11 @@ public class PasskeyConfig
 
     // GROUP 4: Complete Commands (finalize each scenario)
 
-    public string AddExistingUserCompleteCommand { get; set; } = "select * from passkey_add_existing_complete($1,$2,$3,$4,$5,$6,$7,$8)";
+    public string CompleteAddExistingUserCommand { get; set; } = "select * from passkey_complete_add_existing($1,$2,$3,$4,$5,$6,$7,$8)";
 
-    public string RegistrationCompleteCommand { get; set; } = "select * from passkey_registration_complete($1,$2,$3,$4,$5,$6,$7,$8)";
+    public string CompleteRegistrationCommand { get; set; } = "select * from passkey_complete_registration($1,$2,$3,$4,$5,$6,$7,$8)";
 
-    public string AuthenticateCompleteCommand { get; set; } = "select * from passkey_authenticate_complete($1,$2,$3,$4)";
+    public string CompleteAuthenticateCommand { get; set; } = "select * from passkey_complete_authenticate($1,$2,$3,$4)";
 
     // Column name configuration for database responses
 

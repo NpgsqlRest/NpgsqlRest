@@ -63,12 +63,6 @@ public sealed class LoginEndpoint(PasskeyEndpointContext ctx)
     private const string LogLoginComplete = "PasskeyAuth.LoginComplete";
     private const string TracePath = "PasskeyAuth.HandleLoginAsync";
 
-    private const string ErrorInvalidRequest = "invalid_request";
-    private const string ErrorChallengeInvalid = "challenge_invalid";
-    private const string ErrorDatabaseError = "database_error";
-    private const string ErrorLoginFailed = "login_failed";
-    private const string ErrorAssertionInvalid = "assertion_invalid";
-
     public async Task InvokeAsync(HttpContext context)
     {
         var config = ctx.Config;
@@ -82,7 +76,7 @@ public sealed class LoginEndpoint(PasskeyEndpointContext ctx)
         catch
         {
             await WriteErrorResponseAsync(context, HttpStatusCode.BadRequest,
-                ErrorInvalidRequest, "Invalid request body");
+                PasskeyErrorCode.InvalidRequest, "Invalid request body");
             return;
         }
 
@@ -93,7 +87,7 @@ public sealed class LoginEndpoint(PasskeyEndpointContext ctx)
             string.IsNullOrEmpty(request.Signature))
         {
             await WriteErrorResponseAsync(context, HttpStatusCode.BadRequest,
-                ErrorInvalidRequest, "Missing required fields");
+                PasskeyErrorCode.InvalidRequest, "Missing required fields");
             return;
         }
 
@@ -105,7 +99,7 @@ public sealed class LoginEndpoint(PasskeyEndpointContext ctx)
         if (credentialId == null || authenticatorData == null || clientDataJson == null || signature == null)
         {
             await WriteErrorResponseAsync(context, HttpStatusCode.BadRequest,
-                ErrorInvalidRequest, "Invalid base64url encoding");
+                PasskeyErrorCode.InvalidRequest, "Invalid base64url encoding");
             return;
         }
 
@@ -120,7 +114,7 @@ public sealed class LoginEndpoint(PasskeyEndpointContext ctx)
         var requireUv = config.UserVerificationRequirement == "required";
 
         await using var verifyCommand = connection.CreateCommand();
-        verifyCommand.CommandText = config.ChallengeVerifyCommand;
+        verifyCommand.CommandText = config.VerifyChallengeCommand;
         if (long.TryParse(request.ChallengeId, out var challengeIdLong))
         {
             verifyCommand.Parameters.AddWithValue(challengeIdLong);
@@ -142,7 +136,7 @@ public sealed class LoginEndpoint(PasskeyEndpointContext ctx)
         {
             await ExecuteTransactionCommandAsync(connection, "ROLLBACK", context.RequestAborted);
             await WriteErrorResponseAsync(context, HttpStatusCode.BadRequest,
-                ErrorChallengeInvalid, ValidationError.ChallengeNotFound);
+                PasskeyErrorCode.ChallengeInvalid, ValidationError.ChallengeNotFound);
             return;
         }
 
@@ -154,39 +148,47 @@ public sealed class LoginEndpoint(PasskeyEndpointContext ctx)
 
         CommandLogger.LogCommand(dataCommand, ctx.Logger, LogLoginData);
 
-        await using var dataReader = await dataCommand.ExecuteReaderAsync(context.RequestAborted);
-
-        if (!await dataReader.ReadAsync(context.RequestAborted))
-        {
-            await ExecuteTransactionCommandAsync(connection, "ROLLBACK", context.RequestAborted);
-            await WriteErrorResponseAsync(context, HttpStatusCode.InternalServerError,
-                ErrorDatabaseError, "Failed to get login data from database");
-            return;
-        }
-
-        var status = dataReader.GetInt32(dataReader.GetOrdinal(config.StatusColumnName));
-        if (status != 200)
-        {
-            var errorMessage = dataReader.IsDBNull(dataReader.GetOrdinal(config.MessageColumnName))
-                ? "Login failed"
-                : dataReader.GetString(dataReader.GetOrdinal(config.MessageColumnName));
-            await ExecuteTransactionCommandAsync(connection, "ROLLBACK", context.RequestAborted);
-            await WriteErrorResponseAsync(context, (HttpStatusCode)status, ErrorLoginFailed, errorMessage);
-            return;
-        }
-        var publicKey = (byte[])dataReader[config.PublicKeyColumnName];
-        var algorithm = dataReader.GetInt32(dataReader.GetOrdinal(config.PublicKeyAlgorithmColumnName));
-        var storedSignCount = config.ValidateSignCount
-            ? dataReader.GetInt64(dataReader.GetOrdinal(config.SignCountColumnName))
-            : 0L;
-
+        int status;
+        string? errorMessage = null;
+        byte[]? publicKey = null;
+        int algorithm = 0;
+        long storedSignCount = 0;
         string? userContext = null;
-        if (!dataReader.IsDBNull(dataReader.GetOrdinal(config.UserContextColumnName)))
-        {
-            userContext = dataReader.GetString(dataReader.GetOrdinal(config.UserContextColumnName));
-        }
 
-        await dataReader.CloseAsync();
+        await using (var dataReader = await dataCommand.ExecuteReaderAsync(context.RequestAborted))
+        {
+            if (!await dataReader.ReadAsync(context.RequestAborted))
+            {
+                await dataReader.CloseAsync();
+                await ExecuteTransactionCommandAsync(connection, "ROLLBACK", context.RequestAborted);
+                await WriteErrorResponseAsync(context, HttpStatusCode.InternalServerError,
+                    PasskeyErrorCode.DatabaseError, "Failed to get login data from database");
+                return;
+            }
+
+            status = dataReader.GetInt32(dataReader.GetOrdinal(config.StatusColumnName));
+            if (status != 200)
+            {
+                errorMessage = dataReader.IsDBNull(dataReader.GetOrdinal(config.MessageColumnName))
+                    ? "Login failed"
+                    : dataReader.GetString(dataReader.GetOrdinal(config.MessageColumnName));
+                await dataReader.CloseAsync();
+                await ExecuteTransactionCommandAsync(connection, "ROLLBACK", context.RequestAborted);
+                await WriteErrorResponseAsync(context, (HttpStatusCode)status, PasskeyErrorCode.AuthenticationFailed, "Authentication failed");
+                return;
+            }
+
+            publicKey = (byte[])dataReader[config.PublicKeyColumnName];
+            algorithm = dataReader.GetInt32(dataReader.GetOrdinal(config.PublicKeyAlgorithmColumnName));
+            storedSignCount = config.ValidateSignCount
+                ? dataReader.GetInt64(dataReader.GetOrdinal(config.SignCountColumnName))
+                : 0L;
+
+            if (!dataReader.IsDBNull(dataReader.GetOrdinal(config.UserContextColumnName)))
+            {
+                userContext = dataReader.GetString(dataReader.GetOrdinal(config.UserContextColumnName));
+            }
+        }
 
         var result = AssertionValidator.Validate(
             authenticatorData,
@@ -206,12 +208,12 @@ public sealed class LoginEndpoint(PasskeyEndpointContext ctx)
             ctx.Logger?.LogWarning("Assertion validation failed: {Error}", result.Error);
             await ExecuteTransactionCommandAsync(connection, "ROLLBACK", context.RequestAborted);
             await WriteErrorResponseAsync(context, HttpStatusCode.Unauthorized,
-                ErrorAssertionInvalid, result.Error ?? "Assertion validation failed");
+                PasskeyErrorCode.AssertionInvalid, result.Error ?? "Assertion validation failed");
             return;
         }
 
         await using var completeCommand = connection.CreateCommand();
-        completeCommand.CommandText = config.AuthenticateCompleteCommand;
+        completeCommand.CommandText = config.CompleteAuthenticateCommand;
 
         var paramCount = completeCommand.CommandText.PgCountParams();
         if (paramCount >= 1)

@@ -229,19 +229,15 @@ public static class ConfigDefaults
                 ["UserVerificationRequirement"] = "preferred",
                 ["ResidentKeyRequirement"] = "preferred",
                 ["AttestationConveyance"] = "none",
-                // GROUP 1: Challenge Commands
                 ["ChallengeAddExistingUserCommand"] = "select * from passkey_challenge_add_existing($1,$2)",
                 ["ChallengeRegistrationCommand"] = "select * from passkey_challenge_registration($1)",
                 ["ChallengeAuthenticationCommand"] = "select * from passkey_challenge_authentication($1,$2)",
-                // GROUP 2: Challenge Verify Command
-                ["ChallengeVerifyCommand"] = "select * from passkey_verify_challenge($1,$2)",
+                ["VerifyChallengeCommand"] = "select * from passkey_verify_challenge($1,$2)",
                 ["ValidateSignCount"] = true,
-                // GROUP 3: Authentication Data Command
                 ["AuthenticateDataCommand"] = "select * from passkey_authenticate_data($1)",
-                // GROUP 4: Complete Commands
-                ["AddExistingUserCompleteCommand"] = "select * from passkey_add_existing_complete($1,$2,$3,$4,$5,$6,$7,$8)",
-                ["RegistrationCompleteCommand"] = "select * from passkey_registration_complete($1,$2,$3,$4,$5,$6,$7,$8)",
-                ["AuthenticateCompleteCommand"] = "select * from passkey_authenticate_complete($1,$2,$3,$4)",
+                ["CompleteAddExistingUserCommand"] = "select * from passkey_complete_add_existing($1,$2,$3,$4,$5,$6,$7,$8)",
+                ["CompleteRegistrationCommand"] = "select * from passkey_complete_registration($1,$2,$3,$4,$5,$6,$7,$8)",
+                ["CompleteAuthenticateCommand"] = "select * from passkey_complete_authenticate($1,$2,$3,$4)",
                 ["ClientAnalyticsIpKey"] = "ip",
                 ["StatusColumnName"] = "status",
                 ["MessageColumnName"] = "message",

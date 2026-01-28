@@ -60,10 +60,6 @@ public sealed class AddPasskeyOptionsEndpoint(PasskeyEndpointContext ctx)
 {
     private const string LogAddPasskeyOptions = "PasskeyAuth.AddPasskeyOptions";
 
-    private const string ErrorAuthenticationRequired = "authentication_required";
-    private const string ErrorDatabaseError = "database_error";
-    private const string ErrorRegistrationFailed = "registration_failed";
-
     public async Task InvokeAsync(HttpContext context)
     {
         var config = ctx.Config;
@@ -72,7 +68,7 @@ public sealed class AddPasskeyOptionsEndpoint(PasskeyEndpointContext ctx)
         if (context.User.Identity?.IsAuthenticated is not true)
         {
             await WriteErrorResponseAsync(context, HttpStatusCode.Unauthorized,
-                ErrorAuthenticationRequired, "Authentication required to add a passkey");
+                PasskeyErrorCode.AuthenticationRequired, "Authentication required to add a passkey");
             return;
         }
 
@@ -112,102 +108,129 @@ public sealed class AddPasskeyOptionsEndpoint(PasskeyEndpointContext ctx)
 
         CommandLogger.LogCommand(command, ctx.Logger, LogAddPasskeyOptions);
 
-        await using var reader = await command.ExecuteReaderAsync(context.RequestAborted);
-
-        if (!await reader.ReadAsync(context.RequestAborted))
-        {
-            await ExecuteTransactionCommandAsync(connection, "ROLLBACK", context.RequestAborted);
-            await WriteErrorResponseAsync(context, HttpStatusCode.InternalServerError,
-                ErrorDatabaseError, "Failed to get creation options from database");
-            return;
-        }
-
-        var status = reader.GetInt32(reader.GetOrdinal(config.StatusColumnName));
-        if (status != 200)
-        {
-            var errorMessage = reader.IsDBNull(reader.GetOrdinal(config.MessageColumnName))
-                ? "Failed to create registration options"
-                : reader.GetString(reader.GetOrdinal(config.MessageColumnName));
-            await ExecuteTransactionCommandAsync(connection, "ROLLBACK", context.RequestAborted);
-            await WriteErrorResponseAsync(context, (HttpStatusCode)status, ErrorRegistrationFailed, errorMessage);
-            return;
-        }
-
-        var challenge = reader.GetString(reader.GetOrdinal(config.ChallengeColumnName));
-        var userHandle = reader.GetString(reader.GetOrdinal(config.UserHandleColumnName));
-        var userName = reader.GetString(reader.GetOrdinal(config.UserNameColumnName));
-        var userDisplayName = reader.GetString(reader.GetOrdinal(config.UserDisplayNameColumnName));
-        var challengeId = reader.GetValue(reader.GetOrdinal(config.ChallengeIdColumnName))?.ToString();
-
+        int status;
+        string? errorMessage = null;
+        string? challenge = null;
+        string? userHandle = null;
+        string? userName = null;
+        string? userDisplayName = null;
+        string? challengeId = null;
         string? excludeCredentialsJson = null;
-        if (!reader.IsDBNull(reader.GetOrdinal(config.ExcludeCredentialsColumnName)))
-        {
-            excludeCredentialsJson = reader.GetString(reader.GetOrdinal(config.ExcludeCredentialsColumnName));
-        }
+        string? userContextJson = null;
 
-            string? userContextJson = null;
+        await using (var reader = await command.ExecuteReaderAsync(context.RequestAborted))
+        {
+            if (!await reader.ReadAsync(context.RequestAborted))
+            {
+                await reader.CloseAsync();
+                await ExecuteTransactionCommandAsync(connection, "ROLLBACK", context.RequestAborted);
+                await WriteErrorResponseAsync(context, HttpStatusCode.InternalServerError,
+                    PasskeyErrorCode.DatabaseError, "Failed to get creation options from database");
+                return;
+            }
+
+            status = reader.GetInt32(reader.GetOrdinal(config.StatusColumnName));
+            if (status != 200)
+            {
+                errorMessage = reader.IsDBNull(reader.GetOrdinal(config.MessageColumnName))
+                    ? "Failed to create registration options"
+                    : reader.GetString(reader.GetOrdinal(config.MessageColumnName));
+                await reader.CloseAsync();
+                await ExecuteTransactionCommandAsync(connection, "ROLLBACK", context.RequestAborted);
+                await WriteErrorResponseAsync(context, (HttpStatusCode)status, PasskeyErrorCode.StoreFailed, errorMessage);
+                return;
+            }
+
+            challenge = reader.GetString(reader.GetOrdinal(config.ChallengeColumnName));
+            userHandle = reader.GetString(reader.GetOrdinal(config.UserHandleColumnName));
+            userName = reader.GetString(reader.GetOrdinal(config.UserNameColumnName));
+            userDisplayName = reader.GetString(reader.GetOrdinal(config.UserDisplayNameColumnName));
+            challengeId = reader.GetValue(reader.GetOrdinal(config.ChallengeIdColumnName))?.ToString();
+
+            if (!reader.IsDBNull(reader.GetOrdinal(config.ExcludeCredentialsColumnName)))
+            {
+                excludeCredentialsJson = reader.GetString(reader.GetOrdinal(config.ExcludeCredentialsColumnName));
+            }
+
             if (!reader.IsDBNull(reader.GetOrdinal(config.UserContextColumnName)))
             {
                 userContextJson = reader.GetString(reader.GetOrdinal(config.UserContextColumnName));
             }
+        }
 
-            var rpId = config.RelyingPartyId ?? context.Request.Host.Host;
-            var rpName = config.RelyingPartyName ?? rpId;
+        var rpId = config.RelyingPartyId ?? context.Request.Host.Host;
+        var rpName = config.RelyingPartyName ?? rpId;
 
-            await ExecuteTransactionCommandAsync(connection, "COMMIT", context.RequestAborted);
+        await ExecuteTransactionCommandAsync(connection, "COMMIT", context.RequestAborted);
 
-            context.Response.StatusCode = (int)HttpStatusCode.OK;
-            context.Response.ContentType = "application/json";
+        context.Response.StatusCode = (int)HttpStatusCode.OK;
+        context.Response.ContentType = "application/json";
 
-            await using var writer = new Utf8JsonWriter(context.Response.Body);
+        await using (var writer = new Utf8JsonWriter(context.Response.Body))
+        {
             writer.WriteStartObject();
 
             writer.WriteString("challenge", challenge);
             writer.WriteString("challengeId", challengeId);
 
-        writer.WriteStartObject("rp");
-        writer.WriteString("id", rpId);
-        writer.WriteString("name", rpName);
-        writer.WriteEndObject();
+            writer.WriteStartObject("rp");
+            writer.WriteString("id", rpId);
+            writer.WriteString("name", rpName);
+            writer.WriteEndObject();
 
-        writer.WriteStartObject("user");
-        writer.WriteString("id", userHandle);
-        writer.WriteString("name", userName);
-        writer.WriteString("displayName", userDisplayName);
-        writer.WriteEndObject();
+            writer.WriteStartObject("user");
+            writer.WriteString("id", userHandle);
+            writer.WriteString("name", userName);
+            writer.WriteString("displayName", userDisplayName);
+            writer.WriteEndObject();
 
-        writer.WriteStartArray("pubKeyCredParams");
-        writer.WriteStartObject();
-        writer.WriteString("type", "public-key");
-        writer.WriteNumber("alg", CoseAlgorithm.ES256);
-        writer.WriteEndObject();
-        writer.WriteStartObject();
-        writer.WriteString("type", "public-key");
-        writer.WriteNumber("alg", CoseAlgorithm.RS256);
-        writer.WriteEndObject();
-        writer.WriteEndArray();
+            writer.WriteStartArray("pubKeyCredParams");
+            writer.WriteStartObject();
+            writer.WriteString("type", "public-key");
+            writer.WriteNumber("alg", CoseAlgorithm.ES256);
+            writer.WriteEndObject();
+            writer.WriteStartObject();
+            writer.WriteString("type", "public-key");
+            writer.WriteNumber("alg", CoseAlgorithm.RS256);
+            writer.WriteEndObject();
+            writer.WriteEndArray();
 
-        writer.WriteNumber("timeout", config.ChallengeTimeoutMinutes * 60 * 1000);
-        writer.WriteString("attestation", config.AttestationConveyance);
+            writer.WriteNumber("timeout", config.ChallengeTimeoutMinutes * 60 * 1000);
+            writer.WriteString("attestation", config.AttestationConveyance);
 
-        writer.WriteStartObject("authenticatorSelection");
-        writer.WriteString("residentKey", config.ResidentKeyRequirement);
-        writer.WriteString("userVerification", config.UserVerificationRequirement);
-        writer.WriteEndObject();
+            writer.WriteStartObject("authenticatorSelection");
+            writer.WriteString("residentKey", config.ResidentKeyRequirement);
+            writer.WriteString("userVerification", config.UserVerificationRequirement);
+            writer.WriteEndObject();
 
-        if (!string.IsNullOrEmpty(excludeCredentialsJson))
-        {
-            writer.WritePropertyName("excludeCredentials");
-            writer.WriteRawValue(excludeCredentialsJson);
-        }
+            if (!string.IsNullOrEmpty(excludeCredentialsJson))
+            {
+                writer.WritePropertyName("excludeCredentials");
+                writer.WriteRawValue(excludeCredentialsJson);
+            }
 
+            // Inject userHandle into userContext so it's passed back to the completion endpoint
+            writer.WritePropertyName("userContext");
             if (!string.IsNullOrEmpty(userContextJson))
             {
-                writer.WritePropertyName("userContext");
-                writer.WriteRawValue(userContextJson);
+                using var doc = JsonDocument.Parse(userContextJson);
+                writer.WriteStartObject();
+                foreach (var prop in doc.RootElement.EnumerateObject())
+                {
+                    prop.WriteTo(writer);
+                }
+                writer.WriteString("userHandle", userHandle);
+                writer.WriteEndObject();
+            }
+            else
+            {
+                writer.WriteStartObject();
+                writer.WriteString("userHandle", userHandle);
+                writer.WriteEndObject();
             }
 
             writer.WriteEndObject();
             await writer.FlushAsync(context.RequestAborted);
+        }
     }
 }

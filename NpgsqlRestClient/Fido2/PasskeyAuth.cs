@@ -95,14 +95,14 @@ public static class PasskeyAuth
 
         Logger?.LogDebug(
             "Passkey SQL commands - ChallengeVerify: {ChallengeVerify}, AuthenticateData: {AuthenticateData}",
-            config.ChallengeVerifyCommand,
+            config.VerifyChallengeCommand,
             config.AuthenticateDataCommand);
 
         Logger?.LogDebug(
             "Passkey SQL commands - AddExistingComplete: {AddExistingComplete}, RegistrationComplete: {RegistrationComplete}, " +
             "AuthenticateComplete: {AuthenticateComplete}",
-            config.AddExistingUserCompleteCommand,
-            config.RegistrationCompleteCommand,
-            config.AuthenticateCompleteCommand);
+            config.CompleteAddExistingUserCommand,
+            config.CompleteRegistrationCommand,
+            config.CompleteAuthenticateCommand);
     }
 }

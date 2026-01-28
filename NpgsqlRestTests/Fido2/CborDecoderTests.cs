@@ -149,19 +149,19 @@ public class CborDecoderTests
     [Fact]
     public void CredentialPublicKey_IsSupportedAlgorithm_PS256_ReturnsTrue()
     {
-        CredentialPublicKey.IsSupportedAlgorithm(CoseAlgorithm.PS256).Should().BeTrue();
+        CredentialPublicKey.IsSupportedAlgorithm(-37).Should().BeTrue(); // PS256
     }
 
     [Fact]
     public void CredentialPublicKey_IsSupportedAlgorithm_ES384_ReturnsTrue()
     {
-        CredentialPublicKey.IsSupportedAlgorithm(CoseAlgorithm.ES384).Should().BeTrue();
+        CredentialPublicKey.IsSupportedAlgorithm(-35).Should().BeTrue(); // ES384
     }
 
     [Fact]
     public void CredentialPublicKey_IsSupportedAlgorithm_ES512_ReturnsTrue()
     {
-        CredentialPublicKey.IsSupportedAlgorithm(CoseAlgorithm.ES512).Should().BeTrue();
+        CredentialPublicKey.IsSupportedAlgorithm(-36).Should().BeTrue(); // ES512
     }
 
     [Fact]

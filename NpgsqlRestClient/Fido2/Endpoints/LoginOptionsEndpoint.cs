@@ -50,9 +50,6 @@ public sealed class LoginOptionsEndpoint(PasskeyEndpointContext ctx)
 {
     private const string LogLoginOptions = "PasskeyAuth.LoginOptions";
 
-    private const string ErrorDatabaseError = "database_error";
-    private const string ErrorLoginFailed = "login_failed";
-
     public async Task InvokeAsync(HttpContext context)
     {
         var config = ctx.Config;
@@ -95,32 +92,39 @@ public sealed class LoginOptionsEndpoint(PasskeyEndpointContext ctx)
 
         CommandLogger.LogCommand(command, ctx.Logger, LogLoginOptions);
 
-        await using var reader = await command.ExecuteReaderAsync(context.RequestAborted);
-
-        if (!await reader.ReadAsync(context.RequestAborted))
-        {
-            await ExecuteTransactionCommandAsync(connection, "ROLLBACK", context.RequestAborted);
-            await WriteErrorResponseAsync(context, HttpStatusCode.InternalServerError,
-                ErrorDatabaseError, "Failed to get login options from database");
-            return;
-        }
-
-        var status = reader.GetInt32(reader.GetOrdinal(config.StatusColumnName));
-        if (status != 200)
-        {
-            await ExecuteTransactionCommandAsync(connection, "ROLLBACK", context.RequestAborted);
-            await WriteErrorResponseAsync(context, (HttpStatusCode)status,
-                ErrorLoginFailed, "Failed to create login options");
-            return;
-        }
-
-        var challenge = reader.GetString(reader.GetOrdinal(config.ChallengeColumnName));
-        var challengeId = reader.GetValue(reader.GetOrdinal(config.ChallengeIdColumnName))?.ToString();
-
+        int status;
+        string? challenge = null;
+        string? challengeId = null;
         string? allowCredentialsJson = null;
-        if (!reader.IsDBNull(reader.GetOrdinal(config.AllowCredentialsColumnName)))
+
+        await using (var reader = await command.ExecuteReaderAsync(context.RequestAborted))
         {
-            allowCredentialsJson = reader.GetString(reader.GetOrdinal(config.AllowCredentialsColumnName));
+            if (!await reader.ReadAsync(context.RequestAborted))
+            {
+                await reader.CloseAsync();
+                await ExecuteTransactionCommandAsync(connection, "ROLLBACK", context.RequestAborted);
+                await WriteErrorResponseAsync(context, HttpStatusCode.InternalServerError,
+                    PasskeyErrorCode.DatabaseError, "Failed to get login options from database");
+                return;
+            }
+
+            status = reader.GetInt32(reader.GetOrdinal(config.StatusColumnName));
+            if (status != 200)
+            {
+                await reader.CloseAsync();
+                await ExecuteTransactionCommandAsync(connection, "ROLLBACK", context.RequestAborted);
+                await WriteErrorResponseAsync(context, (HttpStatusCode)status,
+                    PasskeyErrorCode.AuthenticationFailed, "Authentication failed");
+                return;
+            }
+
+            challenge = reader.GetString(reader.GetOrdinal(config.ChallengeColumnName));
+            challengeId = reader.GetValue(reader.GetOrdinal(config.ChallengeIdColumnName))?.ToString();
+
+            if (!reader.IsDBNull(reader.GetOrdinal(config.AllowCredentialsColumnName)))
+            {
+                allowCredentialsJson = reader.GetString(reader.GetOrdinal(config.AllowCredentialsColumnName));
+            }
         }
 
         var rpId = config.RelyingPartyId ?? context.Request.Host.Host;

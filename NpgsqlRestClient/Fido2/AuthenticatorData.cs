@@ -66,19 +66,10 @@ public class AuthenticatorData
 public static class AuthenticatorDataFlags
 {
     public const byte UP = 0x01;
-
-    public const byte RFU1 = 0x02;
-
     public const byte UV = 0x04;
-
     public const byte BE = 0x08;
-
     public const byte BS = 0x10;
-
-    public const byte RFU2 = 0x20;
-
     public const byte AT = 0x40;
-
     public const byte ED = 0x80;
 }
 

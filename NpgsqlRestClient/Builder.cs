@@ -766,14 +766,14 @@ public class Builder
             ChallengeRegistrationCommand = _config.GetConfigStr("ChallengeRegistrationCommand", passkeyCfg) ?? "select * from passkey_challenge_registration($1)",
             ChallengeAuthenticationCommand = _config.GetConfigStr("ChallengeAuthenticationCommand", passkeyCfg) ?? "select * from passkey_challenge_authentication($1,$2)",
             // GROUP 2: Challenge Verify Command
-            ChallengeVerifyCommand = _config.GetConfigStr("ChallengeVerifyCommand", passkeyCfg) ?? "select * from passkey_verify_challenge($1,$2)",
+            VerifyChallengeCommand = _config.GetConfigStr("VerifyChallengeCommand", passkeyCfg) ?? "select * from passkey_verify_challenge($1,$2)",
             ValidateSignCount = _config.GetConfigBool("ValidateSignCount", passkeyCfg, true),
             // GROUP 3: Authentication Data Command
             AuthenticateDataCommand = _config.GetConfigStr("AuthenticateDataCommand", passkeyCfg) ?? "select * from passkey_authenticate_data($1)",
             // GROUP 4: Complete Commands
-            AddExistingUserCompleteCommand = _config.GetConfigStr("AddExistingUserCompleteCommand", passkeyCfg) ?? "select * from passkey_add_existing_complete($1,$2,$3,$4,$5,$6,$7,$8)",
-            RegistrationCompleteCommand = _config.GetConfigStr("RegistrationCompleteCommand", passkeyCfg) ?? "select * from passkey_registration_complete($1,$2,$3,$4,$5,$6,$7,$8)",
-            AuthenticateCompleteCommand = _config.GetConfigStr("AuthenticateCompleteCommand", passkeyCfg) ?? "select * from passkey_authenticate_complete($1,$2,$3,$4)",
+            CompleteAddExistingUserCommand = _config.GetConfigStr("CompleteAddExistingUserCommand", passkeyCfg) ?? "select * from passkey_complete_add_existing($1,$2,$3,$4,$5,$6,$7,$8)",
+            CompleteRegistrationCommand = _config.GetConfigStr("CompleteRegistrationCommand", passkeyCfg) ?? "select * from passkey_complete_registration($1,$2,$3,$4,$5,$6,$7,$8)",
+            CompleteAuthenticateCommand = _config.GetConfigStr("CompleteAuthenticateCommand", passkeyCfg) ?? "select * from passkey_complete_authenticate($1,$2,$3,$4)",
             ClientAnalyticsIpKey = _config.GetConfigStr("ClientAnalyticsIpKey", passkeyCfg) ?? "ip",
             StatusColumnName = _config.GetConfigStr("StatusColumnName", passkeyCfg) ?? "status",
             MessageColumnName = _config.GetConfigStr("MessageColumnName", passkeyCfg) ?? "message",

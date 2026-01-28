@@ -13,18 +13,10 @@ internal static class PasskeyHelpers
         string error,
         string? errorDescription)
     {
-        context.Response.StatusCode = (int)statusCode;
-        context.Response.ContentType = "application/json";
-
-        await using var writer = new Utf8JsonWriter(context.Response.Body);
-        writer.WriteStartObject();
-        writer.WriteString("error", error);
-        if (errorDescription != null)
-        {
-            writer.WriteString("errorDescription", errorDescription);
-        }
-        writer.WriteEndObject();
-        await writer.FlushAsync(context.RequestAborted);
+        await Results.Problem(
+            type: error,
+            statusCode: (int)statusCode,
+            title: errorDescription).ExecuteAsync(context);
     }
 
     public static async Task WriteSuccessResponseAsync(

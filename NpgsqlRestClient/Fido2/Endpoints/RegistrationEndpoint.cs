@@ -56,11 +56,6 @@ public sealed class RegistrationEndpoint(PasskeyEndpointContext ctx)
     private const string LogChallengeVerify = "PasskeyAuth.ChallengeVerify";
     private const string LogCredentialStore = "PasskeyAuth.CredentialStore";
 
-    private const string ErrorInvalidRequest = "invalid_request";
-    private const string ErrorChallengeInvalid = "challenge_invalid";
-    private const string ErrorAttestationInvalid = "attestation_invalid";
-    private const string ErrorStoreFailed = "store_failed";
-
     public async Task InvokeAsync(HttpContext context)
     {
         var config = ctx.Config;
@@ -74,7 +69,7 @@ public sealed class RegistrationEndpoint(PasskeyEndpointContext ctx)
         catch
         {
             await WriteErrorResponseAsync(context, HttpStatusCode.BadRequest,
-                ErrorInvalidRequest, "Invalid request body");
+                PasskeyErrorCode.InvalidRequest, "Invalid request body");
             return;
         }
 
@@ -85,7 +80,7 @@ public sealed class RegistrationEndpoint(PasskeyEndpointContext ctx)
             string.IsNullOrEmpty(request.UserContext))
         {
             await WriteErrorResponseAsync(context, HttpStatusCode.BadRequest,
-                ErrorInvalidRequest, "Missing required fields");
+                PasskeyErrorCode.InvalidRequest, "Missing required fields");
             return;
         }
 
@@ -94,7 +89,7 @@ public sealed class RegistrationEndpoint(PasskeyEndpointContext ctx)
         await ExecuteTransactionCommandAsync(connection, "BEGIN", context.RequestAborted);
 
         await using var verifyCommand = connection.CreateCommand();
-        verifyCommand.CommandText = config.ChallengeVerifyCommand;
+        verifyCommand.CommandText = config.VerifyChallengeCommand;
         if (long.TryParse(request.ChallengeId, out var challengeIdLong))
         {
             verifyCommand.Parameters.AddWithValue(challengeIdLong);
@@ -116,7 +111,7 @@ public sealed class RegistrationEndpoint(PasskeyEndpointContext ctx)
         {
             await ExecuteTransactionCommandAsync(connection, "ROLLBACK", context.RequestAborted);
             await WriteErrorResponseAsync(context, HttpStatusCode.BadRequest,
-                ErrorChallengeInvalid, ValidationError.ChallengeNotFound);
+                PasskeyErrorCode.ChallengeInvalid, ValidationError.ChallengeNotFound);
             return;
         }
 
@@ -129,7 +124,7 @@ public sealed class RegistrationEndpoint(PasskeyEndpointContext ctx)
         {
             await ExecuteTransactionCommandAsync(connection, "ROLLBACK", context.RequestAborted);
             await WriteErrorResponseAsync(context, HttpStatusCode.BadRequest,
-                ErrorInvalidRequest, "Invalid base64url encoding");
+                PasskeyErrorCode.InvalidRequest, "Invalid base64url encoding");
             return;
         }
 
@@ -153,12 +148,29 @@ public sealed class RegistrationEndpoint(PasskeyEndpointContext ctx)
             ctx.Logger?.LogWarning("Attestation validation failed: {Error}", result.Error);
             await ExecuteTransactionCommandAsync(connection, "ROLLBACK", context.RequestAborted);
             await WriteErrorResponseAsync(context, HttpStatusCode.BadRequest,
-                ErrorAttestationInvalid, result.Error ?? "Attestation validation failed");
+                PasskeyErrorCode.AttestationInvalid, result.Error ?? "Attestation validation failed");
             return;
         }
 
+        // Extract userHandle from userContext (injected by RegistrationOptionsEndpoint)
+        byte[] userHandle = [];
+        try
+        {
+            var userContext = JsonNode.Parse(request.UserContext);
+            var userHandleBase64 = userContext?["userHandle"]?.GetValue<string>();
+            if (!string.IsNullOrEmpty(userHandleBase64))
+            {
+                userHandle = AttestationValidator.Base64UrlDecode(userHandleBase64)
+                    ?? Convert.FromBase64String(userHandleBase64);
+            }
+        }
+        catch
+        {
+            // userHandle will remain empty if parsing fails
+        }
+
         await using var storeCommand = connection.CreateCommand();
-        storeCommand.CommandText = config.RegistrationCompleteCommand;
+        storeCommand.CommandText = config.CompleteRegistrationCommand;
 
         var paramCount = storeCommand.CommandText.PgCountParams();
         if (paramCount >= 1)
@@ -167,7 +179,7 @@ public sealed class RegistrationEndpoint(PasskeyEndpointContext ctx)
         }
         if (paramCount >= 2)
         {
-            storeCommand.Parameters.AddWithValue(result.UserHandle ?? []);
+            storeCommand.Parameters.AddWithValue(userHandle);
         }
         if (paramCount >= 3)
         {
@@ -232,17 +244,18 @@ public sealed class RegistrationEndpoint(PasskeyEndpointContext ctx)
 
         CommandLogger.LogCommand(storeCommand, ctx.Logger, LogCredentialStore);
 
-        await using var storeReader = await storeCommand.ExecuteReaderAsync(context.RequestAborted);
-
         int storeStatus = 200;
         string storeMessage = "Passkey registered successfully";
 
-        if (await storeReader.ReadAsync(context.RequestAborted))
+        await using (var storeReader = await storeCommand.ExecuteReaderAsync(context.RequestAborted))
         {
-            storeStatus = storeReader.GetInt32(storeReader.GetOrdinal(config.StatusColumnName));
-            if (!storeReader.IsDBNull(storeReader.GetOrdinal(config.MessageColumnName)))
+            if (await storeReader.ReadAsync(context.RequestAborted))
             {
-                storeMessage = storeReader.GetString(storeReader.GetOrdinal(config.MessageColumnName));
+                storeStatus = storeReader.GetInt32(storeReader.GetOrdinal(config.StatusColumnName));
+                if (!storeReader.IsDBNull(storeReader.GetOrdinal(config.MessageColumnName)))
+                {
+                    storeMessage = storeReader.GetString(storeReader.GetOrdinal(config.MessageColumnName));
+                }
             }
         }
 
@@ -250,7 +263,7 @@ public sealed class RegistrationEndpoint(PasskeyEndpointContext ctx)
         {
             await ExecuteTransactionCommandAsync(connection, "ROLLBACK", context.RequestAborted);
             await WriteErrorResponseAsync(context, (HttpStatusCode)storeStatus,
-                ErrorStoreFailed, storeMessage);
+                PasskeyErrorCode.StoreFailed, storeMessage);
             return;
         }
 
