@@ -4,6 +4,31 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [3.5.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.5.0) (2025-01-28)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.4.8...3.5.0)
+
+### New Feature: PasskeyAuth (WebAuthn/FIDO2)
+
+Added WebAuthn/FIDO2 Passkey Authentication support, enabling phishing-resistant, passwordless authentication using device-native biometrics or PINs. This feature allows users to authenticate using passkeys stored on their devices without requiring any external authentication libraries.
+
+- [Technical Blog Post with Implementation Details](https://npgsqlrest.github.io/blog/passkey-sql-auth.html)
+- [Example on GitHub](https://github.com/npgsqlrest/npgsqlrest-docs/tree/main/examples/13_passkey)
+
+### Bugfix: Response Compression for Static Files
+
+Fixed an issue where `ResponseCompression` middleware was not compressing static files served by `AppStaticFileMiddleware`. The middleware was setting `Content-Length` header before writing the response body, which prevented the compression middleware from compressing the response. Also added `text/javascript` to the default list of compressible MIME types.
+
+### Added Client Integration Tests
+
+Added automated integration tests for NpgsqlRestClient configuration features to catch configuration bugs in the CI/CD pipeline:
+
+- **ResponseCompression Tests** - Verify compression works correctly for static files and API responses
+- **CORS Tests** - Verify CORS headers, preflight requests, and origin validation
+- **StaticFiles Tests** - Verify content parsing, claims replacement, and file serving
+
+---
+
 ## Version [3.4.8](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.4.8) (2025-01-26)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.4.7...3.4.8)
