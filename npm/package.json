@@ -1,6 +1,6 @@
 {
   "name": "npgsqlrest",
-  "version": "3.4.8",
+  "version": "3.5.0",
   "description": "Automatic REST API for PostgreSQL Databases Client Build",
   "scripts": {
     "postinstall": "node postinstall.js",
