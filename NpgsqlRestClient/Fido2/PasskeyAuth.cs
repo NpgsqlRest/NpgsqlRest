@@ -18,7 +18,7 @@ public static class PasskeyAuth
             return;
         }
 
-        Logger = app.Services.GetService<ILoggerFactory>()?.CreateLogger("PasskeyAuth");
+        Logger = app.Services.GetService<ILoggerFactory>()?.CreateLogger(options.LoggerName ?? "NpgsqlRest");
 
         // Resolve command retry strategy from config
         RetryStrategy? commandRetryStrategy = null;
