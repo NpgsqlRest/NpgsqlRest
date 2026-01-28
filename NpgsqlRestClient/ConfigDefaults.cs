@@ -216,6 +216,7 @@ public static class ConfigDefaults
             {
                 ["Enabled"] = false,
                 ["EnableRegister"] = false,
+                ["RateLimiterPolicy"] = null,
                 ["RelyingPartyId"] = null,
                 ["RelyingPartyName"] = null,
                 ["RelyingPartyOrigins"] = new JsonArray(),

@@ -35,40 +35,68 @@ public static class PasskeyAuth
         var registrationEndpoint = new RegistrationEndpoint(ctx);
         var loginOptionsEndpoint = new LoginOptionsEndpoint(ctx);
         var loginEndpoint = new LoginEndpoint(ctx);
+
+        var rateLimiterPolicy = config.RateLimiterPolicy;
+
         if (!string.IsNullOrEmpty(config.AddPasskeyOptionsPath))
         {
-            app.MapPost(config.AddPasskeyOptionsPath, addPasskeyOptionsEndpoint.InvokeAsync);
+            var route = app.MapPost(config.AddPasskeyOptionsPath, addPasskeyOptionsEndpoint.InvokeAsync);
+            if (!string.IsNullOrEmpty(rateLimiterPolicy))
+            {
+                route.RequireRateLimiting(rateLimiterPolicy);
+            }
         }
         if (!string.IsNullOrEmpty(config.AddPasskeyPath))
         {
-            app.MapPost(config.AddPasskeyPath, addPasskeyEndpoint.InvokeAsync);
+            var route = app.MapPost(config.AddPasskeyPath, addPasskeyEndpoint.InvokeAsync);
+            if (!string.IsNullOrEmpty(rateLimiterPolicy))
+            {
+                route.RequireRateLimiting(rateLimiterPolicy);
+            }
         }
         if (config.EnableRegister)
         {
             if (!string.IsNullOrEmpty(config.RegistrationOptionsPath))
             {
-                app.MapPost(config.RegistrationOptionsPath, registrationOptionsEndpoint.InvokeAsync);
+                var route = app.MapPost(config.RegistrationOptionsPath, registrationOptionsEndpoint.InvokeAsync);
+                if (!string.IsNullOrEmpty(rateLimiterPolicy))
+                {
+                    route.RequireRateLimiting(rateLimiterPolicy);
+                }
             }
             if (!string.IsNullOrEmpty(config.RegistrationPath))
             {
-                app.MapPost(config.RegistrationPath, registrationEndpoint.InvokeAsync);
+                var route = app.MapPost(config.RegistrationPath, registrationEndpoint.InvokeAsync);
+                if (!string.IsNullOrEmpty(rateLimiterPolicy))
+                {
+                    route.RequireRateLimiting(rateLimiterPolicy);
+                }
             }
         }
         if (!string.IsNullOrEmpty(config.LoginOptionsPath))
         {
-            app.MapPost(config.LoginOptionsPath, loginOptionsEndpoint.InvokeAsync);
+            var route = app.MapPost(config.LoginOptionsPath, loginOptionsEndpoint.InvokeAsync);
+            if (!string.IsNullOrEmpty(rateLimiterPolicy))
+            {
+                route.RequireRateLimiting(rateLimiterPolicy);
+            }
         }
         if (!string.IsNullOrEmpty(config.LoginPath))
         {
-            app.MapPost(config.LoginPath, loginEndpoint.InvokeAsync);
+            var route = app.MapPost(config.LoginPath, loginEndpoint.InvokeAsync);
+            if (!string.IsNullOrEmpty(rateLimiterPolicy))
+            {
+                route.RequireRateLimiting(rateLimiterPolicy);
+            }
         }
 
         Logger?.LogDebug(
-            "Passkey authentication endpoints registered: EnableRegister={EnableRegister}, " +
+            "Passkey authentication endpoints registered: EnableRegister={EnableRegister}, RateLimiterPolicy={RateLimiterPolicy}, " +
             "AddPasskeyOptions={AddPasskeyOptions}, AddPasskey={AddPasskey}, " +
             "RegistrationOptions={RegistrationOptions}, Registration={Registration}, " +
             "LoginOptions={LoginOptions}, Login={Login}",
             config.EnableRegister,
+            rateLimiterPolicy ?? "(none)",
             config.AddPasskeyOptionsPath ?? "(disabled)",
             config.AddPasskeyPath ?? "(disabled)",
             config.EnableRegister ? config.RegistrationOptionsPath ?? "(disabled)" : "(disabled by EnableRegister=false)",

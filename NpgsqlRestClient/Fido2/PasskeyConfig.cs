@@ -6,6 +6,8 @@ public class PasskeyConfig
 
     public bool EnableRegister { get; set; }
 
+    public string? RateLimiterPolicy { get; set; }
+
     public string? RelyingPartyId { get; set; }
 
     public string? RelyingPartyName { get; set; }

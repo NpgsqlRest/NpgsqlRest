@@ -748,6 +748,7 @@ public class Builder
         {
             Enabled = true,
             EnableRegister = _config.GetConfigBool("EnableRegister", passkeyCfg, false),
+            RateLimiterPolicy = _config.GetConfigStr("RateLimiterPolicy", passkeyCfg),
             RelyingPartyId = _config.GetConfigStr("RelyingPartyId", passkeyCfg),
             RelyingPartyName = _config.GetConfigStr("RelyingPartyName", passkeyCfg) ?? Instance.Environment.ApplicationName,
             RelyingPartyOrigins = _config.GetConfigEnumerable("RelyingPartyOrigins", passkeyCfg)?.ToArray() ?? [],
