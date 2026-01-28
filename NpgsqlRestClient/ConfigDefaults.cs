@@ -304,7 +304,7 @@ public static class ConfigDefaults
             ["UseGzipFallback"] = true,
             ["CompressionLevel"] = "Optimal",
             ["IncludeMimeTypes"] = CreateStringArray(
-                "text/plain", "text/css", "application/javascript", "text/html",
+                "text/plain", "text/css", "application/javascript", "text/javascript", "text/html",
                 "application/xml", "text/xml", "application/json", "text/json",
                 "image/svg+xml", "font/woff", "font/woff2", "application/font-woff", "application/font-woff2"
             ),

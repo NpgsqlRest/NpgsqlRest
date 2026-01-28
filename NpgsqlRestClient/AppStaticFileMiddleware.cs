@@ -226,17 +226,8 @@ public class AppStaticFileMiddleware(RequestDelegate next, IWebHostEnvironment h
             try
             {
                 byte[] buffer;
-                if (_parser is null)
+                if (_parser is null || isInParsePattern is false)
                 {
-                    context.Response.ContentLength = length;
-                    using var fileStream = new FileStream(fileInfo.PhysicalPath!, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 8192, useAsync: true);
-                    await fileStream.CopyToAsync(context.Response.Body, context.RequestAborted);
-                    return;
-                }
-
-                if (isInParsePattern is false)
-                {
-                    context.Response.ContentLength = length;
                     using var fileStream = new FileStream(fileInfo.PhysicalPath!, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 8192, useAsync: true);
                     await fileStream.CopyToAsync(context.Response.Body, context.RequestAborted);
                     return;
