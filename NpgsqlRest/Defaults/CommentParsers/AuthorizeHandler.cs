@@ -25,11 +25,11 @@ internal static partial class DefaultCommentParser
         if (wordsLower.Length > 1)
         {
             endpoint.AuthorizeRoles = [.. wordsLower[1..]];
-            Logger?.CommentSetAuthRoles(description, endpoint.AuthorizeRoles);
+            CommentLogger?.CommentSetAuthRoles(description, endpoint.AuthorizeRoles);
         }
         else
         {
-            Logger?.CommentSetAuth(description);
+            CommentLogger?.CommentSetAuth(description);
         }
     }
 }

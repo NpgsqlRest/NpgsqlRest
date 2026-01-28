@@ -23,7 +23,7 @@ internal static partial class DefaultCommentParser
         if (Enum.TryParse<PostgresNoticeLevels>(words[1], true, out var parsedLevel))
         {
             endpoint.SseEventNoticeLevel = parsedLevel;
-            Logger?.CommentSseStreamingLevel(description, endpoint.SseEventNoticeLevel.Value);
+            CommentLogger?.CommentSseStreamingLevel(description, endpoint.SseEventNoticeLevel.Value);
         }
         else
         {

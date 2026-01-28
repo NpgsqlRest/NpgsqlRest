@@ -26,6 +26,6 @@ internal static partial class DefaultCommentParser
     private static void HandleLogin(RoutineEndpoint endpoint, string description)
     {
         endpoint.Login = true;
-        Logger?.CommentSetLogin(description);
+        CommentLogger?.CommentSetLogin(description);
     }
 }

@@ -105,10 +105,10 @@ public class App
             unauthorizedRedirectPath,
             unauthorizedReturnToQueryParameter,
             availableClaims,
-            _builder.Logger);
+            _builder.ClientLogger);
 
         app.UseMiddleware<AppStaticFileMiddleware>();
-        _builder.Logger?.LogDebug("Serving static files from {WebRootPath}. Parsing following file path patterns: {filePaths}", app.Environment.WebRootPath, filePaths);
+        _builder.ClientLogger?.LogDebug("Serving static files from {WebRootPath}. Parsing following file path patterns: {filePaths}", app.Environment.WebRootPath, filePaths);
     }
 
     public string CreateUrl(Routine routine, NpgsqlRestOptions options) =>
@@ -148,17 +148,17 @@ public class App
             }
             if (basicAuth.SslRequirement == SslRequirement.Warning)
             {
-                _builder.Logger?.LogWarning("Using Basic Authentication when SSL is disabled.");
+                _builder.ClientLogger?.LogWarning("Using Basic Authentication when SSL is disabled.");
             }
             else if (basicAuth.SslRequirement == SslRequirement.Ignore)
             {
-                _builder.Logger?.LogDebug("WARNING: Using Basic Authentication when SSL is disabled.");
+                _builder.ClientLogger?.LogDebug("WARNING: Using Basic Authentication when SSL is disabled.");
             }
         }
 
         if (basicAuth.Enabled is true)
         {
-            _builder.Logger?.LogDebug("Basic Authentication enabled with realm {Realm}", basicAuth.Realm);
+            _builder.ClientLogger?.LogDebug("Basic Authentication enabled with realm {Realm}", basicAuth.Realm);
         }
         
         var provider = app.Services.GetService<IDataProtectionProvider>();
@@ -272,7 +272,7 @@ public class App
         var applicationName = _builder.Instance.Environment.ApplicationName;
         var headerName = _config.GetConfigStr("ExecutionIdHeaderName", _config.NpgsqlRestCfg) ?? "X-Execution-Id";
 
-        _builder.Logger?.LogDebug("Using JsonApplicationName {{\"app\":\"{applicationName}\",\"uid\":\"<{UserIdClaimType}>\",\"id\":\"<{headerName}>\"}}",
+        _builder.ClientLogger?.LogDebug("Using JsonApplicationName {{\"app\":\"{applicationName}\",\"uid\":\"<{UserIdClaimType}>\",\"id\":\"<{headerName}>\"}}",
             applicationName,
             options.DefaultUserIdClaimType,
             headerName);
@@ -308,7 +308,7 @@ public class App
                 FileOverwrite = _config.GetConfigBool("FileOverwrite", httpFilecfg, true),
                 ConnectionString = connectionString
             }));
-            _builder.Logger?.LogDebug("HTTP file generation enabled. Name={Name}",
+            _builder.ClientLogger?.LogDebug("HTTP file generation enabled. Name={Name}",
                 _config.GetConfigStr("Name", httpFilecfg) ?? "generated from connection string");
         }
         
@@ -328,7 +328,7 @@ public class App
             };
             if (openApi.UrlPath is null && openApi.FileName is null)
             {
-                _builder.Logger?.LogWarning("OpenAPI generation is disabled because both FileName and UrlPath are not set.");
+                _builder.ClientLogger?.LogWarning("OpenAPI generation is disabled because both FileName and UrlPath are not set.");
             }
             else
             {
@@ -393,7 +393,7 @@ public class App
                 }
 
                 handlers.Add(new OpenApi(openApi));
-                _builder.Logger?.LogDebug("OpenAPI generation enabled. FileName={FileName}, UrlPath={UrlPath}",
+                _builder.ClientLogger?.LogDebug("OpenAPI generation enabled. FileName={FileName}, UrlPath={UrlPath}",
                     openApi.FileName ?? "not set", openApi.UrlPath ?? "not set");
             }
         }
@@ -471,7 +471,7 @@ public class App
             }
 
             handlers.Add(new TsClient(ts));
-            _builder.Logger?.LogDebug("TypeScript client code generation enabled. FilePath={FilePath}", ts.FilePath);
+            _builder.ClientLogger?.LogDebug("TypeScript client code generation enabled. FilePath={FilePath}", ts.FilePath);
         }
 
         return handlers;
@@ -504,7 +504,7 @@ public class App
             source.ResolveNestedCompositeTypes = _config.GetConfigBool("ResolveNestedCompositeTypes", routineOptionsCfg, true);
         }
         sources.Add(source);
-        _builder.Logger?.LogDebug("Using {name} PostrgeSQL Source", nameof(RoutineSource));
+        _builder.ClientLogger?.LogDebug("Using {name} PostrgeSQL Source", nameof(RoutineSource));
 
         var crudSourceCfg = _config.NpgsqlRestCfg.GetSection("CrudSource");
         if (crudSourceCfg.Exists() is false || _config.GetConfigBool("Enabled", crudSourceCfg, true) is false)
@@ -530,7 +530,7 @@ public class App
             OnConflictDoUpdateUrlPattern = _config.GetConfigStr("OnConflictDoUpdateUrlPattern", crudSourceCfg) ?? "{0}/on-conflict-do-update",
             OnConflictDoUpdateReturningUrlPattern = _config.GetConfigStr("OnConflictDoUpdateReturningUrlPattern", crudSourceCfg) ?? "{0}/on-conflict-do-update/returning",
         });
-        _builder.Logger?.LogDebug("Using {name} PostrgeSQL Source", nameof(CrudSource));
+        _builder.ClientLogger?.LogDebug("Using {name} PostrgeSQL Source", nameof(CrudSource));
         return sources;
     }
 
@@ -623,10 +623,10 @@ public class App
 
         if (result?.UploadHandlers is not null && result.UploadHandlers.Count > 1)
         {
-            _builder.Logger?.LogDebug("Using {Keys} upload handlers where {DefaultUploadHandler} is default.", result.UploadHandlers.Keys, result.DefaultUploadHandler);
+            _builder.ClientLogger?.LogDebug("Using {Keys} upload handlers where {DefaultUploadHandler} is default.", result.UploadHandlers.Keys, result.DefaultUploadHandler);
             foreach (var uploadHandler in result.UploadHandlers)
             {
-                _builder.Logger?.LogDebug("Upload handler {Key} has following parameters: {Parameters}", 
+                _builder.ClientLogger?.LogDebug("Upload handler {Key} has following parameters: {Parameters}", 
                     uploadHandler.Key, uploadHandler.Value(null!).SetType(uploadHandler.Key).Parameters);
             }
         }
@@ -652,7 +652,7 @@ public class App
                 minCompletionPortThreads ??= minCompletionPortThreadsTmp;
             }
             ThreadPool.SetMinThreads(workerThreads: minWorkerThreads.Value, completionPortThreads: minCompletionPortThreads.Value);
-            _builder.Logger?.LogDebug("ThreadPool minimum worker threads to {MinWorkerThreads} and minimum completion port threads to {MinCompletionPortThreads}",
+            _builder.ClientLogger?.LogDebug("ThreadPool minimum worker threads to {MinWorkerThreads} and minimum completion port threads to {MinCompletionPortThreads}",
                 minWorkerThreads, minCompletionPortThreads);
         }
 
@@ -667,7 +667,7 @@ public class App
                 maxCompletionPortThreads ??= maxCompletionPortThreadsTmp;
             }
             ThreadPool.SetMaxThreads(workerThreads: maxWorkerThreads.Value, completionPortThreads: maxCompletionPortThreads.Value);
-            _builder.Logger?.LogDebug("ThreadPool maximum worker threads to {MaxWorkerThreads} and maximum completion port threads to {MaxCompletionPortThreads}",
+            _builder.ClientLogger?.LogDebug("ThreadPool maximum worker threads to {MaxWorkerThreads} and maximum completion port threads to {MaxCompletionPortThreads}",
                 maxWorkerThreads, maxCompletionPortThreads);
         }
     }

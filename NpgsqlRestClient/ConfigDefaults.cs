@@ -265,6 +265,7 @@ public static class ConfigDefaults
             ["MinimalLevels"] = new JsonObject
             {
                 ["NpgsqlRest"] = "Information",
+                ["NpgsqlRestClient"] = "Information",
                 ["System"] = "Warning",
                 ["Microsoft"] = "Warning"
             },
@@ -547,6 +548,8 @@ public static class ConfigDefaults
             ["LogConnectionNoticeEventsMode"] = "FirstStackFrameAndMessage",
             ["LogCommands"] = false,
             ["LogCommandParameters"] = false,
+            ["DebugLogEndpointCreateEvents"] = true,
+            ["DebugLogCommentAnnotationEvents"] = true,
             ["DefaultHttpMethod"] = null,
             ["DefaultRequestParamType"] = null,
             ["RequestHeadersMode"] = "Parameter",

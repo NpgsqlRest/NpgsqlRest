@@ -21,14 +21,14 @@ internal static partial class DefaultCommentParser
     {
         if (Options.UploadOptions.UploadHandlers is null || Options.UploadOptions.UploadHandlers.Count == 0)
         {
-            Logger?.CommentUploadNoHandlers(description);
+            CommentLogger?.CommentUploadNoHandlers(description);
         }
         else
         {
             if (endpoint.Upload is false)
             {
                 endpoint.Upload = true;
-                Logger?.CommentUpload(description);
+                CommentLogger?.CommentUpload(description);
             }
             if (endpoint.RequestParamType != RequestParamType.QueryString)
             {
@@ -48,7 +48,7 @@ internal static partial class DefaultCommentParser
                         bool exists = true;
                         if (existingHandlers.Contains(handler) is false)
                         {
-                            Logger?.CommentUploadHandlerNotExists(description, handler, existingHandlers);
+                            CommentLogger?.CommentUploadHandlerNotExists(description, handler, existingHandlers);
                             exists = false;
                         }
                         return new { exists, handler };
@@ -61,15 +61,15 @@ internal static partial class DefaultCommentParser
                 if (handlers.Length == 0)
                 {
                     var first = Options.UploadOptions.UploadHandlers?.Keys.FirstOrDefault();
-                    Logger?.CommentUploadFirstAvaialbleHandler(description, first);
+                    CommentLogger?.CommentUploadFirstAvaialbleHandler(description, first);
                 }
                 if (handlers.Length == 1)
                 {
-                    Logger?.CommentUploadSingleHandler(description, handlers[0]);
+                    CommentLogger?.CommentUploadSingleHandler(description, handlers[0]);
                 }
                 else
                 {
-                    Logger?.CommentUploadHandlers(description, handlers);
+                    CommentLogger?.CommentUploadHandlers(description, handlers);
                 }
             }
 
@@ -81,12 +81,12 @@ internal static partial class DefaultCommentParser
                         string.Equals(x.ConvertedName, paramName, StringComparison.Ordinal));
                 if (param is null)
                 {
-                    Logger?.CommentUploadWrongMetadataParam(description, paramName);
+                    CommentLogger?.CommentUploadWrongMetadataParam(description, paramName);
                 }
                 else
                 {
                     param.IsUploadMetadata = true;
-                    Logger?.CommentUploadMetadataParam(description, paramName);
+                    CommentLogger?.CommentUploadMetadataParam(description, paramName);
                 }
             }
         }

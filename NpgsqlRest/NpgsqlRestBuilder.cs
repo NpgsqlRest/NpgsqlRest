@@ -99,7 +99,10 @@ public static class NpgsqlRestBuilder
                 options.RouteHandlerCreated(routeBuilder, endpoint);
             }
 
-            Logger?.EndpointCreated(urlInfo);
+            if (Options.DebugLogEndpointCreateEvents)
+            {
+                Logger?.EndpointCreated(urlInfo);
+            }
             if (endpoint.SseEventsPath is not null)
             {
                 if (endpoint.SseEventNoticeLevel is null)

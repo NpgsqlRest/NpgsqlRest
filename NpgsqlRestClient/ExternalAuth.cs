@@ -118,7 +118,7 @@ public class ExternalAuthConfig
             clientConfig.ExternalType = section.Key;
 
             ClientConfigs.Add(clientConfig.SigninUrl, clientConfig);
-            builder.Logger?.LogDebug("External login available for {Key} available on path: {signinUrl}", section.Key, signinUrl);
+            builder.ClientLogger?.LogDebug("External login available for {Key} available on path: {signinUrl}", section.Key, signinUrl);
         }
 
         if (ClientConfigs.Where(c => c.Value.Enabled).Any() is false)
@@ -144,14 +144,18 @@ public class ExternalAuthConfig
 
 public class ExternalAuth
 {
+    private readonly ILogger? _clientLogger;
+
     public ExternalAuth(
-        ExternalAuthConfig? externalAuthConfig, 
-        string connectionString, 
-        WebApplication app, 
-        NpgsqlRestOptions options, 
+        ExternalAuthConfig? externalAuthConfig,
+        string connectionString,
+        WebApplication app,
+        NpgsqlRestOptions options,
         RetryStrategy? retryStrategy,
-        PostgresConnectionNoticeLoggingMode loggingMode)
+        PostgresConnectionNoticeLoggingMode loggingMode,
+        ILogger? clientLogger = null)
     {
+        _clientLogger = clientLogger;
         if ((externalAuthConfig?.ClientConfigs!).Any(c => c.Value.Enabled) is false)
         {
             return;
@@ -207,7 +211,7 @@ public class ExternalAuth
                     context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
                     await context.Response.WriteAsync(string.Format("Error talking to {0}", config.ExternalType));
                     await context.Response.CompleteAsync();
-                    Logger?.LogError(e, "Failed to parse external provider response: {ExternalType}", config.ExternalType);
+                    _clientLogger?.LogError(e, "Failed to parse external provider response: {ExternalType}", config.ExternalType);
                     return;
                 }
             }

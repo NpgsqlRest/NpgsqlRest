@@ -20,7 +20,7 @@ internal static partial class DefaultCommentParser
         RoutineEndpoint endpoint,
         string description)
     {
-        Logger?.CommentSetNestedJson(description);
+        CommentLogger?.CommentSetNestedJson(description);
         endpoint.NestedJsonForCompositeTypes = true;
     }
 }

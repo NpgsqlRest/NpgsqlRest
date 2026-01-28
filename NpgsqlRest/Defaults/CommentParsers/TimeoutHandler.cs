@@ -23,7 +23,7 @@ internal static partial class DefaultCommentParser
         }
         else if (endpoint.CommandTimeout != parsedInterval)
         {
-            Logger?.CommentSetTimeout(description, parsedInterval);
+            CommentLogger?.CommentSetTimeout(description, parsedInterval);
         }
         endpoint.CommandTimeout = parsedInterval;
     }

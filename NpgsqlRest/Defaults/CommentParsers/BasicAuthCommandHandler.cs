@@ -30,9 +30,9 @@ internal static partial class DefaultCommentParser
         if (endpoint.BasicAuth is null)
         {
             endpoint.BasicAuth = new() { Enabled = true };
-            Logger?.BasicAuthEnabled(description);
+            CommentLogger?.BasicAuthEnabled(description);
         }
         endpoint.BasicAuth.ChallengeCommand = line[(words[0].Length + 1)..];
-        Logger?.BasicAuthChallengeCommandSet(description, endpoint.BasicAuth.ChallengeCommand);
+        CommentLogger?.BasicAuthChallengeCommandSet(description, endpoint.BasicAuth.ChallengeCommand);
     }
 }

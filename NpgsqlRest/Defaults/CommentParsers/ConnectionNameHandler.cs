@@ -26,7 +26,7 @@ internal static partial class DefaultCommentParser
                 Logger?.CommentInvalidConnectionName(description, name);
             }
             endpoint.ConnectionName = name;
-            Logger?.CommentConnectionName(description, name);
+            CommentLogger?.CommentConnectionName(description, name);
         }
         else
         {

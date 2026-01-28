@@ -38,7 +38,7 @@ internal static partial class DefaultCommentParser
         }
         if (endpoint.QueryStringNullHandling != Options.QueryStringNullHandling)
         {
-            Logger?.CommentSetQueryStringNullHandling(description, endpoint.QueryStringNullHandling);
+            CommentLogger?.CommentSetQueryStringNullHandling(description, endpoint.QueryStringNullHandling);
         }
     }
 }

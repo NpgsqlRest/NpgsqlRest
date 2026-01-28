@@ -61,7 +61,7 @@ internal static partial class DefaultCommentParser
                     }
                     else
                     {
-                        Logger?.CommentParamIsHashOf(description, paramName1, paramName2);
+                        CommentLogger?.CommentParamIsHashOf(description, paramName1, paramName2);
                     }
                 }
                 else
@@ -79,7 +79,7 @@ internal static partial class DefaultCommentParser
             if (endpoint.Upload is false)
             {
                 endpoint.Upload = true;
-                Logger?.CommentUpload(description);
+                CommentLogger?.CommentUpload(description);
             }
             if (endpoint.RequestParamType != RequestParamType.QueryString)
             {
@@ -96,12 +96,12 @@ internal static partial class DefaultCommentParser
                     string.Equals(x.ConvertedName, paramName, StringComparison.Ordinal));
             if (param is null)
             {
-                Logger?.CommentUploadWrongMetadataParam(description, paramName);
+                CommentLogger?.CommentUploadWrongMetadataParam(description, paramName);
             }
             else
             {
                 param.IsUploadMetadata = true;
-                Logger?.CommentUploadMetadataParam(description, paramName);
+                CommentLogger?.CommentUploadMetadataParam(description, paramName);
             }
         }
     }

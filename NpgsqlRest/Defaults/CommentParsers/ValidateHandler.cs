@@ -83,7 +83,7 @@ internal static partial class DefaultCommentParser
             }
             rules.Add(rule);
 
-            Logger?.ValidationRuleSet(description, paramName, ruleName);
+            CommentLogger?.ValidationRuleSet(description, paramName, ruleName);
         }
     }
 }

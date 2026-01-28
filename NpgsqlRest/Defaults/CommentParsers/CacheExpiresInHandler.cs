@@ -22,7 +22,7 @@ internal static partial class DefaultCommentParser
         if (value is not null)
         {
             endpoint.CacheExpiresIn = value.Value;
-            Logger?.CommentCacheExpiresIn(description, value.Value);
+            CommentLogger?.CommentCacheExpiresIn(description, value.Value);
         }
         else
         {

@@ -17,6 +17,6 @@ internal static partial class DefaultCommentParser
         string description)
     {
         endpoint.UserContext = true;
-        Logger?.CommentUserContext(description);
+        CommentLogger?.CommentUserContext(description);
     }
 }

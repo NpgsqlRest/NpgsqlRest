@@ -40,7 +40,7 @@ internal static partial class DefaultCommentParser
         }
         if (endpoint.RequestHeadersMode != Options.RequestHeadersMode)
         {
-            Logger?.CommentSetRequestHeadersMode(description, wordsLower[1]);
+            CommentLogger?.CommentSetRequestHeadersMode(description, wordsLower[1]);
         }
     }
 }

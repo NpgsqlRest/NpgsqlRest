@@ -4,6 +4,11 @@ namespace NpgsqlRest.Defaults;
 
 internal static partial class DefaultCommentParser
 {
+    /// <summary>
+    /// Returns Logger only when DebugLogCommentAnnotationEvents is enabled, otherwise null.
+    /// This allows comment annotation debug logs to be suppressed when the option is disabled.
+    /// </summary>
+    private static ILogger? CommentLogger => Options.DebugLogCommentAnnotationEvents ? Logger : null;
     // Regex to match path parameters like {param_name} or {paramName}
     [GeneratedRegex(@"\{(\w+)\}", RegexOptions.Compiled)]
     private static partial Regex PathParameterRegex();

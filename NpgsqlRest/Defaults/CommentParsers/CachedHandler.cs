@@ -42,6 +42,6 @@ internal static partial class DefaultCommentParser
             endpoint.CachedParams = result;
         }
 
-        Logger?.CommentCached(description, endpoint.CachedParams ?? []);
+        CommentLogger?.CommentCached(description, endpoint.CachedParams ?? []);
     }
 }

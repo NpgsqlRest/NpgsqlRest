@@ -19,6 +19,6 @@ internal static partial class DefaultCommentParser
             endpoint.CustomParamsNeedParsing = true;
         }
         SetCustomParameter(endpoint, customParamName, customParamValue);
-        Logger?.CommentSetCustomParemeter(description, customParamName, customParamValue);
+        CommentLogger?.CommentSetCustomParemeter(description, customParamName, customParamValue);
     }
 }

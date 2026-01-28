@@ -23,7 +23,7 @@ internal static partial class DefaultCommentParser
         {
             if (!string.Equals(endpoint.BodyParameterName, wordsLower[1]))
             {
-                Logger?.CommentSetBodyParamName(description, wordsLower[1]);
+                CommentLogger?.CommentSetBodyParamName(description, wordsLower[1]);
             }
             endpoint.BodyParameterName = wordsLower[1];
         }

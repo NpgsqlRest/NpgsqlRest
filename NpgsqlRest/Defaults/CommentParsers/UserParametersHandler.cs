@@ -18,6 +18,6 @@ internal static partial class DefaultCommentParser
         string description)
     {
         endpoint.UseUserParameters = true;
-        Logger?.CommentUserParameters(description);
+        CommentLogger?.CommentUserParameters(description);
     }
 }

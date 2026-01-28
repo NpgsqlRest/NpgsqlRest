@@ -19,6 +19,6 @@ internal static partial class DefaultCommentParser
         string description)
     {
         endpoint.RawColumnNames = true;
-        Logger?.CommentRawSetColumnNames(description);
+        CommentLogger?.CommentRawSetColumnNames(description);
     }
 }

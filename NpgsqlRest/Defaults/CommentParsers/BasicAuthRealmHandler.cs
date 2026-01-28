@@ -20,9 +20,9 @@ internal static partial class DefaultCommentParser
         if (endpoint.BasicAuth is null)
         {
             endpoint.BasicAuth = new() { Enabled = true };
-            Logger?.BasicAuthEnabled(description);
+            CommentLogger?.BasicAuthEnabled(description);
         }
         endpoint.BasicAuth.Realm = words[1];
-        Logger?.BasicAuthRealmSet(description, endpoint.BasicAuth.Realm);
+        CommentLogger?.BasicAuthRealmSet(description, endpoint.BasicAuth.Realm);
     }
 }

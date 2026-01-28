@@ -11,14 +11,15 @@ public static class PasskeyAuth
         PasskeyConfig? config,
         NpgsqlRestOptions options,
         CommandRetryOptions commandRetryOptions,
-        PostgresConnectionNoticeLoggingMode loggingMode)
+        PostgresConnectionNoticeLoggingMode loggingMode,
+        ILogger? clientLogger = null)
     {
         if (config?.Enabled != true)
         {
             return;
         }
 
-        Logger = app.Services.GetService<ILoggerFactory>()?.CreateLogger(options.LoggerName ?? "NpgsqlRest");
+        Logger = clientLogger;
 
         // Resolve command retry strategy from config
         RetryStrategy? commandRetryStrategy = null;

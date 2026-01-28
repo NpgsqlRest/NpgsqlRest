@@ -29,7 +29,7 @@ internal static partial class DefaultCommentParser
         {
             if (!string.Equals(endpoint.ResponseContentType, headerValue))
             {
-                Logger?.CommentSetContentType(description, headerValue);
+                CommentLogger?.CommentSetContentType(description, headerValue);
             }
             endpoint.ResponseContentType = headerValue;
         }
@@ -55,7 +55,7 @@ internal static partial class DefaultCommentParser
             }
             if (!string.Equals(endpoint.ResponseContentType, headerValue))
             {
-                Logger?.CommentSetHeader(description, headerName, headerValue);
+                CommentLogger?.CommentSetHeader(description, headerName, headerValue);
             }
         }
     }

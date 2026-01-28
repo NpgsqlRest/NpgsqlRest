@@ -36,6 +36,7 @@ public class Builder
     public bool LoggingEnabled { get; private set; } = false;
     
     public Microsoft.Extensions.Logging.ILogger? Logger { get; private set; } = null;
+    public Microsoft.Extensions.Logging.ILogger? ClientLogger { get; private set; } = null;
     public bool UseHttpsRedirection { get; private set; } = false;
     public bool UseHsts { get; private set; } = false;
     public BearerTokenConfig? BearerTokenConfig { get; private set; } = null;
@@ -133,30 +134,35 @@ public class Builder
             LoggingEnabled = true;
             var loggerConfig = new LoggerConfiguration().MinimumLevel.Verbose();
             bool npgsqlRestAdded = false;
+            bool npgsqlRestClientAdded = false;
             bool systemAdded = false;
             bool microsoftAdded = false;
             var appName = _config.GetConfigStr("ApplicationName", _config.Cfg);
             var envName = _config.GetConfigStr("EnvironmentName", _config.Cfg) ?? "Production";
-            string npgsqlRestLoggerName = string.IsNullOrEmpty(appName) ? "NpgsqlRest": appName;
-            
+            string clientLoggerName = string.IsNullOrEmpty(appName) ? "NpgsqlRestClient" : appName;
+
             foreach (var level in logCfg?.GetSection("MinimalLevels")?.GetChildren() ?? [])
             {
                 var key = level.Key;
                 var value = _config.GetEnum<Serilog.Events.LogEventLevel?>(level.Value);
                 if (value is not null && key is not null)
                 {
-                    
                     if (string.Equals(key, "NpgsqlRest", StringComparison.OrdinalIgnoreCase))
                     {
-                        loggerConfig.MinimumLevel.Override(npgsqlRestLoggerName, value.Value);
+                        loggerConfig.MinimumLevel.Override("NpgsqlRest", value.Value);
                         npgsqlRestAdded = true;
                     }
-                    if (string.Equals(key, "System", StringComparison.OrdinalIgnoreCase))
+                    else if (string.Equals(key, "NpgsqlRestClient", StringComparison.OrdinalIgnoreCase))
+                    {
+                        loggerConfig.MinimumLevel.Override(clientLoggerName, value.Value);
+                        npgsqlRestClientAdded = true;
+                    }
+                    else if (string.Equals(key, "System", StringComparison.OrdinalIgnoreCase))
                     {
                         loggerConfig.MinimumLevel.Override(key, value.Value);
                         systemAdded = true;
                     }
-                    if (string.Equals(key, "Microsoft", StringComparison.OrdinalIgnoreCase))
+                    else if (string.Equals(key, "Microsoft", StringComparison.OrdinalIgnoreCase))
                     {
                         loggerConfig.MinimumLevel.Override(key, value.Value);
                         microsoftAdded = true;
@@ -169,7 +175,11 @@ public class Builder
             }
             if (npgsqlRestAdded is false)
             {
-                loggerConfig.MinimumLevel.Override(npgsqlRestLoggerName, Serilog.Events.LogEventLevel.Information);
+                loggerConfig.MinimumLevel.Override("NpgsqlRest", Serilog.Events.LogEventLevel.Information);
+            }
+            if (npgsqlRestClientAdded is false)
+            {
+                loggerConfig.MinimumLevel.Override(clientLoggerName, Serilog.Events.LogEventLevel.Information);
             }
             if (systemAdded is false)
             {
@@ -254,10 +264,12 @@ public class Builder
                 logDebug.Add(string.Concat("OpenTelemetry (minimum level: ", minLevel.ToString(), ", endpoint: ", endpoint, ", protocol: ", protocol.ToString(), ")"));
             }
             var serilog = loggerConfig.CreateLogger();
-            
-            Logger = string.IsNullOrEmpty(appName) ? 
-                new SerilogLoggerFactory(serilog.ForContext("SourceContext", "NpgsqlRest")).CreateLogger("NpgsqlRest") : 
-                new SerilogLoggerFactory(serilog.ForContext("SourceContext", appName)).CreateLogger(appName);
+            var serilogFactory = new SerilogLoggerFactory(serilog);
+
+            // Core library logger - always uses "NpgsqlRest" name
+            Logger = serilogFactory.CreateLogger("NpgsqlRest");
+            // Client application logger - uses ApplicationName or "NpgsqlRestClient"
+            ClientLogger = serilogFactory.CreateLogger(clientLoggerName);
 
             Instance.Host.UseSerilog(serilog);
 
@@ -274,10 +286,10 @@ public class Builder
                 return str;
             }).Aggregate((a, b) => string.Concat(a, ", ", b));
             
-            Logger?.LogDebug("----> Starting with configuration(s): {providerString}", providerString);
+            ClientLogger?.LogDebug("----> Starting with configuration(s): {providerString}", providerString);
             if (logDebug.Count > 0)
             {
-                Logger?.LogDebug("----> Logging enabled: {logDebug}", string.Join(", ", logDebug));
+                ClientLogger?.LogDebug("----> Logging enabled: {logDebug}", string.Join(", ", logDebug));
             }
         }
     }
@@ -302,7 +314,7 @@ public class Builder
                 ? string.Join("; ", defaults.ErrorCodePolicies.Select(p =>
                     $"{p.Key}: [{string.Join(", ", p.Value.Select(m => $"{m.Key}->{m.Value.StatusCode}"))}]"))
                 : "none";
-            Logger?.LogDebug("Using default error handling options: DefaultErrorCodePolicy={DefaultErrorCodePolicy}, TimeoutErrorMapping=[{TimeoutErrorMapping}], ErrorCodePolicies=[{ErrorCodePolicies}]",
+            ClientLogger?.LogDebug("Using default error handling options: DefaultErrorCodePolicy={DefaultErrorCodePolicy}, TimeoutErrorMapping=[{TimeoutErrorMapping}], ErrorCodePolicies=[{ErrorCodePolicies}]",
                 defaults.DefaultErrorCodePolicy ?? "Default",
                 defaultTimeoutLog,
                 defaultPoliciesLog);
@@ -410,7 +422,7 @@ public class Builder
                 $"{p.Key}: [{string.Join(", ", p.Value.Select(m => $"{m.Key}->{m.Value.StatusCode}"))}]"))
             : "none";
 
-        Logger?.LogDebug("Using error handling options: DefaultErrorCodePolicy={DefaultErrorCodePolicy}, RemoveTypeUrl={RemoveTypeUrl}, RemoveTraceId={RemoveTraceId}, TimeoutErrorMapping=[{TimeoutErrorMapping}], ErrorCodePolicies=[{ErrorCodePolicies}]",
+        ClientLogger?.LogDebug("Using error handling options: DefaultErrorCodePolicy={DefaultErrorCodePolicy}, RemoveTypeUrl={RemoveTypeUrl}, RemoveTraceId={RemoveTraceId}, TimeoutErrorMapping=[{TimeoutErrorMapping}], ErrorCodePolicies=[{ErrorCodePolicies}]",
             result.DefaultErrorCodePolicy ?? "Default",
             removeTypeUrl,
             removeTraceId,
@@ -499,7 +511,7 @@ public class Builder
             {
                 dataProtectionBuilder.ProtectKeysWithCertificate(System.Security.Cryptography.X509Certificates.X509CertificateLoader.LoadPkcs12FromFile(certPath, certPassword));
             }
-            Logger?.LogDebug("Data Protection keys encrypted with certificate from {certPath}", certPath);
+            ClientLogger?.LogDebug("Data Protection keys encrypted with certificate from {certPath}", certPath);
         }
         else if (keyEncryption == KeyEncryptionMethod.Dpapi)
         {
@@ -511,7 +523,7 @@ public class Builder
 #pragma warning disable CA1416 // Validate platform compatibility - already checked above
             dataProtectionBuilder.ProtectKeysWithDpapi(protectToLocalMachine);
 #pragma warning restore CA1416
-            Logger?.LogDebug("Data Protection keys encrypted with DPAPI (LocalMachine: {protectToLocalMachine})", protectToLocalMachine);
+            ClientLogger?.LogDebug("Data Protection keys encrypted with DPAPI (LocalMachine: {protectToLocalMachine})", protectToLocalMachine);
         }
 
         var expiresInDays = _config.GetConfigInt("DefaultKeyLifetimeDays", dataProtectionCfg) ?? 90;
@@ -526,13 +538,13 @@ public class Builder
 
         if (storage == DataProtectionStorage.Default)
         {
-            Logger?.LogDebug("Using Data Protection for application {customAppName} with default provider. Expiration in {expiresInDays} days.",
+            ClientLogger?.LogDebug("Using Data Protection for application {customAppName} with default provider. Expiration in {expiresInDays} days.",
                 customAppName,
                 expiresInDays);
         }
         else
         {
-            Logger?.LogDebug($"Using Data Protection for application {{customAppName}} in{(dirInfo is null ? " " : " directory ")}{{dirInfo}}. Expiration in {{expiresInDays}} days.",
+            ClientLogger?.LogDebug($"Using Data Protection for application {{customAppName}} in{(dirInfo is null ? " " : " directory ")}{{dirInfo}}. Expiration in {{expiresInDays}} days.",
                 customAppName,
                 dirInfo?.FullName ?? "database",
                 expiresInDays);
@@ -594,7 +606,7 @@ public class Builder
                 options.Cookie.MaxAge = _config.GetConfigBool("CookieMultiSessions", authCfg, true) is true ? TimeSpan.FromDays(days) : null;
                 options.Cookie.HttpOnly = _config.GetConfigBool("CookieHttpOnly", authCfg, true) is true;
             });
-            Logger?.LogDebug("Using Cookie Authentication with scheme {cookieScheme}. Cookie expires in {days} days.", cookieScheme, days);
+            ClientLogger?.LogDebug("Using Cookie Authentication with scheme {cookieScheme}. Cookie expires in {days} days.", cookieScheme, days);
         }
 
         if (bearerTokenAuth is true)
@@ -611,7 +623,7 @@ public class Builder
                 options.RefreshTokenExpiration = TimeSpan.FromHours(hours);
                 options.Validate();
             });
-            Logger?.LogDebug(
+            ClientLogger?.LogDebug(
                 "Using Bearer Token Authentication with scheme {tokenScheme}. Token expires in {hours} hours. Refresh path is {RefreshPath}",
                 tokenScheme,
                 hours,
@@ -656,7 +668,7 @@ public class Builder
                 options.SaveToken = true;
             });
 
-            Logger?.LogDebug(
+            ClientLogger?.LogDebug(
                 "Using JWT Authentication with scheme {jwtScheme}. Access token expires in {expireMinutes} minutes. Refresh token expires in {refreshExpireDays} days. Refresh path is {RefreshPath}",
                 jwtScheme,
                 expireMinutes,
@@ -792,7 +804,7 @@ public class Builder
             SignCountColumnName = _config.GetConfigStr("SignCountColumnName", passkeyCfg) ?? "sign_count"
         };
 
-        Logger?.LogDebug(
+        ClientLogger?.LogDebug(
             "Using Passkey Authentication: RP ID={RelyingPartyId}, RP Name={RelyingPartyName}, Origins={Origins}, " +
             "UV={UserVerification}, RK={ResidentKey}",
             PasskeyConfig.RelyingPartyId ?? "(auto)",
@@ -820,55 +832,55 @@ public class Builder
             if (allowedOrigins.Contains("*"))
             {
                 builder = builder.AllowAnyOrigin();
-                Logger?.LogDebug("CORS policy allows any origins.");
+                ClientLogger?.LogDebug("CORS policy allows any origins.");
             }
             else
             {
                 builder = builder.WithOrigins(allowedOrigins);
-                Logger?.LogDebug("CORS policy allows origins: {allowedOrigins}", allowedOrigins);
+                ClientLogger?.LogDebug("CORS policy allows origins: {allowedOrigins}", allowedOrigins);
             }
 
             if (allowedMethods.Contains("*"))
             {
                 builder = builder.AllowAnyMethod();
-                Logger?.LogDebug("CORS policy allows any methods.");
+                ClientLogger?.LogDebug("CORS policy allows any methods.");
             }
             else
             {
                 builder = builder.WithMethods(allowedMethods);
-                Logger?.LogDebug("CORS policy allows methods: {allowedMethods}", allowedMethods);
+                ClientLogger?.LogDebug("CORS policy allows methods: {allowedMethods}", allowedMethods);
             }
 
             if (allowedHeaders.Contains("*"))
             {
                 builder = builder.AllowAnyHeader();
-                Logger?.LogDebug("CORS policy allows any headers.");
+                ClientLogger?.LogDebug("CORS policy allows any headers.");
             }
             else
             {
                 builder = builder.WithHeaders(allowedHeaders);
-                Logger?.LogDebug("CORS policy allows headers: {allowedHeaders}", allowedHeaders);
+                ClientLogger?.LogDebug("CORS policy allows headers: {allowedHeaders}", allowedHeaders);
             }
 
             if (_config.GetConfigBool("AllowCredentials", corsCfg, true) is true)
             {
-                Logger?.LogDebug("CORS policy allows credentials.");
+                ClientLogger?.LogDebug("CORS policy allows credentials.");
                 builder.AllowCredentials();
             }
             else
             {
-                Logger?.LogDebug("CORS policy does not allow credentials.");
+                ClientLogger?.LogDebug("CORS policy does not allow credentials.");
             }
             
             var preflightMaxAge = _config.GetConfigInt("PreflightMaxAgeSeconds", corsCfg) ?? 600;
             if (preflightMaxAge > 0)
             {
-                Logger?.LogDebug("CORS policy preflight max age is set to {preflightMaxAge} seconds.", preflightMaxAge);
+                ClientLogger?.LogDebug("CORS policy preflight max age is set to {preflightMaxAge} seconds.", preflightMaxAge);
                 builder.SetPreflightMaxAge(TimeSpan.FromSeconds(preflightMaxAge));
             }
             else
             {
-                Logger?.LogDebug("CORS policy preflight max age is not set.");
+                ClientLogger?.LogDebug("CORS policy preflight max age is not set.");
             }
         }));
         return true;
@@ -966,7 +978,7 @@ public class Builder
             o.SuppressXFrameOptionsHeader = _config.GetConfigBool("SuppressXFrameOptionsHeader", antiforgeryCfg, false);
             o.SuppressReadingTokenFromFormBody = _config.GetConfigBool("SuppressReadingTokenFromFormBody", antiforgeryCfg, false);
 
-            Logger?.LogDebug("Using Antiforgery with cookie name {Cookie}, form field name {FormFieldName}, header name {HeaderName}",
+            ClientLogger?.LogDebug("Using Antiforgery with cookie name {Cookie}, form field name {FormFieldName}, header name {HeaderName}",
                 o.Cookie.Name,
                 o.FormFieldName,
                 o.HeaderName);
@@ -1012,11 +1024,11 @@ public class Builder
         {
             if (string.IsNullOrEmpty(connectionName) is true)
             {
-                Logger?.LogDebug("Using main connection string: {ConnectionString}", connectionStringBuilder.ConnectionString);
+                ClientLogger?.LogDebug("Using main connection string: {ConnectionString}", connectionStringBuilder.ConnectionString);
             }
             else
             {
-                Logger?.LogDebug("Using {connectionName} as main connection string: {ConnectionString}", connectionName, connectionStringBuilder.ConnectionString);
+                ClientLogger?.LogDebug("Using {connectionName} as main connection string: {ConnectionString}", connectionName, connectionStringBuilder.ConnectionString);
             }
         }
         else
@@ -1027,11 +1039,11 @@ public class Builder
             }
             if (string.IsNullOrEmpty(connectionName) is true)
             {
-                Logger?.LogDebug("Using additional connection string: {0}", connectionStringBuilder.ConnectionString);
+                ClientLogger?.LogDebug("Using additional connection string: {0}", connectionStringBuilder.ConnectionString);
             }
             else
             {
-                Logger?.LogDebug("Using {connectionName} as additional connection string: {ConnectionString}", connectionName, connectionStringBuilder.ConnectionString);
+                ClientLogger?.LogDebug("Using {connectionName} as additional connection string: {ConnectionString}", connectionName, connectionStringBuilder.ConnectionString);
             }
         }
 
@@ -1053,7 +1065,7 @@ public class Builder
                                                        "57P03", // Cannot connect now
                                                        "40001", // Serialization failure (can be retried)
                                                    ];
-                Logger?.LogDebug("Using connection retry options with strategy: RetrySequenceSeconds={RetrySequenceSeconds}, ErrorCodes={ErrorCodes}",
+                ClientLogger?.LogDebug("Using connection retry options with strategy: RetrySequenceSeconds={RetrySequenceSeconds}, ErrorCodes={ErrorCodes}",
                     string.Join(",", retryOptions.Strategy.RetrySequenceSeconds),
                     string.Join(",", retryOptions.Strategy.ErrorCodes));
             }
@@ -1222,14 +1234,14 @@ public class Builder
         {
             if (options.Strategies.TryGetValue(options.DefaultStrategy, out var defStrat) is true)
             {
-                Logger?.LogDebug("Using command retry options with default strategy '{DefaultStrategy}': RetrySequenceSeconds={RetrySequenceSeconds}, ErrorCodes={ErrorCodes}",
+                ClientLogger?.LogDebug("Using command retry options with default strategy '{DefaultStrategy}': RetrySequenceSeconds={RetrySequenceSeconds}, ErrorCodes={ErrorCodes}",
                     options.DefaultStrategy,
                     string.Join(",", defStrat.RetrySequenceSeconds),
                     string.Join(",", defStrat.ErrorCodes));
             }
             else
             {
-                Logger?.LogWarning("Default command retry strategy '{DefaultStrategy}' not found in defined strategies.", options.DefaultStrategy);
+                ClientLogger?.LogWarning("Default command retry strategy '{DefaultStrategy}' not found in defined strategies.", options.DefaultStrategy);
             }
         }
         return options;
@@ -1259,11 +1271,11 @@ public class Builder
                 {
                     options.Configuration = redisConfiguration;
                 });
-                Logger?.LogDebug("HybridCache services configured with Redis L2 at: {RedisConfiguration}", redisConfiguration);
+                ClientLogger?.LogDebug("HybridCache services configured with Redis L2 at: {RedisConfiguration}", redisConfiguration);
             }
             else
             {
-                Logger?.LogDebug("HybridCache services configured with in-memory only (no Redis L2)");
+                ClientLogger?.LogDebug("HybridCache services configured with in-memory only (no Redis L2)");
             }
 
             // Register HybridCache with configuration
@@ -1295,7 +1307,7 @@ public class Builder
         };
         if (cacheCfg is null || _config.GetConfigBool("Enabled", cacheCfg) is false)
         {
-            Logger?.LogDebug("Routine caching is disabled.");
+            ClientLogger?.LogDebug("Routine caching is disabled.");
             return options;
         }
 
@@ -1309,7 +1321,7 @@ public class Builder
             options.MemoryCachePruneIntervalSeconds =
                 _config.GetConfigInt("MemoryCachePruneIntervalSeconds", cacheCfg) ?? 60;
             options.DefaultRoutineCache = new RoutineCache();
-            Logger?.LogDebug("Using in-memory routine cache with prune interval of {MemoryCachePruneIntervalSeconds} seconds. MaxCacheableRows={MaxCacheableRows}, UseHashedCacheKeys={UseHashedCacheKeys}, HashKeyThreshold={HashKeyThreshold}",
+            ClientLogger?.LogDebug("Using in-memory routine cache with prune interval of {MemoryCachePruneIntervalSeconds} seconds. MaxCacheableRows={MaxCacheableRows}, UseHashedCacheKeys={UseHashedCacheKeys}, HashKeyThreshold={HashKeyThreshold}",
                 options.MemoryCachePruneIntervalSeconds, options.MaxCacheableRows, options.UseHashedCacheKeys, options.HashKeyThreshold);
         }
         else if (configuredCacheType == CacheType.Redis)
@@ -1321,14 +1333,14 @@ public class Builder
             {
                 var redisCache = new RedisCache(configuration, Logger, options);
                 options.DefaultRoutineCache = redisCache;
-                Logger?.LogDebug("Using Redis routine cache with configuration: {RedisConfiguration}. MaxCacheableRows={MaxCacheableRows}, UseHashedCacheKeys={UseHashedCacheKeys}, HashKeyThreshold={HashKeyThreshold}",
+                ClientLogger?.LogDebug("Using Redis routine cache with configuration: {RedisConfiguration}. MaxCacheableRows={MaxCacheableRows}, UseHashedCacheKeys={UseHashedCacheKeys}, HashKeyThreshold={HashKeyThreshold}",
                     configuration, options.MaxCacheableRows, options.UseHashedCacheKeys, options.HashKeyThreshold);
                 app.Lifetime.ApplicationStopping.Register(() => redisCache.Dispose());
             }
             catch (Exception ex)
             {
-                Logger?.LogError(ex, "Failed to initialize Redis cache with configuration: {RedisConfiguration}", configuration);
-                Logger?.LogWarning("Falling back to in-memory cache due to Redis initialization failure");
+                ClientLogger?.LogError(ex, "Failed to initialize Redis cache with configuration: {RedisConfiguration}", configuration);
+                ClientLogger?.LogWarning("Falling back to in-memory cache due to Redis initialization failure");
                 options.DefaultRoutineCache = new RoutineCache();
                 options.MemoryCachePruneIntervalSeconds = _config.GetConfigInt("MemoryCachePruneIntervalSeconds", cacheCfg) ?? 60;
             }
@@ -1346,19 +1358,19 @@ public class Builder
 
                 if (useRedisBackend && !string.IsNullOrEmpty(redisConfiguration))
                 {
-                    Logger?.LogDebug("Using HybridCache (L1: in-memory, L2: Redis at {RedisConfiguration}). MaxCacheableRows={MaxCacheableRows}, UseHashedCacheKeys={UseHashedCacheKeys}, HashKeyThreshold={HashKeyThreshold}",
+                    ClientLogger?.LogDebug("Using HybridCache (L1: in-memory, L2: Redis at {RedisConfiguration}). MaxCacheableRows={MaxCacheableRows}, UseHashedCacheKeys={UseHashedCacheKeys}, HashKeyThreshold={HashKeyThreshold}",
                         redisConfiguration, options.MaxCacheableRows, options.UseHashedCacheKeys, options.HashKeyThreshold);
                 }
                 else
                 {
-                    Logger?.LogDebug("Using HybridCache (in-memory only, with stampede protection). MaxCacheableRows={MaxCacheableRows}, UseHashedCacheKeys={UseHashedCacheKeys}, HashKeyThreshold={HashKeyThreshold}",
+                    ClientLogger?.LogDebug("Using HybridCache (in-memory only, with stampede protection). MaxCacheableRows={MaxCacheableRows}, UseHashedCacheKeys={UseHashedCacheKeys}, HashKeyThreshold={HashKeyThreshold}",
                         options.MaxCacheableRows, options.UseHashedCacheKeys, options.HashKeyThreshold);
                 }
             }
             catch (Exception ex)
             {
-                Logger?.LogError(ex, "Failed to initialize HybridCache");
-                Logger?.LogWarning("Falling back to in-memory cache due to HybridCache initialization failure");
+                ClientLogger?.LogError(ex, "Failed to initialize HybridCache");
+                ClientLogger?.LogWarning("Falling back to in-memory cache due to HybridCache initialization failure");
                 options.DefaultRoutineCache = new RoutineCache();
                 options.MemoryCachePruneIntervalSeconds = _config.GetConfigInt("MemoryCachePruneIntervalSeconds", cacheCfg) ?? 60;
             }
@@ -1416,7 +1428,7 @@ public class Builder
                         config.QueueLimit = _config.GetConfigInt("QueueLimit", sectionCfg) ?? 10;
                         config.AutoReplenishment = _config.GetConfigBool("AutoReplenishment", sectionCfg, true);
                     });
-                    Logger?.LogDebug("Using Fixed Window rate limiter with name {Name}: PermitLimit={PermitLimit}, WindowSeconds={WindowSeconds}, QueueLimit={QueueLimit}, AutoReplenishment={AutoReplenishment}",
+                    ClientLogger?.LogDebug("Using Fixed Window rate limiter with name {Name}: PermitLimit={PermitLimit}, WindowSeconds={WindowSeconds}, QueueLimit={QueueLimit}, AutoReplenishment={AutoReplenishment}",
                         name,
                         _config.GetConfigInt("PermitLimit", sectionCfg) ?? 100,
                         _config.GetConfigInt("WindowSeconds", sectionCfg) ?? 60,
@@ -1433,7 +1445,7 @@ public class Builder
                         config.QueueLimit = _config.GetConfigInt("QueueLimit", sectionCfg) ?? 10;
                         config.AutoReplenishment = _config.GetConfigBool("AutoReplenishment", sectionCfg, true);
                     });
-                    Logger?.LogDebug("Using Sliding Window rate limiter with name {Name}: PermitLimit={PermitLimit}, WindowSeconds={WindowSeconds}, SegmentsPerWindow={SegmentsPerWindow}, QueueLimit={QueueLimit}, AutoReplenishment={AutoReplenishment}",
+                    ClientLogger?.LogDebug("Using Sliding Window rate limiter with name {Name}: PermitLimit={PermitLimit}, WindowSeconds={WindowSeconds}, SegmentsPerWindow={SegmentsPerWindow}, QueueLimit={QueueLimit}, AutoReplenishment={AutoReplenishment}",
                         name,
                         _config.GetConfigInt("PermitLimit", sectionCfg) ?? 100,
                         _config.GetConfigInt("WindowSeconds", sectionCfg) ?? 60,
@@ -1451,7 +1463,7 @@ public class Builder
                         config.QueueLimit = _config.GetConfigInt("QueueLimit", sectionCfg) ?? 10;
                         config.AutoReplenishment = _config.GetConfigBool("AutoReplenishment", sectionCfg, true);
                     });
-                    Logger?.LogDebug("Using Token Bucket rate limiter with name {Name}: TokenLimit={TokenLimit}, TokensPerPeriod={TokensPerPeriod}, ReplenishmentPeriodSeconds={ReplenishmentPeriodSeconds}, QueueLimit={QueueLimit}, AutoReplenishment={AutoReplenishment}",
+                    ClientLogger?.LogDebug("Using Token Bucket rate limiter with name {Name}: TokenLimit={TokenLimit}, TokensPerPeriod={TokensPerPeriod}, ReplenishmentPeriodSeconds={ReplenishmentPeriodSeconds}, QueueLimit={QueueLimit}, AutoReplenishment={AutoReplenishment}",
                         name,
                         _config.GetConfigInt("TokenLimit", sectionCfg) ?? 100,
                         _config.GetConfigInt("TokensPerPeriod", sectionCfg) ?? 10,
@@ -1467,7 +1479,7 @@ public class Builder
                         config.QueueLimit = _config.GetConfigInt("QueueLimit", sectionCfg) ?? 5;
                         config.QueueProcessingOrder = _config.GetConfigBool("OldestFirst", sectionCfg, true) is true ? QueueProcessingOrder.OldestFirst : QueueProcessingOrder.NewestFirst;
                     });
-                    Logger?.LogDebug("Using Concurrency rate limiter with name {Name}: PermitLimit={PermitLimit}, QueueLimit={QueueLimit}, OldestFirst={OldestFirst}",
+                    ClientLogger?.LogDebug("Using Concurrency rate limiter with name {Name}: PermitLimit={PermitLimit}, QueueLimit={QueueLimit}, OldestFirst={OldestFirst}",
                         name,
                         _config.GetConfigInt("PermitLimit", sectionCfg) ?? 10,
                         _config.GetConfigInt("QueueLimit", sectionCfg) ?? 5,
@@ -1495,7 +1507,7 @@ public class Builder
 
         if (options.Enabled)
         {
-            Logger?.LogDebug("HTTP client options enabled: ResponseBodyField={ResponseBodyField}, ResponseStatusCodeField={ResponseStatusCodeField}, ResponseHeadersField={ResponseHeadersField}, ResponseContentTypeField={ResponseContentTypeField}, ResponseSuccessField={ResponseSuccessField}, ResponseErrorMessageField={ResponseErrorMessageField}",
+            ClientLogger?.LogDebug("HTTP client options enabled: ResponseBodyField={ResponseBodyField}, ResponseStatusCodeField={ResponseStatusCodeField}, ResponseHeadersField={ResponseHeadersField}, ResponseContentTypeField={ResponseContentTypeField}, ResponseSuccessField={ResponseSuccessField}, ResponseErrorMessageField={ResponseErrorMessageField}",
                 options.ResponseBodyField,
                 options.ResponseStatusCodeField,
                 options.ResponseHeadersField,
@@ -1550,7 +1562,7 @@ public class Builder
 
         if (options.Enabled)
         {
-            Logger?.LogDebug("Proxy options enabled: Host={Host}, DefaultTimeout={DefaultTimeout}, ForwardHeaders={ForwardHeaders}, ForwardResponseHeaders={ForwardResponseHeaders}",
+            ClientLogger?.LogDebug("Proxy options enabled: Host={Host}, DefaultTimeout={DefaultTimeout}, ForwardHeaders={ForwardHeaders}, ForwardResponseHeaders={ForwardResponseHeaders}",
                 options.Host,
                 options.DefaultTimeout,
                 options.ForwardHeaders,
@@ -1587,7 +1599,7 @@ public class Builder
             var overrideValue = _config.GetConfigStr(connectionName, byName);
             if (overrideValue is not null && Enum.TryParse<TargetSessionAttributes>(overrideValue, true, out var result))
             {
-                Logger?.LogDebug("Using target session attribute override '{TargetSession}' for connection '{ConnectionName}'", result, connectionName);
+                ClientLogger?.LogDebug("Using target session attribute override '{TargetSession}' for connection '{ConnectionName}'", result, connectionName);
                 return result;
             }
         }
@@ -1614,7 +1626,7 @@ public class Builder
             var target = GetTargetSessionAttribute(ConnectionName);
             var multiHost = new NpgsqlDataSourceBuilder(mainConnectionString).BuildMultiHost();
             result["_default"] = multiHost.WithTargetSession(target);
-            Logger?.LogDebug("Built multi-host data source for main connection with target session '{TargetSession}'", target);
+            ClientLogger?.LogDebug("Built multi-host data source for main connection with target session '{TargetSession}'", target);
         }
 
         // Build additional connection data sources
@@ -1636,7 +1648,7 @@ public class Builder
                 var target = GetTargetSessionAttribute(section.Key);
                 var multiHost = new NpgsqlDataSourceBuilder(connStr).BuildMultiHost();
                 result[section.Key] = multiHost.WithTargetSession(target);
-                Logger?.LogDebug("Built multi-host data source for connection '{ConnectionName}' with target session '{TargetSession}'", section.Key, target);
+                ClientLogger?.LogDebug("Built multi-host data source for connection '{ConnectionName}' with target session '{TargetSession}'", section.Key, target);
             }
         }
 
@@ -1652,7 +1664,7 @@ public class Builder
         {
             var target = GetTargetSessionAttribute(ConnectionName);
             var multiHost = new NpgsqlDataSourceBuilder(connectionString).BuildMultiHost();
-            Logger?.LogDebug("Using multi-host data source with target session '{TargetSession}'", target);
+            ClientLogger?.LogDebug("Using multi-host data source with target session '{TargetSession}'", target);
             return multiHost.WithTargetSession(target);
         }
         return new NpgsqlDataSourceBuilder(connectionString).Build();
@@ -1665,7 +1677,7 @@ public class Builder
 
         if (validationCfg.Exists() is false || _config.GetConfigBool("Enabled", validationCfg) is false)
         {
-            Logger?.LogDebug("Validation options disabled or not configured. Using defaults.");
+            ClientLogger?.LogDebug("Validation options disabled or not configured. Using defaults.");
             return defaults;
         }
 
@@ -1686,7 +1698,7 @@ public class Builder
             var type = _config.GetConfigEnum<ValidationType?>("Type", ruleSection);
             if (type is null)
             {
-                Logger?.LogWarning("Validation rule '{RuleName}' has no valid Type specified, skipping.", ruleName);
+                ClientLogger?.LogWarning("Validation rule '{RuleName}' has no valid Type specified, skipping.", ruleName);
                 continue;
             }
 
@@ -1697,17 +1709,17 @@ public class Builder
             // Skip rules with missing required properties for specific types
             if (type == ValidationType.Regex && string.IsNullOrEmpty(pattern))
             {
-                Logger?.LogWarning("Validation rule '{RuleName}' has Type 'Regex' but no Pattern specified, skipping.", ruleName);
+                ClientLogger?.LogWarning("Validation rule '{RuleName}' has Type 'Regex' but no Pattern specified, skipping.", ruleName);
                 continue;
             }
             if (type == ValidationType.MinLength && minLength is null)
             {
-                Logger?.LogWarning("Validation rule '{RuleName}' has Type 'MinLength' but no MinLength specified, skipping.", ruleName);
+                ClientLogger?.LogWarning("Validation rule '{RuleName}' has Type 'MinLength' but no MinLength specified, skipping.", ruleName);
                 continue;
             }
             if (type == ValidationType.MaxLength && maxLength is null)
             {
-                Logger?.LogWarning("Validation rule '{RuleName}' has Type 'MaxLength' but no MaxLength specified, skipping.", ruleName);
+                ClientLogger?.LogWarning("Validation rule '{RuleName}' has Type 'MaxLength' but no MaxLength specified, skipping.", ruleName);
                 continue;
             }
 
@@ -1722,16 +1734,16 @@ public class Builder
             };
 
             result.Rules[ruleName] = rule;
-            Logger?.LogDebug("Registered validation rule '{RuleName}': {Rule}", ruleName, rule);
+            ClientLogger?.LogDebug("Registered validation rule '{RuleName}': {Rule}", ruleName, rule);
         }
 
         if (result.Rules.Count == 0)
         {
-            Logger?.LogDebug("No validation rules configured, using defaults.");
+            ClientLogger?.LogDebug("No validation rules configured, using defaults.");
             return defaults;
         }
 
-        Logger?.LogDebug("Using {Count} validation rules: {Rules}",
+        ClientLogger?.LogDebug("Using {Count} validation rules: {Rules}",
             result.Rules.Count,
             string.Join(", ", result.Rules.Keys));
 

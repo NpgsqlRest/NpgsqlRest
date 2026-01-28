@@ -23,7 +23,7 @@ internal static partial class DefaultCommentParser
         if (Options.CommandRetryOptions.Strategies.TryGetValue(name, out var strategy))
         {
             endpoint.RetryStrategy = strategy;
-            Logger?.RetryStrategySet(description, name);
+            CommentLogger?.RetryStrategySet(description, name);
         }
         else
         {

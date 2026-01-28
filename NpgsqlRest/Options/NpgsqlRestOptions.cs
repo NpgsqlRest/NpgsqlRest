@@ -193,6 +193,16 @@ public class NpgsqlRestOptions
     public bool LogCommandParameters { get; set; }
 
     /// <summary>
+    /// When set to true (default), debug-level logs are emitted when endpoints are created. Set to false to suppress endpoint creation debug logs.
+    /// </summary>
+    public bool DebugLogEndpointCreateEvents { get; set; } = true;
+
+    /// <summary>
+    /// When set to true (default), debug-level logs are emitted when comment annotations are parsed. Set to false to suppress comment annotation debug logs.
+    /// </summary>
+    public bool DebugLogCommentAnnotationEvents { get; set; } = true;
+
+    /// <summary>
     /// Sets the wait time (in seconds) on database commands, before terminating the attempt to execute a command and generating an error. This value when it is not null will override the `NpgsqlCommand` which is 30 seconds. Command timeout property for individual endpoints can be changed with the `EndpointCreated` function callback, or by using comment annotations.
     /// </summary>
     public TimeSpan? CommandTimeout { get; set; }

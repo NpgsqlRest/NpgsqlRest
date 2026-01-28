@@ -22,7 +22,7 @@ internal static partial class DefaultCommentParser
         {
             if (endpoint.BufferRows != parsedBuffer)
             {
-                Logger?.CommentBufferRows(description, wordsLower[1]);
+                CommentLogger?.CommentBufferRows(description, wordsLower[1]);
             }
             endpoint.BufferRows = parsedBuffer;
         }

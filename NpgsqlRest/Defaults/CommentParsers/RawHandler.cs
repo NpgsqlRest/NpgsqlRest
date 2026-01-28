@@ -18,7 +18,7 @@ internal static partial class DefaultCommentParser
         RoutineEndpoint endpoint,
         string description)
     {
-        Logger?.CommentSetRawMode(description);
+        CommentLogger?.CommentSetRawMode(description);
         endpoint.Raw = true;
     }
 }

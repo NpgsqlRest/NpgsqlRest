@@ -20,7 +20,7 @@ internal static partial class DefaultCommentParser
         if (endpoint.BasicAuth is null)
         {
             endpoint.BasicAuth = new() { Enabled = true };
-            Logger?.BasicAuthEnabled(description);
+            CommentLogger?.BasicAuthEnabled(description);
         }
 
         if (len >= 3)
@@ -30,7 +30,7 @@ internal static partial class DefaultCommentParser
             if (string.IsNullOrEmpty(username) is false && string.IsNullOrEmpty(password) is false)
             {
                 endpoint.BasicAuth.Users[username] = password;
-                Logger?.BasicAuthUserAdded(description, username);
+                CommentLogger?.BasicAuthUserAdded(description, username);
             }
         }
         else

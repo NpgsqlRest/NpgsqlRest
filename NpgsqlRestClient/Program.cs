@@ -126,7 +126,7 @@ if (cmdRetryOpts.Enabled && string.IsNullOrEmpty(cmdRetryOpts.DefaultStrategy))
 builder.BuildInstance();
 builder.Instance.Services.AddRouting();
 builder.BuildLogger(cmdRetryStrategy);
-builder.Logger?.LogInformation("NpgsqlRest version {version}",
+builder.ClientLogger?.LogInformation("NpgsqlRest version {version}",
     System.Reflection.Assembly.GetAssembly(typeof(Program))?.GetName()?.Version?.ToString() ?? "-");
 var errorHandlingOptions = builder.BuildErrorHandlingOptions();
 var (rateLimiterDefaultPolicy, rateLimiterEnabled) = builder.BuildRateLimiter();
@@ -179,7 +179,7 @@ appInstance.Configure(app, () =>
     var message = config.Cfg?.GetSection("StartupMessage")?.Value ?? "Started in {time}, listening on {urls}, version {version}";
     if (string.IsNullOrEmpty(message) is false)
     {
-        builder.Logger?.LogInformation(
+        builder.ClientLogger?.LogInformation(
             Formatter.FormatString(
                 message.AsSpan(), 
                 new Dictionary<string, string> { 
@@ -252,11 +252,13 @@ NpgsqlRestOptions options = new()
     NameConverter = config.GetConfigBool("CamelCaseNames", config.NpgsqlRestCfg, true) ? DefaultNameConverter.ConvertToCamelCase : n => n?.Trim('"'),
     RequiresAuthorization = config.GetConfigBool("RequiresAuthorization", config.NpgsqlRestCfg, true),
 
-    LoggerName = config.GetConfigStr("ApplicationName", config.Cfg),
+    // LoggerName defaults to "NpgsqlRest" - allows separate log level configuration from client
     LogConnectionNoticeEvents = config.GetConfigBool("LogConnectionNoticeEvents", config.NpgsqlRestCfg, true),
     LogCommands = config.GetConfigBool("LogCommands", config.NpgsqlRestCfg),
     LogCommandParameters = config.GetConfigBool("LogCommandParameters", config.NpgsqlRestCfg),
     LogConnectionNoticeEventsMode = logConnectionNoticeEventsMode,
+    DebugLogEndpointCreateEvents = config.GetConfigBool("DebugLogEndpointCreateEvents", config.NpgsqlRestCfg, true),
+    DebugLogCommentAnnotationEvents = config.GetConfigBool("DebugLogCommentAnnotationEvents", config.NpgsqlRestCfg, true),
     
     DefaultHttpMethod = config.GetConfigEnum<Method?>("DefaultHttpMethod", config.NpgsqlRestCfg),
     DefaultRequestParamType = config.GetConfigEnum<RequestParamType?>("DefaultRequestParamType", config.NpgsqlRestCfg),
@@ -298,7 +300,8 @@ if (builder.ExternalAuthConfig?.Enabled is true)
         app,
         options,
         cmdRetryStrategy,
-        logConnectionNoticeEventsMode);
+        logConnectionNoticeEventsMode,
+        builder.ClientLogger);
 }
 
 if (builder.PasskeyConfig?.Enabled is true)
@@ -307,17 +310,18 @@ if (builder.PasskeyConfig?.Enabled is true)
         builder.PasskeyConfig,
         options,
         cmdRetryOpts,
-        logConnectionNoticeEventsMode);
+        logConnectionNoticeEventsMode,
+        builder.ClientLogger);
 }
 
 if (builder.BearerTokenConfig is not null)
 {
-    new TokenRefreshAuth(builder.BearerTokenConfig, app, builder.Logger);
+    new TokenRefreshAuth(builder.BearerTokenConfig, app, builder.ClientLogger);
 }
 
 if (builder.JwtTokenConfig is not null)
 {
-    new JwtRefreshAuth(builder.JwtTokenConfig, app, builder.Logger);
+    new JwtRefreshAuth(builder.JwtTokenConfig, app, builder.ClientLogger);
 }
 
 app.Run();

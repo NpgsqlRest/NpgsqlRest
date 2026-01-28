@@ -18,6 +18,6 @@ internal static partial class DefaultCommentParser
     private static void HandleAllowAnonymous(RoutineEndpoint endpoint, string description)
     {
         endpoint.RequiresAuthorization = false;
-        Logger?.CommentSetAnon(description);
+        CommentLogger?.CommentSetAnon(description);
     }
 }

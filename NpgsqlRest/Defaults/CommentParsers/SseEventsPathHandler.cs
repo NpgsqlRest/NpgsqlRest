@@ -27,7 +27,7 @@ internal static partial class DefaultCommentParser
         {
             endpoint.SseEventsPath =
                 (endpoint.SseEventNoticeLevel ?? Options.DefaultSseEventNoticeLevel).ToString().ToLowerInvariant();
-            Logger?.CommentSseStreamingPath(description, endpoint.SseEventsPath);
+            CommentLogger?.CommentSseStreamingPath(description, endpoint.SseEventsPath);
         }
         else
         {
@@ -37,7 +37,7 @@ internal static partial class DefaultCommentParser
                 if (Enum.TryParse<PostgresNoticeLevels>(words[3], true, out var parsedLevel))
                 {
                     endpoint.SseEventNoticeLevel = parsedLevel;
-                    Logger?.CommentSseStreamingPathAndLevel(description, endpoint.SseEventsPath, endpoint.SseEventNoticeLevel.Value);
+                    CommentLogger?.CommentSseStreamingPathAndLevel(description, endpoint.SseEventsPath, endpoint.SseEventNoticeLevel.Value);
                 }
                 else
                 {
@@ -47,7 +47,7 @@ internal static partial class DefaultCommentParser
             }
             else
             {
-                Logger?.CommentSseStreamingPath(description, endpoint.SseEventsPath);
+                CommentLogger?.CommentSseStreamingPath(description, endpoint.SseEventsPath);
             }
         }
     }

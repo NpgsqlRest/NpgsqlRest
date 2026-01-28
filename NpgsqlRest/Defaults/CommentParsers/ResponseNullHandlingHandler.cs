@@ -52,7 +52,7 @@ internal static partial class DefaultCommentParser
         }
         if (endpoint.TextResponseNullHandling != Options.TextResponseNullHandling)
         {
-            Logger?.CommentSetTextResponseNullHandling(description, wordsLower[1]);
+            CommentLogger?.CommentSetTextResponseNullHandling(description, wordsLower[1]);
         }
     }
 }

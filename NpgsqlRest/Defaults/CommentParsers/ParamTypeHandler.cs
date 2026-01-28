@@ -44,7 +44,7 @@ internal static partial class DefaultCommentParser
 
         if (originalParamType != endpoint.RequestParamType)
         {
-            Logger?.CommentSetParameterType(description, endpoint.RequestParamType);
+            CommentLogger?.CommentSetParameterType(description, endpoint.RequestParamType);
         }
     }
 }

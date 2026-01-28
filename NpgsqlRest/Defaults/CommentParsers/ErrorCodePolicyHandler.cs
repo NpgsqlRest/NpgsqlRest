@@ -20,6 +20,6 @@ internal static partial class DefaultCommentParser
         string description)
     {
         endpoint.ErrorCodePolicy = string.Join(Consts.Space, words[1..]);
-        Logger?.ErrorCodePolicySet(description, endpoint.ErrorCodePolicy);
+        CommentLogger?.ErrorCodePolicySet(description, endpoint.ErrorCodePolicy);
     }
 }

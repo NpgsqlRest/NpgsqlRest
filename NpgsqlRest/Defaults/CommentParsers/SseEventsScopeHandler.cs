@@ -33,11 +33,11 @@ internal static partial class DefaultCommentParser
                         endpoint.SseEventsRoles.Add(word);
                     }
                 }
-                Logger?.CommentSseStreamingScopeRoles(description, endpoint.SseEventsRoles);
+                CommentLogger?.CommentSseStreamingScopeRoles(description, endpoint.SseEventsRoles);
             }
             else
             {
-                Logger?.CommentSseStreamingScope(description, endpoint.SseEventsScope);
+                CommentLogger?.CommentSseStreamingScope(description, endpoint.SseEventsScope);
             }
         }
         else

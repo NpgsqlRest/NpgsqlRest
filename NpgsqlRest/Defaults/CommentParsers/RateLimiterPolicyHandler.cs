@@ -20,6 +20,6 @@ internal static partial class DefaultCommentParser
         string description)
     {
         endpoint.RateLimiterPolicy = string.Join(Consts.Space, words[1..]);
-        Logger?.RateLimiterPolicySet(description, endpoint.RateLimiterPolicy);
+        CommentLogger?.RateLimiterPolicySet(description, endpoint.RateLimiterPolicy);
     }
 }

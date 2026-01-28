@@ -18,6 +18,6 @@ internal static partial class DefaultCommentParser
     private static void HandleSecuritySensitive(RoutineEndpoint endpoint, string description)
     {
         endpoint.SecuritySensitive = true;
-        Logger?.CommentSecuritySensitive(description);
+        CommentLogger?.CommentSecuritySensitive(description);
     }
 }

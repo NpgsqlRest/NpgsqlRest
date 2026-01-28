@@ -27,6 +27,31 @@ Added automated integration tests for NpgsqlRestClient configuration features to
 - **CORS Tests** - Verify CORS headers, preflight requests, and origin validation
 - **StaticFiles Tests** - Verify content parsing, claims replacement, and file serving
 
+### Separate Core and Client Logging
+
+Added ability to configure separate log levels for the core NpgsqlRest library and the NpgsqlRestClient application. This allows fine-grained control over logging verbosity:
+
+```json
+"MinimalLevels": {
+  "NpgsqlRest": "Information",
+  "NpgsqlRestClient": "Debug",
+  "System": "Warning",
+  "Microsoft": "Warning"
+}
+```
+
+- `NpgsqlRest` - Controls log level for the core library (endpoint creation, SQL execution, etc.)
+- `NpgsqlRestClient` - Controls log level for the client application (configuration, authentication setup, passkeys, etc.)
+
+### Debug Log Filtering Options
+
+Added two new boolean options to control debug-level logging verbosity:
+
+- `DebugLogEndpointCreateEvents` (default: `true`) - When `false`, suppresses "Created endpoint" debug logs
+- `DebugLogCommentAnnotationEvents` (default: `true`) - When `false`, suppresses comment annotation parsing debug logs
+
+These options allow users to reduce log noise while keeping the log level at Debug for other important information.
+
 ---
 
 ## Version [3.4.8](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.4.8) (2025-01-26)

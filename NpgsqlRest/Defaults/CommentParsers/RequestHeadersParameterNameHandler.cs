@@ -24,7 +24,7 @@ internal static partial class DefaultCommentParser
         {
             if (!string.Equals(endpoint.RequestHeadersParameterName, wordsLower[1]))
             {
-                Logger?.CommentSetRequestHeadersParamName(description, wordsLower[1]);
+                CommentLogger?.CommentSetRequestHeadersParamName(description, wordsLower[1]);
             }
             endpoint.RequestHeadersParameterName = wordsLower[1];
         }

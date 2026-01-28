@@ -33,7 +33,7 @@ internal static partial class DefaultCommentParser
             // Extract path parameters from the path template
             endpoint.PathParameters = ExtractPathParameters(endpoint.Path);
 
-            Logger?.CommentSetHttp(description, endpoint.Method, endpoint.Path);
+            CommentLogger?.CommentSetHttp(description, endpoint.Method, endpoint.Path);
             urlDescription = string.Concat(endpoint.Method.ToString(), " ", endpoint.Path);
             fullDescription = string.Concat(routineDescription, " mapped to ", urlDescription);
         }

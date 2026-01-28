@@ -67,6 +67,6 @@ internal static partial class DefaultCommentParser
         
         urlDescription = string.Concat(endpoint.Method.ToString(), " ", endpoint.Path);
         fullDescription = string.Concat(routineDescription, " mapped to ", urlDescription);
-        Logger?.CommentSetHttp(fullDescription, endpoint.Method, endpoint.Path);
+        CommentLogger?.CommentSetHttp(fullDescription, endpoint.Method, endpoint.Path);
     }
 }

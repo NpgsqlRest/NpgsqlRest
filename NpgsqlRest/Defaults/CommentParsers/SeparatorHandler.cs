@@ -22,7 +22,7 @@ internal static partial class DefaultCommentParser
         string description)
     {
         var sep = line[(wordsLower[0].Length + 1)..];
-        Logger?.CommentSetRawValueSeparator(description, sep);
+        CommentLogger?.CommentSetRawValueSeparator(description, sep);
         endpoint.RawValueSeparator = Regex.Unescape(sep);
     }
 }
