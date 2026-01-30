@@ -75,6 +75,7 @@ if (args.Length >= 1 && (string.Equals(args[0], "-v", StringComparison.CurrentCu
         ("Microsoft.Extensions.Caching.Hybrid", System.Reflection.Assembly.GetAssembly(typeof(Microsoft.Extensions.Caching.Hybrid.HybridCache))?.GetName().Version?.ToString() ?? "-"),
         ("Microsoft.Extensions.Caching.StackExchangeRedis", System.Reflection.Assembly.GetAssembly(typeof(Microsoft.Extensions.Caching.StackExchangeRedis.RedisCache))?.GetName().Version?.ToString() ?? "-"),
         ("Microsoft.AspNetCore.Authentication.JwtBearer", System.Reflection.Assembly.GetAssembly(typeof(Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions))?.GetName().Version?.ToString() ?? "-"),
+        ("AspNetCore.HealthChecks.NpgSql", System.Reflection.Assembly.GetAssembly(typeof(HealthChecks.NpgSql.NpgSqlHealthCheck))?.GetName().Version?.ToString() ?? "-"),
         (" ", " "),
         ("CurrentDirectory", Directory.GetCurrentDirectory()),
         ("BaseDirectory", AppContext.BaseDirectory)
@@ -145,6 +146,9 @@ var dataProtectionName = builder.BuildDataProtection(cmdRetryStrategy);
 builder.BuildAuthentication();
 builder.BuildPasskeyAuthentication();
 var usingCors = builder.BuildCors();
+var securityHeadersConfig = builder.BuildSecurityHeaders();
+var forwardedHeadersEnabled = builder.BuildForwardedHeaders();
+var healthChecksEnabled = builder.BuildHealthChecks(connectionString);
 var compressionEnabled = builder.ConfigureResponseCompression();
 var antiForgeryUsed = builder.ConfigureAntiForgery();
 var cacheType = builder.ConfigureCacheServices();
@@ -181,8 +185,8 @@ appInstance.Configure(app, () =>
     {
         builder.ClientLogger?.LogInformation(
             Formatter.FormatString(
-                message.AsSpan(), 
-                new Dictionary<string, string> { 
+                message.AsSpan(),
+                new Dictionary<string, string> {
                     ["time"] = sw.ToString(),
                     ["urls"] = string.Join(";", app.Urls.ToArray()),
                     ["version"] = System.Reflection.Assembly.GetAssembly(typeof(Program))?.GetName()?.Version?.ToString() ?? "-",
@@ -190,7 +194,13 @@ appInstance.Configure(app, () =>
                     ["application"] = builder.Instance.Environment.ApplicationName
                 }).ToString());
     }
-});
+}, forwardedHeadersEnabled);
+
+// Security headers middleware (after HSTS, before other middleware)
+appInstance.ConfigureSecurityHeaders(app, securityHeadersConfig, antiForgeryUsed);
+
+// Config endpoint middleware
+appInstance.ConfigureConfigEndpoint(app);
 
 var (authenticationOptions, authCfg) = appInstance.CreateNpgsqlRestAuthenticationOptions(app, dataProtectionName);
 
@@ -322,6 +332,25 @@ if (builder.BearerTokenConfig is not null)
 if (builder.JwtTokenConfig is not null)
 {
     new JwtRefreshAuth(builder.JwtTokenConfig, app, builder.ClientLogger);
+}
+
+// Health check endpoints
+if (healthChecksEnabled)
+{
+    var healthCfg = config.Cfg.GetSection("HealthChecks");
+    var path = config.GetConfigStr("Path", healthCfg) ?? "/health";
+    var readyPath = config.GetConfigStr("ReadyPath", healthCfg) ?? "/health/ready";
+    var livePath = config.GetConfigStr("LivePath", healthCfg) ?? "/health/live";
+
+    app.MapHealthChecks(path);
+    app.MapHealthChecks(readyPath, new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+    {
+        Predicate = check => check.Tags.Contains("ready")
+    });
+    app.MapHealthChecks(livePath, new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+    {
+        Predicate = _ => false // Always healthy if app is running
+    });
 }
 
 app.Run();

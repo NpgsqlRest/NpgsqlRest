@@ -110,6 +110,9 @@ public static class ConfigDefaults
             ["Antiforgery"] = GetAntiforgeryDefaults(),
             ["StaticFiles"] = GetStaticFilesDefaults(),
             ["Cors"] = GetCorsDefaults(),
+            ["SecurityHeaders"] = GetSecurityHeadersDefaults(),
+            ["ForwardedHeaders"] = GetForwardedHeadersDefaults(),
+            ["HealthChecks"] = GetHealthChecksDefaults(),
             ["CommandRetryOptions"] = GetCommandRetryOptionsDefaults(),
             ["CacheOptions"] = GetCacheOptionsDefaults(),
             ["ValidationOptions"] = GetValidationOptionsDefaults(),
@@ -358,6 +361,48 @@ public static class ConfigDefaults
             ["AllowedHeaders"] = CreateStringArray("*"),
             ["AllowCredentials"] = true,
             ["PreflightMaxAgeSeconds"] = 600
+        };
+    }
+
+    private static JsonObject GetSecurityHeadersDefaults()
+    {
+        return new JsonObject
+        {
+            ["Enabled"] = false,
+            ["XContentTypeOptions"] = "nosniff",
+            ["XFrameOptions"] = "DENY",
+            ["ReferrerPolicy"] = "strict-origin-when-cross-origin",
+            ["ContentSecurityPolicy"] = null,
+            ["PermissionsPolicy"] = null,
+            ["CrossOriginOpenerPolicy"] = null,
+            ["CrossOriginEmbedderPolicy"] = null,
+            ["CrossOriginResourcePolicy"] = null
+        };
+    }
+
+    private static JsonObject GetForwardedHeadersDefaults()
+    {
+        return new JsonObject
+        {
+            ["Enabled"] = false,
+            ["ForwardLimit"] = 1,
+            ["KnownProxies"] = new JsonArray(),
+            ["KnownNetworks"] = new JsonArray(),
+            ["AllowedHosts"] = new JsonArray()
+        };
+    }
+
+    private static JsonObject GetHealthChecksDefaults()
+    {
+        return new JsonObject
+        {
+            ["Enabled"] = false,
+            ["Path"] = "/health",
+            ["ReadyPath"] = "/health/ready",
+            ["LivePath"] = "/health/live",
+            ["IncludeDatabaseCheck"] = true,
+            ["DatabaseCheckName"] = "postgresql",
+            ["CacheDurationSeconds"] = 5
         };
     }
 

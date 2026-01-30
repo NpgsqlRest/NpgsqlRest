@@ -25,9 +25,16 @@ public class App
         _builder = builder;
     }
     
-    public void Configure(WebApplication app, Action started)
+    public void Configure(WebApplication app, Action started, bool forwardedHeadersEnabled)
     {
         app.Lifetime.ApplicationStarted.Register(started);
+
+        // Forwarded headers MUST be first - before any IP-based decisions
+        if (forwardedHeadersEnabled)
+        {
+            app.UseForwardedHeaders();
+        }
+
         if (_builder.UseHttpsRedirection)
         {
             app.UseHttpsRedirection();
@@ -41,7 +48,59 @@ public class App
         {
             app.UseSerilogRequestLogging();
         }
+    }
 
+    public void ConfigureSecurityHeaders(WebApplication app, SecurityHeadersConfig? config, bool antiForgeryUsed)
+    {
+        if (config is null)
+        {
+            return;
+        }
+
+        app.Use(async (context, next) =>
+        {
+            var headers = context.Response.Headers;
+
+            if (config.XContentTypeOptions is not null)
+            {
+                headers["X-Content-Type-Options"] = config.XContentTypeOptions;
+            }
+            // Skip X-Frame-Options if Antiforgery is enabled (it already sets this header)
+            if (config.XFrameOptions is not null && !antiForgeryUsed)
+            {
+                headers["X-Frame-Options"] = config.XFrameOptions;
+            }
+            if (config.ReferrerPolicy is not null)
+            {
+                headers["Referrer-Policy"] = config.ReferrerPolicy;
+            }
+            if (config.ContentSecurityPolicy is not null)
+            {
+                headers["Content-Security-Policy"] = config.ContentSecurityPolicy;
+            }
+            if (config.PermissionsPolicy is not null)
+            {
+                headers["Permissions-Policy"] = config.PermissionsPolicy;
+            }
+            if (config.CrossOriginOpenerPolicy is not null)
+            {
+                headers["Cross-Origin-Opener-Policy"] = config.CrossOriginOpenerPolicy;
+            }
+            if (config.CrossOriginEmbedderPolicy is not null)
+            {
+                headers["Cross-Origin-Embedder-Policy"] = config.CrossOriginEmbedderPolicy;
+            }
+            if (config.CrossOriginResourcePolicy is not null)
+            {
+                headers["Cross-Origin-Resource-Policy"] = config.CrossOriginResourcePolicy;
+            }
+
+            await next();
+        });
+    }
+
+    public void ConfigureConfigEndpoint(WebApplication app)
+    {
         var cfgCfg = _config.Cfg.GetSection("Config");
         var configEndpoint = _config.GetConfigStr("ExposeAsEndpoint", cfgCfg);
         if (configEndpoint is not null)

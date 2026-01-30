@@ -8,9 +8,11 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption;
 using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption.ConfigurationModel;
 using Microsoft.AspNetCore.DataProtection.KeyManagement;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.Caching.Hybrid;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Primitives;
 using Microsoft.Net.Http.Headers;
 using Npgsql;
@@ -985,7 +987,104 @@ public class Builder
         });
         return true;
     }
-    
+
+    public SecurityHeadersConfig? BuildSecurityHeaders()
+    {
+        var cfg = _config.Cfg.GetSection("SecurityHeaders");
+        if (_config.Exists(cfg) is false || _config.GetConfigBool("Enabled", cfg) is false)
+        {
+            return null;
+        }
+
+        var config = new SecurityHeadersConfig
+        {
+            XContentTypeOptions = _config.GetConfigStr("XContentTypeOptions", cfg),
+            XFrameOptions = _config.GetConfigStr("XFrameOptions", cfg),
+            ReferrerPolicy = _config.GetConfigStr("ReferrerPolicy", cfg),
+            ContentSecurityPolicy = _config.GetConfigStr("ContentSecurityPolicy", cfg),
+            PermissionsPolicy = _config.GetConfigStr("PermissionsPolicy", cfg),
+            CrossOriginOpenerPolicy = _config.GetConfigStr("CrossOriginOpenerPolicy", cfg),
+            CrossOriginEmbedderPolicy = _config.GetConfigStr("CrossOriginEmbedderPolicy", cfg),
+            CrossOriginResourcePolicy = _config.GetConfigStr("CrossOriginResourcePolicy", cfg)
+        };
+
+        ClientLogger?.LogDebug("Security headers middleware enabled.");
+        return config;
+    }
+
+    public bool BuildForwardedHeaders()
+    {
+        var cfg = _config.Cfg.GetSection("ForwardedHeaders");
+        if (_config.Exists(cfg) is false || _config.GetConfigBool("Enabled", cfg) is false)
+        {
+            return false;
+        }
+
+        Instance.Services.Configure<ForwardedHeadersOptions>(options =>
+        {
+            options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost;
+
+            var forwardLimit = _config.GetConfigInt("ForwardLimit", cfg);
+            if (forwardLimit.HasValue)
+            {
+                options.ForwardLimit = forwardLimit.Value;
+            }
+
+            var knownProxies = _config.GetConfigEnumerable("KnownProxies", cfg);
+            if (knownProxies is not null)
+            {
+                foreach (var proxy in knownProxies)
+                {
+                    if (System.Net.IPAddress.TryParse(proxy, out var ip))
+                    {
+                        options.KnownProxies.Add(ip);
+                    }
+                }
+            }
+
+            var knownNetworks = _config.GetConfigEnumerable("KnownNetworks", cfg);
+            if (knownNetworks is not null)
+            {
+                foreach (var network in knownNetworks)
+                {
+                    if (System.Net.IPNetwork.TryParse(network, out var ipNetwork))
+                    {
+                        options.KnownIPNetworks.Add(ipNetwork);
+                    }
+                }
+            }
+
+            var allowedHosts = _config.GetConfigEnumerable("AllowedHosts", cfg)?.ToList();
+            if (allowedHosts is not null && allowedHosts.Count > 0)
+            {
+                options.AllowedHosts = allowedHosts;
+            }
+        });
+
+        ClientLogger?.LogDebug("Forwarded headers middleware enabled.");
+        return true;
+    }
+
+    public bool BuildHealthChecks(string? connectionString)
+    {
+        var cfg = _config.Cfg.GetSection("HealthChecks");
+        if (_config.Exists(cfg) is false || _config.GetConfigBool("Enabled", cfg) is false)
+        {
+            return false;
+        }
+
+        var builder = Instance.Services.AddHealthChecks();
+
+        if (_config.GetConfigBool("IncludeDatabaseCheck", cfg, true) && connectionString is not null)
+        {
+            var dbName = _config.GetConfigStr("DatabaseCheckName", cfg) ?? "postgresql";
+            builder.AddNpgSql(connectionString, name: dbName, tags: ["ready"]);
+        }
+
+        ClientLogger?.LogDebug("Health checks endpoints configured.");
+        return true;
+    }
+
     private (string?, ConnectionRetryOptions) BuildConnection(
         string? connectionName, 
         string connectionString, 
@@ -1749,4 +1848,16 @@ public class Builder
 
         return result;
     }
+}
+
+public class SecurityHeadersConfig
+{
+    public string? XContentTypeOptions { get; set; }
+    public string? XFrameOptions { get; set; }
+    public string? ReferrerPolicy { get; set; }
+    public string? ContentSecurityPolicy { get; set; }
+    public string? PermissionsPolicy { get; set; }
+    public string? CrossOriginOpenerPolicy { get; set; }
+    public string? CrossOriginEmbedderPolicy { get; set; }
+    public string? CrossOriginResourcePolicy { get; set; }
 }

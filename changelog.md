@@ -4,6 +4,79 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [3.6.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.6.0) (2025-01-30)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.5.0...3.6.0)
+
+### New Feature: Security Headers Middleware
+
+Added configurable security headers middleware to protect against common web vulnerabilities. The middleware adds HTTP security headers to all responses:
+
+- **X-Content-Type-Options** - Prevents MIME-sniffing attacks (default: `nosniff`)
+- **X-Frame-Options** - Prevents clickjacking attacks (default: `DENY`, skipped if Antiforgery is enabled)
+- **Referrer-Policy** - Controls referrer information (default: `strict-origin-when-cross-origin`)
+- **Content-Security-Policy** - Defines approved content sources (configurable)
+- **Permissions-Policy** - Controls browser feature access (configurable)
+- **Cross-Origin-Opener-Policy** - Controls document sharing with popups
+- **Cross-Origin-Embedder-Policy** - Controls cross-origin resource loading
+- **Cross-Origin-Resource-Policy** - Controls resource sharing cross-origin
+
+Configuration example:
+```json
+"SecurityHeaders": {
+  "Enabled": true,
+  "XContentTypeOptions": "nosniff",
+  "XFrameOptions": "DENY",
+  "ReferrerPolicy": "strict-origin-when-cross-origin",
+  "ContentSecurityPolicy": "default-src 'self'",
+  "PermissionsPolicy": "geolocation=(), microphone=()"
+}
+```
+
+### New Feature: Forwarded Headers Middleware
+
+Added support for processing proxy headers when running behind a reverse proxy (nginx, Apache, Azure App Service, AWS ALB, Cloudflare, etc.). This is critical for getting the correct client IP address and protocol.
+
+- **X-Forwarded-For** - Gets real client IP instead of proxy IP
+- **X-Forwarded-Proto** - Gets original protocol (http/https)
+- **X-Forwarded-Host** - Gets original host header
+
+Configuration example:
+```json
+"ForwardedHeaders": {
+  "Enabled": true,
+  "ForwardLimit": 1,
+  "KnownProxies": ["10.0.0.1"],
+  "KnownNetworks": ["10.0.0.0/8"],
+  "AllowedHosts": ["example.com"]
+}
+```
+
+### New Feature: Health Check Endpoints
+
+Added health check endpoints for container orchestration (Kubernetes, Docker Swarm) and monitoring systems:
+
+- **/health** - Overall health status (combines all checks)
+- **/health/ready** - Readiness probe with optional PostgreSQL connectivity check
+- **/health/live** - Liveness probe (always returns healthy if app is running)
+
+Configuration example:
+```json
+"HealthChecks": {
+  "Enabled": true,
+  "Path": "/health",
+  "ReadyPath": "/health/ready",
+  "LivePath": "/health/live",
+  "IncludeDatabaseCheck": true,
+  "DatabaseCheckName": "postgresql",
+  "CacheDurationSeconds": 5
+}
+```
+
+Added new dependency: `AspNetCore.HealthChecks.NpgSql` for PostgreSQL health checks.
+
+---
+
 ## Version [3.5.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.5.0) (2025-01-28)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.4.8...3.5.0)
