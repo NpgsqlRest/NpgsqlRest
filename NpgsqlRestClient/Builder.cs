@@ -1008,7 +1008,16 @@ public class Builder
             CrossOriginResourcePolicy = _config.GetConfigStr("CrossOriginResourcePolicy", cfg)
         };
 
-        ClientLogger?.LogDebug("Security headers middleware enabled.");
+        var enabledHeaders = new List<string>();
+        if (config.XContentTypeOptions is not null) enabledHeaders.Add("X-Content-Type-Options");
+        if (config.XFrameOptions is not null) enabledHeaders.Add("X-Frame-Options");
+        if (config.ReferrerPolicy is not null) enabledHeaders.Add("Referrer-Policy");
+        if (config.ContentSecurityPolicy is not null) enabledHeaders.Add("Content-Security-Policy");
+        if (config.PermissionsPolicy is not null) enabledHeaders.Add("Permissions-Policy");
+        if (config.CrossOriginOpenerPolicy is not null) enabledHeaders.Add("Cross-Origin-Opener-Policy");
+        if (config.CrossOriginEmbedderPolicy is not null) enabledHeaders.Add("Cross-Origin-Embedder-Policy");
+        if (config.CrossOriginResourcePolicy is not null) enabledHeaders.Add("Cross-Origin-Resource-Policy");
+        ClientLogger?.LogDebug("Security headers middleware enabled: {Headers}", string.Join(", ", enabledHeaders));
         return config;
     }
 
@@ -1061,7 +1070,11 @@ public class Builder
             }
         });
 
-        ClientLogger?.LogDebug("Forwarded headers middleware enabled.");
+        var forwardLimit = _config.GetConfigInt("ForwardLimit", cfg) ?? 1;
+        var knownProxiesCount = _config.GetConfigEnumerable("KnownProxies", cfg)?.Count() ?? 0;
+        var knownNetworksCount = _config.GetConfigEnumerable("KnownNetworks", cfg)?.Count() ?? 0;
+        ClientLogger?.LogDebug("Forwarded headers middleware enabled: ForwardLimit={ForwardLimit}, KnownProxies={KnownProxies}, KnownNetworks={KnownNetworks}",
+            forwardLimit, knownProxiesCount, knownNetworksCount);
         return true;
     }
 
@@ -1081,7 +1094,10 @@ public class Builder
             builder.AddNpgSql(connectionString, name: dbName, tags: ["ready"]);
         }
 
-        ClientLogger?.LogDebug("Health checks endpoints configured.");
+        var path = _config.GetConfigStr("Path", cfg) ?? "/health";
+        var readyPath = _config.GetConfigStr("ReadyPath", cfg) ?? "/health/ready";
+        var livePath = _config.GetConfigStr("LivePath", cfg) ?? "/health/live";
+        ClientLogger?.LogDebug("Health checks endpoints configured: {Path}, {ReadyPath}, {LivePath}", path, readyPath, livePath);
         return true;
     }
 

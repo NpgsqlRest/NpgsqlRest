@@ -341,16 +341,32 @@ if (healthChecksEnabled)
     var path = config.GetConfigStr("Path", healthCfg) ?? "/health";
     var readyPath = config.GetConfigStr("ReadyPath", healthCfg) ?? "/health/ready";
     var livePath = config.GetConfigStr("LivePath", healthCfg) ?? "/health/live";
+    var requireAuthorization = config.GetConfigBool("RequireAuthorization", healthCfg);
+    var rateLimiterPolicy = config.GetConfigStr("RateLimiterPolicy", healthCfg);
 
-    app.MapHealthChecks(path);
-    app.MapHealthChecks(readyPath, new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+    var healthEndpoint = app.MapHealthChecks(path);
+    var readyEndpoint = app.MapHealthChecks(readyPath, new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
     {
         Predicate = check => check.Tags.Contains("ready")
     });
-    app.MapHealthChecks(livePath, new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+    var liveEndpoint = app.MapHealthChecks(livePath, new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
     {
         Predicate = _ => false // Always healthy if app is running
     });
+
+    if (requireAuthorization)
+    {
+        healthEndpoint.RequireAuthorization();
+        readyEndpoint.RequireAuthorization();
+        liveEndpoint.RequireAuthorization();
+    }
+
+    if (rateLimiterPolicy is not null)
+    {
+        healthEndpoint.RequireRateLimiting(rateLimiterPolicy);
+        readyEndpoint.RequireRateLimiting(rateLimiterPolicy);
+        liveEndpoint.RequireRateLimiting(rateLimiterPolicy);
+    }
 }
 
 app.Run();

@@ -4,7 +4,7 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
-## Version [3.6.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.6.0) (2025-01-30)
+## Version [3.6.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.6.0) (2025-01-31)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.5.0...3.6.0)
 
@@ -21,15 +21,75 @@ Added configurable security headers middleware to protect against common web vul
 - **Cross-Origin-Embedder-Policy** - Controls cross-origin resource loading
 - **Cross-Origin-Resource-Policy** - Controls resource sharing cross-origin
 
-Configuration example:
-```json
+Configuration:
+```jsonc
+//
+// Security Headers: Adds HTTP security headers to all responses to protect against common web vulnerabilities.
+// These headers instruct browsers how to handle your content securely.
+// Note: X-Frame-Options is automatically handled by the Antiforgery middleware when enabled (see Antiforgery.SuppressXFrameOptionsHeader).
+// Reference: https://owasp.org/www-project-secure-headers/
+//
 "SecurityHeaders": {
-  "Enabled": true,
+  //
+  // Enable security headers middleware. When enabled, configured headers are added to all HTTP responses.
+  //
+  "Enabled": false,
+  //
+  // X-Content-Type-Options: Prevents browsers from MIME-sniffing a response away from the declared content-type.
+  // Recommended value: "nosniff"
+  // Set to null to not include this header.
+  //
   "XContentTypeOptions": "nosniff",
+  //
+  // X-Frame-Options: Controls whether the browser should allow the page to be rendered in a <frame>, <iframe>, <embed> or <object>.
+  // Values: "DENY" (never allow), "SAMEORIGIN" (allow from same origin only)
+  // Note: This header is SKIPPED if Antiforgery is enabled (Antiforgery already sets X-Frame-Options: SAMEORIGIN by default).
+  // Set to null to not include this header.
+  //
   "XFrameOptions": "DENY",
+  //
+  // Referrer-Policy: Controls how much referrer information should be included with requests.
+  // Values: "no-referrer", "no-referrer-when-downgrade", "origin", "origin-when-cross-origin",
+  //         "same-origin", "strict-origin", "strict-origin-when-cross-origin", "unsafe-url"
+  // Recommended: "strict-origin-when-cross-origin" (send origin for cross-origin requests, full URL for same-origin)
+  // Set to null to not include this header.
+  //
   "ReferrerPolicy": "strict-origin-when-cross-origin",
-  "ContentSecurityPolicy": "default-src 'self'",
-  "PermissionsPolicy": "geolocation=(), microphone=()"
+  //
+  // Content-Security-Policy: Defines approved sources of content that the browser may load.
+  // Helps prevent XSS, clickjacking, and other code injection attacks.
+  // Example: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+  // Reference: https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP
+  // Set to null to not include this header (recommended to configure based on your application needs).
+  //
+  "ContentSecurityPolicy": null,
+  //
+  // Permissions-Policy: Controls which browser features and APIs can be used.
+  // Example: "geolocation=(), microphone=(), camera=()" disables these features entirely.
+  // Example: "geolocation=(self), microphone=()" allows geolocation only from same origin.
+  // Reference: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Permissions-Policy
+  // Set to null to not include this header.
+  //
+  "PermissionsPolicy": null,
+  //
+  // Cross-Origin-Opener-Policy: Controls how your document is shared with cross-origin popups.
+  // Values: "unsafe-none", "same-origin-allow-popups", "same-origin"
+  // Set to null to not include this header.
+  //
+  "CrossOriginOpenerPolicy": null,
+  //
+  // Cross-Origin-Embedder-Policy: Prevents a document from loading cross-origin resources that don't explicitly grant permission.
+  // Values: "unsafe-none", "require-corp", "credentialless"
+  // Required for SharedArrayBuffer and high-resolution timers (along with COOP: same-origin).
+  // Set to null to not include this header.
+  //
+  "CrossOriginEmbedderPolicy": null,
+  //
+  // Cross-Origin-Resource-Policy: Indicates how the resource should be shared cross-origin.
+  // Values: "same-site", "same-origin", "cross-origin"
+  // Set to null to not include this header.
+  //
+  "CrossOriginResourcePolicy": null
 }
 ```
 
@@ -41,14 +101,44 @@ Added support for processing proxy headers when running behind a reverse proxy (
 - **X-Forwarded-Proto** - Gets original protocol (http/https)
 - **X-Forwarded-Host** - Gets original host header
 
-Configuration example:
-```json
+Configuration:
+```jsonc
+//
+// Forwarded Headers: Enables the application to read proxy headers (X-Forwarded-For, X-Forwarded-Proto, X-Forwarded-Host).
+// CRITICAL: Required when running behind a reverse proxy (nginx, Apache, Azure App Service, AWS ALB, Cloudflare, etc.)
+// Without this, the application sees the proxy's IP instead of the client's real IP, and HTTP instead of HTTPS.
+// Security Warning: Only enable if you're behind a trusted proxy. Malicious clients can spoof these headers.
+// Reference: https://learn.microsoft.com/en-us/aspnet/core/host-and-deploy/proxy-load-balancer
+//
 "ForwardedHeaders": {
-  "Enabled": true,
+  //
+  // Enable forwarded headers middleware. Must be placed FIRST in the middleware pipeline.
+  //
+  "Enabled": false,
+  //
+  // Limits the number of proxy entries that will be processed from X-Forwarded-For.
+  // Default is 1 (trust only the immediate proxy). Increase if you have multiple proxies in a chain.
+  // Set to null to process all entries (not recommended for security).
+  //
   "ForwardLimit": 1,
-  "KnownProxies": ["10.0.0.1"],
-  "KnownNetworks": ["10.0.0.0/8"],
-  "AllowedHosts": ["example.com"]
+  //
+  // List of IP addresses of known proxies to accept forwarded headers from.
+  // Example: ["10.0.0.1", "192.168.1.1"]
+  // If empty and KnownNetworks is also empty, forwarded headers are accepted from any source (less secure).
+  //
+  "KnownProxies": [],
+  //
+  // List of CIDR network ranges of known proxies.
+  // Example: ["10.0.0.0/8", "192.168.0.0/16", "172.16.0.0/12"] for private networks
+  // Useful when proxy IPs are dynamically assigned within a known range.
+  //
+  "KnownNetworks": [],
+  //
+  // List of allowed values for the X-Forwarded-Host header.
+  // Example: ["example.com", "www.example.com"]
+  // If empty, any host is allowed (less secure). Helps prevent host header injection attacks.
+  //
+  "AllowedHosts": []
 }
 ```
 
@@ -60,16 +150,72 @@ Added health check endpoints for container orchestration (Kubernetes, Docker Swa
 - **/health/ready** - Readiness probe with optional PostgreSQL connectivity check
 - **/health/live** - Liveness probe (always returns healthy if app is running)
 
-Configuration example:
-```json
+Configuration:
+```jsonc
+//
+// Health Checks: Provides endpoints for monitoring application health, used by container orchestrators (Kubernetes, Docker Swarm),
+// load balancers, and monitoring systems to determine if the application is running correctly.
+// Three types of checks are supported:
+//   - /health: Overall health status (combines all checks)
+//   - /health/ready: Readiness probe - is the app ready to accept traffic? (includes database connectivity)
+//   - /health/live: Liveness probe - is the app process running? (always returns healthy if app responds)
+// Reference: https://learn.microsoft.com/en-us/aspnet/core/host-and-deploy/health-checks
+//
 "HealthChecks": {
-  "Enabled": true,
+  //
+  // Enable health check endpoints.
+  //
+  "Enabled": false,
+  //
+  // Path for the main health check endpoint that reports overall status.
+  // Returns "Healthy", "Degraded", or "Unhealthy" with HTTP 200 (healthy/degraded) or 503 (unhealthy).
+  //
   "Path": "/health",
+  //
+  // Path for the readiness probe endpoint.
+  // Kubernetes uses this to know when a pod is ready to receive traffic.
+  // Includes database connectivity check when IncludeDatabaseCheck is true.
+  // Returns 503 Service Unavailable if database is unreachable.
+  //
   "ReadyPath": "/health/ready",
+  //
+  // Path for the liveness probe endpoint.
+  // Kubernetes uses this to know when to restart a pod.
+  // Always returns Healthy (200) if the application process is responding.
+  // Does NOT check database - a slow database shouldn't trigger a container restart.
+  //
   "LivePath": "/health/live",
+  //
+  // Include PostgreSQL database connectivity in health checks.
+  // When true, the readiness probe will fail if the database is unreachable.
+  //
   "IncludeDatabaseCheck": true,
+  //
+  // Name for the database health check (appears in detailed health reports).
+  //
   "DatabaseCheckName": "postgresql",
-  "CacheDurationSeconds": 5
+  //
+  // How long to cache health check results in seconds.
+  // Prevents excessive database queries when health endpoints are polled frequently.
+  // Set to 0 to disable caching (check on every request).
+  //
+  "CacheDurationSeconds": 5,
+  //
+  // Require authentication for health check endpoints.
+  // When true, all health endpoints require a valid authenticated user.
+  // Security Consideration: Health endpoints can reveal information about your infrastructure
+  // (database connectivity, service status). Enable this if your health endpoints are publicly accessible.
+  // Note: Kubernetes/Docker health probes may need to authenticate if this is enabled.
+  //
+  "RequireAuthorization": false,
+  //
+  // Apply a rate limiter policy to health check endpoints.
+  // Specify the name of a policy defined in RateLimiterOptions.Policies.
+  // Security Consideration: Prevents denial-of-service attacks targeting health endpoints.
+  // Set to null to disable rate limiting on health endpoints.
+  // Example: "fixed" or "bucket" (must match a policy name from RateLimiterOptions).
+  //
+  "RateLimiterPolicy": null
 }
 ```
 

@@ -402,7 +402,9 @@ public static class ConfigDefaults
             ["LivePath"] = "/health/live",
             ["IncludeDatabaseCheck"] = true,
             ["DatabaseCheckName"] = "postgresql",
-            ["CacheDurationSeconds"] = 5
+            ["CacheDurationSeconds"] = 5,
+            ["RequireAuthorization"] = false,
+            ["RateLimiterPolicy"] = null
         };
     }
 
