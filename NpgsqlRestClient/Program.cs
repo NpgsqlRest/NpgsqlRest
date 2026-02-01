@@ -148,7 +148,15 @@ builder.BuildPasskeyAuthentication();
 var usingCors = builder.BuildCors();
 var securityHeadersConfig = builder.BuildSecurityHeaders();
 var forwardedHeadersEnabled = builder.BuildForwardedHeaders();
-var healthChecksEnabled = builder.BuildHealthChecks(connectionString);
+var (healthChecksEnabled, healthChecksCacheDuration) = builder.BuildHealthChecks(connectionString);
+var (statsEnabled, statsCacheDuration) = builder.BuildStats();
+
+// Add OutputCache if any endpoint uses caching
+if ((healthChecksEnabled && healthChecksCacheDuration.HasValue) || (statsEnabled && statsCacheDuration.HasValue))
+{
+    builder.Instance.Services.AddOutputCache();
+}
+
 var compressionEnabled = builder.ConfigureResponseCompression();
 var antiForgeryUsed = builder.ConfigureAntiForgery();
 var cacheType = builder.ConfigureCacheServices();
@@ -211,6 +219,10 @@ if (usingCors)
 if (compressionEnabled)
 {
     app.UseResponseCompression();
+}
+if ((healthChecksEnabled && healthChecksCacheDuration.HasValue) || (statsEnabled && statsCacheDuration.HasValue))
+{
+    app.UseOutputCache();
 }
 if (antiForgeryUsed)
 {
@@ -366,6 +378,82 @@ if (healthChecksEnabled)
         healthEndpoint.RequireRateLimiting(rateLimiterPolicy);
         readyEndpoint.RequireRateLimiting(rateLimiterPolicy);
         liveEndpoint.RequireRateLimiting(rateLimiterPolicy);
+    }
+
+    if (healthChecksCacheDuration.HasValue)
+    {
+        healthEndpoint.CacheOutput(policy => policy.Expire(healthChecksCacheDuration.Value).SetVaryByQuery([]));
+        readyEndpoint.CacheOutput(policy => policy.Expire(healthChecksCacheDuration.Value).SetVaryByQuery([]));
+        liveEndpoint.CacheOutput(policy => policy.Expire(healthChecksCacheDuration.Value).SetVaryByQuery([]));
+    }
+}
+
+// Stats endpoints
+if (statsEnabled)
+{
+    var statsCfg = config.Cfg.GetSection("Stats");
+    var routinesPath = config.GetConfigStr("RoutinesStatsPath", statsCfg) ?? "/stats/routines";
+    var tablesPath = config.GetConfigStr("TablesStatsPath", statsCfg) ?? "/stats/tables";
+    var indexesPath = config.GetConfigStr("IndexesStatsPath", statsCfg) ?? "/stats/indexes";
+    var activityPath = config.GetConfigStr("ActivityPath", statsCfg) ?? "/stats/activity";
+    var requireAuthorization = config.GetConfigBool("RequireAuthorization", statsCfg);
+    var authorizedRoles = config.GetConfigEnumerable("AuthorizedRoles", statsCfg)?.ToArray();
+    var rateLimiterPolicy = config.GetConfigStr("RateLimiterPolicy", statsCfg);
+    var outputFormat = config.GetConfigStr("OutputFormat", statsCfg) ?? "json";
+    var schemaSimilarTo = config.GetConfigStr("SchemaSimilarTo", statsCfg);
+
+    // Resolve connection string for stats endpoints
+    var statsConnectionName = config.GetConfigStr("ConnectionName", statsCfg);
+    var statsConnectionString = connectionString;
+    if (statsConnectionName is not null && connectionStrings?.TryGetValue(statsConnectionName, out var namedConnStr) == true)
+    {
+        statsConnectionString = namedConnStr;
+    }
+
+    var routinesEndpoint = app.MapGet(routinesPath, async (HttpContext context) =>
+        await StatsEndpoints.HandleRoutinesStats(context, statsConnectionString!, outputFormat, schemaSimilarTo, builder.ClientLogger));
+
+    var tablesEndpoint = app.MapGet(tablesPath, async (HttpContext context) =>
+        await StatsEndpoints.HandleTablesStats(context, statsConnectionString!, outputFormat, schemaSimilarTo, builder.ClientLogger));
+
+    var indexesEndpoint = app.MapGet(indexesPath, async (HttpContext context) =>
+        await StatsEndpoints.HandleIndexesStats(context, statsConnectionString!, outputFormat, schemaSimilarTo, builder.ClientLogger));
+
+    var activityEndpoint = app.MapGet(activityPath, async (HttpContext context) =>
+        await StatsEndpoints.HandleActivityStats(context, statsConnectionString!, outputFormat, builder.ClientLogger));
+
+    if (requireAuthorization)
+    {
+        if (authorizedRoles is null || authorizedRoles.Length == 0)
+        {
+            routinesEndpoint.RequireAuthorization();
+            tablesEndpoint.RequireAuthorization();
+            indexesEndpoint.RequireAuthorization();
+            activityEndpoint.RequireAuthorization();
+        }
+        else
+        {
+            routinesEndpoint.RequireAuthorization(policy => policy.RequireRole(authorizedRoles));
+            tablesEndpoint.RequireAuthorization(policy => policy.RequireRole(authorizedRoles));
+            indexesEndpoint.RequireAuthorization(policy => policy.RequireRole(authorizedRoles));
+            activityEndpoint.RequireAuthorization(policy => policy.RequireRole(authorizedRoles));
+        }
+    }
+
+    if (rateLimiterPolicy is not null)
+    {
+        routinesEndpoint.RequireRateLimiting(rateLimiterPolicy);
+        tablesEndpoint.RequireRateLimiting(rateLimiterPolicy);
+        indexesEndpoint.RequireRateLimiting(rateLimiterPolicy);
+        activityEndpoint.RequireRateLimiting(rateLimiterPolicy);
+    }
+
+    if (statsCacheDuration.HasValue)
+    {
+        routinesEndpoint.CacheOutput(policy => policy.Expire(statsCacheDuration.Value).SetVaryByQuery([]));
+        tablesEndpoint.CacheOutput(policy => policy.Expire(statsCacheDuration.Value).SetVaryByQuery([]));
+        indexesEndpoint.CacheOutput(policy => policy.Expire(statsCacheDuration.Value).SetVaryByQuery([]));
+        activityEndpoint.CacheOutput(policy => policy.Expire(statsCacheDuration.Value).SetVaryByQuery([]));
     }
 }
 

@@ -1078,12 +1078,12 @@ public class Builder
         return true;
     }
 
-    public bool BuildHealthChecks(string? connectionString)
+    public (bool enabled, TimeSpan? cacheDuration) BuildHealthChecks(string? connectionString)
     {
         var cfg = _config.Cfg.GetSection("HealthChecks");
         if (_config.Exists(cfg) is false || _config.GetConfigBool("Enabled", cfg) is false)
         {
-            return false;
+            return (false, null);
         }
 
         var builder = Instance.Services.AddHealthChecks();
@@ -1097,8 +1097,27 @@ public class Builder
         var path = _config.GetConfigStr("Path", cfg) ?? "/health";
         var readyPath = _config.GetConfigStr("ReadyPath", cfg) ?? "/health/ready";
         var livePath = _config.GetConfigStr("LivePath", cfg) ?? "/health/live";
+        var cacheDuration = Parser.ParsePostgresInterval(_config.GetConfigStr("CacheDuration", cfg));
         ClientLogger?.LogDebug("Health checks endpoints configured: {Path}, {ReadyPath}, {LivePath}", path, readyPath, livePath);
-        return true;
+        return (true, cacheDuration);
+    }
+
+    public (bool enabled, TimeSpan? cacheDuration) BuildStats()
+    {
+        var cfg = _config.Cfg.GetSection("Stats");
+        if (_config.Exists(cfg) is false || _config.GetConfigBool("Enabled", cfg) is false)
+        {
+            return (false, null);
+        }
+
+        var routinesPath = _config.GetConfigStr("RoutinesStatsPath", cfg) ?? "/stats/routines";
+        var tablesPath = _config.GetConfigStr("TablesStatsPath", cfg) ?? "/stats/tables";
+        var indexesPath = _config.GetConfigStr("IndexesStatsPath", cfg) ?? "/stats/indexes";
+        var activityPath = _config.GetConfigStr("ActivityPath", cfg) ?? "/stats/activity";
+        var cacheDuration = Parser.ParsePostgresInterval(_config.GetConfigStr("CacheDuration", cfg));
+        ClientLogger?.LogDebug("Stats endpoints configured: {RoutinesPath}, {TablesPath}, {IndexesPath}, {ActivityPath}",
+            routinesPath, tablesPath, indexesPath, activityPath);
+        return (true, cacheDuration);
     }
 
     private (string?, ConnectionRetryOptions) BuildConnection(

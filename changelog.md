@@ -167,6 +167,13 @@ Configuration:
   //
   "Enabled": false,
   //
+  // Cache health check responses server-side in memory for the specified duration.
+  // Cached responses are served without re-executing the endpoint. 
+  // Value is in PostgreSQL interval format (e.g., '5 seconds', '1 minute', '30s', '1min').
+  // Set to null to disable caching. Query strings are ignored to prevent cache-busting.
+  //
+  "CacheDuration": "5 seconds",
+  //
   // Path for the main health check endpoint that reports overall status.
   // Returns "Healthy", "Degraded", or "Unhealthy" with HTTP 200 (healthy/degraded) or 503 (unhealthy).
   //
@@ -195,12 +202,6 @@ Configuration:
   //
   "DatabaseCheckName": "postgresql",
   //
-  // How long to cache health check results in seconds.
-  // Prevents excessive database queries when health endpoints are polled frequently.
-  // Set to 0 to disable caching (check on every request).
-  //
-  "CacheDurationSeconds": 5,
-  //
   // Require authentication for health check endpoints.
   // When true, all health endpoints require a valid authenticated user.
   // Security Consideration: Health endpoints can reveal information about your infrastructure
@@ -220,6 +221,100 @@ Configuration:
 ```
 
 Added new dependency: `AspNetCore.HealthChecks.NpgSql` for PostgreSQL health checks.
+
+### New Feature: PostgreSQL Statistics Endpoints
+
+Added HTTP endpoints for monitoring PostgreSQL database statistics, useful for debugging, performance analysis, and operational monitoring:
+
+- **/stats/routines** - Function/procedure performance statistics from `pg_stat_user_functions` (call counts, execution times)
+- **/stats/tables** - Table statistics from `pg_stat_user_tables` (tuple counts, sizes, scan counts, vacuum info)
+- **/stats/indexes** - Index statistics from `pg_stat_user_indexes` (scan counts, definitions)
+- **/stats/activity** - Current database activity from `pg_stat_activity` (active sessions, queries, wait events)
+
+Output formats:
+- **HTML** (default) - HTML table with Excel-compatible formatting for direct browser copy-paste
+- **JSON** - JSON array with camelCase property names
+
+Configuration:
+```jsonc
+//
+// PostgreSQL Statistics Endpoints
+// Exposes PostgreSQL statistics through HTTP endpoints for monitoring and debugging.
+// Provides access to pg_stat_user_functions, pg_stat_user_tables, pg_stat_user_indexes, and pg_stat_activity.
+//
+"Stats": {
+  //
+  // Enable PostgreSQL statistics endpoints.
+  //
+  "Enabled": false,
+  //
+  // Cache stats responses server-side in memory for the specified duration.
+  // Cached responses are served without re-executing the endpoint.
+  // Value is in PostgreSQL interval format (e.g., '5 seconds', '1 minute', '30s', '1min').
+  // Set to null to disable caching. Query strings are ignored to prevent cache-busting.
+  //
+  "CacheDuration": "5 seconds",
+  //
+  // Apply a rate limiter policy to stats endpoints.
+  // Specify the name of a policy defined in RateLimiterOptions.Policies.
+  // Set to null to disable rate limiting on stats endpoints.
+  //
+  "RateLimiterPolicy": null,
+  //
+  // Use a specific named connection for stats queries.
+  // When null, uses the default connection string.
+  // Useful when you want to query stats from a different database or use read-only credentials.
+  //
+  "ConnectionName": null,
+  //
+  // Require authentication for stats endpoints.
+  // Security Consideration: Stats endpoints can reveal sensitive information about your database
+  // (table sizes, query patterns, active sessions). Enable this for production environments.
+  //
+  "RequireAuthorization": false,
+  //
+  // Restrict access to specific roles.
+  // When null or empty, any authenticated user can access (if RequireAuthorization is true).
+  // Example: ["admin", "dba"] - only users with admin or dba role can access.
+  //
+  "AuthorizedRoles": [],
+  //
+  // Output format for stats endpoints: "json" or "html".
+  // - json: JSON array
+  // - html: HTML table, Excel-compatible for direct browser copy-paste (default)
+  //
+  "OutputFormat": "html",
+  //
+  // Filter schemas using PostgreSQL SIMILAR TO pattern.
+  // When null, all schemas are included.
+  // Example: "public|myapp%" - includes 'public' and schemas starting with 'myapp'.
+  //
+  "SchemaSimilarTo": null,
+  //
+  // Path for routine (function/procedure) performance statistics.
+  // Returns data from pg_stat_user_functions including call counts and execution times.
+  // Note: Requires track_functions = 'pl' or 'all' in postgresql.conf.
+  // Enable with: alter system set track_functions = 'all'; select pg_reload_conf();
+  //
+  "RoutinesStatsPath": "/stats/routines",
+  //
+  // Path for table statistics.
+  // Returns data from pg_stat_user_tables including tuple counts, sizes, scan counts, and vacuum info.
+  //
+  "TablesStatsPath": "/stats/tables",
+  //
+  // Path for index statistics.
+  // Returns data from pg_stat_user_indexes including scan counts and index definitions.
+  //
+  "IndexesStatsPath": "/stats/indexes",
+  //
+  // Path for current database activity.
+  // Returns data from pg_stat_activity showing active sessions, queries, and wait events.
+  // Security Consideration: Shows currently running queries which may contain sensitive data.
+  //
+  "ActivityPath": "/stats/activity"
+}
+```
 
 ---
 

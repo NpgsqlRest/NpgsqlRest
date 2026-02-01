@@ -113,6 +113,7 @@ public static class ConfigDefaults
             ["SecurityHeaders"] = GetSecurityHeadersDefaults(),
             ["ForwardedHeaders"] = GetForwardedHeadersDefaults(),
             ["HealthChecks"] = GetHealthChecksDefaults(),
+            ["Stats"] = GetStatsDefaults(),
             ["CommandRetryOptions"] = GetCommandRetryOptionsDefaults(),
             ["CacheOptions"] = GetCacheOptionsDefaults(),
             ["ValidationOptions"] = GetValidationOptionsDefaults(),
@@ -397,14 +398,33 @@ public static class ConfigDefaults
         return new JsonObject
         {
             ["Enabled"] = false,
+            ["CacheDuration"] = "5 seconds",
             ["Path"] = "/health",
             ["ReadyPath"] = "/health/ready",
             ["LivePath"] = "/health/live",
             ["IncludeDatabaseCheck"] = true,
             ["DatabaseCheckName"] = "postgresql",
-            ["CacheDurationSeconds"] = 5,
             ["RequireAuthorization"] = false,
             ["RateLimiterPolicy"] = null
+        };
+    }
+
+    private static JsonObject GetStatsDefaults()
+    {
+        return new JsonObject
+        {
+            ["Enabled"] = false,
+            ["CacheDuration"] = "5 seconds",
+            ["RateLimiterPolicy"] = null,
+            ["ConnectionName"] = null,
+            ["RequireAuthorization"] = false,
+            ["AuthorizedRoles"] = new JsonArray(),
+            ["OutputFormat"] = "html",
+            ["SchemaSimilarTo"] = null,
+            ["RoutinesStatsPath"] = "/stats/routines",
+            ["TablesStatsPath"] = "/stats/tables",
+            ["IndexesStatsPath"] = "/stats/indexes",
+            ["ActivityPath"] = "/stats/activity"
         };
     }
 
