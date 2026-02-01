@@ -295,6 +295,7 @@ Configuration:
   // Returns data from pg_stat_user_functions including call counts and execution times.
   // Note: Requires track_functions = 'pl' or 'all' in postgresql.conf.
   // Enable with: alter system set track_functions = 'all'; select pg_reload_conf();
+  // Or set track_functions = 'all' directly in postgresql.conf and restart/reload.
   //
   "RoutinesStatsPath": "/stats/routines",
   //

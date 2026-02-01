@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using NpgsqlRest;
 
 namespace NpgsqlRestClient;
 
@@ -15,7 +16,7 @@ public static class StatsEndpoints
     private const string RoutinesQuery = """
         select
             funcid as oid,
-            a.schemaname as schema,
+            schemaname as schema,
             b.proname as name,
             case
                 when b.prokind = 'f' then 'function'
@@ -25,11 +26,13 @@ public static class StatsEndpoints
                 else b.prokind::text
             end || ' ' || funcid::regprocedure as signature,
             calls,
-            total_time as total_time_ms,
-            self_time as self_time_ms
+            ltrim(justify_interval(total_time * interval '1 ms')::text, '@ ') as total_time,
+            ltrim(justify_interval(self_time * interval '1 ms')::text, '@ ') as self_time
         from pg_stat_user_functions a join pg_proc b on a.funcid = b.oid
-        where $1 is null or a.schemaname similar to $1
-        order by a.schemaname, b.proname
+        where $1 is null or schemaname similar to $1
+        order by
+            a.schemaname,
+            b.proname
         """;
 
     private const string TablesQuery = """
@@ -86,10 +89,10 @@ public static class StatsEndpoints
             state,
             wait_event_type,
             wait_event,
-            now() - state_change as state_duration,
-            now() - backend_start as connection_age,
-            now() - xact_start as transaction_duration,
-            now() - query_start as query_duration,
+            ltrim(justify_interval(now() - state_change)::text, '@ ') as state_duration,
+            ltrim(justify_interval(now() - backend_start)::text, '@ ') as connection_age,
+            ltrim(justify_interval(now() - xact_start)::text, '@ ') as transaction_duration,
+            ltrim(justify_interval(now() - query_start)::text, '@ ') as query_duration,
             left(query, 100) as query_preview,
             query
         from pg_stat_activity
@@ -102,7 +105,7 @@ public static class StatsEndpoints
     /// </summary>
     public static async Task HandleRoutinesStats(HttpContext context, string connectionString, string outputFormat, string? schemaSimilarTo, ILogger? logger)
     {
-        await ExecuteQueryAndRespond(context, connectionString, RoutinesQuery, outputFormat, schemaSimilarTo, logger);
+        await ExecuteQueryAndRespond(context, connectionString, RoutinesQuery, outputFormat, schemaSimilarTo, logger, "Stats.Routines", setupCommands: ["set local intervalstyle = 'postgres_verbose'"]);
     }
 
     /// <summary>
@@ -110,7 +113,7 @@ public static class StatsEndpoints
     /// </summary>
     public static async Task HandleTablesStats(HttpContext context, string connectionString, string outputFormat, string? schemaSimilarTo, ILogger? logger)
     {
-        await ExecuteQueryAndRespond(context, connectionString, TablesQuery, outputFormat, schemaSimilarTo, logger);
+        await ExecuteQueryAndRespond(context, connectionString, TablesQuery, outputFormat, schemaSimilarTo, logger, "Stats.Tables");
     }
 
     /// <summary>
@@ -118,7 +121,7 @@ public static class StatsEndpoints
     /// </summary>
     public static async Task HandleIndexesStats(HttpContext context, string connectionString, string outputFormat, string? schemaSimilarTo, ILogger? logger)
     {
-        await ExecuteQueryAndRespond(context, connectionString, IndexesQuery, outputFormat, schemaSimilarTo, logger);
+        await ExecuteQueryAndRespond(context, connectionString, IndexesQuery, outputFormat, schemaSimilarTo, logger, "Stats.Indexes");
     }
 
     /// <summary>
@@ -126,30 +129,65 @@ public static class StatsEndpoints
     /// </summary>
     public static async Task HandleActivityStats(HttpContext context, string connectionString, string outputFormat, ILogger? logger)
     {
-        await ExecuteQueryAndRespond(context, connectionString, ActivityQuery, outputFormat, null, logger);
+        await ExecuteQueryAndRespond(context, connectionString, ActivityQuery, outputFormat, null, logger, "Stats.Activity", setupCommands: ["set local intervalstyle = 'postgres_verbose'"]);
     }
 
-    private static async Task ExecuteQueryAndRespond(HttpContext context, string connectionString, string query, string outputFormat, string? schemaSimilarTo, ILogger? logger)
+    private static async Task ExecuteQueryAndRespond(
+        HttpContext context,
+        string connectionString,
+        string query, string outputFormat,
+        string? schemaSimilarTo,
+        ILogger? logger,
+        string logName,
+        string[]? setupCommands = null)
     {
         try
         {
             await using var connection = new NpgsqlConnection(connectionString);
             await connection.OpenAsync(context.RequestAborted);
 
-            await using var command = new NpgsqlCommand(query, connection);
-            if (query.Contains("$1"))
+            // If setup commands are provided, wrap in a transaction with rollback
+            if (setupCommands is { Length: > 0 })
             {
-                command.Parameters.Add(new NpgsqlParameter { Value = schemaSimilarTo ?? (object)DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text });
-            }
-            await using var reader = await command.ExecuteReaderAsync(context.RequestAborted);
+                await using var beginCmd = new NpgsqlCommand("begin", connection);
+                CommandLogger.LogCommand(beginCmd, logger, logName);
+                await beginCmd.ExecuteNonQueryAsync(context.RequestAborted);
 
-            if (string.Equals(outputFormat, "html", StringComparison.OrdinalIgnoreCase))
-            {
-                await WriteAsHtml(context, reader);
+                foreach (var setupSql in setupCommands)
+                {
+                    await using var setupCmd = new NpgsqlCommand(setupSql, connection);
+                    CommandLogger.LogCommand(setupCmd, logger, logName);
+                    await setupCmd.ExecuteNonQueryAsync(context.RequestAborted);
+                }
             }
-            else
+
+            try
             {
-                await WriteAsJson(context, reader);
+                await using var command = new NpgsqlCommand(query, connection);
+                if (query.Contains("$1"))
+                {
+                    command.Parameters.Add(new NpgsqlParameter { Value = schemaSimilarTo ?? (object)DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text });
+                }
+                CommandLogger.LogCommand(command, logger, logName);
+                await using var reader = await command.ExecuteReaderAsync(context.RequestAborted);
+
+                if (string.Equals(outputFormat, "html", StringComparison.OrdinalIgnoreCase))
+                {
+                    await WriteAsHtml(context, reader);
+                }
+                else
+                {
+                    await WriteAsJson(context, reader);
+                }
+            }
+            finally
+            {
+                if (setupCommands is { Length: > 0 })
+                {
+                    await using var rollbackCmd = new NpgsqlCommand("rollback", connection);
+                    CommandLogger.LogCommand(rollbackCmd, logger, logName);
+                    await rollbackCmd.ExecuteNonQueryAsync(CancellationToken.None);
+                }
             }
         }
         catch (OperationCanceledException)
@@ -286,7 +324,9 @@ public static class StatsEndpoints
         context.Response.ContentType = "text/html; charset=utf-8";
 
         var sb = new StringBuilder();
-        sb.AppendLine("<table style=\"font-family: Calibri, Arial, sans-serif; font-size: 11pt;\">");
+        sb.AppendLine(
+            "<style>table{font-family:Calibri,Arial,sans-serif;font-size:11pt;border-collapse:collapse}th,td{border:1px solid #d4d4d4;padding:4px 8px}th{background-color:#f5f5f5;font-weight:600}</style>");
+        sb.AppendLine("<table>");
 
         // Write header row
         sb.Append("<tr>");
