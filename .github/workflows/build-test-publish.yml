@@ -17,7 +17,6 @@ permissions:
 
 jobs:
   build-test-publish:
-    if: false  # TEMPORARILY DISABLED
     runs-on: ubuntu-22.04
     steps:
     - name: Install PosgtreSQL
@@ -41,7 +40,6 @@ jobs:
       run: dotnet nuget push **\*.nupkg --source https://api.nuget.org/v3/index.json --api-key ${{secrets.NUGET_API_KEY}} --skip-duplicate
 
   create-release:
-    if: false  # TEMPORARILY DISABLED
     needs: build-test-publish
     runs-on: ubuntu-22.04
     # Explicit permissions for this job
@@ -88,7 +86,6 @@ jobs:
         prerelease: false
 
   upload-assets:
-    if: false  # TEMPORARILY DISABLED
     needs: create-release
     runs-on: ubuntu-22.04
     # Explicit permissions for this job
@@ -109,7 +106,6 @@ jobs:
         asset_content_type: application/json
 
   build-windows:
-    if: false  # TEMPORARILY DISABLED
     needs: create-release
     runs-on: windows-2022
     permissions:
@@ -133,7 +129,6 @@ jobs:
         asset_content_type: application/octet-stream
 
   build-linux:
-    if: false  # TEMPORARILY DISABLED
     needs: create-release
     runs-on: ubuntu-22.04
     permissions:
@@ -162,7 +157,6 @@ jobs:
         path: ./NpgsqlRestClient/bin/Release/net10.0/linux-x64/publish/NpgsqlRestClient
 
   build-linux-arm:
-    if: false  # TEMPORARILY DISABLED
     needs: create-release
     runs-on: ubuntu-22.04-arm
     permissions:
@@ -191,7 +185,6 @@ jobs:
         path: ./NpgsqlRestClient/bin/Release/net10.0/linux-arm64/publish/NpgsqlRestClient
 
   build-macos:
-    if: false  # TEMPORARILY DISABLED
     needs: create-release
     runs-on: macos-latest
     permissions:
@@ -215,7 +208,6 @@ jobs:
         asset_content_type: application/octet-stream
 
   build-docker-aot:
-    if: false  # TEMPORARILY DISABLED
     needs: build-linux
     runs-on: ubuntu-22.04
     permissions:
@@ -253,7 +245,7 @@ jobs:
           vbilopav/npgsqlrest:latest-aot
 
   build-docker-jit:
-    # needs: create-release  # TEMPORARILY REMOVED
+    needs: create-release
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -281,7 +273,6 @@ jobs:
           vbilopav/npgsqlrest:latest-jit
 
   build-docker-arm:
-    if: false  # TEMPORARILY DISABLED
     needs: build-linux-arm
     runs-on: ubuntu-22.04
     permissions:
@@ -319,7 +310,6 @@ jobs:
           vbilopav/npgsqlrest:latest-arm
 
   build-docker-bun:
-    if: false  # TEMPORARILY DISABLED
     needs: build-linux
     runs-on: ubuntu-22.04
     permissions:
@@ -355,7 +345,6 @@ jobs:
           vbilopav/npgsqlrest:latest-bun
 
   npm-publish:
-    if: false  # TEMPORARILY DISABLED
     needs: create-release
     runs-on: ubuntu-22.04
     permissions:
