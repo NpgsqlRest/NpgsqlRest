@@ -66,6 +66,7 @@ public class TestSource : IRoutineSource
     public string[]? IncludeNames { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
     public string[]? ExcludeNames { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
     public CommentsMode? CommentsMode { get => null; set => throw new NotImplementedException(); }
+    public bool NestedJsonForCompositeTypes { get => false; set => throw new NotImplementedException(); }
 
     public IEnumerable<(Routine, IRoutineSourceParameterFormatter)> Read(IServiceProvider? serviceProvider, RetryStrategy? retryStrategy)
     {
