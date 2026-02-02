@@ -4,6 +4,22 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [3.6.2](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.6.2) (2025-02-02)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.6.1...3.6.2)
+
+### Fixes
+
+- Fixed `NestedJsonForCompositeTypes` option from `RoutineOptions` not being applied to endpoints. Previously, only the `nested` comment annotation could enable nested JSON serialization for composite types. Now the global configuration option is properly applied as the default for all endpoints.
+
+- Fixed TypeScript client (`NpgsqlRest.TsClient`) generating incorrect types for composite columns when `NestedJsonForCompositeTypes` is `false` (the default). The client now correctly generates flat field types matching the actual JSON response structure, instead of always generating nested interfaces.
+
+### Breaking Changes
+
+- Added `NestedJsonForCompositeTypes` property to `IRoutineSource` interface. Custom implementations of `IRoutineSource` will need to add this property.
+
+---
+
 ## Version [3.6.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.6.1) (2025-02-02)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.6.0...3.6.1)

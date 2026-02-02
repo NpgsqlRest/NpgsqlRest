@@ -26,10 +26,10 @@
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
         <PackageReadmeFile>README.MD</PackageReadmeFile>
         <DocumentationFile>bin\$(Configuration)\$(AssemblyName).xml</DocumentationFile>
-        <Version>1.33.4</Version>
-        <AssemblyVersion>1.33.4</AssemblyVersion>
-        <FileVersion>1.33.4</FileVersion>
-        <PackageVersion>1.33.4</PackageVersion>
+        <Version>1.33.5</Version>
+        <AssemblyVersion>1.33.5</AssemblyVersion>
+        <FileVersion>1.33.5</FileVersion>
+        <PackageVersion>1.33.5</PackageVersion>
         <LangVersion>14</LangVersion>
     </PropertyGroup>
 

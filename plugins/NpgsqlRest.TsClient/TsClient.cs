@@ -568,9 +568,14 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                         StringBuilder resp = new();
                         responseName = $"I{pascal}Response";
 
-                        // Collect column indices to skip (expanded composite columns)
+                        // Check if nested JSON for composite types is enabled
+                        // When false (default), composite fields are flattened in the JSON response
+                        // When true, composite fields are nested under their column name
+                        var useNestedCompositeTypes = endpoint.NestedJsonForCompositeTypes == true;
+
+                        // Collect column indices to skip (expanded composite columns) - only when using nested types
                         HashSet<int> skipIndices = [];
-                        if (routine.CompositeColumnInfo is not null)
+                        if (useNestedCompositeTypes && routine.CompositeColumnInfo is not null)
                         {
                             foreach (var kvp in routine.CompositeColumnInfo)
                             {
@@ -584,14 +589,15 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
 
                         for (var i = 0; i < columnCount; i++)
                         {
-                            // Skip expanded composite columns
+                            // Skip expanded composite columns (only when nested types are enabled)
                             if (skipIndices.Contains(i))
                             {
                                 continue;
                             }
 
-                            // Check if this is a nested composite column
-                            if (routine.CompositeColumnInfo is not null &&
+                            // Check if this is a nested composite column - only generate nested interface when NestedJsonForCompositeTypes is true
+                            if (useNestedCompositeTypes &&
+                                routine.CompositeColumnInfo is not null &&
                                 routine.CompositeColumnInfo.TryGetValue(i, out var compositeInfo))
                             {
                                 // Generate interface for this composite type if not already done

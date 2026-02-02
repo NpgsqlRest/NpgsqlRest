@@ -169,6 +169,12 @@ public static class NpgsqlRestBuilder
                     }
                 }
 
+                // Apply source's NestedJsonForCompositeTypes default if not set by comment annotation
+                if (endpoint.NestedJsonForCompositeTypes is null && source.NestedJsonForCompositeTypes)
+                {
+                    endpoint.NestedJsonForCompositeTypes = true;
+                }
+
                 if (defaultStrategy is not null && endpoint.RetryStrategy is null)
                 {
                     endpoint.RetryStrategy = defaultStrategy;

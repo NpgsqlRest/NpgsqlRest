@@ -118,6 +118,11 @@ public class CrudSource(
     // Comments mode (`Ignore`, `ParseAll`, `OnlyWithHttpTag`), when not null overrides the `CommentsMode` from the main options.
     //
     public CommentsMode? CommentsMode { get; set; } = commentsMode;
+    //
+    // When true, composite type columns in the response are serialized as nested JSON objects.
+    // Not typically used for CRUD sources but required by IRoutineSource interface.
+    //
+    public bool NestedJsonForCompositeTypes { get; set; } = false;
 
     private readonly IRoutineSourceParameterFormatter _selectParameterFormatter = new SelectParameterFormatter();
     private readonly IRoutineSourceParameterFormatter _updateParameterFormatter = new UpdateParameterFormatter();

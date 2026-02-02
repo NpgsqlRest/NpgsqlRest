@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-  RELEASE_VERSION: v3.6.1
+  RELEASE_VERSION: v3.6.2
 
 # Add workflow-level permissions
 permissions:

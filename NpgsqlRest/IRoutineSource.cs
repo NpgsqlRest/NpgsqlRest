@@ -61,4 +61,12 @@ public interface IRoutineSource
     /// Query parameter
     /// </summary>
     string[]? ExcludeNames { get; set; }
+
+    /// <summary>
+    /// When true, composite type columns in the response are serialized as nested JSON objects.
+    /// For example, a column "req" of type "my_request(id int, name text)" becomes {"req": {"id": 1, "name": "test"}}
+    /// instead of the default flat structure {"id": 1, "name": "test"}.
+    /// Default is false.
+    /// </summary>
+    bool NestedJsonForCompositeTypes { get; set; }
 }
