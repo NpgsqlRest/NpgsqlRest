@@ -47,20 +47,20 @@ public class StatsTestFixture : IDisposable
 
         // Map stats endpoints manually (simulating what Program.cs does)
         _app.MapGet(RoutinesPath, async (Microsoft.AspNetCore.Http.HttpContext context) =>
-            await StatsEndpoints.HandleRoutinesStats(context, _connectionString, "json", null, null));
+            await StatsEndpoints.HandleRoutinesStats(context, _connectionString, "json", null, false, null, null, null));
 
         _app.MapGet(TablesPath, async (Microsoft.AspNetCore.Http.HttpContext context) =>
-            await StatsEndpoints.HandleTablesStats(context, _connectionString, "json", null, null));
+            await StatsEndpoints.HandleTablesStats(context, _connectionString, "json", null, false, null, null, null));
 
         _app.MapGet(IndexesPath, async (Microsoft.AspNetCore.Http.HttpContext context) =>
-            await StatsEndpoints.HandleIndexesStats(context, _connectionString, "json", null, null));
+            await StatsEndpoints.HandleIndexesStats(context, _connectionString, "json", null, false, null, null, null));
 
         _app.MapGet(ActivityPath, async (Microsoft.AspNetCore.Http.HttpContext context) =>
-            await StatsEndpoints.HandleActivityStats(context, _connectionString, "json", null));
+            await StatsEndpoints.HandleActivityStats(context, _connectionString, "json", false, null, null, null));
 
         // Add HTML endpoints for testing HTML format
         _app.MapGet("/stats/tables-html", async (Microsoft.AspNetCore.Http.HttpContext context) =>
-            await StatsEndpoints.HandleTablesStats(context, _connectionString, "html", null, null));
+            await StatsEndpoints.HandleTablesStats(context, _connectionString, "html", null, false, null, null, null));
 
         // Add NpgsqlRest for completeness
         _app.UseNpgsqlRest(new NpgsqlRestOptions(_connectionString)

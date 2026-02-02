@@ -4,6 +4,18 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [3.6.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.6.1) (2025-02-02)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.6.0...3.6.1)
+
+### Fixes
+
+- Fixed `RequireAuthorization` on Stats and Health endpoints to use manual authorization check consistent with NpgsqlRest endpoints.
+- Fixed `ActivityQuery` in Stats endpoints.
+- Fixed `OutputFormat` default value in Stats endpoints.
+
+---
+
 ## Version [3.6.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.6.0) (2025-02-01)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.5.0...3.6.0)

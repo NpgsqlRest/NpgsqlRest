@@ -353,7 +353,7 @@ if (healthChecksEnabled)
     var path = config.GetConfigStr("Path", healthCfg) ?? "/health";
     var readyPath = config.GetConfigStr("ReadyPath", healthCfg) ?? "/health/ready";
     var livePath = config.GetConfigStr("LivePath", healthCfg) ?? "/health/live";
-    var requireAuthorization = config.GetConfigBool("RequireAuthorization", healthCfg);
+    var healthRequireAuthorization = config.GetConfigBool("RequireAuthorization", healthCfg);
     var rateLimiterPolicy = config.GetConfigStr("RateLimiterPolicy", healthCfg);
 
     var healthEndpoint = app.MapHealthChecks(path);
@@ -366,11 +366,20 @@ if (healthChecksEnabled)
         Predicate = _ => false // Always healthy if app is running
     });
 
-    if (requireAuthorization)
+    if (healthRequireAuthorization)
     {
-        healthEndpoint.RequireAuthorization();
-        readyEndpoint.RequireAuthorization();
-        liveEndpoint.RequireAuthorization();
+        healthEndpoint.AddEndpointFilter(AuthorizationFilter);
+        readyEndpoint.AddEndpointFilter(AuthorizationFilter);
+        liveEndpoint.AddEndpointFilter(AuthorizationFilter);
+
+        static async ValueTask<object?> AuthorizationFilter(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+        {
+            if (context.HttpContext.User?.Identity?.IsAuthenticated is false)
+            {
+                return Results.Problem(statusCode: 401, title: "Unauthorized");
+            }
+            return await next(context);
+        }
     }
 
     if (rateLimiterPolicy is not null)
@@ -396,10 +405,11 @@ if (statsEnabled)
     var tablesPath = config.GetConfigStr("TablesStatsPath", statsCfg) ?? "/stats/tables";
     var indexesPath = config.GetConfigStr("IndexesStatsPath", statsCfg) ?? "/stats/indexes";
     var activityPath = config.GetConfigStr("ActivityPath", statsCfg) ?? "/stats/activity";
-    var requireAuthorization = config.GetConfigBool("RequireAuthorization", statsCfg);
-    var authorizedRoles = config.GetConfigEnumerable("AuthorizedRoles", statsCfg)?.ToArray();
+    var statsRequireAuthorization = config.GetConfigBool("RequireAuthorization", statsCfg);
+    var statsAuthorizedRoles = config.GetConfigEnumerable("AuthorizedRoles", statsCfg)?.ToArray();
+    var statsRoleClaimType = authenticationOptions.DefaultRoleClaimType;
     var rateLimiterPolicy = config.GetConfigStr("RateLimiterPolicy", statsCfg);
-    var outputFormat = config.GetConfigStr("OutputFormat", statsCfg) ?? "json";
+    var outputFormat = config.GetConfigStr("OutputFormat", statsCfg) ?? "html";
     var schemaSimilarTo = config.GetConfigStr("SchemaSimilarTo", statsCfg);
 
     // Resolve connection string for stats endpoints
@@ -411,34 +421,16 @@ if (statsEnabled)
     }
 
     var routinesEndpoint = app.MapGet(routinesPath, async (HttpContext context) =>
-        await StatsEndpoints.HandleRoutinesStats(context, statsConnectionString!, outputFormat, schemaSimilarTo, builder.ClientLogger));
+        await StatsEndpoints.HandleRoutinesStats(context, statsConnectionString!, outputFormat, schemaSimilarTo, statsRequireAuthorization, statsAuthorizedRoles, statsRoleClaimType, builder.ClientLogger));
 
     var tablesEndpoint = app.MapGet(tablesPath, async (HttpContext context) =>
-        await StatsEndpoints.HandleTablesStats(context, statsConnectionString!, outputFormat, schemaSimilarTo, builder.ClientLogger));
+        await StatsEndpoints.HandleTablesStats(context, statsConnectionString!, outputFormat, schemaSimilarTo, statsRequireAuthorization, statsAuthorizedRoles, statsRoleClaimType, builder.ClientLogger));
 
     var indexesEndpoint = app.MapGet(indexesPath, async (HttpContext context) =>
-        await StatsEndpoints.HandleIndexesStats(context, statsConnectionString!, outputFormat, schemaSimilarTo, builder.ClientLogger));
+        await StatsEndpoints.HandleIndexesStats(context, statsConnectionString!, outputFormat, schemaSimilarTo, statsRequireAuthorization, statsAuthorizedRoles, statsRoleClaimType, builder.ClientLogger));
 
     var activityEndpoint = app.MapGet(activityPath, async (HttpContext context) =>
-        await StatsEndpoints.HandleActivityStats(context, statsConnectionString!, outputFormat, builder.ClientLogger));
-
-    if (requireAuthorization)
-    {
-        if (authorizedRoles is null || authorizedRoles.Length == 0)
-        {
-            routinesEndpoint.RequireAuthorization();
-            tablesEndpoint.RequireAuthorization();
-            indexesEndpoint.RequireAuthorization();
-            activityEndpoint.RequireAuthorization();
-        }
-        else
-        {
-            routinesEndpoint.RequireAuthorization(policy => policy.RequireRole(authorizedRoles));
-            tablesEndpoint.RequireAuthorization(policy => policy.RequireRole(authorizedRoles));
-            indexesEndpoint.RequireAuthorization(policy => policy.RequireRole(authorizedRoles));
-            activityEndpoint.RequireAuthorization(policy => policy.RequireRole(authorizedRoles));
-        }
-    }
+        await StatsEndpoints.HandleActivityStats(context, statsConnectionString!, outputFormat, statsRequireAuthorization, statsAuthorizedRoles, statsRoleClaimType, builder.ClientLogger));
 
     if (rateLimiterPolicy is not null)
     {

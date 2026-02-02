@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
@@ -92,7 +93,11 @@ public static class StatsEndpoints
             ltrim(justify_interval(now() - state_change)::text, '@ ') as state_duration,
             ltrim(justify_interval(now() - backend_start)::text, '@ ') as connection_age,
             ltrim(justify_interval(now() - xact_start)::text, '@ ') as transaction_duration,
-            ltrim(justify_interval(now() - query_start)::text, '@ ') as query_duration,
+            case 
+                when state = 'active' then ltrim(justify_interval(now() - query_start)::text, '@ ')
+                when state = 'idle' then 'finished ' || ltrim(justify_interval(now() - state_change)::text, '@ ') || ' ago'
+                else state
+            end as query_duration,
             left(query, 100) as query_preview,
             query
         from pg_stat_activity
@@ -103,33 +108,94 @@ public static class StatsEndpoints
     /// <summary>
     /// Returns statistics for user-defined functions and procedures.
     /// </summary>
-    public static async Task HandleRoutinesStats(HttpContext context, string connectionString, string outputFormat, string? schemaSimilarTo, ILogger? logger)
+    public static async Task HandleRoutinesStats(HttpContext context, string connectionString, string outputFormat, string? schemaSimilarTo, bool requireAuthorization, string[]? authorizedRoles, string? roleClaimType, ILogger? logger)
     {
+        if (await CheckAuthorization(context, requireAuthorization, authorizedRoles, roleClaimType) is false)
+        {
+            return;
+        }
         await ExecuteQueryAndRespond(context, connectionString, RoutinesQuery, outputFormat, schemaSimilarTo, logger, "Stats.Routines", setupCommands: ["set local intervalstyle = 'postgres_verbose'"]);
     }
 
     /// <summary>
     /// Returns statistics for user tables including size, tuple counts, and vacuum info.
     /// </summary>
-    public static async Task HandleTablesStats(HttpContext context, string connectionString, string outputFormat, string? schemaSimilarTo, ILogger? logger)
+    public static async Task HandleTablesStats(HttpContext context, string connectionString, string outputFormat, string? schemaSimilarTo, bool requireAuthorization, string[]? authorizedRoles, string? roleClaimType, ILogger? logger)
     {
+        if (await CheckAuthorization(context, requireAuthorization, authorizedRoles, roleClaimType) is false)
+        {
+            return;
+        }
         await ExecuteQueryAndRespond(context, connectionString, TablesQuery, outputFormat, schemaSimilarTo, logger, "Stats.Tables");
     }
 
     /// <summary>
     /// Returns statistics for user indexes including scan counts and definitions.
     /// </summary>
-    public static async Task HandleIndexesStats(HttpContext context, string connectionString, string outputFormat, string? schemaSimilarTo, ILogger? logger)
+    public static async Task HandleIndexesStats(HttpContext context, string connectionString, string outputFormat, string? schemaSimilarTo, bool requireAuthorization, string[]? authorizedRoles, string? roleClaimType, ILogger? logger)
     {
+        if (await CheckAuthorization(context, requireAuthorization, authorizedRoles, roleClaimType) is false)
+        {
+            return;
+        }
         await ExecuteQueryAndRespond(context, connectionString, IndexesQuery, outputFormat, schemaSimilarTo, logger, "Stats.Indexes");
     }
 
     /// <summary>
     /// Returns current database activity from pg_stat_activity.
     /// </summary>
-    public static async Task HandleActivityStats(HttpContext context, string connectionString, string outputFormat, ILogger? logger)
+    public static async Task HandleActivityStats(HttpContext context, string connectionString, string outputFormat, bool requireAuthorization, string[]? authorizedRoles, string? roleClaimType, ILogger? logger)
     {
+        if (await CheckAuthorization(context, requireAuthorization, authorizedRoles, roleClaimType) is false)
+        {
+            return;
+        }
         await ExecuteQueryAndRespond(context, connectionString, ActivityQuery, outputFormat, null, logger, "Stats.Activity", setupCommands: ["set local intervalstyle = 'postgres_verbose'"]);
+    }
+
+    private static async Task<bool> CheckAuthorization(HttpContext context, bool requireAuthorization, string[]? authorizedRoles, string? roleClaimType)
+    {
+        if (requireAuthorization is false && authorizedRoles is null)
+        {
+            return true;
+        }
+
+        if (context.User?.Identity?.IsAuthenticated is false)
+        {
+            await Results.Problem(
+                type: null,
+                statusCode: (int)HttpStatusCode.Unauthorized,
+                title: "Unauthorized",
+                detail: null).ExecuteAsync(context);
+            return false;
+        }
+
+        if (authorizedRoles is not null)
+        {
+            bool ok = false;
+            foreach (var claim in context.User?.Claims ?? [])
+            {
+                if (string.Equals(claim.Type, roleClaimType, StringComparison.Ordinal))
+                {
+                    if (authorizedRoles.Contains(claim.Value) is true)
+                    {
+                        ok = true;
+                        break;
+                    }
+                }
+            }
+            if (ok is false)
+            {
+                await Results.Problem(
+                    type: null,
+                    statusCode: (int)HttpStatusCode.Forbidden,
+                    title: "Forbidden",
+                    detail: null).ExecuteAsync(context);
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static async Task ExecuteQueryAndRespond(
