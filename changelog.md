@@ -4,6 +4,16 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [3.6.3](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.6.3) (2025-02-03)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.6.2...3.6.3)
+
+### Fixes
+
+- Fixed `ParseEnvironmentVariables` feature not working for Kestrel configuration values. Previously, environment variable placeholders (e.g., `{MY_HOST}`) in Kestrel settings like Endpoints URLs, Certificate paths/passwords, and Limits were not being replaced because Kestrel uses ASP.NET Core's direct binding which bypassed the custom placeholder processing. Now all Kestrel configuration values properly support environment variable replacement when `ParseEnvironmentVariables` is enabled.
+
+---
+
 ## Version [3.6.2](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.6.2) (2025-02-02)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.6.1...3.6.2)

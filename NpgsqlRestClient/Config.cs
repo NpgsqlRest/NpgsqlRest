@@ -396,4 +396,34 @@ public class Config
         }
         return (configFiles, commandLineArgs.ToArray());
     }
+
+    public IConfiguration TransformSection(IConfigurationSection section)
+    {
+        if (EnvDict is null)
+        {
+            return section;
+        }
+
+        var dict = new Dictionary<string, string?>();
+        CollectTransformedValues(section, "", dict);
+
+        return new ConfigurationBuilder()
+            .AddInMemoryCollection(dict)
+            .Build();
+    }
+
+    private void CollectTransformedValues(IConfigurationSection section, string prefix, Dictionary<string, string?> dict)
+    {
+        foreach (var child in section.GetChildren())
+        {
+            var key = string.IsNullOrEmpty(prefix) ? child.Key : $"{prefix}:{child.Key}";
+
+            if (child.Value is not null)
+            {
+                dict[key] = Formatter.FormatString(child.Value.AsSpan(), EnvDict!).ToString();
+            }
+
+            CollectTransformedValues(child, key, dict);
+        }
+    }
 }

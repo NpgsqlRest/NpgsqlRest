@@ -66,9 +66,11 @@ public class Builder
         var kestrelConfig = _config.Cfg.GetSection("Kestrel");
         if (kestrelConfig is not null && kestrelConfig.Exists())
         {
+            var transformedKestrelConfig = _config.TransformSection(kestrelConfig);
+
             Instance.WebHost.ConfigureKestrel((context, options) =>
             {
-                options.Configure(kestrelConfig);
+                options.Configure(transformedKestrelConfig);
 
                 options.DisableStringReuse = _config.GetConfigBool("DisableStringReuse", kestrelConfig, options.DisableStringReuse);
                 options.AllowAlternateSchemes = _config.GetConfigBool("AllowAlternateSchemes", kestrelConfig, options.AllowAlternateSchemes);
@@ -77,7 +79,7 @@ public class Builder
                 options.AddServerHeader = _config.GetConfigBool("AddServerHeader", kestrelConfig, options.AddServerHeader);
                 options.AllowHostHeaderOverride = _config.GetConfigBool("AllowSynchronousIO", kestrelConfig, options.AllowHostHeaderOverride);
 
-                var limitsSection = kestrelConfig.GetSection("Limits");
+                var limitsSection = transformedKestrelConfig.GetSection("Limits");
                 if (limitsSection.Exists())
                 {
                     limitsSection.Bind(options.Limits);
