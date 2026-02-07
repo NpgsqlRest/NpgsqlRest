@@ -291,6 +291,29 @@ public static class NpgsqlRestBuilder
                     }
                 }
 
+                // Warn if @table_format is set on non-applicable endpoints
+                if (Options.TableFormatHandlers is not null
+                    && endpoint.CustomParameters is not null
+                    && endpoint.CustomParameters.TryGetValue("table_format", out var tableFormatValue))
+                {
+                    if (!Options.TableFormatHandlers.ContainsKey(tableFormatValue)
+                        && !(tableFormatValue.Contains('{') && tableFormatValue.Contains('}')))
+                    {
+                        Logger?.LogWarning("Endpoint {path} has @table_format = {format} but no table format handler with that name is registered. The annotation will be ignored.",
+                            endpoint.Path, tableFormatValue);
+                    }
+                    else if (routine.IsVoid)
+                    {
+                        Logger?.LogWarning("Endpoint {path} has @table_format but routine returns void. Table format rendering only applies to set/record results. The annotation will be ignored.",
+                            endpoint.Path);
+                    }
+                    else if (routine.ReturnsSet == false && routine.ColumnCount == 1 && routine.ReturnsRecordType is false)
+                    {
+                        Logger?.LogWarning("Endpoint {path} has @table_format but routine returns a single scalar value. Table format rendering only applies to set/record results. The annotation will be ignored.",
+                            endpoint.Path);
+                    }
+                }
+
                 if (endpoint.SseEventsPath is not null)
                 {
                     if (endpoint.SseEventsPath.StartsWith(endpoint.Path) is false)
@@ -347,7 +370,7 @@ public static class NpgsqlRestBuilder
 
         if (Options.UploadOptions.UploadHandlers is not null && Options.UploadOptions.UploadHandlers.ContainsKey(Options.UploadOptions.DefaultUploadHandler) is false)
         {
-            Logger?.LogError("Default upload handler {defaultUploadHandler} not found in the list of upload handlers. Using upload endpoint with default handler may cause an error.", 
+            Logger?.LogWarning("Default upload handler {defaultUploadHandler} not found in the list of upload handlers. Using upload endpoint with default handler may cause an error.", 
                 Options.UploadOptions.DefaultUploadHandler);
         }
 

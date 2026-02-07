@@ -10,6 +10,8 @@ using NpgsqlRest.TsClient;
 using NpgsqlRest.HttpFiles;
 using NpgsqlRest.OpenAPI;
 using NpgsqlRest.UploadHandlers;
+using NpgsqlRest.TableFormatHandlers;
+using NpgsqlRestClient;
 
 namespace NpgsqlRestTests.Setup;
 
@@ -156,6 +158,16 @@ public class Program
             ["22012"] = new() { StatusCode = 409, Title = "Conflict - Custom Policy" }
         });
         
+        var uploadOptions = new NpgsqlRestUploadOptions()
+        {
+            UseDefaultUploadMetadataParameter = true,
+            DefaultUploadMetadataParameterName = "_default_upload_metadata",
+            UseDefaultUploadMetadataContextKey = true,
+        };
+        uploadOptions.UploadHandlers = uploadOptions.CreateUploadHandlers();
+        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+        uploadOptions.UploadHandlers?.Add("excel", strategy => new ExcelUploadHandler(uploadOptions, strategy));
+
         app.UseNpgsqlRest(new(connectionString)
         {
             //NameSimilarTo = "get_conn1_connection_name_p",
@@ -255,13 +267,7 @@ public class Program
                 }
             },
 
-            UploadOptions = new()
-            {
-                UseDefaultUploadMetadataParameter = true,
-                DefaultUploadMetadataParameterName = "_default_upload_metadata",
-                UseDefaultUploadMetadataContextKey = true,
-                //DefaultUploadMetadataContextKey = "request.upload_metadata",
-            },
+            UploadOptions = uploadOptions,
             
             ErrorHandlingOptions = errorHandlingOptions,
             HttpClientOptions = new()
@@ -325,6 +331,11 @@ public class Program
                         StatusCode = 400
                     }
                 }
+            },
+            TableFormatHandlers = new()
+            {
+                ["html"] = new HtmlTableFormatHandler(),
+                ["excel"] = new ExcelTableFormatHandler()
             }
         });
         app.Run();

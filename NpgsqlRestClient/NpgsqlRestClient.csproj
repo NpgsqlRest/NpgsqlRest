@@ -10,7 +10,7 @@
     <PublishAot>true</PublishAot>
     <PublishTrimmed>true</PublishTrimmed>
     <TrimMode>full</TrimMode>
-    <Version>3.6.3</Version>
+    <Version>3.6.4</Version>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,7 +21,8 @@
     <PackageReference Include="Serilog.Sinks.OpenTelemetry" Version="4.2.0" />
     <PackageReference Include="Microsoft.Extensions.Caching.Hybrid" Version="10.2.0" />
     <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.2" />
-    <PackageReference Include="StackExchange.Redis" Version="2.10.1" />
+    <PackageReference Include="SpreadCheetah" Version="1.25.0" />
+    <PackageReference Include="StackExchange.Redis" Version="2.10.14" />
   </ItemGroup>
   
   <ItemGroup>

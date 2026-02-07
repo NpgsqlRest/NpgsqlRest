@@ -16,6 +16,8 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
     private const string IncludeParseUrl = "tsclient_parse_url";
     private const string IncludeParseRequest = "tsclient_parse_request";
     private const string IncludeStatusCode = "tsclient_status_code";
+    private const string ExportUrl = "tsclient_export_url";
+    private const string UrlOnly = "tsclient_url_only";
     
     public void Setup(IApplicationBuilder builder, NpgsqlRestOptions npgsqlRestoptions)
     {
@@ -174,6 +176,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
         }
 
         bool handled = false;
+        var lastContentHeaderWasUrl = false;
         foreach (var endpoint in filtered
             .Where(e => e.Routine.Type == RoutineType.Table || e.Routine.Type == RoutineType.View)
             .OrderBy(e => e.Routine.Schema)
@@ -308,6 +311,12 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             var includeParseUrlParam = endpoint.CustomParameters.ParameterEnabled(IncludeParseUrl) ?? options.IncludeParseUrlParam;
             var includeParseRequestParam = endpoint.CustomParameters.ParameterEnabled(IncludeParseRequest) ?? options.IncludeParseRequestParam;
             var includeStatusCode = endpoint.CustomParameters.ParameterEnabled(IncludeStatusCode) ?? options.IncludeStatusCode;
+            var exportUrl = endpoint.CustomParameters.ParameterEnabled(ExportUrl) ?? options.ExportUrls;
+            var urlOnly = endpoint.CustomParameters.ParameterEnabled(UrlOnly) is true;
+            if (urlOnly)
+            {
+                exportUrl = true;
+            }
 
             if (options.SkipRoutineNames.Contains(routine.Name))
             {
@@ -478,7 +487,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 return string.Concat("return ", responseExp, ";");
             }
 
-            if (!isVoid)
+            if (!isVoid && !urlOnly)
             {
                 if (endpoint.Upload)
                 {
@@ -863,7 +872,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             // Convert path for template literals if it has path parameters
             var pathForUrl = hasPathParams ? ConvertPathToTemplateLiteral(endpoint.Path) : endpoint.Path;
 
-            if (!options.ExportUrls)
+            if (!exportUrl)
             {
                 if (hasPathParams)
                 {
@@ -885,6 +894,11 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                     (requestName is not null && body is null ? string.Format("parseUrl({0}Url(request))", camel) : string.Format("parseUrl({0}Url())", camel)) :
                     (requestName is not null && body is null ? string.Format("{0}Url(request)", camel) : string.Format("{0}Url()", camel));
 
+                if (!lastContentHeaderWasUrl)
+                {
+                    contentHeader.AppendLine();
+                }
+                lastContentHeaderWasUrl = true;
                 if (!options.SkipTypes)
                 {
                     if (hasPathParams)
@@ -928,6 +942,11 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                     }
                 }
             }
+            if (urlOnly)
+            {
+                return true;
+            }
+
             string? createEventSourceFunc = null;
             if (eventsStreamingEnabled)
             {
@@ -938,6 +957,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                     createEventSourceFunc, //1
                     options.SkipTypes ? "(id = \"\")" : "(id: string = \"\")", //2
                     endpoint.SseEventsPath)); //3
+                lastContentHeaderWasUrl = false;
             }
 
             if (body is null && bodyParameterName is not null)

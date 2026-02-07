@@ -34,6 +34,7 @@ public class ExcelUploadHandler(
     private const string DateTimeFormatParam = "datetime_format";
     private const string JsonRowDataParam = "row_is_json";
     private const string RowCommandParam = "row_command";
+    private const string FallbackHandlerParam = "fallback_handler";
 
     protected override IEnumerable<string> GetParameters()
     {
@@ -46,6 +47,7 @@ public class ExcelUploadHandler(
         yield return DateTimeFormatParam;
         yield return JsonRowDataParam;
         yield return RowCommandParam;
+        yield return FallbackHandlerParam;
     }
 
     public bool RequiresTransaction => true;
@@ -60,6 +62,7 @@ public class ExcelUploadHandler(
         bool allSheets = ExcelUploadOptions.Instance.ExcelAllSheets;
         bool dataAsJson = ExcelUploadOptions.Instance.ExcelRowDataAsJson;
         string rowCommand = ExcelUploadOptions.Instance.ExcelUploadRowCommand;
+        string? fallbackHandler = null;
 
         _timeFormat = ExcelUploadOptions.Instance.ExcelTimeFormat;
         _dateFormat = ExcelUploadOptions.Instance.ExcelDateFormat;
@@ -94,6 +97,10 @@ public class ExcelUploadHandler(
             if (TryGetParam(parameters, RowCommandParam, out var rowCommandStr))
             {
                 rowCommand = rowCommandStr;
+            }
+            if (TryGetParam(parameters, FallbackHandlerParam, out var fallbackHandlerStr))
+            {
+                fallbackHandler = fallbackHandlerStr;
             }
         }
 
@@ -259,15 +266,30 @@ public class ExcelUploadHandler(
             }
             catch (Exception ex)
             {
+                if (fallbackHandler is not null &&
+                    Options.UploadOptions.UploadHandlers is not null &&
+                    Options.UploadOptions.UploadHandlers.TryGetValue(fallbackHandler, out var fallbackFactory))
+                {
+                    Logger?.LogDebug("Excel format invalid for {fileName}, falling back to {fallbackHandler} handler", formFile.FileName, fallbackHandler);
+                    var handler = fallbackFactory(cmdRetryStrategy);
+                    handler.SetType(fallbackHandler);
+                    if (handler is BaseUploadHandler baseHandler)
+                    {
+                        baseHandler.ParseSharedParameters(options, parameters);
+                    }
+                    return await handler.UploadAsync(connection, context, parameters, cancellationToken);
+                }
+
                 Logger?.LogError(ex, "Error processing Excel file {fileName}", formFile.FileName);
+                if (fileId > 0)
+                {
+                    result.Append(',');
+                }
                 fileJson.Append(",\"success\":false,\"status\":");
                 fileJson.Append(PgConverters.SerializeString(UploadFileStatus.InvalidFormat.ToString()));
                 fileJson.Append('}');
                 result.Append(fileJson);
-                if (fileId < context.Request.Form.Files.Count - 1)
-                {
-                    result.Append(',');
-                }
+                fileId++;
             }
         }
 

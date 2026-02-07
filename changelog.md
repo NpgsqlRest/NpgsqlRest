@@ -4,6 +4,125 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [3.7.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.7.0) (2025-02-07)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.6.3...3.7.0)
+
+### Fixes
+
+- Fixed comma separator bug in Excel Upload Handler error response when processing multiple files. The `fileId` counter was not incremented on error, causing malformed JSON output when an invalid file was followed by additional files.
+
+- Fixed a bug where custom parameter values with curly bracket placeholders (e.g., `@table_format = {_format}`) were resolved by mutating the shared `RoutineEndpoint` instance. The first request permanently overwrote the template with the resolved value, causing all subsequent requests to use the stale value from the first request. Resolved values are now written to a per-request copy of the dictionary, preserving the original templates for correct resolution on every request.
+
+- Fixed `CustomHost` configuration in `ClientCodeGen` not accepting an empty string value. Setting `"CustomHost": ""` was treated the same as `null` (triggering host auto-detection) because `GetConfigStr` uses `string.IsNullOrEmpty`. Now an explicit empty string correctly produces `const baseUrl = "";` in generated TypeScript, which is useful for relative URL paths.
+
+### New Features
+
+- Added `fallback_handler` parameter to the Excel Upload Handler. When set (e.g., `fallback_handler = csv`), if ExcelDataReader fails to parse an uploaded file (invalid Excel format), the handler automatically delegates processing to the named fallback handler. This allows a single upload endpoint to accept both Excel and CSV files transparently:
+
+```sql
+comment on function my_upload(json) is '
+@upload for excel
+@fallback_handler = csv
+@row_command = select process_row($1,$2)
+';
+```
+
+### New Feature: Pluggable Table Format Renderers
+
+Added a pluggable table format rendering system that allows PostgreSQL function results to be rendered as HTML tables or Excel spreadsheet downloads instead of JSON, controlled by the `@table_format` annotation.
+
+#### HTML Table Format
+
+Renders results as a styled HTML table suitable for browser viewing and copy-paste into Excel:
+
+```sql
+comment on function get_report() is '
+HTTP GET
+@table_format = html
+';
+```
+
+Configuration options in `TableFormatOptions`: `HtmlEnabled`, `HtmlKey`, `HtmlHeader`, `HtmlFooter`.
+
+#### Excel Table Format
+
+Renders results as an `.xlsx` Excel spreadsheet download using the SpreadCheetah library (streaming, AOT-compatible):
+
+```sql
+comment on function get_report() is '
+HTTP GET
+@table_format = excel
+';
+```
+
+Configuration options in `TableFormatOptions`: `ExcelEnabled`, `ExcelKey`, `ExcelSheetName`, `ExcelDateTimeFormat`, `ExcelNumericFormat`.
+
+- `ExcelDateTimeFormat` — Excel Format Code for DateTime cells (default: `yyyy-MM-dd HH:mm:ss`). Examples: `yyyy-mm-dd`, `dd/mm/yyyy hh:mm`.
+- `ExcelNumericFormat` — Excel Format Code for numeric cells (default: General). Examples: `#,##0.00`, `0.00`.
+
+#### Per-Endpoint Custom Parameters
+
+The download filename and worksheet name can be overridden per-endpoint via custom parameter annotations:
+
+```sql
+comment on function get_report() is '
+HTTP GET
+@table_format = excel
+@excel_file_name = monthly_report.xlsx
+@excel_sheet = Report Data
+';
+```
+
+These also support dynamic placeholders resolved from function parameters:
+
+```sql
+comment on function get_report(_format text, _file_name text, _sheet_name text) is '
+HTTP GET
+@table_format = {_format}
+@excel_file_name = {_file_name}
+@excel_sheet = {_sheet_name}
+';
+```
+
+### TsClient: Per-Endpoint URL Export Control
+
+Added two new custom parameter annotations to control TypeScript client code generation per-endpoint:
+
+#### `tsclient_export_url`
+
+Overrides the global `ExportUrls` configuration setting for a specific endpoint:
+
+```sql
+comment on function login(_username text, _password text) is '
+HTTP POST
+@login
+@tsclient_export_url = true
+';
+```
+
+When enabled, the generated TypeScript exports a URL constant for that endpoint:
+
+```typescript
+export const loginUrl = () => baseUrl + "/api/login";
+```
+
+#### `tsclient_url_only`
+
+When set, only the URL constant is exported — the fetch function and response type interface are skipped entirely. Implies `tsclient_export_url = true`:
+
+```sql
+comment on function get_data(_format text) is '
+HTTP GET
+@table_format = {_format}
+@tsclient_url_only = true
+';
+```
+
+This generates only the URL constant and request interface, which is useful for endpoints consumed via browser navigation (e.g., table format downloads) rather than fetch calls.
+
+---
+
 ## Version [3.6.3](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.6.3) (2025-02-03)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.6.2...3.6.3)

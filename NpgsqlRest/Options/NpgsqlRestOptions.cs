@@ -368,4 +368,12 @@ public class NpgsqlRestOptions
     /// Define named validation rules that can be referenced in comment annotations using "validate _param using rule_name" syntax.
     /// </summary>
     public ValidationOptions ValidationOptions { get; set; } = new();
+
+    /// <summary>
+    /// Table format handlers dictionary. When an endpoint has @table_format custom parameter set,
+    /// this dictionary is used to find the renderer by name. Key is the format name (e.g., "html").
+    /// Only applies to set/record-returning endpoints.
+    /// Set to null (default) to disable table format rendering entirely (zero overhead).
+    /// </summary>
+    public Dictionary<string, TableFormatHandlers.ITableFormatHandler>? TableFormatHandlers { get; set; } = null;
 }

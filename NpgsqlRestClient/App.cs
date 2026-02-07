@@ -465,7 +465,9 @@ public class App
                 FilePath = _config.GetConfigStr("FilePath", tsClientCfg),
                 FileOverwrite = _config.GetConfigBool("FileOverwrite", tsClientCfg, true),
                 IncludeHost = _config.GetConfigBool("IncludeHost", tsClientCfg, true),
-                CustomHost = _config.GetConfigStr("CustomHost", tsClientCfg),
+                CustomHost = tsClientCfg.GetSection("CustomHost").Value is not null
+                    ? (_config.GetConfigStr("CustomHost", tsClientCfg) ?? "")
+                    : null,
                 CommentHeader = _config.GetConfigEnum<CommentHeader?>("CommentHeader", tsClientCfg) ?? CommentHeader.Simple,
                 CommentHeaderIncludeComments = _config.GetConfigBool("CommentHeaderIncludeComments", tsClientCfg, true),
                 BySchema = _config.GetConfigBool("BySchema", tsClientCfg, true),
@@ -690,6 +692,57 @@ public class App
             }
         }
         return result!;
+    }
+
+    public Dictionary<string, NpgsqlRest.TableFormatHandlers.ITableFormatHandler>? CreateTableFormatHandlers()
+    {
+        var cfg = _config.NpgsqlRestCfg.GetSection("TableFormatOptions");
+        if (cfg.Exists() is false)
+        {
+            return null;
+        }
+        if (_config.GetConfigBool("Enabled", cfg, false) is false)
+        {
+            return null;
+        }
+
+        var result = new Dictionary<string, NpgsqlRest.TableFormatHandlers.ITableFormatHandler>();
+
+        if (_config.GetConfigBool("HtmlEnabled", cfg, true))
+        {
+            var handler = new NpgsqlRest.TableFormatHandlers.HtmlTableFormatHandler
+            {
+                Header = _config.GetConfigStr("HtmlHeader", cfg) ??
+                    "<style>table{font-family:Calibri,Arial,sans-serif;font-size:11pt;border-collapse:collapse}" +
+                    "th,td{border:1px solid #d4d4d4;padding:4px 8px}" +
+                    "th{background-color:#f5f5f5;font-weight:600}</style>",
+                Footer = _config.GetConfigStr("HtmlFooter", cfg)
+            };
+            var htmlKey = _config.GetConfigStr("HtmlKey", cfg) ?? "html";
+            result.Add(htmlKey, handler);
+            _builder.ClientLogger?.LogDebug("Table format handler for {Key} is enabled.", htmlKey);
+        }
+
+        if (_config.GetConfigBool("ExcelEnabled", cfg, true))
+        {
+            var excelHandler = new ExcelTableFormatHandler
+            {
+                SheetName = _config.GetConfigStr("ExcelSheetName", cfg),
+                DateTimeFormat = _config.GetConfigStr("ExcelDateTimeFormat", cfg),
+                NumericFormat = _config.GetConfigStr("ExcelNumericFormat", cfg)
+            };
+            var excelKey = _config.GetConfigStr("ExcelKey", cfg) ?? "excel";
+            result.Add(excelKey, excelHandler);
+            _builder.ClientLogger?.LogDebug("Table format handler for {Key} is enabled.", excelKey);
+        }
+
+        if (result.Count == 0)
+        {
+            return null;
+        }
+
+        _builder.ClientLogger?.LogDebug("Using {Count} table format handler(s): {Keys}", result.Count, result.Keys);
+        return result;
     }
 
     public void ConfigureThreadPool()

@@ -68,6 +68,7 @@ if (args.Length >= 1 && (string.Equals(args[0], "-v", StringComparison.CurrentCu
         (" ", " "),
         ("Npgsql", System.Reflection.Assembly.GetAssembly(typeof(NpgsqlConnection))?.GetName()?.Version?.ToString() ?? "-"),
         ("ExcelDataReader", System.Reflection.Assembly.GetAssembly(typeof(ExcelDataReader.IExcelDataReader))?.GetName().Version?.ToString() ?? "-"),
+        ("SpreadCheetah", System.Reflection.Assembly.GetAssembly(typeof(SpreadCheetah.Spreadsheet))?.GetName().Version?.ToString() ?? "-"),
         ("Serilog.AspNetCore", System.Reflection.Assembly.GetAssembly(typeof(Serilog.AspNetCore.RequestLoggingOptions))?.GetName().Version?.ToString() ?? "-"),
         ("Serilog.Sinks.OpenTelemetry", System.Reflection.Assembly.GetAssembly(typeof(Serilog.Sinks.OpenTelemetry.OpenTelemetrySinkOptions))?.GetName().Version?.ToString() ?? "-"),
         ("System.Text.Json", System.Reflection.Assembly.GetAssembly(typeof(System.Text.Json.JsonCommentHandling))?.GetName().Version?.ToString() ?? "-"),
@@ -310,6 +311,7 @@ NpgsqlRestOptions options = new()
     HttpClientOptions = builder.BuildHttpClientOptions(),
     ProxyOptions = builder.BuildProxyOptions(),
     ValidationOptions = builder.BuildValidationOptions(),
+    TableFormatHandlers = appInstance.CreateTableFormatHandlers(),
 };
 
 app.UseNpgsqlRest(options);

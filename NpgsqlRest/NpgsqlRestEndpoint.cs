@@ -1381,6 +1381,7 @@ public class NpgsqlRestEndpoint(
                 return;
             }
 
+            Dictionary<string, string>? customParameters = endpoint.CustomParameters;
             Dictionary<string, string>.AlternateLookup<ReadOnlySpan<char>>? lookup = null;
             if (endpoint.HeadersNeedParsing is true || endpoint.CustomParamsNeedParsing || HttpClientTypes.NeedsParsing)
             {
@@ -1406,9 +1407,10 @@ public class NpgsqlRestEndpoint(
             {
                 if (endpoint.CustomParamsNeedParsing && endpoint.CustomParameters is not null)
                 {
+                    customParameters = new Dictionary<string, string>(endpoint.CustomParameters.Count);
                     foreach (var (key, value) in endpoint.CustomParameters)
                     {
-                        endpoint.CustomParameters[key] = Formatter.FormatString(value, lookup!.Value).ToString();
+                        customParameters[key] = Formatter.FormatString(value, lookup!.Value).ToString();
                     }
                 }
             }
@@ -1616,7 +1618,7 @@ public class NpgsqlRestEndpoint(
                 {
                     transaction = await connection.BeginTransactionAsync(cancellationToken);
                 }
-                uploadMetadata = await uploadHandler.UploadAsync(connection, context, endpoint.CustomParameters, cancellationToken);
+                uploadMetadata = await uploadHandler.UploadAsync(connection, context, customParameters, cancellationToken);
                 uploadMetadata ??= DBNull.Value;
                 if (uploadMetaParamIndex > -1)
                 {
@@ -1897,6 +1899,20 @@ public class NpgsqlRestEndpoint(
                     {
                         NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", command.CommandText);
                     }
+
+                    // Pluggable table format renderer
+                    if (Options.TableFormatHandlers is not null
+                        && customParameters is not null
+                        && customParameters.TryGetValue("table_format", out var tableFormatName)
+                        && Options.TableFormatHandlers.TryGetValue(tableFormatName, out var tableFormatHandler))
+                    {
+                        context.Response.ContentType = tableFormatHandler.ContentType;
+                        var tfBufferRows = endpoint.BufferRows ?? Options.BufferRows;
+                        await tableFormatHandler.RenderAsync(reader, routine, endpoint, writer, context, tfBufferRows, customParameters, cancellationToken);
+                        await writer.FlushAsync(cancellationToken);
+                        return;
+                    }
+
                     if (context.Response.ContentType is null)
                     {
                         if (binary is true)

@@ -644,7 +644,8 @@ public static class ConfigDefaults
             ["ClientCodeGen"] = GetClientCodeGenDefaults(),
             ["HttpClientOptions"] = GetHttpClientOptionsDefaults(),
             ["ProxyOptions"] = GetProxyOptionsDefaults(),
-            ["CrudSource"] = GetCrudSourceDefaults()
+            ["CrudSource"] = GetCrudSourceDefaults(),
+            ["TableFormatOptions"] = GetTableFormatOptionsDefaults()
         };
     }
 
@@ -877,6 +878,26 @@ public static class ConfigDefaults
             ["OnConflictDoUpdateUrlPattern"] = "{0}/on-conflict-do-update",
             ["OnConflictDoUpdateReturningUrlPattern"] = "{0}/on-conflict-do-update/returning",
             ["CrudTypes"] = CreateStringArray("All")
+        };
+    }
+
+    private static JsonObject GetTableFormatOptionsDefaults()
+    {
+        return new JsonObject
+        {
+            ["Enabled"] = false,
+            ["HtmlEnabled"] = true,
+            ["HtmlKey"] = "html",
+            ["HtmlHeader"] =
+                "<style>table{font-family:Calibri,Arial,sans-serif;font-size:11pt;border-collapse:collapse}" +
+                "th,td{border:1px solid #d4d4d4;padding:4px 8px}" +
+                "th{background-color:#f5f5f5;font-weight:600}</style>",
+            ["HtmlFooter"] = null,
+            ["ExcelEnabled"] = true,
+            ["ExcelKey"] = "excel",
+            ["ExcelSheetName"] = null,
+            ["ExcelDateTimeFormat"] = null,
+            ["ExcelNumericFormat"] = null
         };
     }
 
