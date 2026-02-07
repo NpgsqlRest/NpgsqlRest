@@ -12,8 +12,6 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 - Fixed comma separator bug in Excel Upload Handler error response when processing multiple files. The `fileId` counter was not incremented on error, causing malformed JSON output when an invalid file was followed by additional files.
 
-- Fixed a bug where custom parameter values with curly bracket placeholders (e.g., `@table_format = {_format}`) were resolved by mutating the shared `RoutineEndpoint` instance. The first request permanently overwrote the template with the resolved value, causing all subsequent requests to use the stale value from the first request. Resolved values are now written to a per-request copy of the dictionary, preserving the original templates for correct resolution on every request.
-
 - Fixed `CustomHost` configuration in `ClientCodeGen` not accepting an empty string value. Setting `"CustomHost": ""` was treated the same as `null` (triggering host auto-detection) because `GetConfigStr` uses `string.IsNullOrEmpty`. Now an explicit empty string correctly produces `const baseUrl = "";` in generated TypeScript, which is useful for relative URL paths.
 
 ### New Features
