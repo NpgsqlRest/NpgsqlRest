@@ -1,21 +1,13 @@
 #!/usr/bin/env node
 
 const fs = require("fs");
+const path = require("path");
 const os = require("os");
 
-const downloadDir = "../.bin/";
-const osType = os.type();
+const binDir = path.join(__dirname, "bin");
+const ext = os.type() === "Windows_NT" ? ".exe" : "";
+const binaryPath = path.join(binDir, `npgsqlrest${ext}`);
 
-var downloadTo;
-
-if (osType === "Windows_NT") {
-    downloadTo = `${downloadDir}npgsqlrest.exe`;
-} else {
-    downloadTo = `${downloadDir}npgsqlrest`;
+if (fs.existsSync(binaryPath)) {
+    fs.unlinkSync(binaryPath);
 }
-
-if (fs.existsSync(downloadTo)) {
-    fs.unlinkSync(downloadTo);
-}
-
-

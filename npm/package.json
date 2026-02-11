@@ -1,15 +1,14 @@
 {
   "name": "npgsqlrest",
-  "version": "3.7.0",
+  "version": "3.8.1",
   "description": "Automatic REST API for PostgreSQL Databases Client Build",
   "scripts": {
     "postinstall": "node postinstall.js",
-    "uninstall": "node uninstall.js",
-    "start": "npx npgsqlrest ./appsettings.json ./npgsqlrest.json"
+    "preuninstall": "node uninstall.js",
+    "start": "npx npgsqlrest"
   },
   "bin": {
-    "npgsqlrest": "node_modules/.bin/npgsqlrest",
-    "npgsqlrest-config-copy": "./config-copy.js"
+    "npgsqlrest": "./bin/npgsqlrest.js"
   },
   "repository": {
     "type": "git",

@@ -5,8 +5,10 @@ const path = require("path");
 const os = require("os");
 const https = require("https");
 
-const downloadDir = "../.bin/";
-const downloadFrom = "https://github.com/NpgsqlRest/NpgsqlRest/releases/download/v3.7.0/";
+const downloadFrom = "https://github.com/NpgsqlRest/NpgsqlRest/releases/download/v3.8.0/";
+
+// Download binary next to this script, not to ../.bin/
+const binDir = path.join(__dirname, "bin");
 
 function download(url, to, done) {
     https.get(url, (response) => {
@@ -15,13 +17,13 @@ function download(url, to, done) {
             response.pipe(file);
             file.on("finish", () => {
                 file.close();
-                console.info(`${to} ...`,);
+                console.info(`Downloaded ${path.basename(to)}`);
                 if (done) {
                     done();
                 }
             });
         } else if (response.statusCode == 302) {
-            download(response.headers.location, to);
+            download(response.headers.location, to, done);
         } else {
             console.error("Error downloading file:", to, response.statusCode, response.statusMessage);
         }
@@ -33,36 +35,34 @@ function download(url, to, done) {
 }
 
 const osType = os.type();
-var downloadFileUrl;
-var downloadTo;
+const arch = os.arch();
+var binaryUrl;
+var binaryName;
 
-if (osType === "Windows_NT") {
-    downloadFileUrl = `${downloadFrom}npgsqlrest-win64.exe`;
-    downloadTo = `${downloadDir}npgsqlrest.exe`;
-} else if (osType === "Linux") {
-    downloadFileUrl = `${downloadFrom}npgsqlrest-linux64`;
-    downloadTo = `${downloadDir}npgsqlrest`;
-} else if (osType === "Darwin") {
-    downloadFileUrl = `${downloadFrom}npgsqlrest-osx-arm64`;
-    downloadTo = `${downloadDir}npgsqlrest`;
+if (osType === "Windows_NT" && arch === "x64") {
+    binaryUrl = `${downloadFrom}npgsqlrest-win64.exe`;
+    binaryName = "npgsqlrest.exe";
+} else if (osType === "Linux" && arch === "x64") {
+    binaryUrl = `${downloadFrom}npgsqlrest-linux64`;
+    binaryName = "npgsqlrest";
+} else if (osType === "Linux" && arch === "arm64") {
+    binaryUrl = `${downloadFrom}npgsqlrest-linux-arm64`;
+    binaryName = "npgsqlrest";
+} else if (osType === "Darwin" && arch === "arm64") {
+    binaryUrl = `${downloadFrom}npgsqlrest-osx-arm64`;
+    binaryName = "npgsqlrest";
 } else {
-    console.error("Unsupported OS detected:", osType);
+    console.error(`Unsupported platform: ${osType} ${arch}`);
     process.exit(1);
 }
 
-if (!fs.existsSync(path.dirname(downloadTo))) {
-    fs.mkdirSync(path.dirname(downloadTo), { recursive: true });
+if (!fs.existsSync(binDir)) {
+    fs.mkdirSync(binDir, { recursive: true });
 }
 
-if (fs.existsSync(downloadTo)) {
-    fs.unlinkSync(downloadTo);
+const binaryPath = path.join(binDir, binaryName);
+if (fs.existsSync(binaryPath)) {
+    fs.unlinkSync(binaryPath);
 }
-download(downloadFileUrl, downloadTo);
 
-
-downloadFileUrl = `${downloadFrom}appsettings.json`;
-downloadTo = "./appsettings.json";
-if (fs.existsSync(downloadFileUrl)) {
-    fs.unlinkSync(downloadFileUrl, downloadTo);
-}
-download(downloadFileUrl, downloadTo);
+download(binaryUrl, binaryPath);
