@@ -237,7 +237,8 @@ public static class StatsEndpoints
                 CommandLogger.LogCommand(command, logger, logName);
                 await using var reader = await command.ExecuteReaderAsync(context.RequestAborted);
 
-                if (string.Equals(outputFormat, "html", StringComparison.OrdinalIgnoreCase))
+                var format = context.Request.Query.ContainsKey("format") ? context.Request.Query["format"].ToString() : outputFormat;
+                if (string.Equals(format, "html", StringComparison.OrdinalIgnoreCase))
                 {
                     await WriteAsHtml(context, reader);
                 }

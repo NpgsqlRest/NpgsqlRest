@@ -1,5 +1,4 @@
-﻿using System.Net;
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using Npgsql;
 using NpgsqlRest;
 using NpgsqlRest.HttpFiles;
@@ -97,29 +96,6 @@ public class App
 
             await next();
         });
-    }
-
-    public void ConfigureConfigEndpoint(WebApplication app)
-    {
-        var cfgCfg = _config.Cfg.GetSection("Config");
-        var configEndpoint = _config.GetConfigStr("ExposeAsEndpoint", cfgCfg);
-        if (configEndpoint is not null)
-        {
-            app.Use(async (context, next) =>
-            {
-                if (
-                    string.Equals(context.Request.Method, "GET", StringComparison.OrdinalIgnoreCase) &&
-                    string.Equals(context.Request.Path, configEndpoint, StringComparison.OrdinalIgnoreCase))
-                {
-                    context.Response.StatusCode = (int)HttpStatusCode.OK;
-                    context.Response.ContentType = System.Net.Mime.MediaTypeNames.Application.Json;
-                    await context.Response.WriteAsync(_config.Serialize());
-                    await context.Response.CompleteAsync();
-                    return;
-                }
-                await next(context);
-            });
-        }
     }
 
     public void ConfigureStaticFiles(WebApplication app, NpgsqlRestAuthenticationOptions options)
@@ -350,9 +326,13 @@ public class App
         };
     }
 
-    public List<IEndpointCreateHandler> CreateCodeGenHandlers(string connectionString)
+    public List<IEndpointCreateHandler> CreateCodeGenHandlers(string connectionString, string[] args)
     {
-        List<IEndpointCreateHandler> handlers = new(2);
+        List<IEndpointCreateHandler> handlers = new(3);
+        if (args.Any(a => string.Equals(a, "--endpoints", StringComparison.OrdinalIgnoreCase)))
+        {
+            handlers.Add(new EndpointCapture());
+        }
         var httpFilecfg = _config.NpgsqlRestCfg.GetSection("HttpFileOptions");
         if (httpFilecfg is not null && _config.GetConfigBool("Enabled", httpFilecfg) is true)
         {

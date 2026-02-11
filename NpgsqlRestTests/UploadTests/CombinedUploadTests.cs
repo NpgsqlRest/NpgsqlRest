@@ -136,7 +136,7 @@ public class CombinedUploadTests(TestFixture test)
             var content = (string?)await command.ExecuteScalarAsync();
             content.Should().Be(csvContent);
         }
-        using (var command = new NpgsqlCommand("select * from pg_largeobject where convert_from(data, 'utf8') = $1", connection))
+        using (var command = new NpgsqlCommand("select * from pg_largeobject where loid = " + oid + " and convert_from(data, 'utf8') = $1", connection))
         {
             command.Parameters.Add(new NpgsqlParameter()
             {

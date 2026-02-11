@@ -4,6 +4,155 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [3.8.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.8.0) (2025-02-11)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.7.0...3.8.0)
+
+### New Feature: Configuration Key Validation
+
+Added startup validation that checks all configuration keys in `appsettings.json` against the known defaults schema. This catches typos and unknown keys that would otherwise be silently ignored (e.g., `LogCommand` instead of `LogCommands`).
+
+Controlled by the new `Config:ValidateConfigKeys` setting with three modes:
+
+- `"Warning"` (default) — logs warnings for unknown keys, startup continues.
+- `"Error"` — logs errors for unknown keys and exits the application.
+- `"Ignore"` — no validation.
+
+```json
+"Config": {
+  "ValidateConfigKeys": "Warning"
+}
+```
+
+Example output:
+
+```
+[12:34:56 WRN] Unknown configuration key: NpgsqlRest:KebabCaselUrls
+```
+
+### Removed
+
+- Removed the `Config:ExposeAsEndpoint` option. Use the `--config` CLI switch to inspect configuration instead.
+
+### Kestrel Configuration Validation
+
+Configuration key validation also covers the `Kestrel` section, checking against the known Kestrel schema including `Limits`, `Http2`, `Http3`, and top-level flags like `DisableStringReuse` and `AllowSynchronousIO`. User-defined endpoint and certificate names under `Endpoints` and `Certificates` remain open-ended and won't trigger warnings.
+
+### Syntax Highlighted `--config` Output
+
+The `--config` CLI switch now outputs JSON with syntax highlighting (keys, strings, numbers/booleans, and structural characters in distinct colors). When output is redirected to a file, plain JSON is emitted without color codes. The `--config` switch can now appear anywhere in the argument list and be combined with config files and `--key=value` overrides.
+
+### Improved CLI Error Handling
+
+Unknown command-line parameters now display a clear error message with a `--help` hint instead of an unhandled exception stack trace.
+
+### Universal `fallback_handler` for All Upload Handlers
+
+The `fallback_handler` parameter, previously Excel-only, is now available on all upload handlers via `BaseUploadHandler`. When a handler's format validation fails and a `fallback_handler` is configured, processing is automatically delegated to the named fallback handler.
+
+This enables scenarios like: CSV format check fails on a binary file → fall back to `large_object` or `file_system` to save the raw file for analysis.
+
+```sql
+comment on function my_csv_upload(json) is '
+@upload for csv
+@check_format = true
+@fallback_handler = large_object
+@row_command = select process_row($1,$2)
+';
+```
+
+### Optional Path Parameters
+
+Path parameters now support the ASP.NET Core optional parameter syntax `{param?}`. When a path parameter is marked as optional and the corresponding PostgreSQL function parameter has a default value, omitting the URL segment will use the PostgreSQL default:
+
+```sql
+create function get_item(p_id int default 42) returns text ...
+comment on function get_item(int) is '
+HTTP GET /items/{p_id?}
+';
+```
+
+- `GET /items/5` → uses the provided value `5`
+- `GET /items/` → uses the PostgreSQL default `42`
+
+This also works with `query_string_null_handling null_literal` to pass NULL via the literal string `"null"` in the path for any parameter type:
+
+```sql
+create function get_item(p_id int default null) returns text ...
+comment on function get_item(int) is '
+HTTP GET /items/{p_id}
+query_string_null_handling null_literal
+';
+```
+
+- `GET /items/null` → passes SQL NULL to the function
+
+### Fixes
+
+- Fixed query string overload resolution not accounting for path parameters. GET endpoints with path parameters and overloaded functions (same name, different signatures) would resolve to the wrong function. The body JSON overload resolution already handled this correctly.
+- Added missing `QueryStringNullHandling` and `TextResponseNullHandling` entries to `ConfigDefaults`, which caused them to be absent from `--config` output.
+- Added missing `Pattern`, `MinLength`, and `MaxLength` properties to default validation rule schemas in `ConfigDefaults`.
+
+### Machine-Readable CLI Commands for Tool Integration
+
+Added new CLI commands designed for programmatic consumption by tools like pgdev. All JSON-outputting commands use syntax highlighting when run in a terminal and emit plain JSON when piped or redirected.
+
+#### `--version --json`
+
+Outputs version information as structured JSON including all assembly versions, runtime, platform RID, and directories:
+
+```
+npgsqlrest --version --json
+```
+
+#### `--validate [--json]`
+
+Pre-flight check that validates configuration keys against known defaults and tests the database connection, then exits with code 0 (success) or 1 (failure):
+
+```
+npgsqlrest --validate
+npgsqlrest --validate --json
+```
+
+#### `--config-schema`
+
+Outputs a [JSON Schema (draft-07)](https://json-schema.org) describing the full `appsettings.json` configuration structure — types, defaults, and enum constraints. Can be used for IDE autocomplete via the `$schema` property or as the foundation for config editing UIs:
+
+```
+npgsqlrest --config-schema
+```
+
+#### `--annotations`
+
+Outputs all 44 supported SQL comment annotations as a JSON array with name, aliases, syntax, and description for each:
+
+```
+npgsqlrest --annotations
+```
+
+#### `--endpoints`
+
+Connects to the database, discovers all generated REST endpoints, outputs full metadata (method, path, routine info, parameters, return columns, authorization, custom parameters), then exits. Logging is suppressed to keep output clean:
+
+```
+npgsqlrest --endpoints
+```
+
+#### `--config` (updated)
+
+The `--config --json` flag has been removed. The `--config` command now always uses automatic detection: syntax highlighted in terminal, plain JSON when output is piped or redirected.
+
+### Stats Endpoints: `format` Query String Override
+
+Stats endpoints now accept an optional `format` query string parameter that overrides the configured `Stats:OutputFormat` setting per-request. Valid values are `html` and `json`.
+
+```
+GET /api/stats/routines?format=json
+GET /api/stats/tables?format=html
+```
+
+---
+
 ## Version [3.7.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.7.0) (2025-02-07)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.6.3...3.7.0)

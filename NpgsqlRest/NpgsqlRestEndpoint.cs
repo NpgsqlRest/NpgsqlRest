@@ -245,9 +245,11 @@ public class NpgsqlRestEndpoint(
                     return;
                 }
 
-                if (queryCollection.Count != routine.ParamCount && overloads.Count > 0)
+                // Account for path parameters when counting query string parameters
+                var pathParamCount = endpoint.PathParameters?.Length ?? 0;
+                if (queryCollection.Count + pathParamCount != routine.ParamCount && overloads.Count > 0)
                 {
-                    if (overloads.TryGetValue(string.Concat(entry.Key, queryCollection.Count), out var overload))
+                    if (overloads.TryGetValue(string.Concat(entry.Key, queryCollection.Count + pathParamCount), out var overload))
                     {
                         routine = overload.Endpoint.Routine;
                         endpoint = overload.Endpoint;

@@ -286,7 +286,25 @@ public class Config
         return merged?.ToJsonString(new JsonSerializerOptions() { WriteIndented = true }) ?? "{}";
     }
 
-    private JsonNode? SerializeConfig(IConfiguration config)
+    /// <summary>
+    /// Validates configuration keys against known defaults.
+    /// Returns the validation mode and list of unknown key paths.
+    /// Mode is "Ignore", "Warning" (default), or "Error".
+    /// </summary>
+    public (string mode, List<string> warnings) ValidateConfigKeys()
+    {
+        var cfgCfg = Cfg.GetSection("Config");
+        var mode = GetConfigStr("ValidateConfigKeys", cfgCfg) ?? "Warning";
+        if (string.Equals(mode, "Ignore", StringComparison.OrdinalIgnoreCase))
+        {
+            return (mode, []);
+        }
+        var defaults = ConfigDefaults.GetDefaults();
+        var actual = SerializeConfig(Cfg);
+        return (mode, ConfigDefaults.FindUnknownConfigKeys(defaults, actual));
+    }
+
+    internal JsonNode? SerializeConfig(IConfiguration config)
     {
         JsonObject obj = [];
 
@@ -306,8 +324,12 @@ public class Config
 
         if (obj.Count == 0 && config is IConfigurationSection section)
         {
-            var value = EnvDict is not null ? 
-                Formatter.FormatString(section.Value.AsSpan(), EnvDict).ToString() : 
+            if (section.Value is null)
+            {
+                return null;
+            }
+            var value = EnvDict is not null ?
+                Formatter.FormatString(section.Value.AsSpan(), EnvDict).ToString() :
                 section.Value;
             if (bool.TryParse(value, out bool boolean))
             {
@@ -323,8 +345,8 @@ public class Config
             }
             if (section.Path.StartsWith("ConnectionStrings:"))
             {
-                return JsonValue.Create(string.Join(';', 
-                    value?.Split(';')?.Where(p => p.StartsWith("password", StringComparison.OrdinalIgnoreCase) is false) ?? []));
+                return JsonValue.Create(string.Join(';',
+                    value.Split(';').Where(p => p.StartsWith("password", StringComparison.OrdinalIgnoreCase) is false)));
             }
             return JsonValue.Create(value);
         }
@@ -382,6 +404,10 @@ public class Config
                 else if ((arg.StartsWith("--") && arg.Contains('=')) || string.Equals("--config", lower))
                 {
                     commandLineArgs.Add(arg);
+                }
+                else if (lower is "--json" or "--validate" or "--endpoints")
+                {
+                    // Known flags handled by Program.cs, skip silently
                 }
                 else
                 {

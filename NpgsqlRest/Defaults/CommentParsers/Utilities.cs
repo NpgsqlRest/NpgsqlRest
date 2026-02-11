@@ -9,8 +9,8 @@ internal static partial class DefaultCommentParser
     /// This allows comment annotation debug logs to be suppressed when the option is disabled.
     /// </summary>
     private static ILogger? CommentLogger => Options.DebugLogCommentAnnotationEvents ? Logger : null;
-    // Regex to match path parameters like {param_name} or {paramName}
-    [GeneratedRegex(@"\{(\w+)\}", RegexOptions.Compiled)]
+    // Regex to match path parameters like {param_name}, {paramName}, or {param_name?} (optional)
+    [GeneratedRegex(@"\{(\w+)\??\}", RegexOptions.Compiled)]
     private static partial Regex PathParameterRegex();
 
     /// <summary>

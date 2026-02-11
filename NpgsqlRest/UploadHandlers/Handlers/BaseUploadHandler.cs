@@ -1,10 +1,15 @@
-﻿namespace NpgsqlRest.UploadHandlers.Handlers;
+﻿using Npgsql;
+using static NpgsqlRest.NpgsqlRestOptions;
+
+namespace NpgsqlRest.UploadHandlers.Handlers;
 
 public abstract class BaseUploadHandler
 {
     protected HashSet<string> SkipFileNames = new(StringComparer.OrdinalIgnoreCase);
 
     protected string? Type = null;
+    protected string? FallbackHandler = null;
+
     protected bool CheckMimeTypes(string contentType)
     {
         // File must match AT LEAST ONE included pattern
@@ -89,6 +94,10 @@ public abstract class BaseUploadHandler
             {
                 StopAfterFirstSuccess = stopAfterFirstSuccessParsed;
             }
+            if (TryGetParam(parameters, FallbackHandlerParam, out var fallbackHandlerStr))
+            {
+                FallbackHandler = fallbackHandlerStr;
+            }
         }
     }
 
@@ -103,6 +112,7 @@ public abstract class BaseUploadHandler
         get
         {
             yield return StopAfterFirstParam;
+            yield return FallbackHandlerParam;
             foreach (var param in GetParameters())
             {
                 yield return param;
@@ -114,10 +124,35 @@ public abstract class BaseUploadHandler
         }
     }
 
+    protected async Task<string?> RunFallbackAsync(
+        RetryStrategy? retryStrategy,
+        NpgsqlConnection connection,
+        HttpContext context,
+        NpgsqlRestUploadOptions options,
+        Dictionary<string, string>? parameters,
+        CancellationToken cancellationToken)
+    {
+        if (FallbackHandler is not null &&
+            Options.UploadOptions.UploadHandlers is not null &&
+            Options.UploadOptions.UploadHandlers.TryGetValue(FallbackHandler, out var fallbackFactory))
+        {
+            Logger?.LogDebug("Upload format invalid, falling back to {fallbackHandler} handler", FallbackHandler);
+            var handler = fallbackFactory(retryStrategy);
+            handler.SetType(FallbackHandler);
+            if (handler is BaseUploadHandler baseHandler)
+            {
+                baseHandler.ParseSharedParameters(options, parameters);
+            }
+            return await handler.UploadAsync(connection, context, parameters, cancellationToken);
+        }
+        return null;
+    }
+
     public const string StopAfterFirstParam = "stop_after_first_success";
     public const string IncludedMimeTypeParam = "included_mime_types";
     public const string ExcludedMimeTypeParam = "excluded_mime_types";
     public const string BufferSizeParam = "buffer_size";
+    public const string FallbackHandlerParam = "fallback_handler";
 
     public bool StopAfterFirst => StopAfterFirstSuccess;
     

@@ -144,6 +144,11 @@ public class CsvUploadHandler(RetryStrategy? retryStrategy) : BaseUploadHandler,
             fileJson.Append('}');
             if (status != UploadFileStatus.Ok)
             {
+                var fallbackResult = await RunFallbackAsync(retryStrategy, connection, context, Options.UploadOptions, parameters, cancellationToken);
+                if (fallbackResult is not null)
+                {
+                    return fallbackResult;
+                }
                 Logger?.FileUploadFailed(Type, formFile.FileName, formFile.ContentType, formFile.Length, status);
                 result.Append(fileJson);
                 fileId++;

@@ -139,7 +139,7 @@ public class LargeObjectUploadTests(TestFixture test)
             var content = (string?)await command.ExecuteScalarAsync();
             content.Should().Be(csvContent);
         }
-        using (var command = new NpgsqlCommand("select * from pg_largeobject where convert_from(data, 'utf8') = $1", connection))
+        using (var command = new NpgsqlCommand("select * from pg_largeobject where loid = " + oid + " and convert_from(data, 'utf8') = $1", connection))
         {
             command.Parameters.Add(new NpgsqlParameter()
             {
@@ -259,7 +259,7 @@ public class LargeObjectUploadTests(TestFixture test)
             var content = (string?)await command.ExecuteScalarAsync();
             content.Should().Be(csvContent);
         }
-        using (var command = new NpgsqlCommand("select * from pg_largeobject where convert_from(data, 'utf8') = $1", connection))
+        using (var command = new NpgsqlCommand("select * from pg_largeobject where loid = " + oid + " and convert_from(data, 'utf8') = $1", connection))
         {
             command.Parameters.Add(new NpgsqlParameter()
             {
@@ -295,11 +295,11 @@ public class LargeObjectUploadTests(TestFixture test)
 
         using var connection = Database.CreateConnection();
         await connection.OpenAsync();
-        using var command = new NpgsqlCommand("select * from pg_largeobject where convert_from(data, 'utf8') = $1", connection);
+        using var command = new NpgsqlCommand("select * from pg_largeobject where encode(data, 'hex') = encode($1::bytea, 'hex')", connection);
         command.Parameters.Add(new NpgsqlParameter()
         {
-            NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text,
-            Value = csvContent
+            NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Bytea,
+            Value = Encoding.UTF8.GetBytes(csvContent)
         });
         using var reader = await command.ExecuteReaderAsync();
         (await reader.ReadAsync()).Should().BeFalse(); // there is a NO record, LOB has rolled-back
@@ -346,7 +346,7 @@ public class LargeObjectUploadTests(TestFixture test)
             var content = (string?)await command.ExecuteScalarAsync();
             content.Should().Be(csvContent);
         }
-        using (var command = new NpgsqlCommand("select * from pg_largeobject where convert_from(data, 'utf8') = $1", connection))
+        using (var command = new NpgsqlCommand("select * from pg_largeobject where loid = " + oid + " and convert_from(data, 'utf8') = $1", connection))
         {
             command.Parameters.Add(new NpgsqlParameter()
             {
@@ -383,13 +383,8 @@ public class LargeObjectUploadTests(TestFixture test)
 
         using var connection = Database.CreateConnection();
         await connection.OpenAsync();
-        using (var command1 = new NpgsqlCommand("select * from pg_largeobject where convert_from(data, 'utf8') = $1", connection))
+        using (var command1 = new NpgsqlCommand("select * from pg_largeobject where loid = " + oid, connection))
         {
-            command1.Parameters.Add(new NpgsqlParameter()
-            {
-                NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text,
-                Value = csvContent
-            });
             using var reader1 = await command1.ExecuteReaderAsync();
             (await reader1.ReadAsync()).Should().BeFalse(); // there is a NO record, LOB has rolled-back
         }

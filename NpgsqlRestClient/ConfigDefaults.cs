@@ -39,10 +39,10 @@ public static class ConfigDefaults
 
             ["Config"] = new JsonObject
             {
-                ["ExposeAsEndpoint"] = null,
                 ["AddEnvironmentVariables"] = false,
                 ["ParseEnvironmentVariables"] = true,
-                ["EnvFile"] = null
+                ["EnvFile"] = null,
+                ["ValidateConfigKeys"] = "Warning"
             },
 
             ["ConnectionStrings"] = new JsonObject
@@ -94,7 +94,47 @@ public static class ConfigDefaults
                 ["DpapiLocalMachine"] = false
             },
 
-            ["Kestrel"] = new JsonObject(),
+            ["Kestrel"] = new JsonObject
+            {
+                ["Endpoints"] = new JsonObject(),
+                ["Certificates"] = new JsonObject(),
+                ["Limits"] = new JsonObject
+                {
+                    ["MaxConcurrentConnections"] = null,
+                    ["MaxConcurrentUpgradedConnections"] = null,
+                    ["MaxRequestBodySize"] = null,
+                    ["MaxRequestBufferSize"] = null,
+                    ["MaxRequestHeaderCount"] = null,
+                    ["MaxRequestHeadersTotalSize"] = null,
+                    ["MaxRequestLineSize"] = null,
+                    ["MaxResponseBufferSize"] = null,
+                    ["KeepAliveTimeout"] = null,
+                    ["RequestHeadersTimeout"] = null,
+                    ["Http2"] = new JsonObject
+                    {
+                        ["MaxStreamsPerConnection"] = null,
+                        ["HeaderTableSize"] = null,
+                        ["MaxFrameSize"] = null,
+                        ["MaxRequestHeaderFieldSize"] = null,
+                        ["InitialConnectionWindowSize"] = null,
+                        ["InitialStreamWindowSize"] = null,
+                        ["MaxReadFrameSize"] = null,
+                        ["KeepAlivePingDelay"] = null,
+                        ["KeepAlivePingTimeout"] = null,
+                        ["KeepAlivePingPolicy"] = null
+                    },
+                    ["Http3"] = new JsonObject
+                    {
+                        ["MaxRequestHeaderFieldSize"] = null
+                    }
+                },
+                ["DisableStringReuse"] = false,
+                ["AllowAlternateSchemes"] = false,
+                ["AllowSynchronousIO"] = false,
+                ["AllowResponseHeaderCompression"] = true,
+                ["AddServerHeader"] = true,
+                ["AllowHostHeaderOverride"] = false
+            },
 
             ["ThreadPool"] = new JsonObject
             {
@@ -479,18 +519,27 @@ public static class ConfigDefaults
                 ["not_null"] = new JsonObject
                 {
                     ["Type"] = "NotNull",
+                    ["Pattern"] = null,
+                    ["MinLength"] = null,
+                    ["MaxLength"] = null,
                     ["Message"] = "Parameter '{0}' cannot be null",
                     ["StatusCode"] = 400
                 },
                 ["not_empty"] = new JsonObject
                 {
                     ["Type"] = "NotEmpty",
+                    ["Pattern"] = null,
+                    ["MinLength"] = null,
+                    ["MaxLength"] = null,
                     ["Message"] = "Parameter '{0}' cannot be empty",
                     ["StatusCode"] = 400
                 },
                 ["required"] = new JsonObject
                 {
                     ["Type"] = "Required",
+                    ["Pattern"] = null,
+                    ["MinLength"] = null,
+                    ["MaxLength"] = null,
                     ["Message"] = "Parameter '{0}' is required",
                     ["StatusCode"] = 400
                 },
@@ -498,6 +547,8 @@ public static class ConfigDefaults
                 {
                     ["Type"] = "Regex",
                     ["Pattern"] = "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+                    ["MinLength"] = null,
+                    ["MaxLength"] = null,
                     ["Message"] = "Parameter '{0}' must be a valid email address",
                     ["StatusCode"] = 400
                 }
@@ -619,6 +670,8 @@ public static class ConfigDefaults
             ["DebugLogCommentAnnotationEvents"] = true,
             ["DefaultHttpMethod"] = null,
             ["DefaultRequestParamType"] = null,
+            ["QueryStringNullHandling"] = "Ignore",
+            ["TextResponseNullHandling"] = "EmptyString",
             ["RequestHeadersMode"] = "Parameter",
             ["RequestHeadersContextKey"] = "request.headers",
             ["RequestHeadersParameterName"] = "_headers",
@@ -956,5 +1009,112 @@ public static class ConfigDefaults
 
         // For primitive values, actual wins
         return actual.DeepClone();
+    }
+
+    /// <summary>
+    /// Recursively validates actual config keys against the defaults schema.
+    /// Returns a list of full key paths for unrecognized keys.
+    /// </summary>
+    public static List<string> FindUnknownConfigKeys(JsonNode? defaults, JsonNode? actual, string path = "")
+    {
+        var warnings = new List<string>();
+
+        if (actual is null || defaults is null)
+        {
+            return warnings;
+        }
+
+        // If defaults is a JsonArray, IConfiguration serializes arrays as objects with numeric keys.
+        // Skip index-key validation but validate properties within each element.
+        if (defaults is JsonArray defaultArray && actual is JsonObject actualArrayObj)
+        {
+            JsonObject? elementSchema = defaultArray.Count > 0 ? defaultArray[0] as JsonObject : null;
+            if (elementSchema is not null)
+            {
+                foreach (var kvp in actualArrayObj)
+                {
+                    if (kvp.Value is JsonObject elementObj)
+                    {
+                        var elementPath = string.IsNullOrEmpty(path) ? kvp.Key : $"{path}:{kvp.Key}";
+                        warnings.AddRange(FindUnknownConfigKeys(elementSchema, elementObj, elementPath));
+                    }
+                }
+            }
+            return warnings;
+        }
+
+        if (defaults is JsonObject defaultObj && actual is JsonObject actualObj)
+        {
+            foreach (var kvp in actualObj)
+            {
+                var fullPath = string.IsNullOrEmpty(path) ? kvp.Key : $"{path}:{kvp.Key}";
+
+                if (ContainsKeyIgnoreCase(defaultObj, kvp.Key, out var matchedKey))
+                {
+                    var defaultChild = defaultObj[matchedKey!];
+
+                    // Empty JsonObject in defaults means open-ended/dictionary section - skip subtree
+                    if (defaultChild is JsonObject emptyObj && emptyObj.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    warnings.AddRange(FindUnknownConfigKeys(defaultChild, kvp.Value, fullPath));
+                }
+                else
+                {
+                    // Key not in defaults - check if parent is an open dictionary section
+                    if (IsOpenDictionarySection(path))
+                    {
+                        continue;
+                    }
+                    warnings.Add(fullPath);
+                }
+            }
+        }
+
+        return warnings;
+    }
+
+    private static bool ContainsKeyIgnoreCase(JsonObject obj, string key, out string? matchedKey)
+    {
+        foreach (var kvp in obj)
+        {
+            if (string.Equals(kvp.Key, key, StringComparison.OrdinalIgnoreCase))
+            {
+                matchedKey = kvp.Key;
+                return true;
+            }
+        }
+        matchedKey = null;
+        return false;
+    }
+
+    /// <summary>
+    /// Sections where users add arbitrary keys beyond the defaults.
+    /// </summary>
+    private static bool IsOpenDictionarySection(string path)
+    {
+        if (path is
+            "ConnectionStrings" or
+            "Log:MinimalLevels" or
+            "Log:OTLResourceAttributes" or
+            "CommandRetryOptions:Strategies" or
+            "ValidationOptions:Rules" or
+            "NpgsqlRest:AuthenticationOptions:ContextKeyClaimsMapping" or
+            "NpgsqlRest:AuthenticationOptions:ParameterNameClaimsMapping" or
+            "NpgsqlRest:ClientCodeGen:CustomHeaders")
+        {
+            return true;
+        }
+
+        // ErrorHandlingOptions:ErrorCodePolicies:N:ErrorCodes - user-defined postgres error codes
+        if (path.StartsWith("ErrorHandlingOptions:ErrorCodePolicies:", StringComparison.Ordinal) &&
+            path.EndsWith(":ErrorCodes", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return false;
     }
 }

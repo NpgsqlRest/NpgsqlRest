@@ -31,8 +31,15 @@ if (args.Length >= 1 && (string.Equals(args[0], "-h", StringComparison.CurrentCu
         ("npgsqlrest [--key=value]", "Override the configuration with this key with a new value (case insensitive, use : to separate sections). "),
         (" ", " "),
         ("npgsqlrest -v, --version", "Show version information."),
+        ("npgsqlrest --version --json", "Show version information as machine-readable JSON."),
         ("npgsqlrest -h, --help", "Show command line help."),
-        ("npgsqlrest --config", "Dump current configuration to console and exit."),
+        ("npgsqlrest [files...] [--key=value] --config", "Dump current configuration as JSON to console and exit. Syntax highlighted in terminal, plain JSON when piped."),
+        ("npgsqlrest [files...] --validate", "Validate configuration keys and test database connection, then exit."),
+        ("npgsqlrest [files...] --validate --json", "Validate and output results as machine-readable JSON."),
+        ("npgsqlrest --config-schema", "Output JSON Schema for appsettings.json. Syntax highlighted in terminal, plain JSON when piped."),
+        ("npgsqlrest --annotations", "Output all supported comment annotations as JSON. Syntax highlighted in terminal, plain JSON when piped."),
+        ("npgsqlrest [files...] --endpoints", "Connect to database, discover endpoints, output as JSON, then exit. Syntax highlighted in terminal, plain JSON when piped."),
+        (" ", " "),
         ("npgsqlrest --hash [value]", "Hash value with default hasher and print to console."),
         ("npgsqlrest --basic_auth [username] [password]", "Print out basic basic auth header value in format 'Authorization: Basic base64(username:password)'."),
         ("npgsqlrest --encrypt [value]", "Encrypt string using default data protection and print to console."),
@@ -52,6 +59,14 @@ if (args.Length >= 1 && (string.Equals(args[0], "-v", StringComparison.CurrentCu
     string.Equals(args[0], "--version", StringComparison.CurrentCultureIgnoreCase) ||
     string.Equals(args[0], "/v", StringComparison.CurrentCultureIgnoreCase)))
 {
+    bool jsonOutput = args.Any(a => string.Equals(a, "--json", StringComparison.OrdinalIgnoreCase));
+    if (jsonOutput)
+    {
+        var versionJson = CliJson.GetVersionJson();
+        Console.WriteLine(versionJson.ToJsonString(CliJson.JsonOptions));
+        return;
+    }
+
     var _ = new Out();
     _.Logo();
     var versions = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription.Split(' ');
@@ -104,17 +119,114 @@ if (args.Length >= 3 && string.Equals(args[0], "--basic_auth", StringComparison.
     return;
 }
 
+if (args.Length >= 1 && string.Equals(args[0], "--config-schema", StringComparison.CurrentCultureIgnoreCase))
+{
+    var schema = ConfigSchemaGenerator.Generate();
+    new Out().JsonHighlight(schema.ToJsonString(CliJson.JsonOptions));
+    return;
+}
+
+if (args.Length >= 1 && string.Equals(args[0], "--annotations", StringComparison.CurrentCultureIgnoreCase))
+{
+    var annotations = NpgsqlRest.Defaults.DefaultCommentParser.GetAnnotationReference();
+    new Out().JsonHighlight(annotations.ToJsonString(CliJson.JsonOptions));
+    return;
+}
+
 var config = new Config();
 var builder = new Builder(config);
 var appInstance = new App(config, builder);
 
-config.Build(args,["--encrypt"]);
-
-if (args.Length >= 1 && string.Equals(args[0], "--config", StringComparison.CurrentCultureIgnoreCase))
+try
 {
-    new Out().Logo();
-    Console.ForegroundColor = ConsoleColor.Yellow;
-    Console.WriteLine(config.Serialize());
+    config.Build(args, ["--encrypt"]);
+}
+catch (ArgumentException ex)
+{
+    var _ = new Out();
+    _.Logo();
+    Console.ForegroundColor = ConsoleColor.Red;
+    Console.Error.WriteLine(ex.Message);
+    Console.ResetColor();
+    Console.Error.WriteLine();
+    Console.Error.WriteLine("Run with --help for usage information.");
+    return;
+}
+
+if (args.Any(a => string.Equals(a, "--config", StringComparison.CurrentCultureIgnoreCase)))
+{
+    new Out().JsonHighlight(config.Serialize());
+    return;
+}
+
+if (args.Any(a => string.Equals(a, "--validate", StringComparison.CurrentCultureIgnoreCase)))
+{
+    bool jsonOutput = args.Any(a => string.Equals(a, "--json", StringComparison.OrdinalIgnoreCase));
+    var (valMode, valWarnings) = config.ValidateConfigKeys();
+    bool configValid = valWarnings.Count == 0;
+
+    // Test database connection
+    string? connectionError = null;
+    var connStr = config.GetConfigStr("Default", config.Cfg.GetSection("ConnectionStrings"));
+    if (connStr is not null)
+    {
+        try
+        {
+            using var conn = new NpgsqlConnection(connStr);
+            conn.Open();
+            conn.Close();
+        }
+        catch (Exception ex)
+        {
+            connectionError = ex.Message;
+        }
+    }
+
+    bool valid = configValid && connectionError is null;
+    if (jsonOutput)
+    {
+        var result = new System.Text.Json.Nodes.JsonObject
+        {
+            ["valid"] = valid,
+            ["configValid"] = configValid,
+            ["validationMode"] = valMode,
+            ["warnings"] = new System.Text.Json.Nodes.JsonArray(
+                valWarnings.Select(w => (System.Text.Json.Nodes.JsonNode)System.Text.Json.Nodes.JsonValue.Create(w)!).ToArray()),
+            ["connectionTest"] = connectionError is null ? "ok" : connectionError
+        };
+        Console.WriteLine(result.ToJsonString(CliJson.JsonOptions));
+    }
+    else
+    {
+        var _ = new Out();
+        _.Logo();
+        if (valWarnings.Count > 0)
+        {
+            _.Line($"Config validation ({valMode}): {valWarnings.Count} unknown key(s):", ConsoleColor.Yellow);
+            foreach (var warning in valWarnings)
+            {
+                _.Line($"  - {warning}", ConsoleColor.Yellow);
+            }
+        }
+        else
+        {
+            _.Line("Config validation: OK", ConsoleColor.Green);
+        }
+        if (connectionError is not null)
+        {
+            _.Line($"Connection test: FAILED - {connectionError}", ConsoleColor.Red);
+        }
+        else if (connStr is not null)
+        {
+            _.Line("Connection test: OK", ConsoleColor.Green);
+        }
+        else
+        {
+            _.Line("Connection test: No default connection string configured", ConsoleColor.Yellow);
+        }
+    }
+
+    Environment.ExitCode = valid ? 0 : 1;
     return;
 }
 
@@ -125,11 +237,35 @@ if (cmdRetryOpts.Enabled && string.IsNullOrEmpty(cmdRetryOpts.DefaultStrategy))
     cmdRetryOpts.Strategies.TryGetValue(cmdRetryOpts.DefaultStrategy, out cmdRetryStrategy);
 }
 
+bool endpointsMode = args.Any(a => string.Equals(a, "--endpoints", StringComparison.OrdinalIgnoreCase));
+
 builder.BuildInstance();
 builder.Instance.Services.AddRouting();
-builder.BuildLogger(cmdRetryStrategy);
-builder.ClientLogger?.LogInformation("NpgsqlRest version {version}",
-    System.Reflection.Assembly.GetAssembly(typeof(Program))?.GetName()?.Version?.ToString() ?? "-");
+if (!endpointsMode)
+{
+    builder.BuildLogger(cmdRetryStrategy);
+    builder.ClientLogger?.LogInformation("NpgsqlRest version {version}",
+        System.Reflection.Assembly.GetAssembly(typeof(Program))?.GetName()?.Version?.ToString() ?? "-");
+}
+
+// Validate configuration keys against known defaults
+var (validationMode, configWarnings) = config.ValidateConfigKeys();
+if (configWarnings.Count > 0)
+{
+    if (string.Equals(validationMode, "Error", StringComparison.OrdinalIgnoreCase))
+    {
+        foreach (var warning in configWarnings)
+        {
+            builder.ClientLogger?.LogError("Unknown configuration key: {Key}", warning);
+        }
+        return;
+    }
+    foreach (var warning in configWarnings)
+    {
+        builder.ClientLogger?.LogWarning("Unknown configuration key: {Key}", warning);
+    }
+}
+
 var errorHandlingOptions = builder.BuildErrorHandlingOptions();
 var (rateLimiterDefaultPolicy, rateLimiterEnabled) = builder.BuildRateLimiter();
 
@@ -207,9 +343,6 @@ appInstance.Configure(app, () =>
 
 // Security headers middleware (after HSTS, before other middleware)
 appInstance.ConfigureSecurityHeaders(app, securityHeadersConfig, antiForgeryUsed);
-
-// Config endpoint middleware
-appInstance.ConfigureConfigEndpoint(app);
 
 var (authenticationOptions, authCfg) = appInstance.CreateNpgsqlRestAuthenticationOptions(app, dataProtectionName);
 
@@ -297,7 +430,7 @@ NpgsqlRestOptions options = new()
     ErrorHandlingOptions = errorHandlingOptions,
     BeforeConnectionOpen = appInstance.BeforeConnectionOpen(connectionString, authenticationOptions),
     AuthenticationOptions = authenticationOptions,
-    EndpointCreateHandlers = appInstance.CreateCodeGenHandlers(connectionString),
+    EndpointCreateHandlers = appInstance.CreateCodeGenHandlers(connectionString, args),
     CustomRequestHeaders = builder.GetCustomHeaders(),
     ExecutionIdHeaderName = config.GetConfigStr("ExecutionIdHeaderName", config.NpgsqlRestCfg) ?? "X-NpgsqlRest-ID",
     DefaultSseEventNoticeLevel = config.GetConfigEnum<PostgresNoticeLevels?>("DefaultServerSentEventsEventNoticeLevel", config.NpgsqlRestCfg) ?? PostgresNoticeLevels.INFO,
@@ -315,6 +448,17 @@ NpgsqlRestOptions options = new()
 };
 
 app.UseNpgsqlRest(options);
+
+if (endpointsMode)
+{
+    using var ms = new MemoryStream();
+    using (var writer = new System.Text.Json.Utf8JsonWriter(ms, new System.Text.Json.JsonWriterOptions { Indented = true }))
+    {
+        EndpointCapture.WriteEndpointsJson(writer);
+    }
+    new Out().JsonHighlight(System.Text.Encoding.UTF8.GetString(ms.ToArray()));
+    return;
+}
 
 if (builder.ExternalAuthConfig?.Enabled is true)
 {
