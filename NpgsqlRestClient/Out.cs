@@ -74,6 +74,14 @@ public class Out
                 continue;
             }
 
+            // JSONC comments
+            if (trimmed.StartsWith("//"))
+            {
+                Write(trimmed.ToString(), ConsoleColor.DarkGreen);
+                Console.WriteLine();
+                continue;
+            }
+
             // "key": value
             if (trimmed.Length > 0 && trimmed[0] == '"')
             {
@@ -108,6 +116,139 @@ public class Out
             Console.WriteLine();
         }
         Console.ResetColor();
+    }
+
+    public void JsonHighlightWithMatch(string json, string match)
+    {
+        if (Console.IsOutputRedirected)
+        {
+            Console.WriteLine(json);
+            return;
+        }
+
+        foreach (var line in json.Split('\n'))
+        {
+            var trimmed = line.AsSpan().TrimStart();
+            // leading whitespace
+            if (trimmed.Length < line.Length)
+            {
+                Console.Write(line.AsSpan(0, line.Length - trimmed.Length));
+            }
+
+            if (trimmed.IsEmpty)
+            {
+                Console.WriteLine();
+                continue;
+            }
+
+            // JSONC comments
+            if (trimmed.StartsWith("//"))
+            {
+                WriteWithMatchHighlight(trimmed.ToString(), ConsoleColor.DarkGreen, match);
+                Console.WriteLine();
+                continue;
+            }
+
+            // "key": value
+            if (trimmed.Length > 0 && trimmed[0] == '"')
+            {
+                int closeQuote = IndexOfUnescapedQuote(trimmed, 1);
+                if (closeQuote > 0)
+                {
+                    var afterQuote = trimmed[(closeQuote + 1)..].TrimStart();
+                    if (afterQuote.Length > 0 && afterQuote[0] == ':')
+                    {
+                        Write("\"", ConsoleColor.DarkGray);
+                        WriteWithMatchHighlight(trimmed[1..closeQuote].ToString(), ConsoleColor.Cyan, match);
+                        Write("\"", ConsoleColor.DarkGray);
+                        Write(": ", ConsoleColor.DarkGray);
+                        var value = afterQuote[1..].TrimStart();
+                        WriteJsonValueWithMatch(value, match);
+                        Console.WriteLine();
+                        continue;
+                    }
+                    else
+                    {
+                        WriteJsonValueWithMatch(trimmed, match);
+                        Console.WriteLine();
+                        continue;
+                    }
+                }
+            }
+
+            WriteJsonValueWithMatch(trimmed, match);
+            Console.WriteLine();
+        }
+        Console.ResetColor();
+    }
+
+    private void WriteWithMatchHighlight(string text, ConsoleColor baseColor, string match)
+    {
+        int pos = 0;
+        while (pos < text.Length)
+        {
+            int idx = text.IndexOf(match, pos, StringComparison.OrdinalIgnoreCase);
+            if (idx < 0)
+            {
+                Write(text[pos..], baseColor);
+                break;
+            }
+            if (idx > pos)
+            {
+                Write(text[pos..idx], baseColor);
+            }
+            // Invert colors for the match
+            var prevBg = Console.BackgroundColor;
+            var prevFg = Console.ForegroundColor;
+            Console.BackgroundColor = baseColor;
+            Console.ForegroundColor = ConsoleColor.Black;
+            Console.Write(text[idx..(idx + match.Length)]);
+            Console.BackgroundColor = prevBg;
+            Console.ForegroundColor = prevFg;
+            pos = idx + match.Length;
+        }
+    }
+
+    private void WriteJsonValueWithMatch(ReadOnlySpan<char> value, string match)
+    {
+        if (value.IsEmpty) return;
+
+        var trimmed = value.TrimEnd();
+        bool trailingComma = trimmed.Length > 0 && trimmed[^1] == ',';
+        var core = trailingComma ? trimmed[..^1] : trimmed;
+
+        if (core.Length == 0)
+        {
+            if (trailingComma) Write(",", ConsoleColor.DarkGray);
+            return;
+        }
+
+        char first = core[0];
+        if (first == '"')
+        {
+            Write("\"", ConsoleColor.DarkGray);
+            WriteWithMatchHighlight(core[1..^1].ToString(), ConsoleColor.Yellow, match);
+            Write("\"", ConsoleColor.DarkGray);
+        }
+        else if (first is '{' or '}' or '[' or ']')
+        {
+            Write(core.ToString(), ConsoleColor.DarkGray);
+        }
+        else if (core is "null")
+        {
+            Write("null", ConsoleColor.DarkGray);
+        }
+        else if (core is "true" or "false" ||
+                 (core.Length > 0 && (char.IsDigit(first) || first == '-')))
+        {
+            WriteWithMatchHighlight(core.ToString(), ConsoleColor.Green, match);
+        }
+        else
+        {
+            WriteWithMatchHighlight(core.ToString(), Console.ForegroundColor, match);
+        }
+
+        if (trailingComma) Write(",", ConsoleColor.DarkGray);
     }
 
     private void WriteJsonValue(ReadOnlySpan<char> value)
@@ -168,6 +309,14 @@ public class Out
 
     public void Line((string str1, string str2)[] lines)
     {
+        if (Console.IsOutputRedirected)
+        {
+            foreach (var (str1, str2) in lines)
+            {
+                Console.WriteLine($"{str1}\t{str2}");
+            }
+            return;
+        }
         var pos = lines.Select(l => l.str1.Length).Max() + 1;
         int consoleWidth = Console.WindowWidth;
         foreach (var (str1, str2) in lines)

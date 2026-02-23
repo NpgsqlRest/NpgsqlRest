@@ -1,0 +1,5 @@
+# Override root .gitignore [Bb]in/ pattern
+# Include the wrapper script that package.json bin field points to
+!bin/
+bin/*
+!bin/npgsqlrest.js

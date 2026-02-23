@@ -1,0 +1,3 @@
+# Ignore downloaded binaries (platform-specific, downloaded by postinstall)
+bin/npgsqlrest
+bin/npgsqlrest.exe
