@@ -4,6 +4,39 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [3.9.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.9.0) (2026-02-23)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.8.0...3.9.0)
+
+### Commented Configuration Output (`--config`)
+
+The `--config` output now includes inline JSONC comments with descriptions for every setting, matching the `appsettings.json` file exactly. This makes it easy to understand what each setting does without consulting the documentation. The default configuration file can be constructed with:
+
+```
+npgsqlrest --config > appsettings.json
+```
+
+### Configuration Search and Filter (`--config [filter]`)
+
+Added an optional filter argument to `--config` that searches keys, comments, and values (case-insensitive) and returns only matching settings as valid JSONC:
+
+```
+npgsqlrest --config cors
+npgsqlrest --config=timeout
+npgsqlrest --config minworker
+```
+
+Output preserves the full section hierarchy so it can be copy-pasted directly into `appsettings.json`. When a key inside a section matches, the parent section wrapper is included. When a section name or its comment matches, the entire section is shown. Matched terms are highlighted with inverted colors in the terminal; piped output is plain text.
+
+### CLI Improvements
+
+- **Case-insensitive config overrides**: Command-line config overrides like `--Applicationname=test` now correctly update the existing `ApplicationName` key instead of creating a duplicate entry with different casing.
+- **Config validation on `--config`**: The `--config` command now validates configuration keys before dumping. Unknown keys (e.g., `--xxx=test`) produce an error on stderr and exit with code 1.
+- **Redirected output fix**: Formatted CLI output (`--help`, `--version`) no longer crashes when stdout is redirected (e.g., piped or captured by a parent process).
+- **CLI test suite**: Added process-based tests for all CLI commands (`--help`, `--version`, `--hash`, `--basic_auth`, `--config-schema`, `--annotations`, `--config`, `--config [filter]`, invalid args).
+
+---
+
 ## Version [3.8.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.8.0) (2025-02-11)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.7.0...3.8.0)

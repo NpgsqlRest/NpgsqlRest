@@ -1,0 +1,2574 @@
+namespace NpgsqlRestClient;
+
+public static partial class ConfigSchemaGenerator
+{
+    /// <summary>
+    /// Full JSONC template for --config output.
+    /// This is the exact content of appsettings.json with all comments preserved.
+    /// </summary>
+    internal const string DefaultConfigJsonc = """
+    {
+      //
+      // The application name used to set the application name property in connection string by "NpgsqlRest.SetApplicationNameInConnection" or the "NpgsqlRest.UseJsonApplicationName" settings.
+      // It is the name of the top-level directory if set to null.
+      //
+      "ApplicationName": null,
+    
+      //
+      // Production or Development
+      //
+      "EnvironmentName": "Production",
+    
+      //
+      // Specify the urls the web host will listen on. See https://learn.microsoft.com/en-us/dotnet/api/microsoft.aspnetcore.hosting.hostingabstractionswebhostbuilderextensions.useurls?view=aspnetcore-8.0
+      //
+      "Urls": "http://localhost:8080",
+    
+      //
+      // Logs at startup, format placeholders:
+      // {time} - startup time
+      // {urls} - listening on urls
+      // {version} - current version
+      // {environment} - EnvironmentName
+      // {application} - ApplicationName
+      //
+      // Note: This message is logged at Information level. To disable this message, set to empty string.
+      //
+      "StartupMessage": "Started in {time}, listening on {urls}, version {version}",
+    
+      //
+      // Configuration settings
+      //
+      "Config": {
+        //
+        // Add the environment variables to configuration.
+        // When enabled, environment variables will override the settings in this configuration file but can be overridden by command line arguments.
+        // Complex hierarchical keys can be defined using double underscore as a separator. 
+        // For example, "ConnectionStrings__Default" environment variable will override the "ConnectionStrings.Default" setting in this configuration file.
+        //
+        "AddEnvironmentVariables": false,
+        //
+        // When set, configuration values will be parsed for environment variables in the format {ENV_VAR_NAME}
+        // and replaced with the value of the environment variable when available.
+        //
+        "ParseEnvironmentVariables": true,
+        //
+        // Path to a .env file containing environment variables.
+        // When AddEnvironmentVariables or ParseEnvironmentVariables is true and this file exists,
+        // variables from this file will be loaded and made available for configuration parsing.
+        // Format: KEY=VALUE (one per line)
+        //
+        "EnvFile": null,
+        //
+        // Validate configuration keys against known defaults at startup.
+        // "Ignore" - no validation
+        // "Warning" - log warnings for unknown keys, continue startup (default)
+        // "Error" - log errors for unknown keys and exit
+        //
+        "ValidateConfigKeys": "Warning"
+      },
+    
+      //
+      // List of named connection strings to PostgreSQL databases.
+      // The "Default" connection string is used when no connection name is specified.
+      // For connection string definition see https://www.npgsql.org/doc/connection-string-parameters.html
+      //
+      "ConnectionStrings": {
+        "Default": "Host={PGHOST};Port=5432;Database={PGDATABASE};Username={PGUSER};Password={PGPASSWORD}"
+      },
+    
+      //
+      // Additional connection settings and options.
+      //
+      "ConnectionSettings": {
+        //
+        // Sets the ApplicationName connection property in the connection string to the value of the ApplicationName configuration.
+        // Note: This option is ignored if the UseJsonApplicationName option is enabled.
+        //
+        "SetApplicationNameInConnection": true,
+        //
+        // Sets the ApplicationName connection property dynamically on every request in the following format: 
+        // {"app":"<ApplicationName>","uid":"<user_id>","id":"<NpgsqlRest.ExecutionIdHeaderName>"}
+        // Note: The ApplicationName connection property is limited to 64 characters.
+        //
+        "UseJsonApplicationName": false,
+        //
+        // Test any connection string before initializing the application and using it. The connection string is tested by opening and closing the connection.
+        //
+        "TestConnectionStrings": true,
+        //
+        // Connection open retry options.
+        //
+        "RetryOptions": {
+          "Enabled": true,
+          //
+          // Retry sequence in seconds. Accepts decimal numbers (0.25 is quarter of a second). The length of the array determines the maximum number of retries.
+          //
+          "RetrySequenceSeconds": [1, 3, 6, 12],
+          //
+          // Error codes that will trigger a retry when opening a connection. See https://www.postgresql.org/docs/current/errcodes-appendix.html
+          //
+          "ErrorCodes": [
+            "08000", "08003", "08006", "08001", "08004", // Connection failure codes
+            "55P03", // Lock not available
+            "55006", // Object in use
+            "53300", // Too many connections
+            "57P03", // Cannot connect now
+            "40001"  // Serialization failure (can be retried)
+          ]
+        },
+        //
+        // The connection name in ConnectionStrings configuration that will be used to execute the metadata query. If this value is null, the default connection string will be used.
+        //
+        "MetadataQueryConnectionName": null,
+        //
+        // Set the search path to this schema before executing the metadata query function.
+        // When null (default), no search path is set and the server's default search path is used.
+        //
+        // This is needed when using non superuser connection roles with limited schema access and mapping the metadata function to a specific schema.
+        // If the connection string contains the same "Search Path=" it will be skipped.
+        //
+        "MetadataQuerySchema": null,
+        // Any: Any successful connection is acceptable.
+        // Primary: Server must not be in hot standby mode (pg_is_in_recovery() must return false).
+        // Standby: Server must be in hot standby mode (pg_is_in_recovery() must return true).
+        // PreferPrimary: First try to find a primary server, but if none of the listed hosts is a primary server, try again in Any mode.
+        // PreferStandby: First try to find a standby server, but if none of the listed hosts is a standby server, try again in Any mode.
+        // ReadWrite: Session must accept read-write transactions by default (that is, the server must not be in hot standby mode and the default_transaction_read_only parameter must be off).
+        // ReadOnly: Session must not accept read-write transactions by default (the converse).
+        // see https://www.npgsql.org/doc/failover-and-load-balancing.html
+        "MultiHostConnectionTargets": {
+          // all connections use the same target mode
+          "Default": "Any",
+          // per connection overrides { "name": "Primary|Standby|Any|PreferPrimary|PreferStandby|ReadWrite|ReadOnly" } 
+          "ByConnectionName": {  }
+        }
+      },
+    
+      //
+      // Enable to invoke UseKestrelHttpsConfiguration. See https://learn.microsoft.com/en-us/dotnet/api/microsoft.aspnetcore.hosting.webhostbuilderkestrelextensions.usekestrelhttpsconfiguration?view=aspnetcore-8.0
+      //
+      "Ssl": {
+        "Enabled": false,
+        //
+        // Adds middleware for redirecting HTTP Requests to HTTPS. See https://learn.microsoft.com/en-us/dotnet/api/microsoft.aspnetcore.builder.httpspolicybuilderextensions.usehttpsredirection?view=aspnetcore-8.0
+        //
+        "UseHttpsRedirection": true,
+        //
+        // Adds middleware for using HSTS, which adds the Strict-Transport-Security header. See https://learn.microsoft.com/en-us/dotnet/api/microsoft.aspnetcore.builder.hstsbuilderextensions.usehsts?view=aspnetcore-2.1
+        //
+        "UseHsts": true
+      },
+    
+      //
+      // Data protection settings. Encryption/decryption settings for Auth Cookies, Antiforgery tokens and custom data protection needs.
+      //
+      "DataProtection": {
+        "Enabled": true,
+        //
+        // Set to null to use the current "ApplicationName" value.
+        // This value determines encryption type or class. Meaning, different application names will not be able to decrypt each other's data.
+        //
+        "CustomApplicationName": null,
+        //
+        // Sets the default lifetime in days of keys created by the data protection system.
+        // Represents a number of days how long before keys are rotated.
+        //
+        "DefaultKeyLifetimeDays": 90,
+        //
+        // Data protection location: "Default", "FileSystem" or "Database"
+        //
+        // Note: When running on Linux, using Default location means keys will not be persisted. 
+        // When keys are lost on restart, encrypted tokens (auth) will also not work on restart.
+        // Linux users should use FileSystem or Database storage.
+        //
+        "Storage": "Default",
+        //
+        // FileSystem storage path. Set to a valid path when using FileSystem.
+        // Note: When running in Docker environment, the path must be a Docker volume path to persist the keys.
+        //
+        "FileSystemPath": "./data-protection-keys",
+        //
+        // GetAllElements database command. Expected to return rows with a single column of type text.
+        //
+        "GetAllElementsCommand": "select get_data_protection_keys()",
+        //
+        // StoreElement database command. Receives two parameters: name and data of type text. Doesn't return anything.
+        //
+        "StoreElementCommand": "call store_data_protection_keys($1,$2)",
+        //
+        // Configure encryption algorithms for data protection keys or null to use the default algorithm.
+        // Values: AES_128_CBC, AES_192_CBC, AES_256_CBC, AES_128_GCM, AES_192_GCM, AES_256_GCM
+        //
+        "EncryptionAlgorithm": null,
+        //
+        // Configure validation algorithms for data protection keys or null to use the default algorithm.
+        // Values: HMACSHA256, HMACSHA512
+        //
+        "ValidationAlgorithm": null,
+        //
+        // Key encryption method: "None", "Certificate", or "Dpapi" (Windows only)
+        // None: Keys are not encrypted at rest (default)
+        // Certificate: Keys are encrypted using an X.509 certificate
+        // Dpapi: Keys are encrypted using Windows Data Protection API (Windows only)
+        //
+        "KeyEncryption": "None",
+        //
+        // Path to the X.509 certificate file (.pfx) when using Certificate key encryption.
+        //
+        "CertificatePath": null,
+        //
+        // Password for the certificate file. Can be null for certificates without password.
+        // For security, consider using environment variable reference: "${CERT_PASSWORD}"
+        //
+        "CertificatePassword": null,
+        //
+        // When using Dpapi key encryption, set to true to protect keys to the local machine.
+        // If false (default), keys are protected to the current user account.
+        //
+        "DpapiLocalMachine": false
+      },
+    
+      //
+      // Uncomment to configure Kestrel web server and to add certificates
+      // See https://learn.microsoft.com/en-us/aspnet/core/fundamentals/servers/kestrel/endpoints?view=aspnetcore-9.0
+      //
+      "Kestrel": {
+        //  "Endpoints": {
+        //    "Http": {
+        //      "Url": "http://localhost:5000"
+        //    },
+        //    "HttpsInlineCertFile": {
+        //      "Url": "https://localhost:5001",
+        //      "Certificate": {
+        //        "Path": "<path to .pfx file>",
+        //        "Password": "$CREDENTIAL_PLACEHOLDER$"
+        //      }
+        //    },
+        //    "HttpsInlineCertAndKeyFile": {
+        //      "Url": "https://localhost:5002",
+        //      "Certificate": {
+        //        "Path": "<path to .pem/.crt file>",
+        //        "KeyPath": "<path to .key file>",
+        //        "Password": "$CREDENTIAL_PLACEHOLDER$"
+        //      }
+        //    },
+        //    "HttpsInlineCertStore": {
+        //      "Url": "https://localhost:5003",
+        //      "Certificate": {
+        //        "Subject": "<subject; required>",
+        //        "Store": "<certificate store; required>",
+        //        "Location": "<location; defaults to CurrentUser>",
+        //        "AllowInvalid": "<true or false; defaults to false>"
+        //      }
+        //    },
+        //    "HttpsDefaultCert": {
+        //      "Url": "https://localhost:5004"
+        //    }
+        //  },
+        //  "Certificates": {
+        //    "Default": {
+        //      "Path": "<path to .pfx file>",
+        //      "Password": "$CREDENTIAL_PLACEHOLDER$"
+        //    }
+        //  },
+        //  "Limits": {
+        //    "MaxConcurrentConnections": 100,
+        //    "MaxConcurrentUpgradedConnections": 100,
+        //    "MaxRequestBodySize": 30000000,
+        //    "MaxRequestBufferSize": 1048576,
+        //    "MaxRequestHeaderCount": 100,
+        //    "MaxRequestHeadersTotalSize": 32768,
+        //    "MaxRequestLineSize": 8192,
+        //    "MaxResponseBufferSize": 65536,
+        //    "KeepAliveTimeout": "00:02:00",
+        //    "RequestHeadersTimeout": "00:00:30",
+        //    "Http2": {
+        //      "MaxStreamsPerConnection": 100,
+        //      "HeaderTableSize": 4096,
+        //      "MaxFrameSize": 16384,
+        //      "MaxRequestHeaderFieldSize": 8192,
+        //      "InitialConnectionWindowSize": 65535,
+        //      "InitialStreamWindowSize": 65535,
+        //      "MaxReadFrameSize": 16384,
+        //      "KeepAlivePingDelay": "00:00:30",
+        //      "KeepAlivePingTimeout": "00:01:00",
+        //      "KeepAlivePingPolicy": "WithActiveRequests"
+        //    },
+        //    "Http3": {
+        //      "MaxRequestHeaderFieldSize": 8192
+        //    }
+        //  },
+        //  "DisableStringReuse": false,
+        //  "AllowAlternateSchemes": false,
+        //  "AllowSynchronousIO": false,
+        //  "AllowResponseHeaderCompression": true,
+        //  "AddServerHeader": true,
+        //  "AllowHostHeaderOverride": false
+      },
+    
+      //
+      // Thread pool configuration settings for optimizing application performance
+      //
+      "ThreadPool": {
+        //
+        // Minimum number of worker threads in the thread pool. Set to null to use system defaults.
+        //
+        "MinWorkerThreads": null,
+        //
+        // Minimum number of completion port threads. Set to null to use system defaults.
+        //
+        "MinCompletionPortThreads": null,
+        //
+        // Maximum number of worker threads in the thread pool. Set to null to use system defaults.
+        //
+        "MaxWorkerThreads": null,
+        //
+        // Maximum number of completion port threads. Set to null to use system defaults.
+        //
+        "MaxCompletionPortThreads": null
+      },
+    
+      //
+      // Authentication and Authorization settings
+      //
+      "Auth": {
+        //
+        // Enable Cookie Auth
+        //
+        "CookieAuth": false,
+        //
+        // Authentication scheme name for cookie authentication. Set to null to use default.
+        //
+        "CookieAuthScheme": null,
+        //
+        // Number of days the cookie remains valid.
+        //
+        "CookieValidDays": 14,
+        //
+        // Custom name for the authentication cookie. Set to null to use default.
+        //
+        "CookieName": null,
+        //
+        // Path scope for the authentication cookie. Set to null to use default.
+        //
+        "CookiePath": null,
+        //
+        // Domain scope for the authentication cookie. Set to null to use default.
+        //
+        "CookieDomain": null,
+        //
+        // Allow multiple concurrent sessions for the same user.
+        //
+        "CookieMultiSessions": true,
+        //
+        // Make cookie accessible only via HTTP (not JavaScript).
+        //
+        "CookieHttpOnly": true,
+        //
+        // Enable Microsoft Bearer Token Auth (proprietary format, not JWT)
+        //
+        "BearerTokenAuth": false,
+        //
+        // Authentication scheme name for bearer token authentication. Set to null to use default.
+        //
+        "BearerTokenAuthScheme": null,
+        //
+        // Number of hours before bearer token expires.
+        //
+        "BearerTokenExpireHours": 1,
+        // POST { "refresh": "{{refreshToken}}" }
+        "BearerTokenRefreshPath": "/api/token/refresh",
+        //
+        // Enable standard JWT (JSON Web Token) Bearer Authentication
+        //
+        "JwtAuth": false,
+        //
+        // Authentication scheme name for JWT authentication. Set to null to use default "JwtBearer".
+        //
+        "JwtAuthScheme": null,
+        //
+        // Secret key used to sign JWT tokens. Must be at least 32 characters for HS256.
+        // IMPORTANT: Use a strong, unique secret in production. Store securely (e.g., environment variable).
+        //
+        "JwtSecret": null,
+        //
+        // JWT issuer (iss claim). Identifies the principal that issued the JWT.
+        //
+        "JwtIssuer": null,
+        //
+        // JWT audience (aud claim). Identifies the recipients that the JWT is intended for.
+        //
+        "JwtAudience": null,
+        //
+        // Number of minutes before JWT access token expires. Default is 60 minutes.
+        //
+        "JwtExpireMinutes": 60,
+        //
+        // Number of days before JWT refresh token expires. Default is 7 days.
+        //
+        "JwtRefreshExpireDays": 7,
+        //
+        // Validate the issuer (iss) claim. Set to true if JwtIssuer is configured.
+        //
+        "JwtValidateIssuer": false,
+        //
+        // Validate the audience (aud) claim. Set to true if JwtAudience is configured.
+        //
+        "JwtValidateAudience": false,
+        //
+        // Validate the token lifetime (exp claim). Default is true.
+        //
+        "JwtValidateLifetime": true,
+        //
+        // Validate the signing key. Default is true.
+        //
+        "JwtValidateIssuerSigningKey": true,
+        //
+        // Clock skew to apply when validating token lifetime. Format: PostgreSQL interval.
+        // Default is 5 minutes to account for clock differences between servers.
+        //
+        "JwtClockSkew": "5 minutes",
+        //
+        // URL path for JWT token refresh endpoint. POST with { "refreshToken": "..." }
+        // Returns new access token and refresh token pair.
+        //
+        "JwtRefreshPath": "/api/jwt/refresh",
+        // 
+        // Enable external auth providers
+        //
+        "External": {
+          "Enabled": false,
+          //
+          // sessionStorage key to store the status of the external auth process returned by the signin page.
+          // The value is HTTP status code (200 for success, 401 for unauthorized, 403 for forbidden, etc.)
+          //
+          "BrowserSessionStatusKey": "__external_status",
+          //
+          // sessionStorage key to store the message of the external auth process returned by the signin page.
+          //
+          "BrowserSessionMessageKey": "__external_message",
+          //
+          // Path to the signin page to handle the external auth process. Redirect to this page to start the external auth process.
+          // Format placeholder {0} is the provider name in lowercase (google, linkedin, github, etc.)
+          //
+          "SigninUrl": "/signin-{0}",
+          //
+          // Sign in page template. Format placeholders {0} is the provider name, {1} is the script to redirect to the external auth provider.
+          //
+          "SignInHtmlTemplate": "<!DOCTYPE html><html><head><meta charset=\"utf-8\" /><title>Talking To {0}</title></head><body>Loading...{1}</body></html>",
+          //
+          // URL to redirect after the external auth process is completed. Usually this is resolved from the request automatically. Except when it's not.
+          // 
+          "RedirectUrl": null,
+          //
+          // Path to redirect after the external auth process is completed. 
+          // 
+          "ReturnToPath": "/",
+          //
+          // Query string key to store the path to redirect after the external auth process is completed.
+          // Use this to set dynamic return path. If this query string key is not found, the ReturnToPath value is used.
+          // 
+          "ReturnToPathQueryStringKey": "return_to",
+          //
+          // Login command to execute after the external auth process is completed. There are five positional and optional parameters:
+          //   $1 - external login provider (if parameter exists, type text).
+          //   $2 - external login email (if parameter exists, type text).
+          //   $3 - external login name (if parameter exists, type text).
+          //   $4 - external login JSON data received (if parameter exists, type text, JSON or JSONB).
+          //   $5 - client browser analytics JSON data (if parameter exists, type text, JSON or JSONB).
+          //
+          // The command uses the same rules as the login enabled routine. 
+          // See: "NpgsqlRest.“LoginPath"
+          //
+          "LoginCommand": "select * from external_login($1,$2,$3,$4,$5)",
+          //
+          // Browser client analytics data that will be sent as JSON to external auth command as the 5th parameter if supplied.
+          //
+          "ClientAnalyticsData": "{timestamp:new Date().toISOString(),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,screen:{width:window.screen.width,height:window.screen.height,colorDepth:window.screen.colorDepth,pixelRatio:window.devicePixelRatio,orientation:screen.orientation.type},browser:{userAgent:navigator.userAgent,language:navigator.language,languages:navigator.languages,cookiesEnabled:navigator.cookieEnabled,doNotTrack:navigator.doNotTrack,onLine:navigator.onLine,platform:navigator.platform,vendor:navigator.vendor},memory:{deviceMemory:navigator.deviceMemory,hardwareConcurrency:navigator.hardwareConcurrency},window:{innerWidth:window.innerWidth,innerHeight:window.innerHeight,outerWidth:window.outerWidth,outerHeight:window.outerHeight},location:{href:window.location.href,hostname:window.location.hostname,pathname:window.location.pathname,protocol:window.location.protocol,referrer:document.referrer},performance:{navigation:{type:performance.navigation?.type,redirectCount:performance.navigation?.redirectCount},timing:performance.timing?{loadEventEnd:performance.timing.loadEventEnd,loadEventStart:performance.timing.loadEventStart,domComplete:performance.timing.domComplete,domInteractive:performance.timing.domInteractive,domContentLoadedEventEnd:performance.timing.domContentLoadedEventEnd}:null}}",
+          //
+          // Client IP address that will be added to the client analytics data under this JSON key.
+          //
+          "ClientAnalyticsIpKey": "ip",
+          //
+          // External providers
+          //
+          "Google": {
+            //
+            // visit https://console.cloud.google.com/apis/ to configure your Google app and get your client id and client secret
+            //
+            "Enabled": false,
+            "ClientId": "",
+            "ClientSecret": "",
+            "AuthUrl": "https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id={0}&redirect_uri={1}&scope=openid profile email&state={2}",
+            "TokenUrl": "https://oauth2.googleapis.com/token",
+            "InfoUrl": "https://www.googleapis.com/oauth2/v3/userinfo",
+            "EmailUrl": null
+          },
+          "LinkedIn": {
+            //
+            // visit https://www.linkedin.com/developers/apps/ to configure your LinkedIn app and get your client id and client secret
+            //
+            "Enabled": false,
+            "ClientId": "",
+            "ClientSecret": "",
+            "AuthUrl": "https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id={0}&redirect_uri={1}&state={2}&scope=r_liteprofile%20r_emailaddress",
+            "TokenUrl": "https://www.linkedin.com/oauth/v2/accessToken",
+            "InfoUrl": "https://api.linkedin.com/v2/me",
+            "EmailUrl": "https://api.linkedin.com/v2/emailAddress?q=members&projection=(elements//(handle~))"
+          },
+          "GitHub": {
+            //
+            // visit https://github.com/settings/developers/ to configure your GitHub app and get your client id and client secret
+            //
+            "Enabled": false,
+            "ClientId": "",
+            "ClientSecret": "",
+            "AuthUrl": "https://github.com/login/oauth/authorize?client_id={0}&redirect_uri={1}&state={2}&allow_signup=false",
+            "TokenUrl": "https://github.com/login/oauth/access_token",
+            "InfoUrl": "https://api.github.com/user",
+            "EmailUrl": null
+          },
+          "Microsoft": {
+            //
+            // visit https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationsListBlade to configure your Microsoft app and get your client id and client secret
+            // Documentation: https://learn.microsoft.com/en-us/entra/identity-platform/
+            //
+            "Enabled": false,
+            "ClientId": "",
+            "ClientSecret": "",
+            "AuthUrl": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?response_type=code&client_id={0}&redirect_uri={1}&scope=openid%20profile%20email&state={2}",
+            "TokenUrl": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+            "InfoUrl": "https://graph.microsoft.com/oidc/userinfo",
+            "EmailUrl": null
+          },
+          "Facebook": {
+            //
+            // visit https://developers.facebook.com/apps/ to configure your Facebook app and get your client id and client secret
+            // Documentation: https://developers.facebook.com/docs/facebook-login/
+            //
+            "Enabled": false,
+            "ClientId": "",
+            "ClientSecret": "",
+            "AuthUrl": "https://www.facebook.com/v20.0/dialog/oauth?response_type=code&client_id={0}&redirect_uri={1}&scope=public_profile%20email&state={2}",
+            "TokenUrl": "https://graph.facebook.com/v20.0/oauth/access_token",
+            "InfoUrl": "https://graph.facebook.com/me?fields=id,name,email",
+            "EmailUrl": null
+          }
+        },
+        //
+        // WebAuthn/FIDO2 Passkey Authentication
+        // Provides phishing-resistant, passwordless authentication using device-native biometrics or PINs.
+        //
+        "PasskeyAuth": {
+          //
+          // Enable passkey authentication.
+          //
+          "Enabled": false,
+          //
+          // Enable registration endpoints.
+          //
+          "EnableRegister": false,
+          //
+          // Rate limiter policy name to apply to all passkey endpoints.
+          // It is recommended to enable rate limiting on passkey endpoints to protect against brute-force attacks.
+          // Set to the name of a configured rate limiter policy, or null to disable rate limiting.
+          //
+          "RateLimiterPolicy": null,
+          //
+          // Optional connection name for named DataSource or ConnectionString lookup.
+          // If null, uses the default DataSource or ConnectionString from NpgsqlRest options.
+          //
+          "ConnectionName": null,
+          //
+          // Command retry strategy name from CommandRetryOptions.Strategies.
+          // Set to null to disable command retry for passkey endpoints.
+          //
+          "CommandRetryStrategy": "default",
+          //
+          // Relying Party ID (domain name). Should match your application domain (e.g., "example.com").
+          // If null, auto-detected from the request host.
+          // Note: IP addresses are not permitted - use "localhost" for local development.
+          //
+          "RelyingPartyId": null,
+          //
+          // Human-readable Relying Party name displayed to users during registration and authentication.
+          // If null, uses the ApplicationName from configuration.
+          //
+          "RelyingPartyName": null,
+          //
+          // Allowed origins for origin validation (scheme + domain + port).
+          // Example: ["https://example.com", "https://www.example.com"]
+          // If empty, auto-detected from the request.
+          // Note: IP addresses are not permitted - use "http://localhost:port" for local development.
+          //
+          "RelyingPartyOrigins": [],
+          //
+          // Post path for adding a passkey to an existing authenticated user (options).
+          // Post any additional data in the body as JSON (e.g., { "deviceName": "My Phone" }).
+          // Requires authentication. Set to null to disable this endpoint.
+          //
+          "AddPasskeyOptionsPath": "/api/passkey/add/options",
+          //
+          // Post path for adding a passkey to an existing authenticated user (completion).
+          // Post the WebAuthn response data in the body as JSON (challengeId, credentialId, attestationObject, clientDataJSON, transports). 
+          // Additional JSON body fields are userContext passed through to the CompleteAddExistingUserCommand and optional analyticsData.
+          // Requires authentication. Set to null to disable this endpoint.
+          //
+          "AddPasskeyPath": "/api/passkey/add",
+          //
+          // Post path for registration options (new user with passkey).
+          // Post the user registration data the body as JSON (e.g., { "user_name": "...", "user_display_name": "...", "deviceName": "My Phone"  }).
+          // No authentication required. Set to null to disable registration.
+          //
+          "RegistrationOptionsPath": "/api/passkey/register/options",
+          //
+          // Post path for registration completion (new user with passkey).
+          // Post the WebAuthn response data in the body as JSON (challengeId, credentialId, attestationObject, clientDataJSON, transports). 
+          // Additional JSON body fields are userContext passed through to the CompleteAddExistingUserCommand and optional analyticsData.
+          // No authentication required. Set to null to disable registration.
+          //
+          "RegistrationPath": "/api/passkey/register",
+          //
+          // Post path for the login options endpoint.
+          // Post the user login data in the body as JSON (e.g., { "user_name": "..." } ).
+          // Posting the user_name is optional when using discoverable credentials. When discoverable credentials ate not enabled on the authenticator, user_name is required.
+          //
+          "LoginOptionsPath": "/api/passkey/login/options",
+          //
+          // Post path for the login completion endpoint.
+          // Post the WebAuthn response data in the body as JSON (challengeId, credentialId, authenticatorData, clientDataJSON, signature, userHandle) and optional analyticsData.
+          //
+          "LoginPath": "/api/passkey/login",
+          //
+          // Challenge timeout in minutes. Challenges not used within this time will expire.
+          //
+          "ChallengeTimeoutMinutes": 5,
+          //
+          // User verification requirement:
+          // - "preferred": Request UV if available, but allow authentication without it
+          // - "required": Require UV, fail if not available
+          // - "discouraged": Don't request UV (not recommended for most use cases)
+          //
+          // Practical implications:
+          // - "required": User MUST authenticate with biometric (fingerprint, face) or device PIN.
+          //   High security - proves the person is present, not just possession of the device.
+          // - "preferred": Browser will request biometric/PIN if available, but allows passkey
+          //   authentication even if UV isn't supported (e.g., older security keys).
+          // - "discouraged": Just proves device possession, no biometric/PIN prompt. Lower security.
+          //
+          // For most apps, use "preferred". For banking/sensitive apps, use "required".
+          //
+          "UserVerificationRequirement": "required",
+          //
+          // Resident key (discoverable credential) requirement:
+          // - "preferred": Request discoverable credentials if supported
+          // - "required": Require discoverable credentials, fail if not supported
+          // - "discouraged": Request non-discoverable credentials
+          //
+          // Practical implications:
+          // - "required": True passwordless. Browser shows passkey picker with all accounts at login.
+          //   User picks account and authenticates with biometric/PIN. No username input needed.
+          // - "preferred"/"discouraged": User enters username first, then authenticates with passkey.
+          //
+          // For passwordless flows (no username field), set to "required".
+          //
+          "ResidentKeyRequirement": "required",
+          //
+          // Attestation conveyance preference - controls whether the server requests the authenticator
+          // to provide cryptographic proof of its identity (make/model) and security properties during registration.
+          //
+          // Options:
+          // - "none": Don't request attestation. Accept any valid authenticator without verifying its identity.
+          //   Best for most apps - simpler, better user privacy, wider device compatibility. (Recommended)
+          // - "indirect": Request attestation but allow the browser/platform to anonymize it. Rarely useful.
+          // - "direct": Request full attestation certificate chain from the authenticator.
+          //   Use when you need to verify the authenticator vendor/model meets security requirements.
+          // - "enterprise": Request enterprise-specific attestation for managed corporate devices
+          //   where IT needs to verify only organization-approved hardware authenticators are used.
+          //
+          // When to use non-"none" values:
+          // - Banking/financial apps requiring hardware security keys only
+          // - Enterprise environments restricting to specific authenticator models
+          // - Compliance requirements mandating certain security certifications (FIDO2 L1/L2)
+          //
+          // For most consumer applications, "none" is the correct choice - you just want the user
+          // to authenticate securely, not audit their hardware.
+          //
+          "AttestationConveyance": "none",
+          //
+          // Whether to validate and update the signature counter (sign count).
+          // When true, validates that the new sign count is greater than stored, and updates it after authentication.
+          // When false, skips sign count validation and update entirely.
+          // Set to false if authenticators don't support it or you want to simplify your database schema.
+          //
+          "ValidateSignCount": true,
+          //
+          // SQL command to create a challenge when adding a passkey to an existing authenticated user.
+          // Parameters:
+          //   - $1 = claims (json): JSON object with user claims from the authenticated session
+          //   - $2 = body (json): JSON object from request body (e.g., { "deviceName": "My Phone" })
+          // Expected return columns (by name):
+          //   - status (int): HTTP status code. Return 200 to proceed, any other status aborts.
+          //   - message (text): Error message when status != 200.
+          //   - challenge (text): Base64-encoded random challenge bytes (typically 32 bytes).
+          //   - challenge_id: Server-side identifier (uuid, int, bigint, or text).
+          //   - user_handle (text): Base64-encoded random bytes (typically 32 bytes) for WebAuthn user.id.
+          //   - user_name (text): Username displayed in the authenticator UI.
+          //   - user_display_name (text): Display name shown in the authenticator UI.
+          //   - exclude_credentials (text): JSON array of existing credentials.
+          //   - user_context (json): Opaque JSON passed through to CompleteAddExistingUserCommand.
+          // Called by AddPasskeyOptionsPath endpoint
+          //
+          "ChallengeAddExistingUserCommand": "select * from passkey_challenge_add_existing($1,$2)",
+          //
+          // SQL command to create a challenge for standalone registration (new user).
+          // Parameter: $1 = JSON object from request body (e.g., { "user_name": "...", "display_name": "..." })
+          // Expected return columns (by name): Same as ChallengeAddExistingUserCommand
+          //   - user_context should NOT contain "id" field (distinguishes from add-existing-user flow)
+          // Called by StandaloneRegistrationOptionsPath endpoint
+          //
+          "ChallengeRegistrationCommand": "select * from passkey_challenge_registration($1)",
+          //
+          // SQL command to create a challenge for authentication.
+          // Parameters:
+          //   - $1 = user_name (text, optional - null for discoverable credential flow)
+          //   - $2 = body (json): JSON object from request body (e.g., { "deviceInfo": "..." })
+          // Expected return columns (by name): status, message, challenge, challenge_id, allow_credentials
+          // Called by AuthenticationOptionsPath endpoint 
+          //
+          "ChallengeAuthenticationCommand": "select * from passkey_challenge_authentication($1,$2)",
+          //
+          // Used by: Flow 1, Flow 2, Flow 3 (ALL flows)
+          // SQL command to verify and consume a challenge.
+          // Parameters: $1 = challenge_id (uuid, int, bigint, or text), $2 = operation (text: "registration" or "authentication")
+          // Returns: challenge (bytea) - the original challenge bytes, or NULL if not found/expired
+          // Called by all endpoints
+          //
+          "VerifyChallengeCommand": "select * from passkey_verify_challenge($1,$2)",
+          //
+          // SQL command to get credential data for authentication.
+          // Parameter: $1 = credential_id (bytea)
+          // Expected return columns (by name): status, message, public_key, public_key_algorithm, sign_count, user_context
+          // Note: user_context is passed through to CompleteAuthenticateCommand (typically contains user_id)
+          // Called by AuthenticatePath endpoint
+          //
+          "AuthenticateDataCommand": "select * from passkey_authenticate_data($1)",
+          //
+          // SQL command to complete adding a passkey to an existing user account.
+          // Parameters:
+          //   - $1 = credential_id (bytea): Unique credential identifier from authenticator.
+          //   - $2 = user_handle (bytea): WebAuthn user.id from registration options.
+          //   - $3 = public_key (bytea): Public key in COSE format.
+          //   - $4 = algorithm (int): COSE algorithm identifier (-7 for ES256, -257 for RS256).
+          //   - $5 = transports (text[]): Transport hints (e.g., ["internal", "hybrid"]).
+          //   - $6 = backup_eligible (boolean): Whether credential can be backed up/synced.
+          //   - $7 = user_context (json): Opaque JSON from ChallengeAddExistingUserCommand (contains user ID).
+          //   - $8 = analytics_data (json, optional): Client analytics with server-added IP.
+          // Expected return columns (by name): status, message
+          // Called by RegisterPath endpoint
+          //
+          "CompleteAddExistingUserCommand": "select * from passkey_complete_add_existing($1,$2,$3,$4,$5,$6,$7,$8)",
+          //
+          // SQL command to complete standalone passkey registration (creates new user).
+          // Parameters: Same as CompleteAddExistingUserCommand
+          //   - user_context should NOT contain "id" field (creates new user instead of linking to existing)
+          // Expected return columns (by name): status, message
+          // Called by RegisterPath endpoint
+          //
+          "CompleteRegistrationCommand": "select * from passkey_complete_registration($1,$2,$3,$4,$5,$6,$7,$8)",
+          //
+          // Flow 3: Login -> AuthenticatePath endpoint (after signature validation)
+          // SQL command to update sign count and return user claims.
+          // Parameters:
+          //   - $1 = credential_id (bytea)
+          //   - $2 = new_sign_count (bigint)
+          //   - $3 = user_context (json): Opaque JSON from AuthenticateDataCommand
+          //   - $4 = analytics_data (json, optional): Client analytics with server-added IP
+          // Expected return columns (by name): status, user_id, user_name, user_roles (plus any custom claims)
+          // Called by AuthenticatePath endpoint
+          //
+          "CompleteAuthenticateCommand": "select * from passkey_complete_authenticate($1,$2,$3,$4)",
+          //
+          // The JSON key name used to add the client's IP address to the analytics data server-side.
+          // Set to null or empty string to disable IP address collection.
+          //
+          "ClientAnalyticsIpKey": "ip",
+          //
+          // Column name configuration for database responses
+          //
+          "StatusColumnName": "status",
+          "MessageColumnName": "message",
+          "ChallengeColumnName": "challenge",
+          "ChallengeIdColumnName": "challenge_id",
+          "UserNameColumnName": "user_name",
+          "UserDisplayNameColumnName": "user_display_name",
+          "UserHandleColumnName": "user_handle",
+          "ExcludeCredentialsColumnName": "exclude_credentials",
+          "AllowCredentialsColumnName": "allow_credentials",
+          "PublicKeyColumnName": "public_key",
+          "PublicKeyAlgorithmColumnName": "public_key_algorithm",
+          "SignCountColumnName": "sign_count"
+        }
+      },
+    
+      //
+      // Serilog settings
+      //
+      "Log": {
+        //
+        // See https://github.com/serilog/serilog/wiki/Configuration-Basics#minimum-level
+        // Verbose, Debug, Information, Warning, Error, Fatal.
+        // Note: NpgsqlRest logger applies to main application logger, which will, by default have the name defined in the ApplicationName setting.
+        //
+        "MinimalLevels": {
+          "NpgsqlRest": "Information",
+          "NpgsqlRestClient": "Information",
+          "System": "Warning",
+          "Microsoft": "Warning"
+        },
+        //
+        // Enable logging to console output.
+        //
+        "ToConsole": true,
+        //
+        // Minimum log level for console output: Verbose, Debug, Information, Warning, Error, Fatal.
+        //
+        "ConsoleMinimumLevel": "Verbose",
+        //
+        // Enable logging to file system.
+        //
+        "ToFile": false,
+        //
+        // File path for log files.
+        //
+        "FilePath": "logs/log.txt",
+        //
+        // Maximum size limit for log files in bytes before rolling to a new file.
+        //
+        "FileSizeLimitBytes": 30000000,
+        //
+        // Minimum log level for file output: Verbose, Debug, Information, Warning, Error, Fatal.
+        //
+        "FileMinimumLevel": "Verbose",
+        //
+        // Maximum number of log files to retain.
+        //
+        "RetainedFileCountLimit": 30,
+        //
+        // Create a new log file when size limit is reached.
+        //
+        "RollOnFileSizeLimit": true,
+        //
+        // Enable logging to PostgreSQL database.
+        //
+        "ToPostgres": false,
+        // $1 - log level text, $2 - message text, $3 - timestamp with tz in utc, $4 - exception text or null, $5 - source context
+        //
+        // PostgreSQL command to execute for database logging. Parameters: $1=level, $2=message, $3=timestamp, $4=exception, $5=source.
+        //
+        "PostgresCommand": "call log($1,$2,$3,$4,$5)",
+        //
+        // Minimum log level for PostgreSQL output: Verbose, Debug, Information, Warning, Error, Fatal.
+        //
+        "PostgresMinimumLevel": "Verbose",
+        //
+        // Enable OpenTelemetry protocol (OTLP) logging output. Requires an OTLP collector endpoint.
+        //
+        "ToOpenTelemetry": false,
+        "OTLPEndpoint": "http://localhost:4317",
+        "OTLPProtocol": "Grpc", // "Grpc" or "HttpProtobuf"
+        "OTLResourceAttributes": {
+            "service.name": "{application}", // application name from the ApplicationName setting
+            "service.version": "1.0", // application version, set to a static value or use a build process to update it
+            "service.environment": "{environment}" // environment name from the EnvironmentName setting
+        },
+        "OTLPHeaders": {},
+        "OTLPMinimumLevel": "Verbose",
+        
+        //
+        // See https://github.com/serilog/serilog/wiki/Formatting-Output
+        //
+        "OutputTemplate": "[{Timestamp:HH:mm:ss.fff} {Level:u3}] {Message:lj} [{SourceContext}]{NewLine}{Exception}"
+      },
+    
+      //
+      // Response compression settings
+      //
+      "ResponseCompression": {
+        //
+        // Enable response compression for HTTP responses.
+        //
+        "Enabled": false,
+        //
+        // Enable response compression for HTTPS responses.
+        //
+        "EnableForHttps": false,
+        //
+        // Use Brotli compression algorithm when supported by client.
+        //
+        "UseBrotli": true,
+        //
+        // Use Gzip compression as fallback when Brotli is not supported.
+        //
+        "UseGzipFallback": true,
+        //
+        // Compression level: Optimal, Fastest, NoCompression, SmallestSize.
+        //
+        "CompressionLevel": "Optimal",
+        //
+        // MIME types to include for compression.
+        //
+        "IncludeMimeTypes": [
+          "text/plain",
+          "text/css",
+          "application/javascript",
+          "text/javascript",
+          "text/html",
+          "application/xml",
+          "text/xml",
+          "application/json",
+          "text/json",
+          "image/svg+xml",
+          "font/woff",
+          "font/woff2",
+          "application/font-woff",
+          "application/font-woff2"
+        ],
+        //
+        // MIME types to exclude from compression.
+        //
+        "ExcludeMimeTypes": []
+      },
+    
+      //
+      // Antiforgery Token Configuration: Protects against Cross-Site Request Forgery (CSRF/XSRF) attacks.
+      // CSRF attacks occur when a malicious site tricks a user's browser into making unwanted requests to your application
+      // using the user's authenticated session (cookies).
+      //
+      // How it works:
+      // 1. Server generates a unique token for each session/request
+      // 2. Token is embedded in forms (hidden field) or sent via header (for AJAX)
+      // 3. On state-changing requests (POST, PUT, DELETE), server validates the token
+      // 4. Requests without valid tokens are rejected (400 Bad Request)
+      //
+      // Usage in HTML forms:
+      //   <form method="post">
+      //     <input type="hidden" name="__RequestVerificationToken" value="{antiForgeryToken}" />
+      //     ...
+      //   </form>
+      //
+      // Usage in AJAX/JavaScript:
+      //   fetch('/api/endpoint', {
+      //     method: 'POST',
+      //     headers: { 'RequestVerificationToken': tokenValue },
+      //     body: JSON.stringify(data)
+      //   });
+      //
+      // Note: Antiforgery automatically sets the X-Frame-Options: SAMEORIGIN header to help prevent clickjacking.
+      // If you're using the SecurityHeaders middleware with X-Frame-Options, the Antiforgery header takes precedence
+      // (SecurityHeaders will skip X-Frame-Options when Antiforgery is enabled).
+      //
+      // Reference: https://learn.microsoft.com/en-us/aspnet/core/security/anti-request-forgery
+      //
+      "Antiforgery": {
+        //
+        // Enable antiforgery token validation for state-changing requests.
+        //
+        "Enabled": false,
+        //
+        // Name of the cookie that stores the antiforgery token.
+        // Set to null to use the ASP.NET Core default (unique per application, starts with ".AspNetCore.Antiforgery.").
+        // Custom names are useful when running multiple applications on the same domain.
+        //
+        "CookieName": null,
+        //
+        // Name of the hidden form field that contains the request verification token.
+        // This must match the name used in your HTML forms.
+        //
+        "FormFieldName": "__RequestVerificationToken",
+        //
+        // Name of the HTTP header that can contain the antiforgery token.
+        // Useful for AJAX requests where adding a form field is not possible.
+        // JavaScript can read the token from a cookie or meta tag and send it in this header.
+        //
+        "HeaderName": "RequestVerificationToken",
+        //
+        // When true, the server will NOT look for the token in the form body.
+        // Forces header-only validation - useful for pure API scenarios where all requests use headers.
+        // When false (default), server checks both form field and header.
+        //
+        "SuppressReadingTokenFromFormBody": false,
+        //
+        // When true, prevents the automatic X-Frame-Options: SAMEORIGIN header from being set.
+        // X-Frame-Options helps prevent clickjacking attacks by blocking the page from being embedded in iframes.
+        // Only set to true if:
+        //   - You need your pages to be embedded in iframes from other origins, OR
+        //   - You're setting X-Frame-Options elsewhere (e.g., in SecurityHeaders or at the proxy level)
+        // Default: false (header is set for security)
+        //
+        "SuppressXFrameOptionsHeader": false
+      },
+    
+      //
+      // Static files settings 
+      //
+      "StaticFiles": {
+        "Enabled": false,
+        "RootPath": "wwwroot",
+        //
+        // List of static file patterns that will require authorization.
+        // File paths are relative to the RootPath property and pattern matching is case-insensitive.
+        // Pattern can include wildcards or question marks. For example: *.html, /user/*, etc
+        //
+        "AuthorizePaths": [],
+        "UnauthorizedRedirectPath": "/",
+        "UnauthorizedReturnToQueryParameter": "return_to",
+        "ParseContentOptions": {
+          //
+          // Enable or disable the parsing of the static files.
+          // When enabled, the static files will be parsed and the tags will be replaced with the values from the claims collection.
+          // The tags are in the format: {claimType} where claimType is the name of the claim that will be replaced with the value from the claims collection.
+          //
+          "Enabled": false,
+          //
+          // List of claims types used. These will be parsed to NULL if not found in the claims collection or user is not authenticated.
+          //
+          "AvailableClaims": [],
+          //
+          // Set to true to cache the parsed files in memory. This will improve the performance of the static files. It only applies to parsed content.
+          // Note: caching will occur before parsing, it applies only to templates, not parsed content.
+          //
+          "CacheParsedFile": true,
+          //
+          // Headers to be added to the response for static files. Set to null or empty array to ignore.
+          //
+          "Headers": [ "Cache-Control: no-store, no-cache, must-revalidate", "Pragma: no-cache", "Expires: 0" ],
+          //
+          // List of static file patterns that will parse the content and replace the tags with the values from the claims collection.
+          // File paths are relative to the RootPath property and pattern matching is case-insensitive.
+          // Pattern can include wildcards or question marks. For example: *.html, *.htm, *.txt, *.json, *.xml, *.css, *.js
+          // 
+          "FilePaths": [ "*.html" ],
+          //
+          // Name of the configured Antiforgery form field name to be used in the static files (see Antiforgery FormFieldName setting).
+          //
+          "AntiforgeryFieldName": "antiForgeryFieldName",
+          //
+          // Value of the Antiforgery token if Antiforgery is enabled.
+          //
+          "AntiforgeryToken": "antiForgeryToken"
+        }
+      },
+    
+      //
+      // Cross-origin resource sharing 
+      //
+      "Cors": {
+        //
+        // Enable Cross-Origin Resource Sharing (CORS) support.
+        //
+        "Enabled": false,
+        //
+        // List of allowed origins for CORS requests. Empty array allows no origins.
+        //
+        "AllowedOrigins": [],
+        //
+        // List of allowed HTTP methods for CORS requests.
+        //
+        "AllowedMethods": [
+          "*"
+        ],
+        //
+        // List of allowed headers for CORS requests.
+        //
+        "AllowedHeaders": [
+          "*"
+        ],
+        //
+        // Allow credentials (cookies, authorization headers) in CORS requests.
+        //
+        "AllowCredentials": true,
+        //
+        // Maximum age in seconds for preflight request caching (10 minutes).
+        //
+        "PreflightMaxAgeSeconds": 600
+      },
+    
+      //
+      // Security Headers: Adds HTTP security headers to all responses to protect against common web vulnerabilities.
+      // These headers instruct browsers how to handle your content securely.
+      // Note: X-Frame-Options is automatically handled by the Antiforgery middleware when enabled (see Antiforgery.SuppressXFrameOptionsHeader).
+      // Reference: https://owasp.org/www-project-secure-headers/
+      //
+      "SecurityHeaders": {
+        //
+        // Enable security headers middleware. When enabled, configured headers are added to all HTTP responses.
+        //
+        "Enabled": false,
+        //
+        // X-Content-Type-Options: Prevents browsers from MIME-sniffing a response away from the declared content-type.
+        // Recommended value: "nosniff"
+        // Set to null to not include this header.
+        //
+        "XContentTypeOptions": "nosniff",
+        //
+        // X-Frame-Options: Controls whether the browser should allow the page to be rendered in a <frame>, <iframe>, <embed> or <object>.
+        // Values: "DENY" (never allow), "SAMEORIGIN" (allow from same origin only)
+        // Note: This header is SKIPPED if Antiforgery is enabled (Antiforgery already sets X-Frame-Options: SAMEORIGIN by default).
+        // Set to null to not include this header.
+        //
+        "XFrameOptions": "DENY",
+        //
+        // Referrer-Policy: Controls how much referrer information should be included with requests.
+        // Values: "no-referrer", "no-referrer-when-downgrade", "origin", "origin-when-cross-origin",
+        //         "same-origin", "strict-origin", "strict-origin-when-cross-origin", "unsafe-url"
+        // Recommended: "strict-origin-when-cross-origin" (send origin for cross-origin requests, full URL for same-origin)
+        // Set to null to not include this header.
+        //
+        "ReferrerPolicy": "strict-origin-when-cross-origin",
+        //
+        // Content-Security-Policy: Defines approved sources of content that the browser may load.
+        // Helps prevent XSS, clickjacking, and other code injection attacks.
+        // Example: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+        // Reference: https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP
+        // Set to null to not include this header (recommended to configure based on your application needs).
+        //
+        "ContentSecurityPolicy": null,
+        //
+        // Permissions-Policy: Controls which browser features and APIs can be used.
+        // Example: "geolocation=(), microphone=(), camera=()" disables these features entirely.
+        // Example: "geolocation=(self), microphone=()" allows geolocation only from same origin.
+        // Reference: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Permissions-Policy
+        // Set to null to not include this header.
+        //
+        "PermissionsPolicy": null,
+        //
+        // Cross-Origin-Opener-Policy: Controls how your document is shared with cross-origin popups.
+        // Values: "unsafe-none", "same-origin-allow-popups", "same-origin"
+        // Set to null to not include this header.
+        //
+        "CrossOriginOpenerPolicy": null,
+        //
+        // Cross-Origin-Embedder-Policy: Prevents a document from loading cross-origin resources that don't explicitly grant permission.
+        // Values: "unsafe-none", "require-corp", "credentialless"
+        // Required for SharedArrayBuffer and high-resolution timers (along with COOP: same-origin).
+        // Set to null to not include this header.
+        //
+        "CrossOriginEmbedderPolicy": null,
+        //
+        // Cross-Origin-Resource-Policy: Indicates how the resource should be shared cross-origin.
+        // Values: "same-site", "same-origin", "cross-origin"
+        // Set to null to not include this header.
+        //
+        "CrossOriginResourcePolicy": null
+      },
+    
+      //
+      // Forwarded Headers: Enables the application to read proxy headers (X-Forwarded-For, X-Forwarded-Proto, X-Forwarded-Host).
+      // CRITICAL: Required when running behind a reverse proxy (nginx, Apache, Azure App Service, AWS ALB, Cloudflare, etc.)
+      // Without this, the application sees the proxy's IP instead of the client's real IP, and HTTP instead of HTTPS.
+      // Security Warning: Only enable if you're behind a trusted proxy. Malicious clients can spoof these headers.
+      // Reference: https://learn.microsoft.com/en-us/aspnet/core/host-and-deploy/proxy-load-balancer
+      //
+      "ForwardedHeaders": {
+        //
+        // Enable forwarded headers middleware (automatically placed first in the middleware pipeline).
+        //
+        "Enabled": false,
+        //
+        // Limits the number of proxy entries that will be processed from X-Forwarded-For.
+        // Default is 1 (trust only the immediate proxy). Increase if you have multiple proxies in a chain.
+        // Set to null to process all entries (not recommended for security).
+        //
+        "ForwardLimit": 1,
+        //
+        // List of IP addresses of known proxies to accept forwarded headers from.
+        // Example: ["10.0.0.1", "192.168.1.1"]
+        // If empty and KnownNetworks is also empty, forwarded headers are accepted from any source (less secure).
+        //
+        "KnownProxies": [],
+        //
+        // List of CIDR network ranges of known proxies.
+        // Example: ["10.0.0.0/8", "192.168.0.0/16", "172.16.0.0/12"] for private networks
+        // Useful when proxy IPs are dynamically assigned within a known range.
+        //
+        "KnownNetworks": [],
+        //
+        // List of allowed values for the X-Forwarded-Host header.
+        // Example: ["example.com", "www.example.com"]
+        // If empty, any host is allowed (less secure). Helps prevent host header injection attacks.
+        //
+        "AllowedHosts": []
+      },
+    
+      //
+      // Health Checks: Provides endpoints for monitoring application health, used by container orchestrators (Kubernetes, Docker Swarm),
+      // load balancers, and monitoring systems to determine if the application is running correctly.
+      // Three types of checks are supported:
+      //   - /health: Overall health status (combines all checks)
+      //   - /health/ready: Readiness probe - is the app ready to accept traffic? (includes database connectivity)
+      //   - /health/live: Liveness probe - is the app process running? (always returns healthy if app responds)
+      // Reference: https://learn.microsoft.com/en-us/aspnet/core/host-and-deploy/health-checks
+      //
+      "HealthChecks": {
+        //
+        // Enable health check endpoints.
+        //
+        "Enabled": false,
+        //
+        // Cache health check responses server-side in memory for the specified duration.
+        // Cached responses are served without re-executing the endpoint.
+        // Value is in PostgreSQL interval format (e.g., '5 seconds', '1 minute', '30s', '1min').
+        // Set to null to disable caching. Query strings are ignored to prevent cache-busting.
+        //
+        "CacheDuration": "5 seconds",
+        //
+        // Path for the main health check endpoint that reports overall status.
+        // Returns "Healthy", "Degraded", or "Unhealthy" with HTTP 200 (healthy/degraded) or 503 (unhealthy).
+        //
+        "Path": "/health",
+        //
+        // Path for the readiness probe endpoint.
+        // Kubernetes uses this to know when a pod is ready to receive traffic.
+        // Includes database connectivity check when IncludeDatabaseCheck is true.
+        // Returns 503 Service Unavailable if database is unreachable.
+        //
+        "ReadyPath": "/health/ready",
+        //
+        // Path for the liveness probe endpoint.
+        // Kubernetes uses this to know when to restart a pod.
+        // Always returns Healthy (200) if the application process is responding.
+        // Does NOT check database - a slow database shouldn't trigger a container restart.
+        //
+        "LivePath": "/health/live",
+        //
+        // Include PostgreSQL database connectivity in health checks.
+        // When true, the readiness probe will fail if the database is unreachable.
+        //
+        "IncludeDatabaseCheck": true,
+        //
+        // Name for the database health check (appears in detailed health reports).
+        //
+        "DatabaseCheckName": "postgresql",
+        //
+        // Require authentication for health check endpoints.
+        // When true, all health endpoints require a valid authenticated user.
+        // Security Consideration: Health endpoints can reveal information about your infrastructure
+        // (database connectivity, service status). Enable this if your health endpoints are publicly accessible.
+        // Note: Kubernetes/Docker health probes may need to authenticate if this is enabled.
+        //
+        "RequireAuthorization": false,
+        //
+        // Apply a rate limiter policy to health check endpoints.
+        // Specify the name of a policy defined in RateLimiterOptions.Policies.
+        // Security Consideration: Prevents denial-of-service attacks targeting health endpoints.
+        // Set to null to disable rate limiting on health endpoints.
+        // Example: "fixed" or "bucket" (must match a policy name from RateLimiterOptions).
+        //
+        "RateLimiterPolicy": null
+      },
+    
+      //
+      // PostgreSQL Statistics Endpoints
+      // Exposes PostgreSQL statistics through HTTP endpoints for monitoring and debugging.
+      // Provides access to pg_stat_user_functions, pg_stat_user_tables, pg_stat_user_indexes, and pg_stat_activity.
+      //
+      "Stats": {
+        //
+        // Enable PostgreSQL statistics endpoints.
+        //
+        "Enabled": false,
+        //
+        // Cache stats responses server-side in memory for the specified duration.
+        // Cached responses are served without re-executing the endpoint.
+        // Value is in PostgreSQL interval format (e.g., '5 seconds', '1 minute', '30s', '1min').
+        // Set to null to disable caching. Query strings are ignored to prevent cache-busting.
+        //
+        "CacheDuration": "5 seconds",
+        //
+        // Apply a rate limiter policy to stats endpoints.
+        // Specify the name of a policy defined in RateLimiterOptions.Policies.
+        // Set to null to disable rate limiting on stats endpoints.
+        //
+        "RateLimiterPolicy": null,
+        //
+        // Use a specific named connection for stats queries.
+        // When null, uses the default connection string.
+        // Useful when you want to query stats from a different database or use read-only credentials.
+        //
+        "ConnectionName": null,
+        //
+        // Require authentication for stats endpoints.
+        // Security Consideration: Stats endpoints can reveal sensitive information about your database
+        // (table sizes, query patterns, active sessions). Enable this for production environments.
+        //
+        "RequireAuthorization": false,
+        //
+        // Restrict access to specific roles.
+        // When null or empty, any authenticated user can access (if RequireAuthorization is true).
+        // Example: ["admin", "dba"] - only users with admin or dba role can access.
+        //
+        "AuthorizedRoles": [],
+        //
+        // Output format for stats endpoints: "json" or "html".
+        // - json: JSON array
+        // - html: HTML table, Excel-compatible for direct browser copy-paste (default)
+        // Can be overridden per-request with the ?format= query string parameter (e.g. ?format=json).
+        //
+        "OutputFormat": "html",
+        //
+        // Filter schemas using PostgreSQL SIMILAR TO pattern.
+        // When null, all schemas are included.
+        // Example: "public|myapp%" - includes 'public' and schemas starting with 'myapp'.
+        //
+        "SchemaSimilarTo": null,
+        //
+        // Path for routine (function/procedure) performance statistics.
+        // Returns data from pg_stat_user_functions including call counts and execution times.
+        // Note: Requires track_functions = 'pl' or 'all' in postgresql.conf.
+        // Enable with: alter system set track_functions = 'all'; select pg_reload_conf();
+        // Or set track_functions = 'all' directly in postgresql.conf and restart/reload.
+        //
+        "RoutinesStatsPath": "/stats/routines",
+        //
+        // Path for table statistics.
+        // Returns data from pg_stat_user_tables including tuple counts, sizes, scan counts, and vacuum info.
+        //
+        "TablesStatsPath": "/stats/tables",
+        //
+        // Path for index statistics.
+        // Returns data from pg_stat_user_indexes including scan counts and index definitions.
+        //
+        "IndexesStatsPath": "/stats/indexes",
+        //
+        // Path for current database activity.
+        // Returns data from pg_stat_activity showing active sessions, queries, and wait events.
+        // Security Consideration: Shows currently running queries which may contain sensitive data.
+        //
+        "ActivityPath": "/stats/activity"
+      },
+    
+      //
+      // Command retry strategies and options for client and middleware commands.
+      //
+      "CommandRetryOptions": {
+        "Enabled": true,
+        "DefaultStrategy": "default",
+        "Strategies": {
+          "default": {
+            //
+            // Retry sequence in seconds. Accepts decimal numbers (0.25 is quarter of a second). The length of the array determines the maximum number of retries.
+            //
+            "RetrySequenceSeconds": [0, 1, 2, 5, 10],
+            //
+            // Error codes that will trigger a retry when executing a command. See https://www.postgresql.org/docs/current/errcodes-appendix.html
+            //
+            "ErrorCodes": [
+              // Serialization failures (MUST retry for correctness)
+              "40001", // serialization_failure 
+              "40P01", // deadlock_detected
+              // Connection issues (Class 08)
+              "08000", // connection_exception
+              "08003", // connection_does_not_exist
+              "08006", // connection_failure  
+              "08001", // sqlclient_unable_to_establish_sqlconnection
+              "08004", // sqlserver_rejected_establishment_of_sqlconnection
+              "08007", // transaction_resolution_unknown
+              "08P01", // protocol_violation
+              // Resource constraints (Class 53)
+              "53000", // insufficient_resources
+              "53100", // disk_full
+              "53200", // out_of_memory
+              "53300", // too_many_connections
+              "53400", // configuration_limit_exceeded
+              // System errors (Class 58) 
+              "57P01", // admin_shutdown
+              "57P02", // crash_shutdown  
+              "57P03", // cannot_connect_now
+              "58000", // system_error
+              "58030", // io_error
+              // Lock acquisition issues (Class 55)
+              "55P03", // lock_not_available
+              "55006", // object_in_use
+              "55000"  // object_not_in_prerequisite_state
+            ]
+          }
+        }
+      },
+      
+      //
+      // Caching options for routines that support caching. Currently, routines that return a single result set can be cached. Returning table or "setof" cannot be cached.
+      // To enable caching for a routine, add the following comment annotation to the routine:
+      // cached [ param1, param2, param3 [, ...] ] - parameters are optional, if no parameters are specified, all parameters are used for cache key.
+      // cache_expires [ value ] or cache_expires_in [ value ] - accepts PostgreSQL interval format (for example: '5 minutes' or '5min', '1 second' or '1s', etc.). Default is forever (no expiration).
+      // 
+      "CacheOptions": {
+        "Enabled": false,
+        //
+        // Cache type: Memory, Redis, or Hybrid
+        // - Memory: In-process memory cache (fastest, single instance only)
+        // - Redis: Distributed Redis cache (slower, shared across instances)
+        // - Hybrid: Uses Microsoft.Extensions.Caching.Hybrid which provides:
+        //   - Automatic stampede protection to prevent multiple concurrent requests from hitting the database
+        //   - Optional Redis L2 backend (enable with HybridCacheUseRedisBackend: true) for sharing cache across instances
+        //   - Without Redis, works as in-memory cache with stampede protection
+        //
+        "Type": "Memory",
+        //
+        // When memory cache is used, this value determines how often the cache will be pruned for expired items (in seconds).
+        //
+        "MemoryCachePruneIntervalSeconds": 60,
+        //
+        // Redis configuration string. Used when Type is "Redis", or when Type is "Hybrid" with UseRedisBackend: true.
+        // See: https://stackexchange.github.io/StackExchange.Redis/Configuration.html
+        //
+        "RedisConfiguration": "localhost:6379,abortConnect=false,ssl=false,connectTimeout=10000,syncTimeout=5000,connectRetry=3",
+        //
+        // Maximum number of rows that can be cached for set-returning functions.
+        // If a result set exceeds this limit, it will not be cached (but will still be returned).
+        // Set to 0 to disable caching for sets entirely. Set to null for unlimited (use with caution).
+        //
+        "MaxCacheableRows": 1000,
+        //
+        // When true, cache keys longer than HashKeyThreshold characters are hashed to a fixed-length SHA256 string (64 characters).
+        // This reduces memory usage for long cache keys and improves Redis performance with large keys.
+        // Recommended for Redis cache or when caching routines with many/large parameters.
+        //
+        "UseHashedCacheKeys": false,
+        //
+        // Cache keys longer than this threshold (in characters) will be hashed when UseHashedCacheKeys is true.
+        // Keys shorter than this threshold are stored as-is for better debuggability.
+        //
+        "HashKeyThreshold": 256,
+        //
+        // When set, creates an additional invalidation endpoint for each cached endpoint.
+        // The invalidation endpoint has the same path with this suffix appended.
+        // For example, if a cached endpoint is /api/my-endpoint/ and this is set to "invalidate",
+        // an invalidation endpoint /api/my-endpoint/invalidate will be created.
+        // Calling the invalidation endpoint with the same parameters removes the cached entry.
+        //
+        "InvalidateCacheSuffix": null,
+        //
+        // --- Hybrid Cache specific options (only used when Type is "Hybrid") ---
+        //
+        // When true, uses Redis as the L2 (secondary/distributed) cache backend.
+        // When false (default), HybridCache uses in-memory only but still provides stampede protection.
+        // Stampede protection prevents multiple concurrent requests from hitting the database when cache expires.
+        //
+        "HybridCacheUseRedisBackend": false,
+        //
+        // Maximum length of cache keys in characters. Keys longer than this will be rejected.
+        // Default: 1024
+        //
+        "HybridCacheMaximumKeyLength": 1024,
+        //
+        // Maximum size of cached payloads in bytes.
+        // Default: 1048576 (1 MB)
+        //
+        "HybridCacheMaximumPayloadBytes": 1048576,
+        //
+        // Default expiration for cached entries (both L1 and L2). Accepts PostgreSQL interval format.
+        // Examples: '5 minutes', '1 hour', '30 seconds'
+        // If not set, individual endpoint cache_expires annotations are used, or entries don't expire.
+        //
+        "HybridCacheDefaultExpiration": null,
+        //
+        // Expiration for L1 (in-memory) cache. If not set, uses DefaultExpiration value.
+        // Set this shorter than DefaultExpiration to refresh local cache more frequently from Redis.
+        // Accepts PostgreSQL interval format.
+        //
+        "HybridCacheLocalCacheExpiration": null
+      },
+    
+      //
+      // Parameter validation options for validating endpoint parameters before database execution.
+      // Validation rules can be referenced in comment annotations using "validate _param using rule_name" syntax.
+      //
+      "ValidationOptions": {
+        "Enabled": true,
+        //
+        // Named validation rules that can be referenced in comment annotations.
+        // Default rules: not_null, not_empty, required, email
+        //
+        // Each rule can have:
+        // - Type: NotNull, NotEmpty, Required, Regex, MinLength, MaxLength
+        // - Pattern: Regular expression pattern for Regex type
+        // - MinLength: Minimum length for MinLength type
+        // - MaxLength: Maximum length for MaxLength type
+        // - Message: Error message with placeholders {0}=original name, {1}=converted name, {2}=rule name
+        // - StatusCode: HTTP status code to return (default: 400)
+        //
+        "Rules": {
+          "not_null": {
+            "Type": "NotNull",
+            "Message": "Parameter '{0}' cannot be null",
+            "StatusCode": 400
+          },
+          "not_empty": {
+            "Type": "NotEmpty",
+            "Message": "Parameter '{0}' cannot be empty",
+            "StatusCode": 400
+          },
+          "required": {
+            "Type": "Required",
+            "Message": "Parameter '{0}' is required",
+            "StatusCode": 400
+          },
+          "email": {
+            "Type": "Regex",
+            "Pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+            "Message": "Parameter '{0}' must be a valid email address",
+            "StatusCode": 400
+          }
+        }
+      },
+    
+      //
+      // Rate Limiter settings to limit the number of requests from clients.
+      //
+      "RateLimiterOptions": {
+        "Enabled": false,
+        "StatusCode": 429,
+        "StatusMessage": "Too many requests. Please try again later.",
+        "DefaultPolicy": null,
+        // Policy types: FixedWindow, SlidingWindow, BucketWindow, Concurrency
+        "Policies": [{
+            // see https://learn.microsoft.com/en-us/aspnet/core/performance/rate-limit#fixed
+            "Type": "FixedWindow",
+            "Enabled": false,
+            "Name": "fixed",
+            "PermitLimit": 100,
+            "WindowSeconds": 60,
+            "QueueLimit": 10,
+            "AutoReplenishment": true
+        }, {
+            // see https://learn.microsoft.com/en-us/aspnet/core/performance/rate-limit#sliding-window-limiter
+            "Type": "SlidingWindow",
+            "Enabled": false,
+            "Name": "sliding",
+            "PermitLimit": 100,
+            "WindowSeconds": 60,
+            "SegmentsPerWindow": 6,
+            "QueueLimit": 10,
+            "AutoReplenishment": true
+        }, {
+            // see https://learn.microsoft.com/en-us/aspnet/core/performance/rate-limit#token-bucket-limiter
+            "Type": "TokenBucket",
+            "Enabled": false,
+            "Name": "bucket",
+            "TokenLimit": 100,
+            "TokensPerPeriod": 10,
+            "ReplenishmentPeriodSeconds": 10,
+            "QueueLimit": 10,
+            "AutoReplenishment": true
+        }, {
+            // see https://learn.microsoft.com/en-us/aspnet/core/performance/rate-limit#concurrency-limiter
+            "Type": "Concurrency",
+            "Enabled": false,
+            "Name": "concurrency",
+            "PermitLimit": 10,
+            "QueueLimit": 5,
+            "OldestFirst": true
+        }]
+      },
+      
+      //
+      // Error handling options for NpgsqlRest middleware
+      //
+      "ErrorHandlingOptions": {
+        // Remove Type URL from error responses. Middleware automatically sets a default Type URL based on the HTTP status code that points to the RFC documentation.
+        "RemoveTypeUrl": false,
+        // Remove TraceId field from error responses. Useful in development and debugging scenarios to correlate logs with error responses.
+        "RemoveTraceId": true,
+        //
+        // Default policy name to use from the ErrorCodePolicies section.
+        //
+        "DefaultErrorCodePolicy": "Default",
+        //
+        // Timeout error mapping when command timeout occurs (see NpgsqlRest CommandTimeout setting).
+        //
+        "TimeoutErrorMapping": {"StatusCode": 504, "Title": "Command execution timed out", "Details": null, "Type": null}, // timeout error case -> 504 Gateway Timeout
+        //
+        // Named policies for mapping of PostgreSQL error codes to HTTP Status Codes.
+        //
+        // If routine raises these PostgreSQL error codes, endpoint will return these HTTP Status Codes.
+        // See https://www.postgresql.org/docs/current/errcodes-appendix.html
+        // Exception is timeout, which is not a PostgreSQL error code, but a special case when command timeout occurs.
+        //
+        // - StatusCode: HTTP status code to return.
+        // - Title: Optional title field in response JSON. When null, actual error message is used.
+        // - Details: Optional details field in response JSON. When null, PostgreSQL Error Code is used.
+        // - Type: Optional types field in response JSON. A URI reference [RFC3986] that identifies the problem type. Set to null to use default. Or RemoveTypeUrl to true to disable.
+        //
+        "ErrorCodePolicies": [{
+          "Name": "Default",
+          "ErrorCodes": {
+            "42501": {"StatusCode": 403, "Title": "Insufficient Privilege", "Details": null, "Type": null},   // query_canceled      -> 403 Forbidden
+            "57014": {"StatusCode": 205, "Title": "Cancelled", "Details": null, "Type": null},                // query_canceled      -> 205 Reset Content
+            "P0001": {"StatusCode": 400, "Title": null, "Details": null, "Type": null},                       // raise_exception     -> 400 Bad Request
+            "P0004": {"StatusCode": 400, "Title": null, "Details": null, "Type": null}                        // assert_failure      -> 400 Bad Request
+          }
+        }]
+      },
+      
+      //
+      // NpgsqlRest HTTP Middleware General Configuration
+      //
+      "NpgsqlRest": {
+        //
+        // Connection name to be used from the ConnectionStrings section or NULL to use the first available connection string.
+        //
+        "ConnectionName": null,
+        //
+        // Allow using multiple connections from the ConnectionStrings section. When set to true, the connection name can be set for individual Routines.
+        // Some routines might use the primary database connection string, while others might want to use a read-only connection string from the replica servers.
+        //
+        "UseMultipleConnections": false,
+        //
+        // Command timeout, after which the command will be cancelled and default timeout error policy will be applied. (see ErrorCodePolicies) 
+        // Value is in PostgreSQL interval format (for example: '30 seconds' or '30s', '1 minute' or '1min', etc.) or `null` to use the default timeout of 30 seconds.
+        //
+        "CommandTimeout": null,
+        //
+        // Filter schema names similar to this parameter or `null` to ignore this parameter.
+        //
+        "SchemaSimilarTo": null,
+        //
+        // Filter schema names NOT similar to this parameter or `null` to ignore this parameter.
+        //
+        "SchemaNotSimilarTo": null,
+        //
+        // List of schema names to be included or `null` to ignore this parameter.
+        //
+        "IncludeSchemas": null,
+        //
+        // List of schema names to be excluded or `null` to ignore this parameter.
+        //
+        "ExcludeSchemas": null,
+        //
+        // Filter names similar to this parameter or `null` to ignore this parameter.
+        //
+        "NameSimilarTo": null,
+        //
+        // Filter names NOT similar to this parameter or `null` to ignore this parameter.
+        //
+        "NameNotSimilarTo": null,
+        //
+        // List of names to be included or `null` to ignore this parameter.
+        //
+        "IncludeNames": null,
+        //
+        // List of names to be excluded or `null` to ignore this parameter.
+        //
+        "ExcludeNames": null,
+        //
+        // Configure how the comment annotations will behave. `Ignore` will create all endpoints and ignore comment annotations. `ParseAll` will create all endpoints and parse comment annotations to alter the endpoint. `OnlyWithHttpTag` (default) will only create endpoints that contain the `HTTP` tag in the comments and then parse comment annotations.
+        //
+        "CommentsMode": "OnlyWithHttpTag",
+        //
+        // The URL prefix string for every URL created by the default URL builder or `null` to ignore the URL prefix.
+        //
+        "UrlPathPrefix": "/api",
+        //
+        // Convert all URL paths to kebab-case from the original PostgreSQL names.
+        //
+        "KebabCaseUrls": true,
+        //
+        // Convert all parameter names to camel case from the original PostgreSQL paramater names.
+        //
+        "CamelCaseNames": true,
+        //
+        // When set to true, it will force all created endpoints to require authorization. Authorization requirements for individual endpoints can be changed with the `EndpointCreated` function callback, or by using comment annotations.
+        //
+        "RequiresAuthorization": true,
+        //
+        // When this value is true, all connection events are logged (depending on the level). This is usually triggered by the PostgreSQL RAISE statements. 
+        // Set to false to turn off logging these events.
+        //
+        "LogConnectionNoticeEvents": true,
+        //
+        // MessageOnly - Log only connection messages. FirstStackFrameAndMessage - Log first stack frame and the message. FullStackAndMessage - Log full stack trace and message.
+        //
+        "LogConnectionNoticeEventsMode": "FirstStackFrameAndMessage",
+        //
+        // Set this option to true to log information for every executed command and query (including parameters and parameter values) in debug level.
+        //
+        "LogCommands": false,
+        //
+        // Set this option to true to include parameter values when logging commands. This only applies when `LogCommands` is true.
+        //
+        "LogCommandParameters": false,
+        //
+        // Set this option to false to suppress debug-level logs when endpoints are created.
+        // When true (default), debug logs are emitted for each endpoint creation showing URL and method.
+        //
+        "DebugLogEndpointCreateEvents": true,
+        //
+        // Set this option to false to suppress debug-level logs when comment annotations are parsed.
+        // When true (default), debug logs are emitted for each comment annotation that is successfully processed.
+        //
+        "DebugLogCommentAnnotationEvents": true,
+        //
+        // When not null, forces a method type for all created endpoints. Method types are `GET`, `PUT`, `POST`, `DELETE`, `HEAD`, `OPTIONS`, `TRACE`, `PATCH` or `CONNECT`. When this value is null (default), the method type is always `GET` when the routine volatility option is not volatile or the routine name starts with, `get_`, contains `_get_` or ends with `_get` (case-insensitive). Otherwise, it is `POST`. This option for individual endpoints can be changed with the `EndpointCreated` function callback, or by using comment annotations.
+        //
+        "DefaultHttpMethod": null,
+        //
+        // When not null, sets the request parameter position (request parameter types) for all created endpoints. Values are `QueryString` (parameters are sent using query string) or `BodyJson` (parameters are sent using JSON request body). When this value is null (default), request parameter type is `QueryString` for all `GET` and `DELETE` endpoints, otherwise, request parameter type is `BodyJson`. This option for individual endpoints can be changed with the `EndpointCreated` function callback, or by using comment annotations.
+        //
+        "DefaultRequestParamType": null,
+        //
+        // Sets the default behavior for handling NULL values in query string parameters.
+        // - `Ignore` (default): No special handling - empty strings stay as empty strings, "null" literal stays as "null" string.
+        // - `EmptyString`: Empty query string values are interpreted as NULL values. This limits sending empty strings via query strings.
+        // - `NullLiteral`: Literal string "null" (case insensitive) is interpreted as NULL value.
+        // This option for individual endpoints can be changed with the `EndpointCreated` function callback, or by using comment annotations.
+        //
+        "QueryStringNullHandling": "Ignore",
+        //
+        // Sets the default behavior for plain text responses when the execution returns NULL from the database.
+        // - `EmptyString` (default): Returns an empty string response with status code 200 OK.
+        // - `NullLiteral`: Returns a string literal "NULL" with status code 200 OK.
+        // - `NoContent`: Returns status code 204 NO CONTENT.
+        // This option for individual endpoints can be changed with the `EndpointCreated` function callback, or by using comment annotations.
+        //
+        "TextResponseNullHandling": "EmptyString",
+        //
+        // Configure how to send request headers to PostgreSQL routines execution: 
+        // - `Ignore` (default) don't send any request headers to routines. 
+        // - `Context` sets a context variable for the current session `context.headers` containing JSON string with current request headers. This executes `set_config('context.headers', headers, false)` before any routine executions. 
+        // - `Parameter` sends request headers to the routine parameter defined with the `RequestHeadersParameterName` option. Parameter with this name must exist, must be one of the JSON or text types and must have the default value defined. This option for individual endpoints can be changed with the `EndpointCreated` function callback, or by using comment annotations.
+        //
+        "RequestHeadersMode": "Parameter",
+        //
+        // Name of the context variable that will receive the request headers when RequestHeadersMode is set to Context.
+        //
+        "RequestHeadersContextKey": "request.headers",
+        //
+        // Sets a parameter name that will receive a request headers JSON when the `Parameter` value is used in `RequestHeadersMode` options. A parameter with this name must exist, must be one of the JSON or text types and must have the default value defined. This option for individual endpoints can be changed with the `EndpointCreated` function callback, or by using comment annotations.
+        //
+        "RequestHeadersParameterName": "_headers",
+        //
+        // Add the unique NpgsqlRest instance id request header with this name to the response or set to null to ignore.
+        //
+        "InstanceIdRequestHeaderName": null,
+        //
+        // Custom request headers dictionary that will be added to NpgsqlRest requests. Note: these values are added to the request headers dictionary before they are sent as a context or parameter to the PostgreSQL routine and as such not visible to the browser debugger.
+        //
+        "CustomRequestHeaders": {
+        },
+        //
+        // Name of the request ID header that will be used to track requests. This is used to correlate requests with server event streaming connection ids.
+        //
+        "ExecutionIdHeaderName": "X-NpgsqlRest-ID",
+        //
+        // Default server-sent event notice message level: INFO, NOTICE, WARNING.
+        // When SSE path is set, generate SSE events for PostgreSQL notice messages with this level or higher.
+        // This can be overridden for individual endpoints using comment annotations.
+        //
+        "DefaultServerSentEventsEventNoticeLevel": "INFO",
+        //
+        // Collection of custom server-sent events response headers that will be added to the response when connected to the endpoint that is configured to return server-sent events.
+        //
+        "ServerSentEventsResponseHeaders": {
+        },
+        //
+        // Options for handling PostgreSQL routines (functions and procedures)
+        //
+        "RoutineOptions": {
+          //
+          // Name separator for parameter names when using custom type parameters. 
+          // Parameter names will be in the format: {ParameterName}{CustomTypeParameterSeparator}{CustomTypeFieldName}. When NULL, default underscore is used.
+          // This is used when using custom types for parameters. For example: with "create type custom_type1 as (value text);" and parameter "_p custom_type1", this name will be merged into "_p_value"
+          //
+          "CustomTypeParameterSeparator": null,
+          //
+          // List of PostgreSQL routine language names to include. If NULL, all languages are included. Names are case-insensitive.
+          //
+          "IncludeLanguages": null,
+          //
+          // List of PostgreSQL routine language names to exclude. If NULL, "C" and "INTERNAL" are excluded by default. Names are case-insensitive.
+          //
+          "ExcludeLanguages": null,
+          //
+          // When true, composite type columns in return tables are serialized as nested JSON objects.
+          // For example, a table column "req" of type "my_request(id int, name text)" becomes {"req": {"id": 1, "name": "test"}}
+          // instead of the default flat structure {"id": 1, "name": "test"}.
+          // Default is false for backward compatibility.
+          //
+          "NestedJsonForCompositeTypes": false,
+          //
+          // When true, nested composite types and arrays of composite types within composite fields
+          // are serialized as JSON objects/arrays instead of PostgreSQL tuple strings.
+          // For example, a nested composite "(1,x)" becomes {"id":1,"name":"x"} and
+          // an array of composites ["(1,a)","(2,b)"] becomes [{"id":1,"name":"a"},{"id":2,"name":"b"}].
+          // Default is true.
+          //
+          "ResolveNestedCompositeTypes": true
+        },
+    
+        //
+        // Options for different upload handlers and general upload settings
+        //
+        "UploadOptions": {
+          "Enabled": false,
+          "LogUploadEvent": true,
+          "LogUploadParameters": false,
+          //
+          // Handler that will be used when upload handler or handlers are not specified.
+          //
+          "DefaultUploadHandler": "large_object",
+          //
+          // Gets or sets a value indicating whether the default upload metadata parameter should be used.
+          //
+          "UseDefaultUploadMetadataParameter": false,
+          //
+          // Name of the default upload metadata parameter. This parameter is used to pass metadata to the upload handler. The metadata is passed as a JSON object.
+          //
+          "DefaultUploadMetadataParameterName": "_upload_metadata",
+          //
+          // Gets or sets a value indicating whether the default upload metadata context key should be used.
+          //
+          "UseDefaultUploadMetadataContextKey": false,
+          //
+          // Name of the default upload metadata context key. This key is used to pass the metadata to the upload handler. The metadata is passed as a JSON object.
+          //
+          "DefaultUploadMetadataContextKey": "request.upload_metadata",
+          //
+          // Upload handlers specific settings.
+          //
+          "UploadHandlers": {
+            //
+            // General settings for all upload handlers
+            //
+            "StopAfterFirstSuccess": false,
+            // csv string containing mime type patters, set to null to ignore
+            "IncludedMimeTypePatterns": null,
+            // csv string containing mime type patters, set to null to ignore
+            "ExcludedMimeTypePatterns": null,
+            "BufferSize": 8192, // Buffer size for the upload handlers file_system and large_object, in bytes. Default is 8192 bytes (8 KB).
+            "TextTestBufferSize": 4096, // Buffer sample size for testing textual content, in bytes. Default is 4096 bytes (4 KB).
+            "TextNonPrintableThreshold": 5, // Threshold for non-printable characters in the text buffer. Default is 5 non-printable characters.
+            "AllowedImageTypes": "jpeg, png, gif, bmp, tiff, webp", // Comma-separated list of allowed image types when checking images.
+            //
+            // When set, authenticated user claims are included in the row metadata JSON parameter ($4) under this key name.
+            // Set to null or empty string to disable adding claims to row metadata. Example: "claims" adds {"claims": {...}} to metadata.
+            // Access in SQL: (_meta->'claims'->>'name_identifier')
+            //
+            "RowCommandUserClaimsKey": "claims",
+            //
+            // Enables upload handlers for the NpgsqlRest endpoints that uses PostgreSQL Large Objects API
+            //
+            "LargeObjectEnabled": true,
+            "LargeObjectKey": "large_object",
+            "LargeObjectCheckText": false,
+            "LargeObjectCheckImage": false,
+            //
+            // Enables upload handlers for the NpgsqlRest endpoints that uses file system
+            //
+            "FileSystemEnabled": true,
+            "FileSystemKey": "file_system",
+            "FileSystemPath": "/tmp/uploads",
+            "FileSystemUseUniqueFileName": true,
+            "FileSystemCreatePathIfNotExists": true,
+            "FileSystemCheckText": false,
+            "FileSystemCheckImage": false,
+            //
+            // Enables upload handlers for the NpgsqlRest endpoints that uploads CSV files to a row command
+            //
+            "CsvUploadEnabled": true,
+            "CsvUploadKey": "csv",
+            "CsvUploadCheckFileStatus": true,
+            "CsvUploadDelimiterChars": ",",
+            "CsvUploadHasFieldsEnclosedInQuotes": true,
+            "CsvUploadSetWhiteSpaceToNull": true,
+            //
+            // $1 - row index (1-based), $2 - parsed value text array, $3 - result of previous row command, $4 - JSON metadata for upload
+            //
+            "CsvUploadRowCommand": "call process_csv_row($1,$2,$3,$4)",
+            //
+            // Enables upload handlers for the NpgsqlRest endpoints that uploads Excel files to a row command
+            //
+            "ExcelUploadEnabled": true,
+            "ExcelKey": "excel",
+            "ExcelSheetName": null, // null to use the first available
+            "ExcelAllSheets": false,
+            "ExcelTimeFormat": "HH:mm:ss",
+            "ExcelDateFormat": "yyyy-MM-dd",
+            "ExcelDateTimeFormat": "yyyy-MM-dd HH:mm:ss",
+            "ExcelRowDataAsJson": false,
+            //
+            // $1 - row index (1-based), $2 - parsed value text array, $3 - result of previous row command, $4 - JSON metadata for upload
+            //
+            "ExcelUploadRowCommand": "call process_excel_row($1,$2,$3,$4)"
+          }
+        },
+    
+        //
+        // Table format handlers for custom rendering of set/record results.
+        // When an endpoint has @table_format = <name> custom parameter, the matching handler renders the response.
+        //
+        "TableFormatOptions": {
+          //
+          // Enable or disable table format handlers. When false, @table_format annotations are ignored.
+          //
+          "Enabled": false,
+          //
+          // Built-in HTML table handler. Renders results as an HTML table for easy copy-paste to Excel.
+          // Activated by @table_format = html annotation on PostgreSQL functions.
+          //
+          "HtmlEnabled": true,
+          //
+          // The key name used to match @table_format = <key> annotation. Default is "html".
+          //
+          "HtmlKey": "html",
+          //
+          // Content written before the HTML table. Typically a CSS style block.
+          // Set to null to omit.
+          //
+          "HtmlHeader": "<style>table{font-family:Calibri,Arial,sans-serif;font-size:11pt;border-collapse:collapse}th,td{border:1px solid #d4d4d4;padding:4px 8px}th{background-color:#f5f5f5;font-weight:600}</style>",
+          //
+          // Content written after the closing HTML table tag.
+          // Set to null to omit.
+          //
+          "HtmlFooter": null,
+          //
+          // Built-in Excel (.xlsx) handler using SpreadCheetah. Renders results as an Excel spreadsheet download.
+          // Activated by @table_format = excel annotation on PostgreSQL functions.
+          //
+          "ExcelEnabled": true,
+          //
+          // The key name used to match @table_format = <key> annotation. Default is "excel".
+          //
+          "ExcelKey": "excel",
+          //
+          // Worksheet name. When null, uses the routine name.
+          //
+          "ExcelSheetName": null,
+          //
+          // Excel Format Code for DateTime cells. When null, uses SpreadCheetah default (yyyy-MM-dd HH:mm:ss).
+          // Uses Excel Format Codes (not .NET format strings). Examples: "yyyy-mm-dd", "dd/mm/yyyy hh:mm", "m/d/yy h:mm".
+          //
+          "ExcelDateTimeFormat": null,
+          //
+          // Excel Format Code for numeric cells. When null, uses Excel default (General).
+          // Uses Excel Format Codes (not .NET format strings). Examples: "#,##0.00", "0.00", "#,##0".
+          //
+          "ExcelNumericFormat": null
+        },
+    
+        //
+        // Authentication options for NpgsqlRest endpoints
+        //
+        "AuthenticationOptions": {
+          //
+          // Authentication type used with the Login endpoints to set the authentication type for the new `ClaimsIdentity` created by the login. This value must be set to non-null when using login endpoints, otherwise, the following error will raise: `SignInAsync when principal.Identity.IsAuthenticated is false is not allowed when AuthenticationOptions.RequireAuthenticatedSignIn is true.` If the value is not set and the login endpoint is present, it will automatically get the database name from the connection string.
+          //
+          "DefaultAuthenticationType": null,
+    
+          //
+          // The default column name in the data reader which will be used to read the value to determine the success or failure of the login operation. If this column is not present, the success is when the endpoint returns any records. If this column is present, it must be either a boolean to indicate success or a numeric value to indicate the HTTP Status Code to return. If this column is present and retrieves a numeric value, that value is assigned to the HTTP Status Code and the login will authenticate only when this value is 200.
+          //
+          "StatusColumnName": "status",
+          //
+          // The default column name in the data reader which will be used to read the value of the authentication scheme of the login process. If this column is not present in the login response the default authentication scheme is used. Return new value to use a different authentication scheme with the login endpoint.
+          //
+          "SchemeColumnName": "scheme",
+          //
+          // The default column name in the data reader which will return a response body message for the login operation where writing to body is possible.
+          //
+          "BodyColumnName": "body",
+          //
+          // The default column name in the data reader which will set the response content type for the login operation where writing to body is possible.
+          //
+          "ResponseTypeColumnName": "application/json",
+          //
+          // The default column name in the data reader which will be used to read the value of the hash of the password. 
+          // If this column is present, the value will be used to verify the password from the password parameter. 
+          // Password parameter is the first parameter which name contains the value of PasswordParameterNameContains. 
+          // If verification fails, the login will fail and the HTTP Status Code will be set to 404 Not Found.
+          //
+          "HashColumnName": "hash",
+          //
+          // The default name of the password parameter. 
+          // The first parameter which name contains this value will be used as the password parameter. 
+          // This is used to verify the password from the password parameter when login endpoint returns a hash of the password (see HashColumnName).
+          //
+          "PasswordParameterNameContains": "pass",
+          //
+          // Default claim type for user id.
+          //
+          "DefaultUserIdClaimType": "user_id",
+          //
+          // Default claim type for username.
+          //
+          "DefaultNameClaimType": "user_name",
+          //
+          // Default claim type for user roles.
+          //
+          "DefaultRoleClaimType": "user_roles",
+          //
+          // Default claim type for user display name.
+          //
+          "DefaultDisplayNameClaimType": "display_name",
+          //
+          // If true, return any response from auth endpoints (login and logout) if response hasn't been written by auth handler. For cookie auth, this will return full record to response as returned by the routine. For bearer token auth, this will be ignored because bearer token auth writes its own response (with tokens). This option will also be ignored if message column is present (see BodyColumnName option).
+          //
+          "SerializeAuthEndpointsResponse": false,
+          //
+          // Don't write real parameter values when logging parameters from auth endpoints and obfuscate instead. This prevents user credentials including password from ending up in application logs.
+          //
+          "ObfuscateAuthParameterLogValues": true,
+          //
+          // Command that is executed when the password verification fails. There are three positional and optional parameters: 
+          // - $1: Authentication scheme used for the login (if parameter exists, type text).
+          // - $2: User id used for the login (if parameter exists, type text).
+          // - $3: Username used for the login (if parameter exists, type text).
+          //
+          "PasswordVerificationFailedCommand": null,
+          //
+          // Command that is executed when the password verification succeeds. There are three positional and optional parameters:
+          // - $1: authentication scheme used for the login (if parameter exists, type text).
+          // - $2: user id used for the login (if parameter exists, type text).
+          // - $3: username used for the login (if parameter exists, type text).
+          //
+          "PasswordVerificationSucceededCommand": null,
+          //
+          // Enable setting authenticated user claims to context variables automatically. See ContextKeyClaimsMapping and ClaimsJsonContextKey options. You can set this individually for each request by using UserContext endpoint property or user_context comment annotation.
+          // Note: For proxy endpoints, when user_context is enabled, these values are also forwarded as HTTP headers to the upstream proxy using the context key names.
+          //
+          "UseUserContext": false,
+          //
+          // Mapping of context keys to user claim names. Keys are the context variable names and values are the user claim names. When <see cref="UseUserContext"/> is enabled, the user claims from will be automatically mapped to the context variables.
+          //
+          "ContextKeyClaimsMapping": {
+            "request.user_id": "user_id",
+            "request.user_name": "user_name",
+            "request.user_roles": "user_roles"
+          },
+          //
+          // Context key that is used to set context variable for all available user claims. When this option is not null, and user is authenticated, the user claims will be serialized to JSON value and set to the context variable.
+          //
+          "ClaimsJsonContextKey": null,
+          //
+          // IP address context key that is used to set context variable for the IP address. When this option is not null, the IP address will be set to the context variable when <see cref="UseUserContext"/> is enabled and even when user is not authenticated.
+          //
+          "IpAddressContextKey": "request.ip_address",
+          //
+          // Enable mapping authenticated user claims to parameters by name automatically. See ParameterNameClaimsMapping and ClaimsJsonParameterName options. You can set this individually for each request by using UseUserParameters endpoint property or user_parameters comment annotation.
+          // Note: For proxy endpoints, when user_params is enabled, these values are also forwarded as query string parameters to the upstream proxy.
+          //
+          "UseUserParameters": false,
+          //
+          // Mapping of parameter names to user claim names. Keys are the parameter names and values are the user claim names. When <see cref="UseUserParameters"/> is enabled, the user claims from will be automatically mapped to the parameters.
+          //
+          "ParameterNameClaimsMapping": {
+            "_user_id": "user_id",
+            "_user_name": "user_name",
+            "_user_roles": "user_roles"
+          },
+          //
+          // Parameter name that is used to set value for all available user claims. When this option is not null, and user is authenticated, the user claims will be serialized to JSON value and set to the parameter with this name.
+          //
+          "ClaimsJsonParameterName": "_user_claims",
+          //
+          // IP address parameter name that is used to set parameter value for the IP address. When this option is not null, the IP address will be set to the parameter when <see cref="UseUserContext"/> is enabled and even when user is not authenticated.
+          //
+          "IpAddressParameterName": "_ip_address",
+          //
+          // Url path that will be used for the login endpoint. If NULL, the login endpoint will not be created.
+          // Login endpoint expects a PostgreSQL command that will be executed to authenticate the user that follow this convention:
+          //
+          // - Must return at least one record when authentication is successful. If no records are returned endpoint will return 401 Unauthorized.
+          // - If record is returned, the authentication is successful, if not set in StatusColumnName column otherwise.
+          // - All records will be added to user principal claim collection where column name is claim type and column value is claim value, 
+          //   except for four special columns defined in StatusColumnName, SchemeColumnName, BodyColumnName and HashColumnName options:
+          //
+          // - If "StatusColumnName" is present in the returned record, it must be either boolean (true for success, false for failure) or numeric (HTTP Status Code, 200 for success, anything else for failure). If not present, the success is when the endpoint returns any records.
+          // - If "SchemeColumnName" is present in the returned record, it must be text value that defines the authentication scheme to use for the login.
+          // - If "BodyColumnName" is present in the returned record, it must be text value that defines the message to return to the client as response body where possible. This only works for authentication that doesn't write response body (cookie authentication).
+          // - If "HashColumnName" is present in the returned record, it must be text value that defines the hash of the password. Password parameter is the first parameter which name contains the value of PasswordParameterNameContains option. If verification fails, the login will fail and the HTTP Status Code will be set to 404 Not Found.
+          //
+          "LoginPath": null,
+          //
+          // Url path that will be used for the logout endpoint. If NULL, the logout endpoint will not be created.
+          // Login endpoint expects a PostgreSQL command that performs the logout or the sign-out operation.
+          //
+          // If the routine doesn't return any data, the default authorization scheme is signed out. 
+          // Any values returned will be interpreted as scheme names (converted to string) to sign out.
+          //
+          "LogoutPath": null,
+          //
+          // Settings for basic authentication support.
+          // Basic authentication is a simple authentication scheme built into the HTTP protocol.
+          // It expects request header `Authorization: Basic base64(username:password)` where username and password are the credentials for the user.
+          //
+          "BasicAuth": {
+            //
+            // Enable or disable the Basic Authentication support.
+            //
+            "Enabled": false,
+            //
+            // The default realm for the Basic Authentication. If not set, "NpgsqlRest" will be used.
+            //
+            "Realm": null,
+            //
+            // Default users dictionary for the Basic Authentication. Key is the username and value is the password or password hash depending on the UseDefaultPasswordHasher option.
+            // Users can be set on individual endpoints using multiple annotations: basic_authentication [ username ] [ password ]
+            //
+            "Users": { },
+            //
+            // When using Basic Authentication, set this to Required to enforce SSL/TLS connection. 
+            // Use Warning to issue a warning in the log when connection is not secure.
+            // Use Ignore to allow Basic Authentication (debug level log will show a warning).
+            //
+            "SslRequirement": "Required", // Ignore, Warning, Required
+            //
+            // Use default password hasher for Basic Authentication to verify the password when Password is set on endpoint or options.
+            // When this is true, Password set in configuration, endpoint or header (depending on PasswordHashLocation) is expected to be a hashed with default hasher.
+            //
+            "UseDefaultPasswordHasher": true,
+            //
+            // PostgreSQL command executed when the Basic Authentication is challenged. 
+            // Same convention applies as with "LoginPath" command. See "NpgsqlRest.LoginPath" option for details.
+            // Use this command to validate the username and password and/or return user claims.
+            // 
+            // Positional parameters:
+            // - $1: Username from basic authentication header (if parameter exists, type text).
+            // - $2: Password from basic authentication header (if parameter exists, type text).
+            // - $3: Password is valid, true or false. If endpoint or configuration has a password defined, it will be validated. 
+            //       This the result of that validation or NULL of no password is defined. 
+            //       This allows for password to be validated before the command and use command for additional user claims. (if parameter exists, type boolean).
+            // - $4: Basic authentication realm (if parameter exists, type text).
+            // - $5: Endpoint path (if parameter exists, type text).
+            //
+            "ChallengeCommand": null
+          }
+        },
+        
+        //
+        // Enable or disable the generation of HTTP files for NpgsqlRest endpoints.
+        // See more on HTTP files at: 
+        // https://marketplace.visualstudio.com/items?itemName=humao.rest-client or 
+        // https://learn.microsoft.com/en-us/aspnet/core/test/http-files?view=aspnetcore-8.0
+        //
+        "HttpFileOptions": {
+          "Enabled": false,
+          //
+          // Options for HTTP file generation:
+          // - File: Generate HTTP files in the file system.
+          // - Endpoint: Generate Endpoint(s) with HTTP file(s) content.
+          // - Both: Generate HTTP files in the file system and Endpoint(s) with HTTP file(s) content.
+          //
+          "Option": "File",
+          //
+          // File name. If not set, the database name will be used if connection string is set. 
+          // If neither ConnectionString nor Name is set, the file name will be "npgsqlrest".
+          //
+          "Name": null,
+          //
+          // The pattern to use when generating file names. {0} is database name, {1} is schema suffix with underline when FileMode is set to Schema.
+          // Use this property to set a custom file name.
+          // .http extension will be added automatically.
+          //
+          "NamePattern": "{0}_{1}",
+          //
+          // Adds comment header to above request based on PostgreSQL routine.
+          // - None: skip.
+          // - Simple: Add name, parameters and return values to comment header. This default.
+          // - Full: Add the entire routine code as comment header.
+          //
+          "CommentHeader": "Simple",
+          //
+          // When CommentHeader is set to Simple or Full, set to true to include routine comments in comment header.
+          //
+          "CommentHeaderIncludeComments": true,
+          //
+          // - Database: to create one http file for entire database.
+          // - Schema: to create one http file for each schema.
+          //
+          "FileMode": "Schema",
+          //
+          // Set to true to overwrite existing files.
+          //
+          "FileOverwrite": true
+        },
+    
+        //
+        // Enable or disable the generation of OpenAPI files for NpgsqlRest endpoints.
+        //
+        "OpenApiOptions": {
+          "Enabled": false,
+          //
+          // File name for the generated OpenAPI file. Set to null to skip the file generation.
+          //
+          "FileName": "npgsqlrest_openapi.json",
+          //
+          // URL path for the OpenAPI endpoint. Set to null to skip the endpoint generation.
+          //
+          "UrlPath": "/openapi.json",
+          //
+          // Set to true to overwrite existing files.
+          //
+          "FileOverwrite": true,
+          //
+          // The title of the OpenAPI document. This appears in the "info" section of the OpenAPI specification.
+          // If not set, the database name from the ConnectionString will be used.
+          //
+          "DocumentTitle": null,
+          //
+          // The version of the OpenAPI document. This appears in the "info" section of the OpenAPI specification.
+          // When null, default is "1.0.0".
+          //
+          "DocumentVersion": "1.0.0",
+          //
+          // Optional description of the API. This appears in the "info" section of the OpenAPI specification.
+          //
+          "DocumentDescription": null,
+          //
+          // Include current server information in the "servers" section of the OpenAPI document.
+          //
+          "AddCurrentServer": true,
+          //
+          // Additional server entries to add to the "servers" section of the OpenAPI document.
+          // Each server entry must have "Url" property and optional "Description" property.
+          //
+          "Servers": [/*{"Url": "https://api.example.com", "Description": "Production server"}*/],
+          //
+          // Security schemes to include in the OpenAPI document.
+          // If not specified, a default Bearer authentication scheme will be added for endpoints requiring authorization.
+          // Supported types: "Http" (for Bearer/Basic auth) and "ApiKey" (for Cookie/Header/Query auth).
+          // Examples:
+          // - Bearer token: {"Name": "bearerAuth", "Type": "Http", "Scheme": "Bearer", "BearerFormat": "JWT"}
+          // - Cookie auth: {"Name": "cookieAuth", "Type": "ApiKey", "In": ".AspNetCore.Cookies", "ApiKeyLocation": "Cookie"}
+          // - Basic auth: {"Name": "basicAuth", "Type": "Http", "Scheme": "Basic"}
+          //
+          "SecuritySchemes": [
+            /*{
+              "Name": "bearerAuth",
+              "Type": "Http",
+              "Scheme": "Bearer",
+              "BearerFormat": "JWT",
+              "Description": "JWT Bearer token authentication"
+            },
+            {
+              "Name": "cookieAuth",
+              "Type": "ApiKey",
+              "In": ".AspNetCore.Cookies",
+              "ApiKeyLocation": "Cookie",
+              "Description": "Cookie-based authentication"
+            }*/
+          ]
+        },
+        
+        //
+        // Enable or disable the generation of TypeScript/Javascript client source code files for NpgsqlRest endpoints.
+        //
+        "ClientCodeGen": {
+          "Enabled": false,
+          //
+          // File path for the generated code. Set to null to skip the code generation. Use {0} to set schema name when BySchema is true
+          //
+          "FilePath": null,
+          //
+          //  Force file overwrite.
+          //
+          "FileOverwrite": true,
+          //
+          // Include current host information in the URL prefix.
+          //
+          "IncludeHost": true,
+          //
+          // Set the custom host prefix information.
+          //
+          "CustomHost": null,
+          //
+          // Adds comment header to above request based on PostgreSQL routine
+          // Set None to skip.
+          // Set Simple (default) to add name, parameters and return values to comment header.
+          // Set Full to add the entire routine code as comment header.
+          //
+          "CommentHeader": "Simple",
+          //
+          // When CommentHeader is set to Simple or Full, set to true to include routine comments in comment header.
+          //
+          "CommentHeaderIncludeComments": true,
+          //
+          // Create files by PostgreSQL schema. File name will use formatted FilePath where {0} is the schema name in pascal case.
+          //
+          "BySchema": true,
+          //
+          // Set to true to include status code in response: {status: response.status, response: model}
+          //
+          "IncludeStatusCode": true,
+          //
+          // Create separate file with global types {name}Types.d.ts
+          //
+          "CreateSeparateTypeFile": true,
+          //
+          // Module name to import "baseUrl" constant, instead of defining it in a module.
+          //
+          "ImportBaseUrlFrom": null,
+          //
+          // Module name to import "parseQuery" function, instead of defining it in a module.
+          //
+          "ImportParseQueryFrom": null,
+          //
+          // Include optional parameter `parseUrl: (url: string) => string = url=>url` that will parse the constructed URL.
+          //
+          "IncludeParseUrlParam": false,
+          //
+          // Include optional parameter `parseRequest: (request: RequestInit) => RequestInit = request=>request` that will parse the constructed request.
+          //
+          "IncludeParseRequestParam": false,
+          //
+          // Header lines on each auto-generated source file. Default is ["// autogenerated at {0}", "", ""] where {0} is the current timestamp.
+          //
+          "HeaderLines": [
+            "// autogenerated at {0}",
+            ""
+          ],
+          //
+          // Array of routine names to skip (without schema)
+          //
+          "SkipRoutineNames": [],
+          //
+          // Array of generated function names to skip (without schema)
+          //
+          "SkipFunctionNames": [],
+          //
+          // Array of url paths to skip
+          //
+          "SkipPaths": [],
+          //
+          // Array of schema names to skip
+          //
+          "SkipSchemas": [],
+          //
+          // Default TypeScript type for JSON types
+          //
+          "DefaultJsonType": "string",
+          //
+          // Use routine name instead of endpoint name when generating function names.
+          //
+          "UseRoutineNameInsteadOfEndpoint": false,
+          //
+          // Export URLs as constants in the generated code.
+          //
+          "ExportUrls": false,
+          //
+          // Skip generating types and produce pure JavaScript code. Setting this to true will also change the .ts extension to .js where applicable.
+          //
+          "SkipTypes": false,
+          //
+          // Keep TypeScript models unique, meaning models with the same fields and types will be merged into one model with the name of the last model. This significantly reduces the number of generated models.
+          //
+          "UniqueModels": false,
+          //
+          // Name of the XSRF Token Header (Anti-forgery Token). This is used in FORM POSTS to the server when Anti-forgery is enabled. Currently, only Upload requests use FORM POST.
+          //
+          "XsrfTokenHeaderName": null,
+          //
+          // Export event sources create functions for streaming events.
+          //
+          "ExportEventSources": true,
+          //
+          // List of custom imports to add to the generated code. It adds line to a file. Use full expression like `import { MyType } from './my-type';`
+          //
+          "CustomImports": [],
+          //
+          // Dictionary of custom headers to add to each request in generated code. Header key is automatically quoted if it doesn't contain quotes.
+          //
+          "CustomHeaders": {},
+          //
+          // When true, include PostgreSQL schema name in the generated type names to avoid name collisions. Set to false to simplify type names when no name collisions are expected.
+          //
+          "IncludeSchemaInNames": true,
+          //
+          // Expression to parse error response. Only used when IncludeStatusCode is true.
+          //
+          "ErrorExpression": "await response.json()",
+          //
+          // TypeScript type for error response. Only used when IncludeStatusCode is true.
+          //
+          "ErrorType": "{status: number; title: string; detail?: string | null} | undefined"
+        },
+    
+        //
+        // HTTP client functionality for annotated composite types.
+        // Allows PostgreSQL functions to make HTTP requests by using specially annotated types as parameters.
+        //
+        "HttpClientOptions": {
+          //
+          // Enable HTTP client functionality for annotated types.
+          //
+          "Enabled": false,
+          //
+          // Default name for the response status code field within annotated types.
+          //
+          "ResponseStatusCodeField": "status_code",
+          //
+          // Default name for the response body field within annotated types.
+          //
+          "ResponseBodyField": "body",
+          //
+          // Default name for the response headers field within annotated types.
+          //
+          "ResponseHeadersField": "headers",
+          //
+          // Default name for the response content type field within annotated types.
+          //
+          "ResponseContentTypeField": "content_type",
+          //
+          // Default name for the response success field within annotated types.
+          //
+          "ResponseSuccessField": "success",
+          //
+          // Default name for the response error message field within annotated types.
+          //
+          "ResponseErrorMessageField": "error_message"
+        },
+    
+        //
+        // Reverse proxy functionality for NpgsqlRest endpoints.
+        // When an endpoint is marked with 'proxy' annotation, incoming requests are forwarded to another URL.
+        //
+        "ProxyOptions": {
+          //
+          // Enable proxy functionality for annotated endpoints.
+          //
+          "Enabled": false,
+          //
+          // Base URL (host) for proxy requests (e.g., "https://api.example.com").
+          // When set, proxy endpoints will forward requests to this host + the original path.
+          //
+          "Host": null,
+          //
+          // Default timeout for all proxy requests. Format: "HH:MM:SS" or PostgreSQL interval.
+          //
+          "DefaultTimeout": "00:00:30",
+          //
+          // When true, original request headers are forwarded to the proxy target.
+          //
+          "ForwardHeaders": true,
+          //
+          // Headers to exclude from forwarding to the proxy target.
+          //
+          "ExcludeHeaders": ["Host", "Content-Length", "Transfer-Encoding"],
+          //
+          // When true, forward response headers from proxy back to client.
+          //
+          "ForwardResponseHeaders": true,
+          //
+          // Response headers to exclude from forwarding back to client.
+          //
+          "ExcludeResponseHeaders": ["Transfer-Encoding", "Content-Length"],
+          //
+          // Default name for the proxy response status code parameter.
+          //
+          "ResponseStatusCodeParameter": "_proxy_status_code",
+          //
+          // Default name for the proxy response body parameter.
+          //
+          "ResponseBodyParameter": "_proxy_body",
+          //
+          // Default name for the proxy response headers parameter.
+          //
+          "ResponseHeadersParameter": "_proxy_headers",
+          //
+          // Default name for the proxy response content type parameter.
+          //
+          "ResponseContentTypeParameter": "_proxy_content_type",
+          //
+          // Default name for the proxy response success parameter.
+          //
+          "ResponseSuccessParameter": "_proxy_success",
+          //
+          // Default name for the proxy response error message parameter.
+          //
+          "ResponseErrorMessageParameter": "_proxy_error_message",
+          //
+          // When true, for upload endpoints marked as proxy, the raw multipart/form-data content is forwarded directly to the upstream proxy instead of being processed locally. This allows the upstream service to handle file uploads. When false (default), upload endpoints with proxy annotation will process uploads locally and upload metadata will not be available to the proxy.
+          //
+          "ForwardUploadContent": false
+        },
+    
+        //
+        // CRUD endpoints for the PostgreSQL tables and views.
+        //
+        "CrudSource": {
+          //
+          // Enable or disable the creation of the endpoints for the PostgreSQL tables and views.
+          //
+          "Enabled": true,
+          //
+          // Filter schema names similar to this parameter or `null` to ignore this parameter.
+          //
+          "SchemaSimilarTo": null,
+          //
+          // Filter schema names NOT similar to this parameter or `null` to ignore this parameter.
+          //
+          "SchemaNotSimilarTo": null,
+          //
+          // List of schema names to be included or `null` to ignore this parameter.
+          //
+          "IncludeSchemas": null,
+          //
+          // List of schema names to be excluded or `null` to ignore this parameter.
+          //
+          "ExcludeSchemas": null,
+          //
+          // Filter names similar to this parameter or `null` to ignore this parameter.
+          //
+          "NameSimilarTo": null,
+          //
+          // Filter names NOT similar to this parameter or `null` to ignore this parameter.
+          //
+          "NameNotSimilarTo": null,
+          //
+          // List of names to be included or `null` to ignore this parameter.
+          //
+          "IncludeNames": null,
+          //
+          // List of names to be excluded or `null` to ignore this parameter.
+          //
+          "ExcludeNames": null,
+          //
+          // Configure how the comment annotations will behave. `Ignore` will create all endpoints and ignore comment annotations. `ParseAll` will create all endpoints and parse comment annotations to alter the endpoint. `OnlyWithHttpTag` (default) will only create endpoints that contain the `HTTP` tag in the comments and then parse comment annotations.
+          //
+          "CommentsMode": "OnlyWithHttpTag",
+          //
+          // URL pattern for all "returning" endpoints. Parameter is the original URL. Parameter placeholder {0} is default URL.
+          //
+          "ReturningUrlPattern": "{0}/returning",
+          //
+          // URL pattern for all "do nothing" endpoints. Parameter is the original URL. Parameter placeholder {0} is default URL.
+          //
+          "OnConflictDoNothingUrlPattern": "{0}/on-conflict-do-nothing",
+          //
+          // URL pattern for all "do nothing returning " endpoints. Parameter is the original URL. Parameter placeholder {0} is default URL.
+          //
+          "OnConflictDoNothingReturningUrlPattern": "{0}/on-conflict-do-nothing/returning",
+          //
+          // URL pattern for all "do update" endpoints. Parameter is the original URL. Parameter placeholder {0} is default URL.
+          //
+          "OnConflictDoUpdateUrlPattern": "{0}/on-conflict-do-update",
+          //
+          // URL pattern for all "do update returning" endpoints. Parameter is the original URL. Parameter placeholder {0} is default URL.
+          //
+          "OnConflictDoUpdateReturningUrlPattern": "{0}/on-conflict-do-update/returning",
+          //
+          // Set of flags to enable or disable the creation of the CRUD endpoints for the specific types of the PostgreSQL tables and views. 
+          //
+          // Possible values are: 
+          // Select, Update, UpdateReturning, Insert, InsertReturning, InsertOnConflictDoNothing, InsertOnConflictDoUpdate, InsertOnConflictDoNothingReturning, 
+          // InsertOnConflictDoUpdateReturning, Delete, DeleteReturning, All
+          //
+          "CrudTypes": [
+            "All"
+          ]
+        }
+      }
+    }
+    """;
+}

@@ -10,7 +10,7 @@
     <PublishAot>true</PublishAot>
     <PublishTrimmed>true</PublishTrimmed>
     <TrimMode>full</TrimMode>
-    <Version>3.8.0</Version>
+    <Version>3.9.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
@@ -22,7 +22,7 @@
     <PackageReference Include="Microsoft.Extensions.Caching.Hybrid" Version="10.3.0" />
     <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.3" />
     <PackageReference Include="SpreadCheetah" Version="1.26.0" />
-    <PackageReference Include="StackExchange.Redis" Version="2.10.14" />
+    <PackageReference Include="StackExchange.Redis" Version="2.11.3" />
   </ItemGroup>
   
   <ItemGroup>

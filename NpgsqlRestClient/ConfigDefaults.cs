@@ -62,7 +62,7 @@ public static class ConfigDefaults
                     ["ErrorCodes"] = CreateStringArray("08000", "08003", "08006", "08001", "08004", "55P03", "55006", "53300", "57P03", "40001")
                 },
                 ["MetadataQueryConnectionName"] = null,
-                ["MetadataQuerySchema"] = "public",
+                ["MetadataQuerySchema"] = null,
                 ["MultiHostConnectionTargets"] = new JsonObject
                 {
                     ["Default"] = "Any",
@@ -691,14 +691,14 @@ public static class ConfigDefaults
             },
 
             ["UploadOptions"] = GetUploadOptionsDefaults(),
+            ["TableFormatOptions"] = GetTableFormatOptionsDefaults(),
             ["AuthenticationOptions"] = GetAuthenticationOptionsDefaults(),
             ["HttpFileOptions"] = GetHttpFileOptionsDefaults(),
             ["OpenApiOptions"] = GetOpenApiOptionsDefaults(),
             ["ClientCodeGen"] = GetClientCodeGenDefaults(),
             ["HttpClientOptions"] = GetHttpClientOptionsDefaults(),
             ["ProxyOptions"] = GetProxyOptionsDefaults(),
-            ["CrudSource"] = GetCrudSourceDefaults(),
-            ["TableFormatOptions"] = GetTableFormatOptionsDefaults()
+            ["CrudSource"] = GetCrudSourceDefaults()
         };
     }
 
@@ -962,7 +962,13 @@ public static class ConfigDefaults
     {
         if (actual is null)
         {
-            return defaults?.DeepClone();
+            // For container types (objects/arrays), fall back to defaults
+            // For primitive defaults, null means "explicitly null" - preserve it
+            if (defaults is JsonObject || defaults is JsonArray)
+            {
+                return defaults.DeepClone();
+            }
+            return null;
         }
 
         if (defaults is null)
@@ -974,13 +980,13 @@ public static class ConfigDefaults
         {
             var result = new JsonObject();
 
-            // Add all keys from defaults
+            // Add all keys from defaults, using case-insensitive matching against actual
             foreach (var kvp in defaultObj)
             {
-                if (actualObj.ContainsKey(kvp.Key))
+                if (ContainsKeyIgnoreCase(actualObj, kvp.Key, out var matchedKey))
                 {
-                    // Recursively merge
-                    result[kvp.Key] = MergeWithDefaults(kvp.Value, actualObj[kvp.Key]);
+                    // Recursively merge (use default's key casing)
+                    result[kvp.Key] = MergeWithDefaults(kvp.Value, actualObj[matchedKey!]);
                 }
                 else
                 {
@@ -989,10 +995,10 @@ public static class ConfigDefaults
                 }
             }
 
-            // Add any keys from actual that aren't in defaults
+            // Add any keys from actual that aren't in defaults (case-insensitive)
             foreach (var kvp in actualObj)
             {
-                if (!defaultObj.ContainsKey(kvp.Key))
+                if (!ContainsKeyIgnoreCase(defaultObj, kvp.Key, out _))
                 {
                     result[kvp.Key] = kvp.Value?.DeepClone();
                 }
@@ -1001,13 +1007,83 @@ public static class ConfigDefaults
             return result;
         }
 
-        if (defaults is JsonArray && actual is JsonArray actualArray)
+        if (defaults is JsonArray defaultArr)
         {
-            // For arrays, actual completely replaces default
-            return actualArray.DeepClone();
+            if (actual is JsonArray actualArray)
+            {
+                // Merge array elements using corresponding default elements as schema
+                return MergeArrayElements(defaultArr, actualArray);
+            }
+            // Config system converts empty arrays to "" or null - keep the default (empty array)
+            return defaults.DeepClone();
         }
 
-        // For primitive values, actual wins
+        // For primitive values, coerce actual to match default's type
+        return CoerceToDefaultType(defaults, actual);
+    }
+
+    private static JsonArray MergeArrayElements(JsonArray defaultArr, JsonArray actualArr)
+    {
+        if (actualArr.Count == 0)
+        {
+            return new JsonArray();
+        }
+
+        var result = new JsonArray();
+        for (int i = 0; i < actualArr.Count; i++)
+        {
+            var actualItem = actualArr[i];
+
+            // Use the corresponding default element as schema, or the first if fewer defaults
+            JsonNode? defaultItem = i < defaultArr.Count ? defaultArr[i] : (defaultArr.Count > 0 ? defaultArr[0] : null);
+
+            if (actualItem is JsonObject actualItemObj && defaultItem is JsonObject)
+            {
+                // Merge object element using default schema (preserves key ordering)
+                result.Add(MergeWithDefaults(defaultItem, actualItemObj));
+            }
+            else if (defaultItem is not null)
+            {
+                // Primitive array element - coerce to match default's type
+                result.Add(CoerceToDefaultType(defaultItem, actualItem));
+            }
+            else
+            {
+                result.Add(actualItem?.DeepClone());
+            }
+        }
+        return result;
+    }
+
+    private static JsonNode? CoerceToDefaultType(JsonNode? defaults, JsonNode? actual)
+    {
+        if (actual is null)
+        {
+            return actual;
+        }
+
+        // If default is a string value but actual is numeric, convert actual to string
+        if (defaults is JsonValue defaultJv && actual is JsonValue actualJv)
+        {
+            if (defaultJv.TryGetValue<string>(out _))
+            {
+                // Default says string - ensure actual is also string
+                if (actualJv.TryGetValue<string>(out _))
+                {
+                    return actual.DeepClone();
+                }
+                // Actual is numeric but default is string - convert to string
+                if (actualJv.TryGetValue<decimal>(out var decVal))
+                {
+                    return JsonValue.Create(decVal.ToString());
+                }
+                if (actualJv.TryGetValue<long>(out var longVal))
+                {
+                    return JsonValue.Create(longVal.ToString());
+                }
+            }
+        }
+
         return actual.DeepClone();
     }
 

@@ -33,7 +33,7 @@ if (args.Length >= 1 && (string.Equals(args[0], "-h", StringComparison.CurrentCu
         ("npgsqlrest -v, --version", "Show version information."),
         ("npgsqlrest --version --json", "Show version information as machine-readable JSON."),
         ("npgsqlrest -h, --help", "Show command line help."),
-        ("npgsqlrest [files...] [--key=value] --config", "Dump current configuration as JSON to console and exit. Syntax highlighted in terminal, plain JSON when piped."),
+        ("npgsqlrest [files...] [--key=value] --config [filter]", "Dump current configuration as JSONC (with comments). Optional filter searches keys and descriptions, highlighting matches."),
         ("npgsqlrest [files...] --validate", "Validate configuration keys and test database connection, then exit."),
         ("npgsqlrest [files...] --validate --json", "Validate and output results as machine-readable JSON."),
         ("npgsqlrest --config-schema", "Output JSON Schema for appsettings.json. Syntax highlighted in terminal, plain JSON when piped."),
@@ -153,9 +153,30 @@ catch (ArgumentException ex)
     return;
 }
 
-if (args.Any(a => string.Equals(a, "--config", StringComparison.CurrentCultureIgnoreCase)))
+if (args.Any(a => string.Equals(a, "--config", StringComparison.CurrentCultureIgnoreCase) || a.StartsWith("--config=", StringComparison.CurrentCultureIgnoreCase)))
 {
-    new Out().JsonHighlight(config.Serialize());
+    var (valMode, valWarnings) = config.ValidateConfigKeys();
+    if (valWarnings.Count > 0)
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.Error.WriteLine($"Config validation failed: {valWarnings.Count} unknown key(s):");
+        foreach (var warning in valWarnings)
+        {
+            Console.Error.WriteLine($"  - {warning}");
+        }
+        Console.ResetColor();
+        Environment.ExitCode = 1;
+        return;
+    }
+    var outWriter = new Out();
+    if (config.ConfigFilter is not null)
+    {
+        outWriter.JsonHighlightWithMatch(config.FilterConfig(config.ConfigFilter), config.ConfigFilter);
+    }
+    else
+    {
+        outWriter.JsonHighlight(config.SerializeWithComments());
+    }
     return;
 }
 
