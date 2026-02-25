@@ -78,6 +78,62 @@ Resolved values participate in all HTTP Client Type placeholder locations — UR
 -- Body: {"token": "{_token}", "data": "{_payload}"}
 ```
 
+### New Feature: HTTP Client Type Retry Logic
+
+When using [HTTP Client Types](https://vb-consulting.github.io/npgsqlrest/http-client-types/), outgoing HTTP requests to external APIs can fail transiently — rate limiting (429), temporary server errors (503), network timeouts. Previously, a single failure was passed directly to the PostgreSQL function with no opportunity to retry.
+
+The new `@retry_delay` directive adds configurable automatic retries with delays, defined in the HTTP type comment alongside existing directives like `timeout`.
+
+#### Syntax
+
+```sql
+-- Retry on any failure (non-2xx status, timeout, or network error):
+comment on type my_api_type is '@retry_delay 1s, 2s, 5s
+GET https://api.example.com/data';
+
+-- Retry only on specific HTTP status codes:
+comment on type my_api_type is '@retry_delay 1s, 2s, 5s on 429, 503
+GET https://api.example.com/data';
+
+-- Combined with timeout:
+comment on type my_api_type is 'timeout 10s
+@retry_delay 1s, 2s, 5s on 429, 503
+GET https://api.example.com/data';
+```
+
+The delay list defines both the **number of retries** and the **delay before each retry**. `1s, 2s, 5s` means 3 retries with 1-second, 2-second, and 5-second delays respectively. Delay values use the same format as `timeout` — `100ms`, `1s`, `5m`, `30`, `00:00:01`, etc.
+
+#### Behavior
+
+- **Without `on` filter**: Retries on any non-success HTTP response, timeout, or network error.
+- **With `on` filter**: Retries only when the HTTP response status code matches one of the listed codes (e.g., `429, 503`). Timeouts and network errors always trigger retry regardless of the filter, since they have no status code.
+- **Retry exhaustion**: If all retries fail, the last error (status code, error message) is passed to the PostgreSQL function — the same as if retries were not configured.
+- **Unexpected exceptions**: Non-HTTP errors (e.g., invalid URL) are never retried.
+- **Parallel execution**: Each HTTP type in a function retries independently within its own parallel task. No changes to the parallel execution model.
+- **No external dependencies**: Built-in retry loop, no Polly or other libraries required. Matches the existing PostgreSQL command retry pattern.
+
+#### Example
+
+```sql
+create type rate_limited_api as (body json, status_code int, error_message text);
+comment on type rate_limited_api is '@retry_delay 1s, 2s, 5s on 429, 503
+GET https://api.example.com/data
+Authorization: Bearer {_token}';
+
+create function get_rate_limited_data(
+    _token text,
+    _req rate_limited_api
+)
+returns table (body json, status_code int, error_message text)
+language plpgsql as $$
+begin
+    return query select (_req).body, (_req).status_code, (_req).error_message;
+end;
+$$;
+```
+
+If the external API returns 429 (rate limited), the request is automatically retried after 1s, then 2s, then 5s. If it returns 400 (bad request), no retry occurs and the error is returned immediately.
+
 ### New Feature: Data Protection Encrypt/Decrypt Annotations
 
 Two new comment annotations — `encrypt` and `decrypt` — enable transparent application-level column encryption using ASP.NET [Data Protection](https://learn.microsoft.com/en-us/aspnet/core/security/data-protection/introduction). Parameter values are encrypted before being sent to PostgreSQL, and result column values are decrypted before being returned to the API client. The database stores ciphertext; the API consumer sees plaintext. No `pgcrypto` or client-side encryption required.

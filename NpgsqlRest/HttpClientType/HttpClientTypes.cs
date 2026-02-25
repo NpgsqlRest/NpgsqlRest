@@ -89,6 +89,8 @@ group by n.nspname, t.typname, des.description";
         var span = comment.AsSpan();
         int pos = 0;
         TimeSpan? timeout = null;
+        TimeSpan[]? retryDelays = null;
+        HashSet<int>? retryOnStatusCodes = null;
 
         // Parse directives before the request line
         while (pos < span.Length)
@@ -110,6 +112,17 @@ group by n.nspname, t.typname, des.description";
             if (TryParseTimeoutDirective(trimmedLine, typeName, out var parsedTimeout))
             {
                 timeout = parsedTimeout;
+                pos += lineEnd == -1 ? line.Length : lineEnd;
+                if (pos < span.Length && span[pos] == '\r') pos++;
+                if (pos < span.Length && span[pos] == '\n') pos++;
+                continue;
+            }
+
+            // Check for retry_delay directive
+            if (TryParseRetryDirective(trimmedLine, typeName, out var parsedDelays, out var parsedRetryCodes))
+            {
+                retryDelays = parsedDelays;
+                retryOnStatusCodes = parsedRetryCodes;
                 pos += lineEnd == -1 ? line.Length : lineEnd;
                 if (pos < span.Length && span[pos] == '\r') pos++;
                 if (pos < span.Length && span[pos] == '\n') pos++;
@@ -183,7 +196,9 @@ group by n.nspname, t.typname, des.description";
         {
             Method = new string(methodUpper),
             Url = new string(urlSpan),
-            Timeout = timeout
+            Timeout = timeout,
+            RetryDelays = retryDelays,
+            RetryOnStatusCodes = retryOnStatusCodes
         };
 
         // Move past first line
@@ -427,6 +442,110 @@ group by n.nspname, t.typname, des.description";
         }
 
         timeout = ParseTimeoutValue(afterKeyword, typeName);
+        return true;
+    }
+
+    private static bool TryParseRetryDirective(
+        ReadOnlySpan<char> line,
+        string? typeName,
+        out TimeSpan[]? delays,
+        out HashSet<int>? statusCodes)
+    {
+        delays = null;
+        statusCodes = null;
+        var trimmed = TrimSpan(line);
+
+        // Remove leading # if present
+        if (!trimmed.IsEmpty && trimmed[0] == '#')
+        {
+            trimmed = TrimSpan(trimmed[1..]);
+        }
+
+        // Remove leading @ if present
+        if (!trimmed.IsEmpty && trimmed[0] == '@')
+        {
+            trimmed = TrimSpan(trimmed[1..]);
+        }
+
+        // Check for "retry_delay" keyword (case-insensitive)
+        if (!trimmed.StartsWith("retry_delay", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var afterKeyword = trimmed[11..]; // Skip "retry_delay"
+
+        // Handle separator: space, '=', or ':'
+        afterKeyword = TrimSpan(afterKeyword);
+        if (afterKeyword.IsEmpty)
+        {
+            return false;
+        }
+
+        if (afterKeyword[0] == '=' || afterKeyword[0] == ':')
+        {
+            afterKeyword = TrimSpan(afterKeyword[1..]);
+        }
+
+        if (afterKeyword.IsEmpty)
+        {
+            return false;
+        }
+
+        // Split by " on " to separate delays from status codes
+        var afterStr = new string(afterKeyword);
+        var onIndex = afterStr.IndexOf(" on ", StringComparison.OrdinalIgnoreCase);
+
+        string delaysPart;
+        string? codesPart = null;
+
+        if (onIndex >= 0)
+        {
+            delaysPart = afterStr[..onIndex];
+            codesPart = afterStr[(onIndex + 4)..]; // Skip " on "
+        }
+        else
+        {
+            delaysPart = afterStr;
+        }
+
+        // Parse delays: comma-separated time values
+        var delayParts = delaysPart.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (delayParts.Length == 0)
+        {
+            Logger?.LogError("Type '{TypeName}': retry_delay has no delay values", typeName);
+            return false;
+        }
+
+        var parsedDelays = new TimeSpan[delayParts.Length];
+        for (int i = 0; i < delayParts.Length; i++)
+        {
+            parsedDelays[i] = ParseTimeoutValue(delayParts[i].AsSpan(), typeName);
+        }
+        delays = parsedDelays;
+
+        // Parse status codes if present
+        if (codesPart is not null)
+        {
+            var codeParts = codesPart.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var codes = new HashSet<int>();
+            foreach (var code in codeParts)
+            {
+                if (int.TryParse(code, out var statusCode))
+                {
+                    codes.Add(statusCode);
+                }
+                else
+                {
+                    Logger?.LogError("Type '{TypeName}': Failed to parse retry status code '{Code}'", typeName, code);
+                }
+            }
+            if (codes.Count > 0)
+            {
+                statusCodes = codes;
+            }
+        }
+
         return true;
     }
 }

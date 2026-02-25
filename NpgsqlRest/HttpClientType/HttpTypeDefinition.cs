@@ -8,5 +8,7 @@ public class HttpTypeDefinition
     public string? Body { get; set; }
     public string? ContentType { get; set; }
     public TimeSpan? Timeout { get; set; }
+    public TimeSpan[]? RetryDelays { get; set; }
+    public HashSet<int>? RetryOnStatusCodes { get; set; }
     public bool NeedsParsing { get; set; }
 }

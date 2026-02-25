@@ -22,39 +22,87 @@ public class HttpClientTypeHandler(HttpTypeDefinition definition, Dictionary<str
 
     public async Task InvokeAsync(CancellationToken cancellationToken = default)
     {
-        var startTimestamp = Stopwatch.GetTimestamp();
-        Logger?.LogDebug("HTTP client starting {Method} request to '{Url}'", definition.Method, definition.Url);
+        int maxRetries = definition.RetryDelays?.Length ?? 0;
 
-        try
+        for (int attempt = 0; attempt <= maxRetries; attempt++)
         {
-            using var request = CreateRequest();
-            using var cts = CreateTimeoutCancellationTokenSource(cancellationToken);
+            var startTimestamp = Stopwatch.GetTimestamp();
+            if (attempt == 0)
+            {
+                Logger?.LogDebug("HTTP client starting {Method} request to '{Url}'", definition.Method, definition.Url);
+            }
+            else
+            {
+                Logger?.LogDebug("HTTP client retrying {Method} request to '{Url}' (attempt {Attempt}/{MaxRetries})",
+                    definition.Method, definition.Url, attempt + 1, maxRetries + 1);
+            }
 
-            using var response = await SharedClient.SendAsync(request, cts?.Token ?? cancellationToken);
+            try
+            {
+                using var request = CreateRequest();
+                using var cts = CreateTimeoutCancellationTokenSource(cancellationToken);
 
-            await ProcessResponseAsync(response, startTimestamp);
+                using var response = await SharedClient.SendAsync(request, cts?.Token ?? cancellationToken);
+
+                await ProcessResponseAsync(response, startTimestamp);
+
+                if (!IsSuccess && attempt < maxRetries && ShouldRetry(StatusCode))
+                {
+                    Logger?.LogWarning("HTTP client request to '{Url}' returned {StatusCode}, retrying after {Delay}ms",
+                        definition.Url, StatusCode, definition.RetryDelays![attempt].TotalMilliseconds);
+                    await Task.Delay(definition.RetryDelays![attempt], cancellationToken);
+                    continue;
+                }
+                return;
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                StatusCode = 408;
+                IsSuccess = false;
+                ErrorMessage = $"Request timed out after {definition.Timeout?.TotalSeconds ?? 30} seconds";
+                if (attempt < maxRetries)
+                {
+                    Logger?.LogWarning("HTTP client request to '{Url}' timed out, retrying after {Delay}ms",
+                        definition.Url, definition.RetryDelays![attempt].TotalMilliseconds);
+                    await Task.Delay(definition.RetryDelays![attempt], cancellationToken);
+                    continue;
+                }
+                Logger?.LogWarning("HTTP client request to '{Url}' timed out after {Timeout}s",
+                    definition.Url, definition.Timeout?.TotalSeconds ?? 30);
+            }
+            catch (HttpRequestException ex)
+            {
+                StatusCode = (int?)ex.StatusCode ?? 0;
+                IsSuccess = false;
+                ErrorMessage = ex.Message;
+                if (attempt < maxRetries)
+                {
+                    Logger?.LogWarning("HTTP client request to '{Url}' failed ({Message}), retrying after {Delay}ms",
+                        definition.Url, ex.Message, definition.RetryDelays![attempt].TotalMilliseconds);
+                    await Task.Delay(definition.RetryDelays![attempt], cancellationToken);
+                    continue;
+                }
+                Logger?.LogError(ex, "HTTP client request to '{Url}' failed with status {StatusCode}",
+                    definition.Url, StatusCode);
+            }
+            catch (Exception ex)
+            {
+                StatusCode = 0;
+                IsSuccess = false;
+                ErrorMessage = ex.Message;
+                Logger?.LogError(ex, "HTTP client request to '{Url}' failed with unexpected error", definition.Url);
+                return; // Unexpected errors are not retryable
+            }
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+    }
+
+    private bool ShouldRetry(int statusCode)
+    {
+        if (definition.RetryOnStatusCodes is null)
         {
-            StatusCode = 408; // Request Timeout
-            IsSuccess = false;
-            ErrorMessage = $"Request timed out after {definition.Timeout?.TotalSeconds ?? 30} seconds";
-            Logger?.LogWarning("HTTP client request to '{Url}' timed out after {Timeout}s", definition.Url, definition.Timeout?.TotalSeconds ?? 30);
+            return true; // No filter = retry any failure
         }
-        catch (HttpRequestException ex)
-        {
-            StatusCode = (int?)ex.StatusCode ?? 0;
-            IsSuccess = false;
-            ErrorMessage = ex.Message;
-            Logger?.LogError(ex, "HTTP client request to '{Url}' failed with status {StatusCode}", definition.Url, StatusCode);
-        }
-        catch (Exception ex)
-        {
-            StatusCode = 0;
-            IsSuccess = false;
-            ErrorMessage = ex.Message;
-            Logger?.LogError(ex, "HTTP client request to '{Url}' failed with unexpected error", definition.Url);
-        }
+        return definition.RetryOnStatusCodes.Contains(statusCode);
     }
 
     private HttpRequestMessage CreateRequest()
