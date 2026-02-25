@@ -35,7 +35,11 @@ public class RoutineEndpoint(
     bool userParameters = false,
     string? sseEventsPath = null,
     SseEventsScope sseEventsScope = SseEventsScope.All,
-    HashSet<string>? sseEventsRoles = null)
+    HashSet<string>? sseEventsRoles = null,
+    bool encryptAllParameters = false,
+    HashSet<string>? encryptParameters = null,
+    bool decryptAllColumns = false,
+    HashSet<string>? decryptColumns = null)
 {
     private string? _bodyParameterName = bodyParameterName;
 
@@ -94,10 +98,33 @@ public class RoutineEndpoint(
     public string? ErrorCodePolicy { get; set; } = null;
     public TimeSpan? CommandTimeout { get; set; } = null;
     /// <summary>
+    /// When true, encrypt ALL text parameters using the default data protector.
+    /// </summary>
+    public bool EncryptAllParameters { get; set; } = encryptAllParameters;
+    /// <summary>
+    /// Set of parameter names (actual or converted) to encrypt using the default data protector.
+    /// </summary>
+    public HashSet<string>? EncryptParameters { get; set; } = encryptParameters;
+    /// <summary>
+    /// When true, decrypt ALL text result columns using the default data protector.
+    /// </summary>
+    public bool DecryptAllColumns { get; set; } = decryptAllColumns;
+    /// <summary>
+    /// Set of column names to decrypt using the default data protector.
+    /// </summary>
+    public HashSet<string>? DecryptColumns { get; set; } = decryptColumns;
+    /// <summary>
     /// When true, this endpoint is a cache invalidation endpoint.
     /// Instead of executing the routine, it removes the cached entry for the given parameters.
     /// </summary>
     public bool InvalidateCache { get; set; } = false;
+
+    /// <summary>
+    /// Dictionary of parameter names to SQL expressions that resolve their values server-side.
+    /// Key = actual parameter name (e.g., "_token"), Value = SQL expression template (e.g., "select api_token from tokens where user_id = {_user_id}").
+    /// Resolved parameters cannot be overridden by client input.
+    /// </summary>
+    public Dictionary<string, string>? ResolvedParameterExpressions { get; set; }
 
     /// <summary>
     /// List of parameter names that are extracted from the URL path.

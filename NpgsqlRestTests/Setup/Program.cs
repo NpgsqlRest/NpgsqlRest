@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,6 +18,11 @@ namespace NpgsqlRestTests.Setup;
 
 public class Program
 {
+    /// <summary>
+    /// Data protector for encrypt/decrypt tests
+    /// </summary>
+    public static IDataProtector? DataProtector { get; private set; }
+
     /// <summary>
     /// Output path for TsClient generated files (used by tests)
     /// </summary>
@@ -104,6 +110,11 @@ public class Program
         
         builder
             .Services
+            .AddDataProtection()
+            .SetApplicationName("npgsqlrest-tests");
+
+        builder
+            .Services
             .AddAuthentication()
             //.AddBearerToken();
             .AddCookie();
@@ -122,6 +133,10 @@ public class Program
 
         var app = builder.Build();
         app.UseRateLimiter();
+
+        var dataProtectionProvider = app.Services.GetRequiredService<IDataProtectionProvider>();
+        var dataProtector = dataProtectionProvider.CreateProtector("npgsqlrest-tests");
+        DataProtector = dataProtector;
 
         var authOptions = new NpgsqlRestAuthenticationOptions
         {
@@ -264,7 +279,8 @@ public class Program
                 BasicAuth = new BasicAuthOptions()
                 {
                     SslRequirement = SslRequirement.Ignore
-                }
+                },
+                DefaultDataProtector = dataProtector
             },
 
             UploadOptions = uploadOptions,

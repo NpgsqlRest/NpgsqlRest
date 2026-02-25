@@ -4,6 +4,243 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [3.10.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.10.0) (2026-02-25)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.9.0...3.10.0)
+
+### New Feature: Resolved Parameter Expressions
+
+When using [HTTP Client Types](https://vb-consulting.github.io/npgsqlrest/http-client-types/), sensitive values like API tokens or secrets are often needed in outgoing HTTP requests (e.g., in an `Authorization` header). Previously, these values had to be supplied as regular HTTP parameters — exposing them to the client and requiring an insecure round-trip: database → client → server → external API.
+
+**Resolved parameter expressions** solve this by allowing function parameters to be resolved server-side via SQL expressions defined in comment annotations. The resolved values are used in HTTP Client Type placeholder substitution (headers, URL, body) and are also passed to the PostgreSQL function — but they never appear in or originate from the client HTTP request.
+
+#### How It Works
+
+If a comment annotation uses the existing `key = value` syntax and the key matches an actual function parameter name, the value is treated as a SQL expression to execute at runtime:
+
+```sql
+create type my_api_response as (body json, status_code int);
+comment on type my_api_response is 'GET https://api.example.com/data
+Authorization: Bearer {_token}';
+
+create function get_secure_data(
+    _user_id int,
+    _req my_api_response,
+    _token text default null
+)
+returns table (body json, status_code int)
+language plpgsql as $$
+begin
+    return query select (_req).body, (_req).status_code;
+end;
+$$;
+comment on function get_secure_data(int, my_api_response, text) is '
+_token = select api_token from user_tokens where user_id = {_user_id}
+';
+```
+
+The client calls `GET /api/get-secure-data/?user_id=42`. The server:
+
+1. Fills `_user_id` from the query string (value `42`).
+2. Executes the resolved expression: `select api_token from user_tokens where user_id = $1` (parameterized, with `$1 = 42`).
+3. Sets `_token` to the result (e.g., `"secret-abc"`).
+4. Substitutes `{_token}` in the outgoing HTTP request header: `Authorization: Bearer secret-abc`.
+5. Makes the HTTP call and returns the response.
+
+The token never leaves the server. The client never sees it.
+
+#### Behavior
+
+- **Server-side only**: Resolved parameters cannot be overridden by client input. Even if the client sends `&token=hacked`, the DB-resolved value is used.
+- **NULL handling**: If the SQL expression returns no rows or NULL, the parameter is set to `DBNull.Value` (empty string in placeholder substitution).
+- **Name-based placeholders, parameterized execution**: Placeholders like `{_user_id}` reference other function parameters by name — the value is always looked up by name, regardless of position. Internally, placeholders are converted to positional `$N` parameters for safe execution (preventing SQL injection).
+- **Sequential execution**: When multiple parameters are resolved, expressions execute one-by-one on the same connection, in annotation order.
+- **Works with user_params**: Resolved expressions can reference parameters auto-filled from JWT claims via `user_params`, enabling fully zero-parameter authenticated calls.
+
+#### Multiple Resolved Parameters
+
+Multiple parameters can each have their own resolved expression:
+
+```sql
+comment on function my_func(text, my_type, text, text) is '
+_token = select api_token from tokens where user_name = {_name}
+_api_key = select ''static-key-'' || api_token from tokens where user_name = {_name}
+';
+```
+
+#### Resolved Parameters in URL, Headers, and Body
+
+Resolved values participate in all HTTP Client Type placeholder locations — URL path segments, headers, and request body templates:
+
+```sql
+-- URL: GET https://api.example.com/resource/{_secret_path}
+-- Header: Authorization: Bearer {_token}
+-- Body: {"token": "{_token}", "data": "{_payload}"}
+```
+
+### New Feature: Data Protection Encrypt/Decrypt Annotations
+
+Two new comment annotations — `encrypt` and `decrypt` — enable transparent application-level column encryption using ASP.NET [Data Protection](https://learn.microsoft.com/en-us/aspnet/core/security/data-protection/introduction). Parameter values are encrypted before being sent to PostgreSQL, and result column values are decrypted before being returned to the API client. The database stores ciphertext; the API consumer sees plaintext. No `pgcrypto` or client-side encryption required.
+
+This is useful for storing PII (SSN, medical records, credit card numbers) or other sensitive data that must be encrypted at rest but is only ever looked up by an unencrypted key (e.g., `user_id`, `patient_id`).
+
+> **Prerequisite**: The `DataProtection` section must be enabled in `appsettings.json` (it is by default). The `DefaultDataProtector` is automatically created from Data Protection configuration and passed to the NpgsqlRest authentication options.
+
+#### Encrypt Parameters
+
+Mark specific parameters to encrypt before they are sent to PostgreSQL:
+
+```sql
+create function store_patient_ssn(_patient_id int, _ssn text)
+returns void
+language plpgsql as $$
+begin
+    insert into patients (id, ssn) values (_patient_id, _ssn)
+    on conflict (id) do update set ssn = excluded.ssn;
+end;
+$$;
+comment on function store_patient_ssn(int, text) is '
+HTTP POST
+encrypt _ssn
+';
+```
+
+The client calls `POST /api/store-patient-ssn/` with `{"patientId": 1, "ssn": "123-45-6789"}`. The server encrypts `_ssn` using Data Protection before executing the SQL — the database stores ciphertext like `CfDJ8N...`, never the plaintext SSN.
+
+Use `encrypt` without arguments to encrypt **all** text parameters:
+
+```sql
+comment on function store_all_secrets(text, text) is '
+HTTP POST
+encrypt
+';
+```
+
+#### Decrypt Result Columns
+
+Mark specific result columns to decrypt before returning to the client:
+
+```sql
+create function get_patient(_patient_id int)
+returns table(id int, ssn text, name text)
+language plpgsql as $$
+begin
+    return query select p.id, p.ssn, p.name from patients p where p.id = _patient_id;
+end;
+$$;
+comment on function get_patient(int) is '
+decrypt ssn
+';
+```
+
+The client calls `GET /api/get-patient/?patientId=1`. The `ssn` column is decrypted from ciphertext back to `"123-45-6789"` before being included in the JSON response. The `id` and `name` columns are returned as-is.
+
+Use `decrypt` without arguments to decrypt **all** result columns:
+
+```sql
+comment on function get_all_secrets(text) is '
+decrypt
+';
+```
+
+Decrypt also works on scalar (single-value) return types:
+
+```sql
+create function get_secret(_id int) returns text ...
+comment on function get_secret(int) is 'decrypt';
+```
+
+#### Full Roundtrip Example
+
+```sql
+-- Store with encryption
+create function store_secret(_key text, _value text) returns void ...
+comment on function store_secret(text, text) is '
+HTTP POST
+encrypt _value
+';
+
+-- Retrieve with decryption
+create function get_secret(_key text) returns table(key text, value text) ...
+comment on function get_secret(text) is '
+decrypt value
+';
+```
+
+```
+POST /api/store-secret/  {"key": "api-key", "value": "sk-abc123"}
+GET  /api/get-secret/?key=api-key  →  {"key": "api-key", "value": "sk-abc123"}
+```
+
+The value is stored encrypted in PostgreSQL and decrypted transparently on read.
+
+#### Annotation Aliases
+
+| Annotation | Aliases |
+|---|---|
+| `encrypt` | `encrypted`, `protect`, `protected` |
+| `decrypt` | `decrypted`, `unprotect`, `unprotected` |
+
+#### Behavior Notes
+
+- **NULL values**: NULL parameters are not encrypted (passed as `DBNull`). NULL columns are not decrypted (returned as JSON `null`).
+- **Non-text types**: Only `string` parameter values are encrypted. Integer, boolean, and other types are unaffected even when `encrypt` is used without arguments.
+- **Decryption failures**: If a column value cannot be decrypted (e.g., it was not encrypted, or keys were rotated/lost), the raw value is returned as-is — no error is thrown.
+- **Key rotation**: ASP.NET Data Protection maintains a key ring. Old keys still decrypt old ciphertext. Keys rotate based on `DefaultKeyLifetimeDays` (default: 90 days). Persistent key storage (`FileSystem` or `Database`) is strongly recommended.
+- **Encrypted columns are opaque to PostgreSQL**: The database cannot filter, join, sort, or index on encrypted values. Use encryption only for columns that are written and read back, never queried by content.
+
+#### Key Management
+
+Encrypt/decrypt relies on the existing `DataProtection` configuration in `appsettings.json`. The encryption keys must be persisted — if keys are lost, encrypted data is **permanently unrecoverable**.
+
+**Key storage options** (`DataProtection:Storage`):
+
+| Storage | Description | Recommendation |
+|---|---|---|
+| `"Default"` | OS default location. On Linux, keys are in-memory only and lost on restart. | Windows only |
+| `"FileSystem"` | Keys persisted to a directory (`FileSystemPath`). In Docker, use a volume mount. | Good for single-instance |
+| `"Database"` | Keys stored in PostgreSQL via `GetAllElementsCommand` / `StoreElementCommand`. | Best for multi-instance |
+
+**Key rotation** (`DataProtection:DefaultKeyLifetimeDays`, default: `90`):
+
+Data Protection automatically rotates keys. New `Protect()` calls use the newest key. Old keys remain in the key ring and can still `Unprotect()` previously encrypted data. This means values encrypted months ago continue to decrypt correctly — the key ring grows over time, it doesn't replace old keys.
+
+**Key encryption at rest** (`DataProtection:KeyEncryption`):
+
+The keys themselves can be encrypted at rest using `"Certificate"` (X.509 `.pfx` file) or `"Dpapi"` (Windows only). Default is `"None"`.
+
+**Application name isolation** (`DataProtection:CustomApplicationName`):
+
+The application name acts as an encryption isolation boundary. Different application names produce incompatible ciphertext — they cannot decrypt each other's data. When set to `null` (default), the current `ApplicationName` is used.
+
+Example minimal configuration for production use:
+
+```json
+{
+  "DataProtection": {
+    "Enabled": true,
+    "Storage": "FileSystem",
+    "FileSystemPath": "/var/lib/npgsqlrest/data-protection-keys",
+    "DefaultKeyLifetimeDays": 90
+  }
+}
+```
+
+Or using database storage:
+
+```json
+{
+  "DataProtection": {
+    "Enabled": true,
+    "Storage": "Database",
+    "GetAllElementsCommand": "select get_data_protection_keys()",
+    "StoreElementCommand": "call store_data_protection_keys($1,$2)"
+  }
+}
+```
+
+---
+
 ## Version [3.9.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.9.0) (2026-02-23)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.8.0...3.9.0)

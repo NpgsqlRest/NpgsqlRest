@@ -268,4 +268,16 @@ public static partial class Log
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has set NESTED JSON FOR COMPOSITE TYPES by the comment annotation.")]
     public static partial void CommentSetNestedJson(this ILogger logger, string description);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has set ENCRYPT ALL PARAMETERS by the comment annotation.")]
+    public static partial void CommentEncryptAll(this ILogger logger, string description);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has set ENCRYPT PARAMETERS {parameters} by the comment annotation.")]
+    public static partial void CommentEncryptParams(this ILogger logger, string description, IEnumerable<string> parameters);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has set DECRYPT ALL COLUMNS by the comment annotation.")]
+    public static partial void CommentDecryptAll(this ILogger logger, string description);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has set DECRYPT COLUMNS {columns} by the comment annotation.")]
+    public static partial void CommentDecryptColumns(this ILogger logger, string description, IEnumerable<string> columns);
 }

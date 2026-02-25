@@ -64,11 +64,18 @@ internal static partial class DefaultCommentParser
                 }
 
                 // key = value
-                // custom_parameter_1 = custom parameter 1 value
-                // custom_parameter_2 = custom parameter 2 value
+                // If key matches a real parameter name → resolved parameter (SQL expression)
+                // Otherwise → custom parameter
                 else if (haveTag is true && SplitBySeparatorChar(line, Consts.Equal, out var customParamName, out var customParamValue))
                 {
-                    HandleCustomParameter(routineEndpoint, customParamName, customParamValue, description);
+                    if (routine.OriginalParamsHash.Contains(customParamName))
+                    {
+                        HandleResolvedParameter(routineEndpoint, customParamName, customParamValue, description);
+                    }
+                    else
+                    {
+                        HandleCustomParameter(routineEndpoint, customParamName, customParamValue, description);
+                    }
                 }
 
                 // key: value
@@ -369,6 +376,20 @@ internal static partial class DefaultCommentParser
                     HandleProxy(routine, routineEndpoint, wordsLower, words, len, description);
                 }
 
+                // encrypt
+                // encrypt [ param1, param2, ... ]
+                else if (haveTag is true && StrEqualsToArray(wordsLower[0], EncryptKey))
+                {
+                    HandleEncrypt(routine, routineEndpoint, wordsLower, len, description);
+                }
+
+                // decrypt
+                // decrypt [ col1, col2, ... ]
+                else if (haveTag is true && StrEqualsToArray(wordsLower[0], DecryptKey))
+                {
+                    HandleDecrypt(routineEndpoint, wordsLower, len, description);
+                }
+
                 // nested
                 // nested_json
                 // nested_composite
@@ -548,7 +569,23 @@ internal static partial class DefaultCommentParser
         {
             endpoint.ErrorCodePolicy = value;
         }
-        
+
+        else if (StrEqualsToArray(name, EncryptKey))
+        {
+            if (bool.TryParse(value, out var parsedEncrypt))
+            {
+                endpoint.EncryptAllParameters = parsedEncrypt;
+            }
+        }
+
+        else if (StrEqualsToArray(name, DecryptKey))
+        {
+            if (bool.TryParse(value, out var parsedDecrypt))
+            {
+                endpoint.DecryptAllColumns = parsedDecrypt;
+            }
+        }
+
         else if (StrEqualsToArray(name, TimeoutKey))
         {
             var parsedInterval = Parser.ParsePostgresInterval(value);

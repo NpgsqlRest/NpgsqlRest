@@ -351,6 +351,22 @@ internal static partial class DefaultCommentParser
 
         annotations.Add((JsonNode)new JsonObject
         {
+            ["name"] = "encrypt",
+            ["aliases"] = ToJsonArray(EncryptKey),
+            ["syntax"] = "encrypt [param1, param2, ...]",
+            ["description"] = "Encrypt parameter values using the default data protector before sending to PostgreSQL. Without arguments, encrypts all text parameters."
+        });
+
+        annotations.Add((JsonNode)new JsonObject
+        {
+            ["name"] = "decrypt",
+            ["aliases"] = ToJsonArray(DecryptKey),
+            ["syntax"] = "decrypt [column1, column2, ...]",
+            ["description"] = "Decrypt result column values using the default data protector before returning to the client. Without arguments, decrypts all text columns."
+        });
+
+        annotations.Add((JsonNode)new JsonObject
+        {
             ["name"] = "custom_parameter",
             ["aliases"] = new JsonArray(),
             ["syntax"] = "key = value",

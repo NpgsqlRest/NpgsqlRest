@@ -6,6 +6,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.Extensions.Primitives;
 using Npgsql;
@@ -270,6 +271,50 @@ public class NpgsqlRestEndpoint(
                 for (int i = 0; i < routine.Parameters.Length; i++)
                 {
                     var parameter = routine.Parameters[i].NpgsqlRestParameterMemberwiseClone();
+
+                    // Resolved parameter: skip HTTP filling, set to DBNull.Value placeholder.
+                    // The actual value will be resolved via SQL expression after the parameter loop.
+                    if (endpoint.ResolvedParameterExpressions is not null &&
+                        (endpoint.ResolvedParameterExpressions.ContainsKey(parameter.ActualName) ||
+                         endpoint.ResolvedParameterExpressions.ContainsKey(parameter.ConvertedName)))
+                    {
+                        parameter.Value = DBNull.Value;
+                        if (Options.HttpClientOptions.Enabled)
+                        {
+                            if (parameter.TypeDescriptor.CustomType is not null)
+                            {
+                                if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
+                                {
+                                    customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
+                                }
+                            }
+                        }
+                        command.Parameters.Add(parameter);
+                        hasNulls = true;
+                        if (formatter.IsFormattable is false)
+                        {
+                            if (formatter.RefContext)
+                            {
+                                commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex, context));
+                                if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
+                                {
+                                    return;
+                                }
+                            }
+                            else
+                            {
+                                commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex));
+                            }
+                        }
+                        paramIndex++;
+                        if (shouldLog && Options.LogCommandParameters)
+                        {
+                            cmdLog!.Append("-- $").Append(paramIndex).Append(' ')
+                                .Append(parameter.TypeDescriptor.OriginalType)
+                                .Append(" = (resolved)").AppendLine();
+                        }
+                        continue;
+                    }
 
                     if (parameter.HashOf is not null)
                     {
@@ -883,6 +928,50 @@ public class NpgsqlRestEndpoint(
                 {
                     var parameter = routine.Parameters[i].NpgsqlRestParameterMemberwiseClone();
 
+                    // Resolved parameter: skip HTTP filling, set to DBNull.Value placeholder.
+                    // The actual value will be resolved via SQL expression after the parameter loop.
+                    if (endpoint.ResolvedParameterExpressions is not null &&
+                        (endpoint.ResolvedParameterExpressions.ContainsKey(parameter.ActualName) ||
+                         endpoint.ResolvedParameterExpressions.ContainsKey(parameter.ConvertedName)))
+                    {
+                        parameter.Value = DBNull.Value;
+                        if (Options.HttpClientOptions.Enabled)
+                        {
+                            if (parameter.TypeDescriptor.CustomType is not null)
+                            {
+                                if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
+                                {
+                                    customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
+                                }
+                            }
+                        }
+                        command.Parameters.Add(parameter);
+                        hasNulls = true;
+                        if (formatter.IsFormattable is false)
+                        {
+                            if (formatter.RefContext)
+                            {
+                                commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex, context));
+                                if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
+                                {
+                                    return;
+                                }
+                            }
+                            else
+                            {
+                                commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex));
+                            }
+                        }
+                        paramIndex++;
+                        if (shouldLog && Options.LogCommandParameters)
+                        {
+                            cmdLog!.Append("-- $").Append(paramIndex).Append(' ')
+                                .Append(parameter.TypeDescriptor.OriginalType)
+                                .Append(" = (resolved)").AppendLine();
+                        }
+                        continue;
+                    }
+
                     if (parameter.HashOf is not null)
                     {
                         var hashValueBodyDict = bodyDict.GetValueOrDefault(parameter.HashOf.ConvertedName)?.ToString();
@@ -1299,6 +1388,24 @@ public class NpgsqlRestEndpoint(
                 }
             }
 
+            // Encrypt parameters marked with encrypt annotation
+            if (Options.AuthenticationOptions.DefaultDataProtector is not null &&
+                (endpoint.EncryptAllParameters || endpoint.EncryptParameters is not null))
+            {
+                var protector = Options.AuthenticationOptions.DefaultDataProtector;
+                for (int p = 0; p < command.Parameters.Count; p++)
+                {
+                    var param = (NpgsqlRestParameter)command.Parameters[p];
+                    if (param.Value is string strValue &&
+                        (endpoint.EncryptAllParameters ||
+                         endpoint.EncryptParameters!.Contains(param.ActualName) ||
+                         endpoint.EncryptParameters!.Contains(param.ConvertedName)))
+                    {
+                        param.Value = protector.Protect(strValue);
+                    }
+                }
+            }
+
             // authorization check
             if (endpoint.Login is false)
             {
@@ -1381,6 +1488,34 @@ public class NpgsqlRestEndpoint(
                 context.Response.StatusCode = StatusCodes.Status404NotFound;
                 await context.Response.CompleteAsync();
                 return;
+            }
+
+            // Resolve parameter expressions: execute SQL expressions to fill resolved parameter values
+            if (endpoint.ResolvedParameterExpressions is not null && endpoint.ResolvedParameterExpressions.Count > 0)
+            {
+                await OpenConnectionAsync(connection, context, endpoint, cancellationToken);
+                foreach (var (resolvedParamName, sqlExpression) in endpoint.ResolvedParameterExpressions)
+                {
+                    var (parameterizedSql, sqlParams) = Formatter.ParameterizeSqlExpression(sqlExpression, command.Parameters);
+                    await using var resolveCmd = new NpgsqlCommand(parameterizedSql, connection);
+                    for (int p = 0; p < sqlParams.Count; p++)
+                    {
+                        resolveCmd.Parameters.Add(new NpgsqlParameter { Value = sqlParams[p].Value ?? DBNull.Value });
+                    }
+                    var resolvedValue = await resolveCmd.ExecuteScalarAsync(cancellationToken);
+
+                    // Update the parameter value in the main command
+                    for (int p = 0; p < command.Parameters.Count; p++)
+                    {
+                        var param = (NpgsqlRestParameter)command.Parameters[p];
+                        if (string.Equals(param.ActualName, resolvedParamName, StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(param.ConvertedName, resolvedParamName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            param.Value = resolvedValue ?? DBNull.Value;
+                            break;
+                        }
+                    }
+                }
             }
 
             Dictionary<string, string>? customParameters = endpoint.CustomParameters;
@@ -1797,6 +1932,21 @@ public class NpgsqlRestEndpoint(
                         }
                     }
 
+                    // Decrypt scalar result if marked with decrypt annotation
+                    if (valueResult is string scalarStr &&
+                        Options.AuthenticationOptions.DefaultDataProtector is not null &&
+                        (endpoint.DecryptAllColumns || endpoint.DecryptColumns is not null))
+                    {
+                        try
+                        {
+                            valueResult = Options.AuthenticationOptions.DefaultDataProtector.Unprotect(scalarStr);
+                        }
+                        catch
+                        {
+                            // If decryption fails, use raw value as-is
+                        }
+                    }
+
                     if (context.Response.ContentType is null)
                     {
                         if (descriptor.IsBinary)
@@ -2032,6 +2182,24 @@ public class NpgsqlRestEndpoint(
                                 object value = reader.GetValue(i);
                                 // AllResultTypesAreUnknown = true always returns string, except for null
                                 var raw = (value == DBNull.Value ? "" : (string)value).AsSpan();
+
+                                // Decrypt column value if marked with decrypt annotation
+                                if (value != DBNull.Value &&
+                                    Options.AuthenticationOptions.DefaultDataProtector is not null &&
+                                    (endpoint.DecryptAllColumns ||
+                                     (endpoint.DecryptColumns is not null &&
+                                      i < routine.ColumnNames.Length &&
+                                      endpoint.DecryptColumns.Contains(routine.ColumnNames[i]))))
+                                {
+                                    try
+                                    {
+                                        raw = Options.AuthenticationOptions.DefaultDataProtector.Unprotect((string)value).AsSpan();
+                                    }
+                                    catch
+                                    {
+                                        // If decryption fails, use raw value as-is
+                                    }
+                                }
 
                                 // if raw
                                 if (endpoint.Raw)
