@@ -204,11 +204,11 @@ The npm package includes native executables for:
 ## Links
 
 - [Documentation](https://npgsqlrest.github.io/)
-- [Getting Started Guide](https://npgsqlrest.github.io/getting-started/)
-- [Configuration Reference](https://npgsqlrest.github.io/config-reference/)
-- [Comment Annotations](https://npgsqlrest.github.io/comment-annotations/)
+- [Getting Started Guide](https://npgsqlrest.github.io/guide/quick-start.html)
+- [Configuration Reference](https://npgsqlrest.github.io/config/)
+- [Comment Annotations](https://npgsqlrest.github.io/annotations/)
 - [GitHub Repository](https://github.com/NpgsqlRest/NpgsqlRest)
-- [Changelog](https://github.com/NpgsqlRest/NpgsqlRest/blob/master/changelog.md)
+- [Changelog](https://npgsqlrest.github.io/changelog/)
 - [Docker Hub](https://hub.docker.com/r/vbilopav/npgsqlrest)
 
 ## License

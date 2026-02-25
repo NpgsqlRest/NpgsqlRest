@@ -5,7 +5,7 @@ const path = require("path");
 const os = require("os");
 const https = require("https");
 
-const downloadFrom = "https://github.com/NpgsqlRest/NpgsqlRest/releases/download/v3.9.0/";
+const downloadFrom = "https://github.com/NpgsqlRest/NpgsqlRest/releases/download/v3.10.0/";
 
 // Download binary next to this script, not to ../.bin/
 const binDir = path.join(__dirname, "bin");
