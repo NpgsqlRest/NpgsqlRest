@@ -4,6 +4,141 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [3.11.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.11.0) (2026-03-10)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.10.0...3.11.0)
+
+### New Feature: `proxy_out` Annotation (Post-Execution Proxy)
+
+A new proxy mode that reverses the existing proxy flow: **execute the PostgreSQL function first**, then forward the function's result body to an upstream service. The upstream response is returned to the client.
+
+This enables a common pattern where business logic in PostgreSQL prepares a payload, and an external service performs processing that PostgreSQL cannot do — PDF rendering, image processing, ML inference, email sending, etc.
+
+#### Syntax
+
+```
+@proxy_out [ METHOD ] [ host_url ]
+```
+
+Also aliased as `forward_proxy` (with or without `@` prefix).
+
+#### How It Works
+
+```
+Client Request → NpgsqlRest
+  → Execute PostgreSQL function
+  → Forward function result as request body to upstream service
+  → Forward original query string to upstream URL
+  → Return upstream response to client
+```
+
+Unlike the existing `proxy` annotation (which forwards the *incoming* request to upstream), `proxy_out` forwards the *outgoing* function result. The original request query string is forwarded to the upstream URL as-is. The client-facing HTTP method and the upstream HTTP method are independent — the client can send a GET while the upstream receives a POST.
+
+#### Basic Usage
+
+```sql
+create function generate_report(report_id int)
+returns json
+language plpgsql as $$
+begin
+    return json_build_object(
+        'title', 'Monthly Report',
+        'data', (select json_agg(row_to_json(t)) from sales t where month = report_id)
+    );
+end;
+$$;
+
+comment on function generate_report(int) is 'HTTP GET
+@proxy_out POST https://render-service.internal/render';
+```
+
+The client calls `GET /api/generate-report/?reportId=3`. The server:
+
+1. Executes `generate_report(3)` in PostgreSQL.
+2. Takes the returned JSON and POSTs it to `https://render-service.internal/render/api/generate-report/?reportId=3` (original query string forwarded).
+3. Returns the upstream response (e.g., a rendered PDF) directly to the client with the upstream's content-type and status code.
+
+#### Query String Forwarding
+
+The original client query string is forwarded to the upstream service as-is. This allows the upstream to receive the same parameters that were used to invoke the function:
+
+```sql
+create function generate_report(p_format text, p_id int)
+returns json
+language plpgsql as $$
+begin
+    return json_build_object('id', p_id, 'data', 'report');
+end;
+$$;
+
+comment on function generate_report(text, int) is 'HTTP GET
+@proxy_out POST';
+```
+
+Calling `GET /api/generate-report/?pFormat=pdf&pId=123` executes the function, then POSTs the result to the upstream with `?pFormat=pdf&pId=123` appended to the URL.
+
+#### HTTP Method Override
+
+Specify which HTTP method to use for the upstream request:
+
+```sql
+comment on function my_func() is 'HTTP GET
+@proxy_out PUT';
+```
+
+The client sends GET, but the upstream receives PUT with the function's result as the body.
+
+#### Custom Host
+
+Override the default `ProxyOptions.Host` per-endpoint:
+
+```sql
+comment on function my_func() is 'HTTP GET
+@proxy_out POST https://my-other-service.internal';
+```
+
+#### Error Handling
+
+- If the **function fails** (database error, exception), the error is returned directly to the client — the proxy call is never made.
+- If the **upstream fails** (5xx, timeout, connection error), the upstream's error status and body are forwarded to the client (502 for connection errors, 504 for timeouts).
+
+#### Configuration
+
+Uses the same `ProxyOptions` configuration as the existing `proxy` annotation. `ProxyOptions.Enabled` must be `true`:
+
+```json
+{
+  "NpgsqlRest": {
+    "ProxyOptions": {
+      "Enabled": true,
+      "Host": "https://api.example.com",
+      "DefaultTimeout": "30 seconds"
+    }
+  }
+}
+```
+
+#### Performance
+
+- **Zero overhead for non-proxy_out endpoints.** The implementation adds only branch-not-taken boolean/null checks on the normal execution path (~4 nanoseconds).
+- **Efficient byte forwarding.** Function output is captured as raw bytes and forwarded directly via `ByteArrayContent` — no intermediate string allocation or double UTF-8 encoding.
+
+### TsClient: `proxy_out` Endpoint Support
+
+The TypeScript client generator (`NpgsqlRest.TsClient`) now recognizes `proxy_out` endpoints and generates functions that return the raw `Response` object instead of a typed return value. Since the actual response comes from the upstream proxy service (not from the PostgreSQL function's return type), the generated function returns `Promise<Response>`, allowing the caller to handle the response appropriately (`.json()`, `.blob()`, `.text()`, etc.):
+
+```typescript
+// Generated for a proxy_out endpoint
+export async function generateReport() : Promise<Response> {
+    const response = await fetch(baseUrl + "/api/generate-report", {
+        method: "GET",
+    });
+    return response;
+}
+```
+
+---
+
 ## Version [3.10.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.10.0) (2026-02-25)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.9.0...3.10.0)

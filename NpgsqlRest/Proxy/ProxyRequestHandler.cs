@@ -300,6 +300,87 @@ public static class ProxyRequestHandler
     }
 
     /// <summary>
+    /// Forward the function result body to an upstream proxy target (proxy_out mode).
+    /// </summary>
+    public static async Task<ProxyResponse> InvokeOutAsync(
+        HttpContext context,
+        RoutineEndpoint endpoint,
+        byte[] functionBodyBytes,
+        CancellationToken cancellationToken = default)
+    {
+        var startTimestamp = Stopwatch.GetTimestamp();
+        var proxyOptions = Options.ProxyOptions;
+
+        var host = endpoint.ProxyOutHost ?? proxyOptions.Host;
+        if (string.IsNullOrEmpty(host))
+        {
+            return new ProxyResponse
+            {
+                StatusCode = 500,
+                IsSuccess = false,
+                ErrorMessage = "Proxy host is not configured. Set ProxyOptions.Host or specify host in proxy_out annotation."
+            };
+        }
+
+        host = host.TrimEnd('/');
+        var path = context.Request.Path.Value ?? "";
+        var queryString = context.Request.QueryString.Value ?? "";
+        var targetUrl = $"{host}{path}{queryString}";
+
+        var method = endpoint.ProxyOutMethod?.ToString().ToUpperInvariant() ?? context.Request.Method;
+
+        Logger?.LogDebug("ProxyOut starting {Method} request to '{Url}'", method, targetUrl);
+
+        try
+        {
+            using var request = new HttpRequestMessage(new HttpMethod(method), targetUrl);
+
+            if (HasRequestBody(method) && functionBodyBytes.Length > 0)
+            {
+                request.Content = new ByteArrayContent(functionBodyBytes);
+                request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json") { CharSet = "utf-8" };
+            }
+
+            using var cts = CreateTimeoutCancellationTokenSource(proxyOptions.DefaultTimeout, cancellationToken);
+
+            using var response = await SharedClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts?.Token ?? cancellationToken);
+
+            return await ProcessResponseAsync(response, proxyOptions, startTimestamp, targetUrl);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            var timeoutSeconds = proxyOptions.DefaultTimeout.TotalSeconds;
+            Logger?.LogWarning("ProxyOut request to '{Url}' timed out after {Timeout}s", targetUrl, timeoutSeconds);
+            return new ProxyResponse
+            {
+                StatusCode = 504,
+                IsSuccess = false,
+                ErrorMessage = $"ProxyOut request timed out after {timeoutSeconds} seconds"
+            };
+        }
+        catch (HttpRequestException ex)
+        {
+            Logger?.LogError(ex, "ProxyOut request to '{Url}' failed with status {StatusCode}", targetUrl, ex.StatusCode);
+            return new ProxyResponse
+            {
+                StatusCode = (int?)ex.StatusCode ?? 502,
+                IsSuccess = false,
+                ErrorMessage = ex.Message
+            };
+        }
+        catch (Exception ex)
+        {
+            Logger?.LogError(ex, "ProxyOut request to '{Url}' failed with unexpected error", targetUrl);
+            return new ProxyResponse
+            {
+                StatusCode = 502,
+                IsSuccess = false,
+                ErrorMessage = ex.Message
+            };
+        }
+    }
+
+    /// <summary>
     /// Write the proxy response directly to the HTTP context response.
     /// Used when the routine has no proxy response parameters.
     /// </summary>

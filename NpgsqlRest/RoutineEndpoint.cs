@@ -224,6 +224,24 @@ public class RoutineEndpoint(
     internal HashSet<string>? ProxyResponseParameterNames { get; set; } = null;
 
     /// <summary>
+    /// When true, this endpoint executes the PostgreSQL function first, then forwards
+    /// the function's result body as the request body to an upstream proxy service.
+    /// The upstream response is returned to the client.
+    /// </summary>
+    public bool IsProxyOut { get; set; } = false;
+
+    /// <summary>
+    /// The proxy host URL for proxy_out endpoints (e.g., "https://render-service.internal").
+    /// If null, uses ProxyOptions.Host from global configuration.
+    /// </summary>
+    public string? ProxyOutHost { get; set; } = null;
+
+    /// <summary>
+    /// HTTP method for the proxy_out request (e.g., POST, PUT).
+    /// </summary>
+    public Method? ProxyOutMethod { get; set; } = null;
+
+    /// <summary>
     /// Dictionary of parameter validations. Key is the parameter name, value is the list of validation rules to apply.
     /// Configured via comment annotations using "validate _param using rule_name" syntax.
     /// </summary>

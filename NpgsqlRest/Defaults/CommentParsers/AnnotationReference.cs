@@ -319,6 +319,14 @@ internal static partial class DefaultCommentParser
 
         annotations.Add((JsonNode)new JsonObject
         {
+            ["name"] = "proxy_out",
+            ["aliases"] = ToJsonArray(ProxyOutKey),
+            ["syntax"] = "proxy_out [GET|POST|PUT|DELETE|PATCH] [host_url]",
+            ["description"] = "Execute function first, then forward result body to upstream proxy service."
+        });
+
+        annotations.Add((JsonNode)new JsonObject
+        {
             ["name"] = "nested_json",
             ["aliases"] = ToJsonArray(NestedJsonKey),
             ["syntax"] = "nested_json",

@@ -51,7 +51,19 @@ public class NpgsqlRestEndpoint(
         StringBuilder? rowBuilder = null;
         StringBuilder? compositeFieldBuffer = null;
 
-        var writer = PipeWriter.Create(context.Response.Body);
+        // proxy_out: capture function output into a buffer instead of writing to the real response
+        MemoryStream? proxyOutBuffer = null;
+        Stream? proxyOutOriginalBody = null;
+        if (endpoint.IsProxyOut && Options.ProxyOptions.Enabled)
+        {
+            proxyOutBuffer = new MemoryStream();
+            proxyOutOriginalBody = context.Response.Body;
+            context.Response.Body = proxyOutBuffer;
+        }
+
+        var writer = proxyOutBuffer is not null
+            ? PipeWriter.Create(context.Response.Body, new StreamPipeWriterOptions(leaveOpen: true))
+            : PipeWriter.Create(context.Response.Body);
         try
         {
             if (endpoint.ConnectionName is not null)
@@ -2506,6 +2518,38 @@ public class NpgsqlRestEndpoint(
         finally
         {
             await writer.CompleteAsync();
+
+            // proxy_out: capture buffered function output and forward to upstream proxy
+            if (proxyOutBuffer is not null && proxyOutOriginalBody is not null)
+            {
+                // Only forward to proxy if the function executed successfully (no error status)
+                if (context.Response.StatusCode >= 200 && context.Response.StatusCode < 400)
+                {
+                    // Extract bytes directly — avoid string allocation and double UTF-8 conversion
+                    var functionBodyBytes = proxyOutBuffer.Length > 0
+                        ? proxyOutBuffer.ToArray()
+                        : [];
+
+                    // Restore original response body and reset response state
+                    context.Response.Body = proxyOutOriginalBody;
+                    context.Response.Headers.Clear();
+                    context.Response.StatusCode = 200;
+
+                    var proxyResponse = await Proxy.ProxyRequestHandler.InvokeOutAsync(
+                        context, endpoint, functionBodyBytes, cancellationToken);
+                    await Proxy.ProxyRequestHandler.WriteResponseAsync(
+                        context, proxyResponse, Options.ProxyOptions, cancellationToken);
+                }
+                else
+                {
+                    // Function errored — restore original body and copy error content through
+                    proxyOutBuffer.Position = 0;
+                    context.Response.Body = proxyOutOriginalBody;
+                    await proxyOutBuffer.CopyToAsync(proxyOutOriginalBody, cancellationToken);
+                }
+                proxyOutBuffer.Dispose();
+            }
+
             await context.Response.CompleteAsync();
             if (transaction is not null)
             {

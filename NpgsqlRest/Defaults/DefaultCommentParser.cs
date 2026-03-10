@@ -376,6 +376,13 @@ internal static partial class DefaultCommentParser
                     HandleProxy(routine, routineEndpoint, wordsLower, words, len, description);
                 }
 
+                // proxy_out [ GET | POST | PUT | DELETE | PATCH ] [ host_url ] [ ?query={param} ]
+                // forward_proxy [ ... ]
+                else if (haveTag is true && StrEqualsToArray(wordsLower[0], ProxyOutKey))
+                {
+                    HandleProxyOut(routine, routineEndpoint, wordsLower, words, len, description);
+                }
+
                 // encrypt
                 // encrypt [ param1, param2, ... ]
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], EncryptKey))
