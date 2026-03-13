@@ -487,9 +487,9 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 return string.Concat("return ", responseExp, ";");
             }
 
-            // proxy_out: the actual response comes from the upstream service, not from the function's return type.
+            // proxy / proxy_out: the actual response comes from the upstream service, not from the function's return type.
             // Return the raw Response object so the caller can handle .json(), .blob(), .text() etc.
-            if (endpoint.IsProxyOut && !urlOnly)
+            if ((endpoint.IsProxyOut || endpoint.IsProxy) && !urlOnly)
             {
                 responseName = "Response";
                 returnExp = "return response;";
@@ -1322,7 +1322,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                         method: "{3}",{4}{5}
                     }}{6});{7}
                 """,
-                    isVoid && !includeStatusCode ? "" : "const response = ",//0
+                    isVoid && !includeStatusCode && !endpoint.IsProxy && !endpoint.IsProxyOut ? "" : "const response = ",//0
                     url,//1
                     includeParseRequestParam ? "parseRequest(" : "",//2
                     endpoint.Method,//3

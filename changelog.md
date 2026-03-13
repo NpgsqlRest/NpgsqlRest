@@ -4,6 +4,30 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [3.11.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.11.1) (2026-03-13)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.11.0...3.11.1)
+
+### TsClient: `proxy` Passthrough Endpoint Support
+
+The TypeScript client generator (`NpgsqlRest.TsClient`) now recognizes `proxy` passthrough endpoints and generates functions that return the raw `Response` object, matching the existing `proxy_out` behavior. Previously, passthrough proxy endpoints (which typically use `returns void`) would generate `Promise<void>`, which was incorrect since the actual response comes from the upstream service.
+
+Now, both `proxy` and `proxy_out` endpoints generate `Promise<Response>`:
+
+```typescript
+// Generated for a proxy passthrough endpoint
+export async function tsclientTestProxyPassthrough() : Promise<Response> {
+    const response = await fetch(baseUrl + "/api/tsclient-test/proxy-passthrough", {
+        method: "GET",
+    });
+    return response;
+}
+```
+
+This allows callers to handle the upstream response appropriately (`.json()`, `.blob()`, `.text()`, etc.), just like `proxy_out` endpoints.
+
+---
+
 ## Version [3.11.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.11.0) (2026-03-10)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.10.0...3.11.0)
