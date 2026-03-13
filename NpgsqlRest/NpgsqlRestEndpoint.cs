@@ -1436,7 +1436,10 @@ public class NpgsqlRestEndpoint(
                     bool ok = false;
                     foreach (var claim in context.User?.Claims ?? [])
                     {
-                        if (string.Equals(claim.Type, Options.AuthenticationOptions.DefaultRoleClaimType, StringComparison.Ordinal))
+                        if (
+                            string.Equals(claim.Type, Options.AuthenticationOptions.DefaultUserIdClaimType, StringComparison.Ordinal) ||
+                            string.Equals(claim.Type, Options.AuthenticationOptions.DefaultNameClaimType, StringComparison.Ordinal) ||
+                            string.Equals(claim.Type, Options.AuthenticationOptions.DefaultRoleClaimType, StringComparison.Ordinal))
                         {
                             if (endpoint.AuthorizeRoles.Contains(claim.Value) is true)
                             {

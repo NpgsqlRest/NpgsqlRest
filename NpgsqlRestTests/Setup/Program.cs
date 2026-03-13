@@ -159,6 +159,7 @@ public class Program
         app.MapGet("/login", () => Results.SignIn(new ClaimsPrincipal(new ClaimsIdentity(
             claims: new[]
             {
+                new Claim(authOptions.DefaultUserIdClaimType, "user123"),
                 new Claim(authOptions.DefaultNameClaimType, "user"),
                 new Claim(authOptions.DefaultRoleClaimType, "role1"),
                 new Claim(authOptions.DefaultRoleClaimType, "role2"),

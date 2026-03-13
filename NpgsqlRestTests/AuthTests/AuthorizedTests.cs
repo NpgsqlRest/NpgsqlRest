@@ -19,6 +19,21 @@ public static partial class Database
 
         create function authorized_roles4() returns text language sql as 'select ''roles4''';
         comment on function authorized_roles4() is 'authorize test_role1 test_role2 test_role3';
+
+        create function authorized_by_name() returns text language sql as 'select ''by_name''';
+        comment on function authorized_by_name() is 'authorize user';
+
+        create function authorized_by_name_wrong() returns text language sql as 'select ''by_name_wrong''';
+        comment on function authorized_by_name_wrong() is 'authorize wrong_user';
+
+        create function authorized_by_userid() returns text language sql as 'select ''by_userid''';
+        comment on function authorized_by_userid() is 'authorize user123';
+
+        create function authorized_by_userid_wrong() returns text language sql as 'select ''by_userid_wrong''';
+        comment on function authorized_by_userid_wrong() is 'authorize wrong_id';
+
+        create function authorized_mixed() returns text language sql as 'select ''mixed''';
+        comment on function authorized_mixed() is 'authorize wrong_role, user123';
         """);
     }
 }
@@ -120,5 +135,72 @@ public class AuthorizedTests(TestFixture test)
         var content2 = await response2.Content.ReadAsStringAsync();
         content2.Should().Contain("\"status\":403");
         content2.Should().Contain("\"title\":\"Forbidden\"");
+    }
+
+    [Fact]
+    public async Task Test_authorized_by_name()
+    {
+        using var client = test.Application.CreateClient();
+        client.Timeout = TimeSpan.FromHours(1);
+
+        using var response1 = await client.PostAsync("/api/authorized-by-name/", null);
+        response1.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        using var login = await client.GetAsync("/login");
+
+        using var response2 = await client.PostAsync("/api/authorized-by-name/", null);
+        response2.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Test_authorized_by_name_wrong()
+    {
+        using var client = test.Application.CreateClient();
+        client.Timeout = TimeSpan.FromHours(1);
+
+        using var login = await client.GetAsync("/login");
+
+        using var response = await client.PostAsync("/api/authorized-by-name-wrong/", null);
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task Test_authorized_by_userid()
+    {
+        using var client = test.Application.CreateClient();
+        client.Timeout = TimeSpan.FromHours(1);
+
+        using var response1 = await client.PostAsync("/api/authorized-by-userid/", null);
+        response1.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        using var login = await client.GetAsync("/login");
+
+        using var response2 = await client.PostAsync("/api/authorized-by-userid/", null);
+        response2.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Test_authorized_by_userid_wrong()
+    {
+        using var client = test.Application.CreateClient();
+        client.Timeout = TimeSpan.FromHours(1);
+
+        using var login = await client.GetAsync("/login");
+
+        using var response = await client.PostAsync("/api/authorized-by-userid-wrong/", null);
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task Test_authorized_mixed()
+    {
+        using var client = test.Application.CreateClient();
+        client.Timeout = TimeSpan.FromHours(1);
+
+        using var login = await client.GetAsync("/login");
+
+        // wrong_role doesn't match, but user123 matches user_id claim
+        using var response = await client.PostAsync("/api/authorized-mixed/", null);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 }

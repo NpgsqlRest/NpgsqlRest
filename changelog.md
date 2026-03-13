@@ -26,6 +26,28 @@ export async function tsclientTestProxyPassthrough() : Promise<Response> {
 
 This allows callers to handle the upstream response appropriately (`.json()`, `.blob()`, `.text()`, etc.), just like `proxy_out` endpoints.
 
+### `authorize` Annotation Now Matches User ID and User Name Claims
+
+The `authorize` comment annotation previously only matched against role claims (`DefaultRoleClaimType`). It now also matches against user ID (`DefaultUserIdClaimType`) and user name (`DefaultNameClaimType`) claims, aligning with the behavior that `sse_scope authorize` already had.
+
+This means you can now restrict endpoint access to specific users, not just roles:
+
+```sql
+-- Authorize by role (existing behavior)
+comment on function get_reports() is 'authorize admin';
+
+-- Authorize by user name (new)
+comment on function get_my_profile() is 'authorize john';
+
+-- Authorize by user ID (new)
+comment on function get_account() is 'authorize user123';
+
+-- Mix of roles and user identifiers (new)
+comment on function get_data() is 'authorize admin, user123, jane';
+```
+
+The SSE `matching` scope was also aligned to check all three claim types, making authorization behavior consistent across all features.
+
 ---
 
 ## Version [3.11.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.11.0) (2026-03-10)
