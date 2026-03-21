@@ -4,6 +4,111 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+## Version [3.12.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.12.0) (2026-03-21)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.11.1...3.12.0)
+
+### New Plugin: `NpgsqlRest.SqlFileSource` — REST Endpoints from SQL Files
+
+A new endpoint source plugin that scans a configured folder for `.sql` files and generates REST API endpoints from them. Each SQL file defines one statement, analyzed via the PostgreSQL wire protocol (`SchemaOnly`) at startup. This complements the existing function-based and CRUD sources for cases where a full PostgreSQL function would be overkill.
+
+**Features:**
+
+- **Single-statement SQL files** — SELECT, INSERT, UPDATE, DELETE, and `DO` blocks
+- **Automatic HTTP verb detection** — SELECT → GET, INSERT → PUT, UPDATE → POST, DELETE → DELETE, DO → POST. Priority for mixed: DELETE > POST > PUT. Explicit annotation override via `HTTP GET/POST/PUT/DELETE`
+- **Wire protocol introspection** — parameter types and return columns inferred from `SchemaOnly` Describe, no query execution at startup
+- **Full annotation support** — all existing NpgsqlRest comment annotations (`authorize`, `tag`, `sse`, `request_param_type`, etc.) work automatically from SQL comments (`--` and `/* */`)
+- **Custom/composite type support** — expanded composite fields (`SELECT (data).val1, (data).val2`) render as proper JSON. Arrays of composite types render as JSON arrays of objects
+- **Glob file patterns** — e.g., `sql/**/*.sql` for recursive scanning
+- **Configurable comment scope** — parse all comments (`All`) or only header comments before the first statement (`Header`)
+- **Error handling modes** — `Skip` (log + continue, production-safe) or `Throw` (halt startup, dev/CI)
+
+**Configuration** (`appsettings.json`):
+
+```json
+"NpgsqlRest": {
+  "SqlFileSource": {
+    "Enabled": true,
+    "FilePattern": "sql/**/*.sql",
+    "CommentScope": "All",
+    "ErrorMode": "Skip"
+  }
+}
+```
+
+**Example SQL file** (`sql/get_report.sql`):
+
+```sql
+-- HTTP GET
+-- @param $1 from_date
+-- @param $2 to_date
+-- @authorize admin
+SELECT id, title, created_at
+FROM reports
+WHERE created_at BETWEEN $1 AND $2;
+```
+
+### New Core Annotation: `@param` / `@parameter` — Rename and Retype Parameters
+
+A new comment annotation that renames and optionally retypes individual parameters. Works on **all** endpoint types — functions, procedures, CRUD, and SQL file endpoints.
+
+Positional parameters (`$1`, `$2`) already work as HTTP parameter names (`?$1=value`), but this annotation provides better API ergonomics:
+
+```sql
+-- Simplest form: rename only
+comment on function my_func(int, text) is '
+param $1 user_id
+param $2 search_query
+';
+-- Result: ?user_id=123&search_query=hello instead of ?$1=123&$2=hello
+
+-- With type override
+comment on function my_func(int) is '
+param $1 user_id integer
+';
+
+-- "is" style (consistent with existing @param X is hash of Y)
+comment on function my_func(int) is '
+param $1 is user_id
+param $1 is user_id integer
+';
+
+-- Rename named parameters too
+comment on function my_func(_old_name int) is '
+param _old_name better_name
+';
+```
+
+All forms coexist with existing `@param X is hash of Y` and `@param X is upload metadata` handlers without ambiguity.
+
+### Glob Pattern Enhancement: `**` Recursive Matching
+
+`Parser.IsPatternMatch` now supports `**` for recursive directory matching:
+
+- `*` — matches any characters (backward-compatible: matches `/` when no `**` in pattern)
+- `**` — matches any characters including `/` (crosses directory boundaries)
+- When `**` is present in the pattern, `*` stops matching `/` (standard glob semantics)
+
+Examples:
+- `sql/**/*.sql` — matches `sql/file.sql`, `sql/dir/file.sql`, `sql/a/b/c/file.sql`
+- `sql/*.sql` — with no `**`, matches everything including `sql/dir/file.sql` (backward-compatible)
+
+This enhancement benefits all existing `IsPatternMatch` consumers (static files, upload MIME types) and enables the SQL file source's recursive file scanning.
+
+### Composite Type Cache: Public API for Plugins
+
+- `CompositeTypeCache.ResolveTypeDescriptor(TypeDescriptor)` — new public method that plugins can call to resolve composite type metadata. Sets `CompositeFieldNames`/`CompositeFieldDescriptors` on the descriptor (previously only accessible from the core library).
+- `Routine.CompositeColumnInfo` and `Routine.ArrayCompositeColumnInfo` — changed from `internal` to `public` to allow plugins to set composite column metadata for proper nested JSON rendering.
+- `CompositeTypeCache.GetType` — improved lookup with schema-prefix fallback. `GetDataTypeName` returns `public.my_type` but `regtype::text` cache keys omit the `public` schema. The lookup now strips the schema prefix on miss, resolving composite types from all sources consistently.
+
+### Internal Changes
+
+- `NpgsqlRestParameter.ConvertedName` and `ActualName` — changed from `private set` to `internal set` to support the `@param` rename annotation
+- `ParameterHandler.HandleParameter` — extended with `words` parameter for original-case access, added `HandleParameterRename` for all rename/retype forms
+- Three new log messages: `CommentParamNotExistsCantRename`, `CommentParamRenamed`, `CommentParamRetyped`
+
+---
+
 ## Version [3.11.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.11.1) (2026-03-13)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.11.0...3.11.1)

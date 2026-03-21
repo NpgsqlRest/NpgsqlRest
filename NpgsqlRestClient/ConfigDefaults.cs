@@ -698,7 +698,8 @@ public static class ConfigDefaults
             ["ClientCodeGen"] = GetClientCodeGenDefaults(),
             ["HttpClientOptions"] = GetHttpClientOptionsDefaults(),
             ["ProxyOptions"] = GetProxyOptionsDefaults(),
-            ["CrudSource"] = GetCrudSourceDefaults()
+            ["CrudSource"] = GetCrudSourceDefaults(),
+            ["SqlFileSource"] = GetSqlFileSourceDefaults()
         };
     }
 
@@ -931,6 +932,17 @@ public static class ConfigDefaults
             ["OnConflictDoUpdateUrlPattern"] = "{0}/on-conflict-do-update",
             ["OnConflictDoUpdateReturningUrlPattern"] = "{0}/on-conflict-do-update/returning",
             ["CrudTypes"] = CreateStringArray("All")
+        };
+    }
+
+    private static JsonObject GetSqlFileSourceDefaults()
+    {
+        return new JsonObject
+        {
+            ["Enabled"] = false,
+            ["FilePattern"] = "",
+            ["CommentScope"] = "All",
+            ["ErrorMode"] = "Skip"
         };
     }
 

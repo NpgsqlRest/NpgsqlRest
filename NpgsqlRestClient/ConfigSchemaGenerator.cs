@@ -449,6 +449,11 @@ public static partial class ConfigSchemaGenerator
         ["NpgsqlRest:CrudSource:OnConflictDoUpdateUrlPattern"] = "URL pattern for all \"do update\" endpoints. Parameter is the original URL. Parameter placeholder {0} is default URL.",
         ["NpgsqlRest:CrudSource:OnConflictDoUpdateReturningUrlPattern"] = "URL pattern for all \"do update returning\" endpoints. Parameter is the original URL. Parameter placeholder {0} is default URL.",
         ["NpgsqlRest:CrudSource:CrudTypes"] = "Set of flags to enable or disable the creation of the CRUD endpoints for the specific types of the PostgreSQL tables and views.\n\nPossible values are:\nSelect, Update, UpdateReturning, Insert, InsertReturning, InsertOnConflictDoNothing, InsertOnConflictDoUpdate, InsertOnConflictDoNothingReturning,\nInsertOnConflictDoUpdateReturning, Delete, DeleteReturning, All",
+        ["NpgsqlRest:SqlFileSource"] = "SQL file source for generating REST API endpoints from .sql files.",
+        ["NpgsqlRest:SqlFileSource:Enabled"] = "Enable or disable SQL file source endpoints. Default is false.",
+        ["NpgsqlRest:SqlFileSource:FilePattern"] = "Glob pattern for SQL files, e.g. \"sql/**/*.sql\", \"queries/*.sql\".\nSupports * (any chars), ** (recursive, any including /), ? (single char).\nEmpty string disables the feature.",
+        ["NpgsqlRest:SqlFileSource:CommentScope"] = "Which comments in the SQL file to parse as annotations.\nPossible values: All (default — all comments), Header (only comments before the first statement).",
+        ["NpgsqlRest:SqlFileSource:ErrorMode"] = "Behavior when a SQL file fails to parse or describe.\nPossible values: Skip (default — log error, continue), Throw (halt startup).",
     };
 
     /// <summary>

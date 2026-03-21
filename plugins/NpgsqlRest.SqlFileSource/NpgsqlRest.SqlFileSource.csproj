@@ -1,0 +1,55 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+    <PropertyGroup>
+        <OutputType>Library</OutputType>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <NoDefaultLaunchSettingsFile>true</NoDefaultLaunchSettingsFile>
+        <NoWarn>$(NoWarn);1591</NoWarn>
+        <IsPackable>true</IsPackable>
+        <Title>NpgsqlRest.SqlFileSource</Title>
+        <Authors>Vedran Bilopavlović</Authors>
+        <Company>VB-Consulting</Company>
+        <Description>SQL File Source for NpgsqlRest - generates REST API endpoints from .sql files</Description>
+        <PackageTags>api;api-rest;restful-api;http;postgres;dotnet;sql;database;rest;server;postgresql;npgsqlrest;pgsql;pg;automatic</PackageTags>
+        <PackageProjectUrl>https://github.com/NpgsqlRest/NpgsqlRest/NpgsqlRest.SqlFileSource</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/NpgsqlRest/NpgsqlRest</RepositoryUrl>
+        <PackageReleaseNotes>https://github.com/NpgsqlRest/NpgsqlRest/blob/master/changelog.md</PackageReleaseNotes>
+        <PackageId>NpgsqlRest.SqlFileSource</PackageId>
+        <PackageLicenseFile>LICENSE</PackageLicenseFile>
+        <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+        <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+        <IncludeSymbols>true</IncludeSymbols>
+        <PublishRepositoryUrl>true</PublishRepositoryUrl>
+        <EmbedUntrackedSources>true</EmbedUntrackedSources>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <DocumentationFile>bin\$(Configuration)\$(AssemblyName).xml</DocumentationFile>
+        <Version>1.0.0</Version>
+        <AssemblyVersion>1.0.0</AssemblyVersion>
+        <FileVersion>1.0.0</FileVersion>
+        <PackageVersion>1.0.0</PackageVersion>
+        <LangVersion>14</LangVersion>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(GITHUB_ACTIONS)' == 'true'">
+        <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.201" PrivateAssets="All" />
+        <PackageReferenceFiles Include="bin\$(Configuration)\$(AssemblyName).xml" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="..\..\LICENSE">
+            <Pack>True</Pack>
+            <PackagePath></PackagePath>
+        </None>
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\..\NpgsqlRest\NpgsqlRest.csproj" />
+    </ItemGroup>
+</Project>

@@ -285,9 +285,11 @@ internal static partial class DefaultCommentParser
 
                 // param param_name1 is hash of param_name2
                 // param param_name is upload metadata
+                // param [original] [new_name] [type]
+                // param [original] is [new_name] [type is [type]]
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], ParameterKey))
                 {
-                    HandleParameter(routine, routineEndpoint, wordsLower, len, description);
+                    HandleParameter(routine, routineEndpoint, wordsLower, words, len, description);
                 }
                 
                 // sse path [ path ] [ on info | notice | warning ]

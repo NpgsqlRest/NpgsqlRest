@@ -8,8 +8,8 @@ namespace NpgsqlRest;
 public class NpgsqlRestParameter : NpgsqlParameter
 {
     public int Ordinal { get; private set; }
-    public string ConvertedName { get; private set; }
-    public string ActualName { get; private set; }
+    public string ConvertedName { get; internal set; }
+    public string ActualName { get; internal set; }
     public TypeDescriptor TypeDescriptor { get; init; }
 
     public ParamType ParamType { get; set; } = default!;

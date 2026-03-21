@@ -64,8 +64,13 @@ public static partial class Parser
         int nl = name.Length, pl = pattern.Length;
         if (nl == 0 || pl == 0) return false;
 
-        // Fast path: extension matching (*.ext)
-        if (pl > 1 && pattern[0] == Consts.Multiply && pattern[1] == Consts.Dot)
+        // Check if pattern contains ** (double-star / recursive glob)
+        // When ** is present, we're in "path glob mode": * doesn't cross /
+        // When ** is absent, * matches everything including / (backward compatible)
+        bool hasDoubleStar = pattern.Contains("**");
+
+        // Fast path: extension matching (*.ext) — only when no double-star
+        if (!hasDoubleStar && pl > 1 && pattern[0] == Consts.Multiply && pattern[1] == Consts.Dot)
         {
             ReadOnlySpan<char> ext = pattern.AsSpan(1);
             return nl > ext.Length && name.AsSpan(nl - ext.Length).Equals(ext, StringComparison.OrdinalIgnoreCase);
@@ -91,7 +96,72 @@ public static partial class Parser
             }
         }
 
-        // Standard wildcard matching algorithm
+        if (hasDoubleStar)
+        {
+            // Path glob mode: * doesn't cross /, ** crosses /
+            // Track two backtrack points: most recent * and most recent **
+            int ni2 = 0, pi2 = 0;
+            int singleStarPi = -1, singleStarNi = 0;
+            int doubleStarPi = -1, doubleStarNi = 0;
+
+            while (ni2 < nl)
+            {
+                if (pi2 < pl)
+                {
+                    char pc = pattern[pi2];
+                    if (pc == Consts.Multiply)
+                    {
+                        bool isDouble = (pi2 + 1 < pl && pattern[pi2 + 1] == Consts.Multiply);
+                        if (isDouble)
+                        {
+                            pi2 += 2;
+                            if (pi2 < pl && pattern[pi2] == '/') pi2++;
+                            doubleStarPi = pi2;
+                            doubleStarNi = ni2;
+                            singleStarPi = -1;
+                        }
+                        else
+                        {
+                            pi2++;
+                            singleStarPi = pi2;
+                            singleStarNi = ni2;
+                        }
+                        continue;
+                    }
+                    if (pc == Consts.Question ? ni2 < nl : char.ToLowerInvariant(pc) == char.ToLowerInvariant(name[ni2]))
+                    {
+                        ni2++;
+                        pi2++;
+                        continue;
+                    }
+                }
+                if (singleStarPi >= 0)
+                {
+                    if (name[singleStarNi] != '/')
+                    {
+                        singleStarNi++;
+                        ni2 = singleStarNi;
+                        pi2 = singleStarPi;
+                        continue;
+                    }
+                    singleStarPi = -1;
+                }
+                if (doubleStarPi >= 0)
+                {
+                    doubleStarNi++;
+                    ni2 = doubleStarNi;
+                    pi2 = doubleStarPi;
+                    singleStarPi = -1;
+                    continue;
+                }
+                return false;
+            }
+
+            while (pi2 < pl && pattern[pi2] == Consts.Multiply) pi2++;
+            return pi2 == pl;
+        }
+
+        // Standard wildcard matching (no **): * matches everything including /
         int ni = 0, pi = 0;
         int lastStar = -1, lastMatch = 0;
 

@@ -1,0 +1,193 @@
+using System.Data;
+using System.Text.RegularExpressions;
+using Npgsql;
+using NpgsqlTypes;
+
+namespace NpgsqlRest.SqlFileSource;
+
+/// <summary>
+/// Uses the PostgreSQL wire protocol (Parse → Describe → Sync via SchemaOnly)
+/// to introspect a SQL statement's parameters and return columns.
+/// </summary>
+public static partial class SqlFileDescriber
+{
+    // Match $1, $2, ... $N (positional parameters)
+    [GeneratedRegex(@"\$(\d+)", RegexOptions.Compiled)]
+    private static partial Regex PositionalParamRegex();
+
+    /// <summary>
+    /// Find the maximum $N parameter index in a SQL statement.
+    /// Returns 0 if no parameters found.
+    /// </summary>
+    public static int FindMaxParamIndex(string sql)
+    {
+        int max = 0;
+        foreach (Match match in PositionalParamRegex().Matches(sql))
+        {
+            if (int.TryParse(match.Groups[1].Value, out int index) && index > max)
+            {
+                max = index;
+            }
+        }
+        return max;
+    }
+
+    /// <summary>
+    /// Describe a SQL statement using SchemaOnly to get parameter types and return columns.
+    /// </summary>
+    /// <summary>
+    /// Resolve a type OID to its PostgreSQL type name via pg_catalog.
+    /// </summary>
+    public static string? ResolveTypeNameByOid(NpgsqlConnection connection, uint oid)
+    {
+        using var cmd = new NpgsqlCommand(
+            "SELECT (quote_ident(n.nspname) || '.' || quote_ident(t.typname))::regtype::text FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace WHERE t.oid = $1",
+            connection);
+        cmd.Parameters.AddWithValue(NpgsqlDbType.Oid, oid);
+        var result = cmd.ExecuteScalar();
+        return result as string;
+    }
+
+    public static DescribeResult Describe(NpgsqlConnection connection, string sql, int paramCount)
+    {
+        var result = new DescribeResult();
+
+        using var cmd = new NpgsqlCommand(sql, connection);
+
+        // Add placeholder parameters for each $N
+        for (int i = 0; i < paramCount; i++)
+        {
+            cmd.Parameters.Add(new NpgsqlParameter
+            {
+                NpgsqlDbType = NpgsqlDbType.Unknown
+            });
+        }
+
+        try
+        {
+            // Use SchemaOnly without KeyInfo — avoids .NET type mapping overhead.
+            // Use reader.GetName/GetDataTypeName instead of GetColumnSchema to avoid
+            // failures on custom composite types (GetColumnSchema tries to resolve .NET types).
+            using (var reader = cmd.ExecuteReader(CommandBehavior.SchemaOnly))
+            {
+                result.Columns = new ColumnInfo[reader.FieldCount];
+                for (int i = 0; i < reader.FieldCount; i++)
+                {
+                    var dataTypeName = reader.GetDataTypeName(i);
+                    uint typeOid = 0;
+
+                    try
+                    {
+                        typeOid = ((NpgsqlDataReader)reader).GetDataTypeOID(i);
+                    }
+                    catch
+                    {
+                        // OID not available
+                    }
+
+                    result.Columns[i] = new ColumnInfo
+                    {
+                        Name = reader.GetName(i),
+                        DataTypeName = dataTypeName,
+                        TypeOid = typeOid
+                    };
+                }
+
+                // Extract parameter types from the command's parameters after Describe
+                result.ParameterTypes = new string[paramCount];
+                for (int i = 0; i < paramCount; i++)
+                {
+                    var p = cmd.Parameters[i];
+                    result.ParameterTypes[i] = p.NpgsqlDbType == NpgsqlDbType.Unknown ? "unknown" : MapNpgsqlDbTypeToTypeName(p.NpgsqlDbType);
+                }
+            } // reader closed
+
+            // Resolve unknown type names via pg_catalog (requires reader to be closed first)
+            for (int i = 0; i < result.Columns.Length; i++)
+            {
+                var col = result.Columns[i];
+                if ((col.DataTypeName == "-.-" || string.IsNullOrEmpty(col.DataTypeName)) && col.TypeOid > 0)
+                {
+                    var resolved = ResolveTypeNameByOid(connection, col.TypeOid);
+                    if (resolved is not null)
+                    {
+                        col.DataTypeName = resolved;
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            result.Error = ex.Message;
+        }
+
+        return result;
+    }
+
+    private static string MapNpgsqlDbTypeToTypeName(NpgsqlDbType dbType)
+    {
+        // Strip Array flag for base type lookup
+        var baseType = dbType & ~NpgsqlDbType.Array;
+        bool isArray = (dbType & NpgsqlDbType.Array) != 0;
+
+        var typeName = baseType switch
+        {
+            NpgsqlDbType.Smallint => "smallint",
+            NpgsqlDbType.Integer => "integer",
+            NpgsqlDbType.Bigint => "bigint",
+            NpgsqlDbType.Numeric => "numeric",
+            NpgsqlDbType.Real => "real",
+            NpgsqlDbType.Double => "double precision",
+            NpgsqlDbType.Money => "money",
+            NpgsqlDbType.Text => "text",
+            NpgsqlDbType.Varchar => "character varying",
+            NpgsqlDbType.Char => "character",
+            NpgsqlDbType.Name => "name",
+            NpgsqlDbType.Boolean => "boolean",
+            NpgsqlDbType.Uuid => "uuid",
+            NpgsqlDbType.Json => "json",
+            NpgsqlDbType.Jsonb => "jsonb",
+            NpgsqlDbType.Xml => "xml",
+            NpgsqlDbType.Date => "date",
+            NpgsqlDbType.Timestamp => "timestamp",
+            NpgsqlDbType.TimestampTz => "timestamptz",
+            NpgsqlDbType.Time => "time",
+            NpgsqlDbType.TimeTz => "timetz",
+            NpgsqlDbType.Interval => "interval",
+            NpgsqlDbType.Bytea => "bytea",
+            NpgsqlDbType.Inet => "inet",
+            NpgsqlDbType.Cidr => "cidr",
+            NpgsqlDbType.MacAddr => "macaddr",
+            NpgsqlDbType.Bit => "bit",
+            NpgsqlDbType.Varbit => "bit varying",
+            NpgsqlDbType.TsQuery => "tsquery",
+            NpgsqlDbType.TsVector => "tsvector",
+            NpgsqlDbType.Point => "point",
+            NpgsqlDbType.Line => "line",
+            NpgsqlDbType.LSeg => "lseg",
+            NpgsqlDbType.Box => "box",
+            NpgsqlDbType.Path => "path",
+            NpgsqlDbType.Polygon => "polygon",
+            NpgsqlDbType.Circle => "circle",
+            NpgsqlDbType.Oid => "oid",
+            _ => "text"
+        };
+
+        return isArray ? typeName + "[]" : typeName;
+    }
+}
+
+public class DescribeResult
+{
+    public ColumnInfo[]? Columns { get; set; }
+    public string[]? ParameterTypes { get; set; }
+    public string? Error { get; set; }
+    public bool HasError => Error is not null;
+}
+
+public class ColumnInfo
+{
+    public required string Name { get; set; }
+    public required string DataTypeName { get; set; }
+    public uint TypeOid { get; set; }
+}

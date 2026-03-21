@@ -5,6 +5,7 @@ using NpgsqlRest.HttpFiles;
 using NpgsqlRest.TsClient;
 using Serilog;
 using NpgsqlRest.CrudSource;
+using NpgsqlRest.SqlFileSource;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.DataProtection;
 using NpgsqlRest.UploadHandlers;
@@ -572,6 +573,23 @@ public class App
             OnConflictDoUpdateReturningUrlPattern = _config.GetConfigStr("OnConflictDoUpdateReturningUrlPattern", crudSourceCfg) ?? "{0}/on-conflict-do-update/returning",
         });
         _builder.ClientLogger?.LogDebug("Using {name} PostrgeSQL Source", nameof(CrudSource));
+
+        var sqlFileSourceCfg = _config.NpgsqlRestCfg.GetSection("SqlFileSource");
+        if (sqlFileSourceCfg.Exists() is true && _config.GetConfigBool("Enabled", sqlFileSourceCfg, true) is true)
+        {
+            var filePattern = _config.GetConfigStr("FilePattern", sqlFileSourceCfg) ?? "";
+            if (!string.IsNullOrEmpty(filePattern))
+            {
+                sources.Add(new SqlFileSource(new SqlFileSourceOptions
+                {
+                    FilePattern = filePattern,
+                    CommentScope = _config.GetConfigEnum<CommentScope>("CommentScope", sqlFileSourceCfg),
+                    ErrorMode = _config.GetConfigEnum<ParseErrorMode>("ErrorMode", sqlFileSourceCfg),
+                }));
+                _builder.ClientLogger?.LogDebug("Using {name} PostgreSQL Source with pattern {pattern}", nameof(SqlFileSource), filePattern);
+            }
+        }
+
         return sources;
     }
 

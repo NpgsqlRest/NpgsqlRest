@@ -95,4 +95,67 @@ public class PatternMatcherTests
     {
         Parser.IsPatternMatch(name, pattern).Should().Be(expected);
     }
+
+    // ** (double-star / recursive glob) tests
+
+    [Theory]
+    [InlineData("sql/dir/file.sql", "sql/**/*.sql", true)]
+    [InlineData("sql/a/b/c/file.sql", "sql/**/*.sql", true)]
+    [InlineData("sql/file.sql", "sql/**/*.sql", true)]
+    [InlineData("sql/dir/file.txt", "sql/**/*.sql", false)]
+    [InlineData("other/dir/file.sql", "sql/**/*.sql", false)]
+    public void DoubleStar_RecursiveGlob_MatchesCorrectly(string name, string pattern, bool expected)
+    {
+        Parser.IsPatternMatch(name, pattern).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("sql/file.sql", "sql/*.sql", true)]
+    [InlineData("sql/dir/file.sql", "sql/*.sql", true)]        // no ** in pattern → * matches everything
+    [InlineData("dir/sub/file.txt", "dir/*.txt", true)]         // no ** in pattern → * matches everything
+    [InlineData("dir/file.txt", "dir/*.txt", true)]
+    public void SingleStar_WithoutDoubleStar_CrossesSlash(string name, string pattern, bool expected)
+    {
+        Parser.IsPatternMatch(name, pattern).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("file.sql", "**/*.sql", true)]
+    [InlineData("a/file.sql", "**/*.sql", true)]
+    [InlineData("a/b/c/file.sql", "**/*.sql", true)]
+    [InlineData("a/b/c/file.txt", "**/*.sql", false)]
+    public void DoubleStar_AtStart_MatchesAnyDepth(string name, string pattern, bool expected)
+    {
+        Parser.IsPatternMatch(name, pattern).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("dir/file.sql", "dir/**/file.sql", true)]
+    [InlineData("dir/a/file.sql", "dir/**/file.sql", true)]
+    [InlineData("dir/a/b/file.sql", "dir/**/file.sql", true)]
+    [InlineData("dir/a/b/other.sql", "dir/**/file.sql", false)]
+    public void DoubleStar_InMiddle_MatchesAnyDepth(string name, string pattern, bool expected)
+    {
+        Parser.IsPatternMatch(name, pattern).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("a/b/c", "**", true)]
+    [InlineData("file.txt", "**", true)]
+    [InlineData("a", "**", true)]
+    public void DoubleStar_Alone_MatchesEverything(string name, string pattern, bool expected)
+    {
+        Parser.IsPatternMatch(name, pattern).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("/admin/page.html", "/admin/*.html", true)]
+    [InlineData("/admin/sub/page.html", "/admin/*.html", true)]     // no ** → * crosses /
+    [InlineData("/admin/sub/page.html", "/admin/**/*.html", true)]  // ** crosses /
+    [InlineData("image/png", "image/*", true)]                      // MIME type — no / in segment
+    [InlineData("image/svg+xml", "image/*", true)]
+    public void BackwardCompat_ExistingPatterns_StillWork(string name, string pattern, bool expected)
+    {
+        Parser.IsPatternMatch(name, pattern).Should().Be(expected);
+    }
 }

@@ -141,7 +141,7 @@ public class Routine
     /// Key: first expanded column index for the composite type
     /// Value: (fieldNames, fieldDescriptors, convertedColumnName, expandedColumnIndices)
     /// </summary>
-    internal Dictionary<int, (string[] FieldNames, TypeDescriptor[] FieldDescriptors, string ConvertedColumnName, int[] ExpandedColumnIndices)>? CompositeColumnInfo { get; set; } = null;
+    public Dictionary<int, (string[] FieldNames, TypeDescriptor[] FieldDescriptors, string ConvertedColumnName, int[] ExpandedColumnIndices)>? CompositeColumnInfo { get; set; } = null;
 
     /// <summary>
     /// When NestedJsonForCompositeTypes is enabled, this contains information about columns that are
@@ -150,5 +150,5 @@ public class Routine
     /// Key: column index (0-based)
     /// Value: (fieldNames for the composite element type, fieldDescriptors for each field)
     /// </summary>
-    internal Dictionary<int, (string[] FieldNames, TypeDescriptor[] FieldDescriptors)>? ArrayCompositeColumnInfo { get; set; } = null;
+    public Dictionary<int, (string[] FieldNames, TypeDescriptor[] FieldDescriptors)>? ArrayCompositeColumnInfo { get; set; } = null;
 }

@@ -6,8 +6,13 @@ internal static partial class DefaultCommentParser
     /// Annotation: parameter | param
     /// Syntax: param [param_name1] is hash of [param_name2]
     ///         param [param_name] is upload metadata
+    ///         param [original] [new_name]              — rename only (simplest form)
+    ///         param [original] [new_name] [type]        — rename + retype (simplest form)
+    ///         param [original] is [new_name]            — rename only ("is" style)
+    ///         param [original] is [new_name] type is [type] — rename + retype ("is" style)
     ///
-    /// Description: Configure parameter behavior, such as marking one parameter as a hash of another or as upload metadata.
+    /// Description: Configure parameter behavior, such as marking one parameter as a hash of another,
+    /// as upload metadata, or renaming/retyping parameters.
     /// </summary>
     private static readonly string[] ParameterKey = [
         "parameter",
@@ -18,6 +23,7 @@ internal static partial class DefaultCommentParser
         Routine routine,
         RoutineEndpoint endpoint,
         string[] wordsLower,
+        string[] words,
         int len,
         string description)
     {
@@ -69,12 +75,11 @@ internal static partial class DefaultCommentParser
                     Logger?.CommentParamNotExistsCantHash(description, paramName1);
                 }
             }
+            return;
         }
 
         // param param_name1 is upload metadata
-        if (len >= 5 && (
-            StrEquals(wordsLower[2], "is") && StrEquals(wordsLower[3], "upload") && StrEquals(wordsLower[4], "metadata")
-            ))
+        if (len >= 5 && StrEquals(wordsLower[2], "is") && StrEquals(wordsLower[3], "upload") && StrEquals(wordsLower[4], "metadata"))
         {
             if (endpoint.Upload is false)
             {
@@ -102,6 +107,101 @@ internal static partial class DefaultCommentParser
             {
                 param.IsUploadMetadata = true;
                 CommentLogger?.CommentUploadMetadataParam(description, paramName);
+            }
+            return;
+        }
+
+        // Rename / retype forms:
+        // param [original] is [new_name]                     — len >= 4, wordsLower[2] == "is"
+        // param [original] is [new_name] [type]              — len >= 5, wordsLower[2] == "is"
+        // param [original] [new_name]                        — len >= 3
+        // param [original] [new_name] [type]                 — len >= 4
+        if (len >= 2)
+        {
+            HandleParameterRename(routine, wordsLower, words, len, description);
+        }
+    }
+
+    private static void HandleParameterRename(
+        Routine routine,
+        string[] wordsLower,
+        string[] words,
+        int len,
+        string description)
+    {
+        var originalName = wordsLower[1];
+        string? newName = null;
+        string? newType = null;
+
+        if (len >= 4 && StrEquals(wordsLower[2], "is"))
+        {
+            // "is" style: param [original] is [new_name] [type]
+            newName = words[3]; // preserve original case for the new name
+
+            if (len >= 5)
+            {
+                newType = wordsLower[4];
+            }
+        }
+        else if (len == 3 && StrEquals(wordsLower[2], "is"))
+        {
+            // "param $1 is" — rename to literal "is"
+            newName = words[2]; // "is"
+        }
+        else if (len >= 3 && !StrEquals(wordsLower[2], "is"))
+        {
+            // Simplest form: param [original] [new_name] [type]
+            newName = words[2]; // preserve original case
+
+            if (len >= 4)
+            {
+                newType = wordsLower[3];
+            }
+        }
+        else if (len == 2)
+        {
+            // Just "param $1" — not enough tokens for rename, skip
+            return;
+        }
+
+        if (newName is null)
+        {
+            return;
+        }
+
+        // Find the parameter by original name (matching ActualName or ConvertedName)
+        var param = routine.Parameters.FirstOrDefault(x =>
+            string.Equals(x.ActualName, originalName, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(x.ConvertedName, originalName, StringComparison.OrdinalIgnoreCase));
+
+        if (param is null)
+        {
+            Logger?.CommentParamNotExistsCantRename(description, originalName);
+            return;
+        }
+
+        // Apply rename
+        var oldConvertedName = param.ConvertedName;
+        param.ConvertedName = newName;
+
+        // Update ParamsHash: remove old, add new
+        routine.ParamsHash.Remove(oldConvertedName);
+        routine.ParamsHash.Add(newName);
+
+        CommentLogger?.CommentParamRenamed(description, originalName, newName);
+
+        // Apply retype if specified
+        if (newType is not null)
+        {
+            var typeDescriptor = new TypeDescriptor(newType);
+            if (typeDescriptor.DbType != NpgsqlTypes.NpgsqlDbType.Unknown)
+            {
+                param.NpgsqlDbType = typeDescriptor.ActualDbType;
+                CommentLogger?.CommentParamRetyped(description, newName, newType);
+            }
+            else
+            {
+                Logger?.CommentParamNotExistsCantRename(description, $"unknown type '{newType}' for parameter {originalName}");
             }
         }
     }

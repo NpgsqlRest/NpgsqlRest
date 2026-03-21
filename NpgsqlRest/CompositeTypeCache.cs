@@ -137,9 +137,7 @@ public static class CompositeTypeCache
     public static CompositeTypeMetadata? GetType(string? typeName)
     {
         if (string.IsNullOrEmpty(typeName)) return null;
-
-        var normalizedName = NormalizeTypeName(typeName);
-        return _cache.GetValueOrDefault(normalizedName);
+        return FindInCache(typeName);
     }
 
     /// <summary>
@@ -162,6 +160,38 @@ public static class CompositeTypeCache
     }
 
     /// <summary>
+    /// Resolve composite type metadata for a TypeDescriptor.
+    /// Sets CompositeFieldNames/CompositeFieldDescriptors if the type is a composite,
+    /// or ArrayCompositeFieldNames/ArrayCompositeFieldDescriptors if it's an array of composites.
+    /// Can be called from plugins since TypeDescriptor setters are internal.
+    /// </summary>
+    /// <param name="descriptor">The TypeDescriptor to resolve</param>
+    /// <returns>True if the descriptor was resolved as a composite or array of composites</returns>
+    public static bool ResolveTypeDescriptor(TypeDescriptor descriptor)
+    {
+        var compositeMetadata = GetType(descriptor.OriginalType);
+        if (compositeMetadata != null)
+        {
+            descriptor.CompositeFieldNames = compositeMetadata.ConvertedFieldNames;
+            descriptor.CompositeFieldDescriptors = compositeMetadata.FieldDescriptors;
+            return true;
+        }
+
+        if (descriptor.IsArray)
+        {
+            var elementMetadata = GetArrayElementType(descriptor.OriginalType);
+            if (elementMetadata != null)
+            {
+                descriptor.ArrayCompositeFieldNames = elementMetadata.ConvertedFieldNames;
+                descriptor.ArrayCompositeFieldDescriptors = elementMetadata.FieldDescriptors;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Normalize type name by removing quotes and handling schema prefixes.
     /// </summary>
     private static string NormalizeTypeName(string typeName)
@@ -177,6 +207,32 @@ public static class CompositeTypeCache
         result = result.Replace("\"", "");
 
         return result;
+    }
+
+    /// <summary>
+    /// Try to find a type in the cache, also trying without schema prefix.
+    /// PostgreSQL regtype::text omits the public schema, but other sources may include it.
+    /// </summary>
+    private static CompositeTypeMetadata? FindInCache(string typeName)
+    {
+        var normalized = NormalizeTypeName(typeName);
+        if (_cache.TryGetValue(normalized, out var result))
+        {
+            return result;
+        }
+
+        // Try stripping schema prefix (e.g., "public.my_type" → "my_type")
+        int dotIndex = normalized.IndexOf('.');
+        if (dotIndex >= 0)
+        {
+            var withoutSchema = normalized[(dotIndex + 1)..];
+            if (_cache.TryGetValue(withoutSchema, out result))
+            {
+                return result;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

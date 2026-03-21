@@ -280,4 +280,13 @@ public static partial class Log
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has set DECRYPT COLUMNS {columns} by the comment annotation.")]
     public static partial void CommentDecryptColumns(this ILogger logger, string description, IEnumerable<string> columns);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "{description} parameter name {param} does not exist in parameter collection either as original or translated name. RENAME could not be set by the comment annotation.")]
+    public static partial void CommentParamNotExistsCantRename(this ILogger logger, string description, string param);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has RENAMED parameter {oldName} to {newName} by the comment annotation.")]
+    public static partial void CommentParamRenamed(this ILogger logger, string description, string oldName, string newName);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has RETYPED parameter {paramName} to {newType} by the comment annotation.")]
+    public static partial void CommentParamRetyped(this ILogger logger, string description, string paramName, string newType);
 }

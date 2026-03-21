@@ -31,6 +31,7 @@
     <ProjectReference Include="..\plugins\NpgsqlRest.HttpFiles\NpgsqlRest.HttpFiles.csproj" />
     <ProjectReference Include="..\plugins\NpgsqlRest.OpenApi\NpgsqlRest.OpenApi.csproj" />
     <ProjectReference Include="..\plugins\NpgsqlRest.TsClient\NpgsqlRest.TsClient.csproj" />
+    <ProjectReference Include="..\plugins\NpgsqlRest.SqlFileSource\NpgsqlRest.SqlFileSource.csproj" />
   </ItemGroup>
   
   <ItemGroup>
