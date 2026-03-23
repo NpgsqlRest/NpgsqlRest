@@ -1,9 +1,13 @@
 namespace NpgsqlRest;
 
-public interface IRoutineSource
+/// <summary>
+/// Base interface for endpoint sources. Provides the minimal contract needed
+/// to yield routines into the NpgsqlRest pipeline.
+/// </summary>
+public interface IEndpointSource
 {
     /// <summary>
-    /// Comments mode for the current routine source.
+    /// Comments mode for the current source.
     /// </summary>
     CommentsMode? CommentsMode { get; set; }
 
@@ -13,15 +17,22 @@ public interface IRoutineSource
     /// <param name="serviceProvider">Service provider</param>
     /// <param name="retryStrategy"></param>
     /// <returns></returns>
-    IEnumerable<(Routine, IRoutineSourceParameterFormatter)> Read( IServiceProvider? serviceProvider, RetryStrategy? retryStrategy);
+    IEnumerable<(Routine, IRoutineSourceParameterFormatter)> Read(IServiceProvider? serviceProvider, RetryStrategy? retryStrategy);
+}
 
+/// <summary>
+/// Extended endpoint source interface for database catalog-based sources (functions, procedures, tables, views).
+/// Adds query filtering properties for schema/name patterns.
+/// </summary>
+public interface IRoutineSource : IEndpointSource
+{
     /// <summary>
     /// SQL Query that returns data source.
     /// When it doesn't contain any blanks, it is interpreted as a function name.
     /// Set to NULL to use default source query.
     /// </summary>
     string? Query { get; set; }
-    
+
     /// <summary>
     /// Query parameter
     /// </summary>

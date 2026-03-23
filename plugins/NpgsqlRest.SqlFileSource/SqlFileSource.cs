@@ -6,32 +6,17 @@ namespace NpgsqlRest.SqlFileSource;
 /// Routine source that scans SQL files matching a glob pattern and generates REST API endpoints.
 /// Each SQL file must contain exactly one statement (multi-statement support planned for a future version).
 /// </summary>
-public class SqlFileSource(SqlFileSourceOptions options) : IRoutineSource
+public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
 {
-    public CommentsMode? CommentsMode { get; set; }
-    public string? Query { get; set; }
-    public string? SchemaSimilarTo { get; set; }
-    public string? SchemaNotSimilarTo { get; set; }
-    public string[]? IncludeSchemas { get; set; }
-    public string[]? ExcludeSchemas { get; set; }
-    public string? NameSimilarTo { get; set; }
-    public string? NameNotSimilarTo { get; set; }
-    public string[]? IncludeNames { get; set; }
-    public string[]? ExcludeNames { get; set; }
-    public bool NestedJsonForCompositeTypes { get; set; }
+    private const string UnnamedColumnPrefix = "column";
+
+    public CommentsMode? CommentsMode { get; set; } = options.CommentsMode; // Always has a value from options default
 
     public IEnumerable<(Routine, IRoutineSourceParameterFormatter)> Read(
         IServiceProvider? serviceProvider,
         RetryStrategy? retryStrategy)
     {
         if (string.IsNullOrEmpty(options.FilePattern))
-        {
-            yield break;
-        }
-
-        // Find all matching SQL files
-        var files = FindMatchingFiles(options.FilePattern);
-        if (files.Count == 0)
         {
             yield break;
         }
@@ -53,7 +38,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IRoutineSource
             // Initialize composite type cache for custom type column resolution
             CompositeTypeCache.Initialize(connection, nameConverter);
 
-            foreach (var filePath in files)
+            foreach (var filePath in FindMatchingFiles(options.FilePattern))
             {
                 (Routine, IRoutineSourceParameterFormatter)? result = null;
                 try
@@ -152,10 +137,19 @@ public class SqlFileSource(SqlFileSourceOptions options) : IRoutineSource
         var columnTypeDescriptors = new TypeDescriptor[columnCount];
         Dictionary<int, (string[] FieldNames, TypeDescriptor[] FieldDescriptors)>? arrayCompositeColumnInfo = null;
 
+        var usedColumnNames = new HashSet<string>(StringComparer.Ordinal);
         for (int i = 0; i < columnCount; i++)
         {
-            originalColumnNames[i] = columns[i].Name;
-            columnNames[i] = nameConverter(columns[i].Name) ?? columns[i].Name;
+            var colName = columns[i].Name;
+
+            // Replace unnamed/duplicate columns with unique names (column1, column2, ...)
+            if (colName == "?column?" || !usedColumnNames.Add(colName))
+            {
+                colName = string.Concat(UnnamedColumnPrefix, (i + 1).ToString());
+            }
+
+            originalColumnNames[i] = colName;
+            columnNames[i] = nameConverter(colName) ?? colName;
             columnTypeDescriptors[i] = new TypeDescriptor(columns[i].DataTypeName);
 
             // Resolve composite types from CompositeTypeCache
@@ -219,8 +213,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IRoutineSource
             routine.ArrayCompositeColumnInfo = arrayCompositeColumnInfo;
         }
 
-        var formatter = new SqlFileParameterFormatter(sql);
-        return (routine, formatter);
+        return (routine, SqlFileParameterFormatter.Instance);
     }
 
     /// <summary>
@@ -234,12 +227,10 @@ public class SqlFileSource(SqlFileSourceOptions options) : IRoutineSource
 
     /// <summary>
     /// Find files matching the glob pattern. Splits the pattern into a base directory
-    /// and a file pattern, then uses Directory.GetFiles + IsPatternMatch.
+    /// and a file pattern, then lazily enumerates matching files.
     /// </summary>
-    internal static List<string> FindMatchingFiles(string filePattern)
+    internal static IEnumerable<string> FindMatchingFiles(string filePattern)
     {
-        var result = new List<string>();
-
         // Find the base directory (everything before the first wildcard)
         int firstWildcard = filePattern.IndexOfAny(['*', '?']);
         if (firstWildcard < 0)
@@ -247,9 +238,9 @@ public class SqlFileSource(SqlFileSourceOptions options) : IRoutineSource
             // No wildcards — treat as exact file path
             if (File.Exists(filePattern))
             {
-                result.Add(Path.GetFullPath(filePattern));
+                yield return Path.GetFullPath(filePattern);
             }
-            return result;
+            yield break;
         }
 
         // Find the last / before the first wildcard to get the base directory
@@ -270,23 +261,20 @@ public class SqlFileSource(SqlFileSourceOptions options) : IRoutineSource
 
         if (!Directory.Exists(baseDir))
         {
-            return result;
+            yield break;
         }
 
-        // Get all files recursively and filter with IsPatternMatch
+        // Lazily enumerate files and filter with IsPatternMatch
         bool isRecursive = filePattern.Contains("**");
         var searchOption = isRecursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
 
-        foreach (var file in Directory.GetFiles(baseDir, "*", searchOption))
+        foreach (var file in Directory.EnumerateFiles(baseDir, "*", searchOption))
         {
-            // Normalize path separators for matching
             var normalizedFile = file.Replace('\\', '/');
             if (Parser.IsPatternMatch(normalizedFile, pattern))
             {
-                result.Add(file);
+                yield return file;
             }
         }
-
-        return result;
     }
 }

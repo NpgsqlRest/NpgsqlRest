@@ -1,5 +1,18 @@
 namespace NpgsqlRestTests.SqlFileSourceTests;
 
+public static partial class SqlFiles
+{
+    public static void VerbOverrideTests()
+    {
+        File.WriteAllText(Path.Combine(Dir, "annotated_query.sql"), """
+            -- HTTP GET
+            -- @param $1 from_date
+            -- @param $2 to_date
+            select id, name, created_at from sql_describe_test where created_at between $1 and $2;
+            """);
+    }
+}
+
 [Collection("SqlFileSourceFixture")]
 public class VerbOverrideTests(SqlFileSourceTestFixture test)
 {

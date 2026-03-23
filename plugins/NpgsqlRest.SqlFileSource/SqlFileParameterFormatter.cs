@@ -1,20 +1,15 @@
-using Npgsql;
-
 namespace NpgsqlRest.SqlFileSource;
 
 /// <summary>
-/// Parameter formatter for SQL file endpoints.
-/// SQL files contain complete command text with $N placeholders — the formatter
-/// returns the full SQL as the command, with parameters bound positionally.
+/// No-op parameter formatter for SQL file endpoints.
+/// SQL files already contain complete command text with $N placeholders in routine.Expression.
+/// IsFormattable = false means the rendering uses Expression directly.
+/// Interface defaults (returning null) are safe — StringBuilder.Append(null) is a no-op.
+/// Single static instance shared by all SQL file endpoints.
 /// </summary>
-public class SqlFileParameterFormatter(string sql) : IRoutineSourceParameterFormatter
+public class SqlFileParameterFormatter : IRoutineSourceParameterFormatter
 {
-    public bool IsFormattable { get; } = true;
+    public static readonly SqlFileParameterFormatter Instance = new();
 
-    public string? FormatCommand(Routine routine, NpgsqlParameterCollection parameters)
-    {
-        return sql;
-    }
-
-    public string? AppendEmpty() => sql;
+    public bool IsFormattable => false;
 }

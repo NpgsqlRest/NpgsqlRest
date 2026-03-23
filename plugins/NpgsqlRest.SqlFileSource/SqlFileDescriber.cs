@@ -5,6 +5,21 @@ using NpgsqlTypes;
 
 namespace NpgsqlRest.SqlFileSource;
 
+public class DescribeResult
+{
+    public ColumnInfo[]? Columns { get; set; }
+    public string[]? ParameterTypes { get; set; }
+    public string? Error { get; set; }
+    public bool HasError => Error is not null;
+}
+
+public class ColumnInfo
+{
+    public required string Name { get; set; }
+    public required string DataTypeName { get; set; }
+    public uint TypeOid { get; set; }
+}
+
 /// <summary>
 /// Uses the PostgreSQL wire protocol (Parse → Describe → Sync via SchemaOnly)
 /// to introspect a SQL statement's parameters and return columns.
@@ -31,23 +46,7 @@ public static partial class SqlFileDescriber
         }
         return max;
     }
-
-    /// <summary>
-    /// Describe a SQL statement using SchemaOnly to get parameter types and return columns.
-    /// </summary>
-    /// <summary>
-    /// Resolve a type OID to its PostgreSQL type name via pg_catalog.
-    /// </summary>
-    public static string? ResolveTypeNameByOid(NpgsqlConnection connection, uint oid)
-    {
-        using var cmd = new NpgsqlCommand(
-            "SELECT (quote_ident(n.nspname) || '.' || quote_ident(t.typname))::regtype::text FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace WHERE t.oid = $1",
-            connection);
-        cmd.Parameters.AddWithValue(NpgsqlDbType.Oid, oid);
-        var result = cmd.ExecuteScalar();
-        return result as string;
-    }
-
+    
     public static DescribeResult Describe(NpgsqlConnection connection, string sql, int paramCount)
     {
         var result = new DescribeResult();
@@ -78,7 +77,7 @@ public static partial class SqlFileDescriber
 
                     try
                     {
-                        typeOid = ((NpgsqlDataReader)reader).GetDataTypeOID(i);
+                        typeOid = reader.GetDataTypeOID(i);
                     }
                     catch
                     {
@@ -122,6 +121,16 @@ public static partial class SqlFileDescriber
         }
 
         return result;
+    }
+    
+    private static string? ResolveTypeNameByOid(NpgsqlConnection connection, uint oid)
+    {
+        using var cmd = new NpgsqlCommand(
+            "SELECT (quote_ident(n.nspname) || '.' || quote_ident(t.typname))::regtype::text FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace WHERE t.oid = $1",
+            connection);
+        cmd.Parameters.AddWithValue(NpgsqlDbType.Oid, oid);
+        var result = cmd.ExecuteScalar();
+        return result as string;
     }
 
     private static string MapNpgsqlDbTypeToTypeName(NpgsqlDbType dbType)
@@ -177,17 +186,3 @@ public static partial class SqlFileDescriber
     }
 }
 
-public class DescribeResult
-{
-    public ColumnInfo[]? Columns { get; set; }
-    public string[]? ParameterTypes { get; set; }
-    public string? Error { get; set; }
-    public bool HasError => Error is not null;
-}
-
-public class ColumnInfo
-{
-    public required string Name { get; set; }
-    public required string DataTypeName { get; set; }
-    public uint TypeOid { get; set; }
-}

@@ -1,5 +1,15 @@
 namespace NpgsqlRestTests.SqlFileSourceTests;
 
+public static partial class SqlFiles
+{
+    public static void BasicQueryTests()
+    {
+        File.WriteAllText(Path.Combine(Dir, "get_time.sql"), """
+            select now() as current_time;
+            """);
+    }
+}
+
 [Collection("SqlFileSourceFixture")]
 public class BasicQueryTests(SqlFileSourceTestFixture test)
 {

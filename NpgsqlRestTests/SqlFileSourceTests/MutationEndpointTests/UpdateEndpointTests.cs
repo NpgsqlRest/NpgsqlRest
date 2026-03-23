@@ -1,5 +1,17 @@
 namespace NpgsqlRestTests.SqlFileSourceTests;
 
+public static partial class SqlFiles
+{
+    public static void UpdateEndpointTests()
+    {
+        File.WriteAllText(Path.Combine(Dir, "update_test.sql"), """
+            -- @param $1 new_name
+            -- @param $2 id
+            update sql_describe_test set name = $1 where id = $2 returning id, name;
+            """);
+    }
+}
+
 [Collection("SqlFileSourceFixture")]
 public class UpdateEndpointTests(SqlFileSourceTestFixture test)
 {

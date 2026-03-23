@@ -1,5 +1,15 @@
 namespace NpgsqlRestTests.SqlFileSourceTests;
 
+public static partial class SqlFiles
+{
+    public static void SubdirectoryQueryTests()
+    {
+        File.WriteAllText(Path.Combine(SubDir, "sub_query.sql"), """
+            select 42 as answer;
+            """);
+    }
+}
+
 [Collection("SqlFileSourceFixture")]
 public class SubdirectoryQueryTests(SqlFileSourceTestFixture test)
 {

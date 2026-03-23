@@ -35,6 +35,12 @@ public class SqlFileSourceOptions
     public string FilePattern { get; set; } = "";
 
     /// <summary>
+    /// How comment annotations are processed for this source.
+    /// Default is ParseAll — every SQL file becomes an endpoint, comments configure it.
+    /// </summary>
+    public CommentsMode CommentsMode { get; set; } = CommentsMode.ParseAll;
+
+    /// <summary>
     /// Which comments in the file to parse as annotations.
     /// </summary>
     public CommentScope CommentScope { get; set; } = CommentScope.All;

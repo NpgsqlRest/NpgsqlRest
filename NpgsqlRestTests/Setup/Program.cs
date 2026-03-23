@@ -244,7 +244,7 @@ public class Program
                 }
             },
 
-            SourcesCreated = sources =>
+            EndpointSourcesCreated = sources =>
             {
                 //sources.Clear();
                 sources.Add(new CrudSource());

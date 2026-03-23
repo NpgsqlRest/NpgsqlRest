@@ -941,6 +941,7 @@ public static class ConfigDefaults
         {
             ["Enabled"] = false,
             ["FilePattern"] = "",
+            ["CommentsMode"] = "ParseAll",
             ["CommentScope"] = "All",
             ["ErrorMode"] = "Skip"
         };

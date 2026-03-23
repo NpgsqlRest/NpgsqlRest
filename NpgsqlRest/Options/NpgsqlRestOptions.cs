@@ -273,9 +273,9 @@ public class NpgsqlRestOptions
     public IEnumerable<IEndpointCreateHandler> EndpointCreateHandlers { get; set; } = Array.Empty<IEndpointCreateHandler>();
 
     /// <summary>
-    /// Action callback executed after routine sources are created and before they are processed into endpoints. Receives a parameter with the list of `IRoutineSource` instances. This list will always contain a single item - functions and procedures source. Use this callback to modify the routine source list and add new sources from plugins.
+    /// Action callback executed after endpoint sources are created and before they are processed into endpoints. Receives the list of `IEndpointSource` instances. Use this callback to modify the source list and add new sources from plugins.
     /// </summary>
-    public Action<List<IRoutineSource>> SourcesCreated { get; set; } = s => { };
+    public Action<List<IEndpointSource>> EndpointSourcesCreated { get; set; } = s => { };
 
     /// <summary>
     /// Sets the default behavior of plain text responses when the execution returns the `NULL` value from the database. `EmptyString` (default) returns an empty string response with status code 200 OK. `NullLiteral` returns a string literal `NULL` with the status code 200 OK. `NoContent` returns status code 204 NO CONTENT. This option for individual endpoints can be changed with the `EndpointCreated` function callback, or by using comment annotations.
@@ -320,9 +320,10 @@ public class NpgsqlRestOptions
     public Dictionary<string, StringValues> CustomRequestHeaders { get; set; } = [];
 
     /// <summary>
-    /// Routine sources default list.
+    /// Endpoint sources list. Includes routine sources (functions, procedures), CRUD sources (tables, views),
+    /// and any other sources like SQL file source. Default contains a single RoutineSource.
     /// </summary>
-    public List<IRoutineSource> RoutineSources { get; set; } = [new RoutineSource()];
+    public List<IEndpointSource> EndpointSources { get; set; } = [new RoutineSource()];
     
     /// <summary>
     /// Cache options

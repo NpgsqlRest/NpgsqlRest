@@ -1,5 +1,16 @@
 namespace NpgsqlRestTests.SqlFileSourceTests;
 
+public static partial class SqlFiles
+{
+    public static void DeleteEndpointTests()
+    {
+        File.WriteAllText(Path.Combine(Dir, "delete_test.sql"), """
+            -- @param $1 id
+            delete from sql_describe_test where id = $1 returning id;
+            """);
+    }
+}
+
 [Collection("SqlFileSourceFixture")]
 public class DeleteEndpointTests(SqlFileSourceTestFixture test)
 {

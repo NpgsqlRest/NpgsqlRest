@@ -519,9 +519,9 @@ public class App
         return handlers;
     }
 
-    public List<IRoutineSource> CreateRoutineSources()
+    public List<IEndpointSource> CreateEndpointSources()
     {
-        var sources = new List<IRoutineSource>(2);
+        var sources = new List<IEndpointSource>(2);
 
         var source = new RoutineSource();
         var routineOptionsCfg = _config.NpgsqlRestCfg.GetSection("RoutineOptions");
@@ -583,6 +583,7 @@ public class App
                 sources.Add(new SqlFileSource(new SqlFileSourceOptions
                 {
                     FilePattern = filePattern,
+                    CommentsMode = _config.GetConfigEnum<CommentsMode>("CommentsMode", sqlFileSourceCfg),
                     CommentScope = _config.GetConfigEnum<CommentScope>("CommentScope", sqlFileSourceCfg),
                     ErrorMode = _config.GetConfigEnum<ParseErrorMode>("ErrorMode", sqlFileSourceCfg),
                 }));

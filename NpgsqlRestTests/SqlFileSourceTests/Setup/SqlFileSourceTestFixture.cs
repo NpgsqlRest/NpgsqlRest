@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using NpgsqlRest.SqlFileSource;
+using NpgsqlRestTests.SqlFileSourceTests;
 
 namespace NpgsqlRestTests.Setup;
 
@@ -32,7 +33,7 @@ public class SqlFileSourceTestFixture : IDisposable
         Directory.CreateDirectory(subDir);
 
         // Write SQL files for testing
-        WriteSqlFiles(_sqlDir, subDir);
+        SqlFiles.WriteAll(_sqlDir, subDir);
 
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseUrls("http://127.0.0.1:0");
@@ -42,11 +43,12 @@ public class SqlFileSourceTestFixture : IDisposable
         _app.UseNpgsqlRest(new NpgsqlRestOptions(connectionString)
         {
             CommentsMode = CommentsMode.ParseAll,
-            RoutineSources =
+            EndpointSources =
             [
                 new SqlFileSource(new SqlFileSourceOptions
                 {
                     FilePattern = _sqlDir.Replace('\\', '/') + "/**/*.sql",
+                    CommentsMode = CommentsMode.ParseAll,
                     CommentScope = CommentScope.All,
                     ErrorMode = ParseErrorMode.Skip,
                 })
@@ -58,88 +60,6 @@ public class SqlFileSourceTestFixture : IDisposable
         var serverAddress = _app.Urls.First();
         _client = new HttpClient { BaseAddress = new Uri(serverAddress) };
         _client.Timeout = TimeSpan.FromHours(1);
-    }
-
-    private static void WriteSqlFiles(string dir, string subDir)
-    {
-        // Basic SELECT query (no auth)
-        File.WriteAllText(Path.Combine(dir, "get_time.sql"), """
-            SELECT now() as current_time;
-            """);
-
-        // SELECT with parameter
-        File.WriteAllText(Path.Combine(dir, "get_by_id.sql"), """
-            -- @param $1 id
-            SELECT id, name, active FROM sql_describe_test WHERE id = $1;
-            """);
-
-        // SELECT with multiple params
-        File.WriteAllText(Path.Combine(dir, "search_test.sql"), """
-            -- @param $1 name_filter
-            -- @param $2 active_filter
-            SELECT id, name, active FROM sql_describe_test WHERE name LIKE $1 AND active = $2;
-            """);
-
-        // INSERT mutation
-        File.WriteAllText(Path.Combine(dir, "insert_test.sql"), """
-            -- @param $1 id
-            -- @param $2 name
-            INSERT INTO sql_describe_test (id, name) VALUES ($1, $2) RETURNING id, name;
-            """);
-
-        // UPDATE mutation
-        File.WriteAllText(Path.Combine(dir, "update_test.sql"), """
-            -- @param $1 new_name
-            -- @param $2 id
-            UPDATE sql_describe_test SET name = $1 WHERE id = $2 RETURNING id, name;
-            """);
-
-        // DELETE mutation
-        File.WriteAllText(Path.Combine(dir, "delete_test.sql"), """
-            -- @param $1 id
-            DELETE FROM sql_describe_test WHERE id = $1 RETURNING id;
-            """);
-
-        // DO block
-        File.WriteAllText(Path.Combine(dir, "do_block.sql"), """
-            DO $$ BEGIN PERFORM 1; END; $$;
-            """);
-
-        // Parameterless SELECT
-        File.WriteAllText(Path.Combine(dir, "count_test.sql"), """
-            SELECT count(*) as total FROM sql_describe_test;
-            """);
-
-        // File in subdirectory
-        File.WriteAllText(Path.Combine(subDir, "sub_query.sql"), """
-            SELECT 42 as answer;
-            """);
-
-        // With comment annotations
-        File.WriteAllText(Path.Combine(dir, "annotated_query.sql"), """
-            -- HTTP GET
-            -- @param $1 from_date
-            -- @param $2 to_date
-            SELECT id, name, created_at FROM sql_describe_test WHERE created_at BETWEEN $1 AND $2;
-            """);
-
-        // Custom type — whole composite column in return
-        File.WriteAllText(Path.Combine(dir, "custom_type_return.sql"), """
-            -- @param $1 id
-            SELECT id, data FROM sql_file_custom_table WHERE id = $1;
-            """);
-
-        // Array of custom types
-        File.WriteAllText(Path.Combine(dir, "custom_array_query.sql"), """
-            -- @param $1 id
-            SELECT id, items FROM sql_file_custom_array_table WHERE id = $1;
-            """);
-
-        // Custom type fields expanded in return
-        File.WriteAllText(Path.Combine(dir, "custom_type_fields.sql"), """
-            -- @param $1 id
-            SELECT id, (data).val1, (data).val2, (data).val3 FROM sql_file_custom_table WHERE id = $1;
-            """);
     }
 
 #pragma warning disable CA1816 // Dispose methods should call SuppressFinalize
