@@ -110,6 +110,21 @@ public class SqlFileSourceTestFixture : IDisposable
             SELECT count(*) as total FROM sql_describe_test;
             """);
 
+        // Multi-command: two SELECTs
+        File.WriteAllText(Path.Combine(dir, "multi_select.sql"), """
+            SELECT id, name FROM sql_describe_test WHERE id = $1;
+            SELECT count(*) as total FROM sql_describe_test;
+            """);
+
+        // Multi-command: SELECT + void INSERT (void omitted from response)
+        File.WriteAllText(Path.Combine(dir, "multi_mixed.sql"), """
+            -- @command_name lookup
+            SELECT name FROM sql_describe_test WHERE id = $1;
+            INSERT INTO sql_describe_test (id, name) VALUES ($1 + 1000, 'multi_test');
+            -- @command_name verify
+            SELECT count(*) as total FROM sql_describe_test;
+            """);
+
         // File in subdirectory
         File.WriteAllText(Path.Combine(subDir, "sub_query.sql"), """
             SELECT 42 as answer;

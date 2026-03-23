@@ -5,11 +5,11 @@ namespace NpgsqlRestTests.SqlFileSourceTests;
 public class StatementSplittingMultipleTests
 {
     [Fact]
-    public void TwoStatements_ProducesTwoStatementsAndError()
+    public void TwoStatements_ProducesTwoStatements()
     {
         var result = SqlFileParser.Parse("SELECT 1; SELECT 2");
         result.Statements.Should().HaveCount(2);
-        result.Errors.Should().NotBeEmpty();
+        result.Errors.Should().BeEmpty();
     }
 
     [Fact]
@@ -25,6 +25,13 @@ public class StatementSplittingMultipleTests
     {
         var result = SqlFileParser.Parse("SELECT 1; SELECT 2; SELECT 3");
         result.Statements.Should().HaveCount(3);
-        result.Errors.Should().NotBeEmpty();
+        result.Errors.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void MultiStatement_CommandNamesPopulated()
+    {
+        var result = SqlFileParser.Parse("SELECT 1; SELECT 2; SELECT 3");
+        result.CommandNames.Should().HaveCount(3);
     }
 }

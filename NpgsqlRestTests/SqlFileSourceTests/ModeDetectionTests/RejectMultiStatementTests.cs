@@ -2,20 +2,22 @@ using NpgsqlRest.SqlFileSource;
 
 namespace NpgsqlRestTests.SqlFileSourceTests;
 
-public class RejectMultiStatementTests
+public class MultiStatementValidTests
 {
     [Fact]
-    public void TwoStatements_ErrorsNonEmpty()
+    public void TwoStatements_NoErrors()
     {
         var result = SqlFileParser.Parse("SELECT 1; SELECT 2");
-        result.Errors.Should().NotBeEmpty();
+        result.Errors.Should().BeEmpty();
+        result.Statements.Should().HaveCount(2);
     }
 
     [Fact]
-    public void ThreeStatements_ErrorsNonEmpty()
+    public void ThreeStatements_NoErrors()
     {
         var result = SqlFileParser.Parse("SELECT 1; SELECT 2; SELECT 3");
-        result.Errors.Should().NotBeEmpty();
+        result.Errors.Should().BeEmpty();
+        result.Statements.Should().HaveCount(3);
     }
 
     [Fact]
@@ -33,10 +35,9 @@ public class RejectMultiStatementTests
     }
 
     [Fact]
-    public void MultiStatementError_ContainsDescriptiveMessage()
+    public void MultiStatement_IsNotSingleCommand()
     {
         var result = SqlFileParser.Parse("SELECT 1; SELECT 2");
-        result.Errors.Should().ContainSingle()
-            .Which.Should().Contain("Multi-statement");
+        result.Statements.Count.Should().BeGreaterThan(1);
     }
 }

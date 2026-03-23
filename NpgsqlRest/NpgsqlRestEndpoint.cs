@@ -2097,6 +2097,45 @@ public class NpgsqlRestEndpoint(
                     var maxCacheableRows = Options.CacheOptions.MaxCacheableRows;
                     var shouldCache = canCacheRecordsAndSets;
 
+                    // Multi-command rendering: wrap result sets in JSON object
+                    var multiCmd = routine.MultiCommandInfo;
+                    int multiCmdIndex = 0;
+                    bool multiCmdFirstWritten = false;
+                    if (multiCmd is not null && binary is false)
+                    {
+                        writer.Advance(Encoding.UTF8.GetBytes("{".AsSpan(), writer.GetSpan(1)));
+                    }
+
+                    // Begin result set loop (single pass for normal, do/while for multi-command)
+                    do
+                    {
+                    // For multi-command: determine current command metadata and skip void commands
+                    string[]? currentColumnNames = null;
+                    TypeDescriptor[]? currentColumnDescriptors = null;
+                    int currentColumnCount = routine.ColumnCount;
+                    if (multiCmd is not null && multiCmdIndex < multiCmd.Length)
+                    {
+                        var cmdInfo = multiCmd[multiCmdIndex];
+                        if (cmdInfo.ColumnCount == 0)
+                        {
+                            // Void command — skip (omit from response)
+                            multiCmdIndex++;
+                            continue;
+                        }
+                        currentColumnNames = cmdInfo.ColumnNames;
+                        currentColumnDescriptors = cmdInfo.ColumnTypeDescriptors;
+                        currentColumnCount = cmdInfo.ColumnCount;
+
+                        // Write command name key
+                        if (multiCmdFirstWritten)
+                        {
+                            writer.Advance(Encoding.UTF8.GetBytes(",".AsSpan(), writer.GetSpan(1)));
+                        }
+                        var nameJson = $"\"{cmdInfo.Name}\":";
+                        writer.Advance(Encoding.UTF8.GetBytes(nameJson.AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(nameJson.Length))));
+                        multiCmdFirstWritten = true;
+                    }
+
                     if (routine.ReturnsSet && endpoint.Raw is false && binary is false)
                     {
                         writer.Advance(Encoding.UTF8.GetBytes(Consts.OpenBracket.ToString().AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(1))));
@@ -2107,7 +2146,9 @@ public class NpgsqlRestEndpoint(
                     }
 
                     bool first = true;
-                    var routineReturnRecordCount = routine.ColumnCount;
+                    var routineReturnRecordCount = currentColumnCount;
+                    var activeColumnNames = currentColumnNames ?? routine.ColumnNames;
+                    var activeColumnDescriptors = currentColumnDescriptors ?? routine.ColumnsTypeDescriptor;
 
                     rowBuilder = StringBuilderPool.Rent(512);
                     ulong rowCount = 0;
@@ -2203,8 +2244,8 @@ public class NpgsqlRestEndpoint(
                                     Options.AuthenticationOptions.DefaultDataProtector is not null &&
                                     (endpoint.DecryptAllColumns ||
                                      (endpoint.DecryptColumns is not null &&
-                                      i < routine.ColumnNames.Length &&
-                                      endpoint.DecryptColumns.Contains(routine.ColumnNames[i]))))
+                                      i < activeColumnNames.Length &&
+                                      endpoint.DecryptColumns.Contains(activeColumnNames[i]))))
                                 {
                                     try
                                     {
@@ -2221,7 +2262,7 @@ public class NpgsqlRestEndpoint(
                                 {
                                     if (endpoint.RawValueSeparator is not null)
                                     {
-                                        var descriptor = routine.ColumnsTypeDescriptor[i];
+                                        var descriptor = activeColumnDescriptors[i];
                                         if ((descriptor.Category & (TypeCategory.Text | TypeCategory.Date | TypeCategory.DateTime)) != 0)
                                         {
                                             rowBuilder.Append(QuoteText(raw));
@@ -2281,12 +2322,12 @@ public class NpgsqlRestEndpoint(
                                         else
                                         {
                                             rowBuilder.Append(Consts.DoubleQuote);
-                                            rowBuilder.Append(routine.ColumnNames[i]);
+                                            rowBuilder.Append(activeColumnNames[i]);
                                             rowBuilder.Append(Consts.DoubleQuoteColon);
                                         }
                                     }
 
-                                    var descriptor = routine.ColumnsTypeDescriptor[i];
+                                    var descriptor = activeColumnDescriptors[i];
                                     if (value == DBNull.Value)
                                     {
                                         outputBuffer.Append(Consts.Null);
@@ -2380,17 +2421,17 @@ public class NpgsqlRestEndpoint(
                                         outputBuffer.Append(Consts.Comma);
                                     }
 
-                                    if (routine.ReturnsUnnamedSet == false && i == routine.ColumnCount - 1)
+                                    if (routine.ReturnsUnnamedSet == false && i == routineReturnRecordCount - 1)
                                     {
                                         rowBuilder.Append(Consts.CloseBrace);
                                     }
 
                                     // Add comma between columns (but not within composite fields which are handled above)
-                                    if (!isInComposite && i < routine.ColumnCount - 1)
+                                    if (!isInComposite && i < routineReturnRecordCount - 1)
                                     {
                                         rowBuilder.Append(Consts.Comma);
                                     }
-                                    else if (isInComposite && compositeMapping.IsLastField && i < routine.ColumnCount - 1)
+                                    else if (isInComposite && compositeMapping.IsLastField && i < routineReturnRecordCount - 1)
                                     {
                                         rowBuilder.Append(Consts.Comma);
                                     }
@@ -2449,6 +2490,16 @@ public class NpgsqlRestEndpoint(
                             Options.CacheOptions.DefaultRoutineCache?.AddOrUpdate(endpoint, cacheKeyString!, cacheBuffer.ToString());
                         }
                     }
+
+                    multiCmdIndex++;
+                    } while (multiCmd is not null && multiCmdIndex < multiCmd.Length && await reader.NextResultAsync(cancellationToken));
+
+                    // Close multi-command JSON object
+                    if (multiCmd is not null && binary is false)
+                    {
+                        writer.Advance(Encoding.UTF8.GetBytes("}".AsSpan(), writer.GetSpan(1)));
+                    }
+
                     return;
                 } // end if (routine.ReturnsRecord == true)
             } // end if (routine.IsVoid is false)

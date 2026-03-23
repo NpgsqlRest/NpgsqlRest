@@ -43,4 +43,11 @@ public class SqlFileSourceOptions
     /// Behavior when a file fails to parse or describe.
     /// </summary>
     public ParseErrorMode ErrorMode { get; set; } = ParseErrorMode.Skip;
+
+    /// <summary>
+    /// Name pattern for commands in multi-statement SQL files.
+    /// {0} is replaced with the 1-based command index.
+    /// Override per-file with @command_name annotation.
+    /// </summary>
+    public string CommandNamePattern { get; set; } = "command{0}";
 }

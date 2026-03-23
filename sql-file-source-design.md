@@ -518,3 +518,130 @@ Build `Routine` objects and plug into NpgsqlRest.
 | Test files (ParamAnnotation) | 16 files | |
 | Test files (SqlFileSource) | ~50 files | |
 | NpgsqlRestClient integration | ~50 | Low |
+
+---
+
+## 11. Multi-Command SQL Files (v2)
+
+### 11.1 Overview
+
+Multi-statement SQL files execute as a batch via `NpgsqlBatch`. Each statement produces a result set (or void). The response is a JSON object where each key maps to one command's results. Void commands are omitted from the response.
+
+### 11.2 Response Format
+
+```json
+{
+  "command1": [{"id": 1, "name": "test"}],
+  "command3": [{"count": 42}]
+}
+```
+
+- Commands with result sets → JSON array of rows (same format as single-command endpoints)
+- Void commands (INSERT/UPDATE/DELETE without RETURNING) → **omitted** from response
+- If no commands return results → empty object `{}`
+
+### 11.3 Command Naming
+
+Default key pattern: `"command{0}"` where `{0}` is the 1-based index.
+
+**Configurable via:**
+1. Plugin option `CommandNamePattern` (global default)
+2. Per-file annotation `-- @command_name step1` before each statement
+
+```sql
+-- @command_name validate
+SELECT count(*) FROM orders WHERE id = $1;
+
+-- @command_name process
+UPDATE orders SET status = 'processing' WHERE id = $1 RETURNING id, status;
+
+-- no annotation → uses pattern: "command3"
+INSERT INTO order_log (order_id, action) VALUES ($1, 'started');
+```
+
+Response:
+```json
+{
+  "validate": [{"count": 1}],
+  "process": [{"id": 42, "status": "processing"}]
+}
+```
+
+(Third command is void INSERT → omitted)
+
+### 11.4 Parameters
+
+All statements share the same parameter set. User sends `$1=123` once, every statement that references `$1` gets the value.
+
+**Describe:** Each statement described individually via SchemaOnly. Parameter types collected per `$N` across all statements:
+- All OIDs for same `$N` agree → use that type
+- OIDs conflict → startup error with clear message (annotation `@param $1 name type` can override)
+- `$N` appears in only some statements → type from the statement(s) that reference it
+
+**Execution:** Each `NpgsqlBatchCommand` gets its own copy of bound parameter values. Parameters not referenced by a command are still bound (PostgreSQL ignores extra params in batch commands).
+
+### 11.5 Transaction Control
+
+No implicit transaction wrapping. The SQL file controls transactions explicitly:
+
+```sql
+BEGIN;
+UPDATE accounts SET balance = balance - $1 WHERE id = $2;
+UPDATE accounts SET balance = balance + $1 WHERE id = $3;
+COMMIT;
+```
+
+### 11.6 Error Handling
+
+If any command in the batch fails, the entire request fails and returns the error — same as any other NpgsqlRest error. No partial results.
+
+### 11.7 HTTP Verb
+
+Multi-command files use the same auto-detection as single-command: scan all statements for mutations, apply priority (DELETE > POST > PUT > GET). Explicit annotation overrides.
+
+### 11.8 Implementation
+
+| Component | Est. Lines | Complexity |
+|---|---|---|
+| Parser: remove multi-statement error | ~5 | Trivial |
+| Describer: per-statement describe + param merge | ~80 | Medium |
+| Parameter merger with conflict detection | ~40 | Low |
+| Batch execution (NpgsqlBatch, bind per command) | ~60 | Medium |
+| JSON object rendering (multi-result-set) | ~120 | High |
+| Command naming (config + annotation) | ~30 | Low |
+| SqlFileSourceOptions: CommandNamePattern | ~5 | Trivial |
+| Tests | ~15 files | Medium |
+| **Total** | **~350** | |
+
+### 11.9 Rendering Approach
+
+The multi-result-set rendering cannot use the existing `NpgsqlRestEndpoint` code which writes a JSON array for a single result set. Two options:
+
+**Option A: Custom endpoint handler in the plugin.** SqlFileSource registers a custom `RequestDelegate` for multi-command endpoints that:
+1. Executes the `NpgsqlBatch`
+2. Uses `reader.NextResult()` to iterate command result sets
+3. Writes `{key: [rows], ...}` directly to the response
+
+**Option B: Extend core rendering.** Add a `MultiResultSet` flag to `RoutineEndpoint` that switches the rendering to JSON object mode.
+
+**Recommendation:** Option A — keeps the complexity in the plugin, doesn't touch core rendering code. The custom handler uses the same `PipeWriter` + `StringBuilderPool` patterns for performance.
+
+### 11.10 Column Metadata per Command
+
+Each command in the batch may return different columns. The Describe phase captures column info per statement:
+
+```csharp
+class MultiCommandDescribeResult
+{
+    public List<SingleCommandDescribe> Commands { get; }
+    public string[] MergedParameterTypes { get; }  // merged across all commands
+}
+
+class SingleCommandDescribe
+{
+    public ColumnInfo[]? Columns { get; }           // null for void commands
+    public string? CommandName { get; }             // from annotation or pattern
+}
+```
+
+The rendering uses per-command column metadata to write each result set correctly.

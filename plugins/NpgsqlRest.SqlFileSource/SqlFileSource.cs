@@ -112,40 +112,78 @@ public class SqlFileSource(SqlFileSourceOptions options) : IRoutineSource
             return null;
         }
 
-        var sql = parseResult.Statements[0];
+        bool isMultiCommand = parseResult.Statements.Count > 1;
 
-        // Describe via wire protocol
-        int paramCount = SqlFileDescriber.FindMaxParamIndex(sql);
-        var describeResult = SqlFileDescriber.Describe(connection, sql, paramCount);
+        // Describe each statement individually and merge parameters
+        int mergedMaxParam = 0;
+        var paramTypesByIndex = new Dictionary<int, string>(); // $N index → type name
+        var commandDescribes = new List<DescribeResult>();
 
-        if (describeResult.HasError)
+        foreach (var stmt in parseResult.Statements)
         {
-            if (options.ErrorMode == ParseErrorMode.Throw)
+            int stmtParamCount = SqlFileDescriber.FindMaxParamIndex(stmt);
+            if (stmtParamCount > mergedMaxParam) mergedMaxParam = stmtParamCount;
+
+            var describeResult = SqlFileDescriber.Describe(connection, stmt, stmtParamCount);
+            if (describeResult.HasError)
             {
-                throw new InvalidOperationException($"SqlFileSource: {filePath}: Describe failed: {describeResult.Error}");
+                if (options.ErrorMode == ParseErrorMode.Throw)
+                {
+                    throw new InvalidOperationException($"SqlFileSource: {filePath}: Describe failed: {describeResult.Error}");
+                }
+                NpgsqlRestOptions.Logger?.LogWarning("SqlFileSource: {FilePath}: Describe failed: {Error}", filePath, describeResult.Error);
+                return null;
             }
-            NpgsqlRestOptions.Logger?.LogWarning("SqlFileSource: {FilePath}: Describe failed: {Error}", filePath, describeResult.Error);
-            return null;
+            commandDescribes.Add(describeResult);
+
+            // Merge parameter types — if same $N has different types across statements, error
+            if (describeResult.ParameterTypes is not null)
+            {
+                for (int i = 0; i < describeResult.ParameterTypes.Length; i++)
+                {
+                    var pType = describeResult.ParameterTypes[i];
+                    if (pType == "unknown") continue;
+                    if (paramTypesByIndex.TryGetValue(i, out var existing))
+                    {
+                        if (existing != "unknown" && existing != pType)
+                        {
+                            var error = $"Parameter ${i + 1} has conflicting types across statements: '{existing}' vs '{pType}'. Use @param annotation to override.";
+                            if (options.ErrorMode == ParseErrorMode.Throw)
+                            {
+                                throw new InvalidOperationException($"SqlFileSource: {filePath}: {error}");
+                            }
+                            NpgsqlRestOptions.Logger?.LogWarning("SqlFileSource: {FilePath}: {Error}", filePath, error);
+                            return null;
+                        }
+                    }
+                    else
+                    {
+                        paramTypesByIndex[i] = pType;
+                    }
+                }
+            }
         }
 
-        // Build parameters
-        var parameters = new NpgsqlRestParameter[paramCount];
-        for (int i = 0; i < paramCount; i++)
+        // Build merged parameters
+        var parameters = new NpgsqlRestParameter[mergedMaxParam];
+        for (int i = 0; i < mergedMaxParam; i++)
         {
-            var typeName = describeResult.ParameterTypes?[i] ?? "text";
+            var typeName = paramTypesByIndex.GetValueOrDefault(i, "unknown");
             var typeDescriptor = new TypeDescriptor(typeName);
             var positionalName = $"${i + 1}";
-            var convertedName = positionalName; // Default to $N, can be renamed by @param annotation
 
             parameters[i] = new NpgsqlRestParameter(
                 ordinal: i,
-                convertedName: convertedName,
+                convertedName: positionalName,
                 actualName: positionalName,
                 typeDescriptor: typeDescriptor);
         }
 
-        // Build return columns
-        var columns = describeResult.Columns ?? [];
+        // For single-command: use first describe's columns
+        // For multi-command: use first non-void describe's columns as the Routine columns
+        //   (individual command columns stored in MultiCommandInfo)
+        var primaryDescribe = commandDescribes[0];
+        var columns = primaryDescribe.Columns ?? [];
         var columnCount = columns.Length;
         var originalColumnNames = new string[columnCount];
         var columnNames = new string[columnCount];
@@ -157,11 +195,8 @@ public class SqlFileSource(SqlFileSourceOptions options) : IRoutineSource
             originalColumnNames[i] = columns[i].Name;
             columnNames[i] = nameConverter(columns[i].Name) ?? columns[i].Name;
             columnTypeDescriptors[i] = new TypeDescriptor(columns[i].DataTypeName);
-
-            // Resolve composite types from CompositeTypeCache
             ResolveCompositeType(columnTypeDescriptors[i]);
 
-            // Track array-of-composite columns for JSON array rendering
             if (columnTypeDescriptors[i].IsArrayOfCompositeType &&
                 columnTypeDescriptors[i].ArrayCompositeFieldNames is not null &&
                 columnTypeDescriptors[i].ArrayCompositeFieldDescriptors is not null)
@@ -173,9 +208,42 @@ public class SqlFileSource(SqlFileSourceOptions options) : IRoutineSource
             }
         }
 
-        bool isVoid = columnCount == 0;
+        // Build multi-command info if needed
+        MultiCommandInfo[]? multiCommandInfo = null;
+        if (isMultiCommand)
+        {
+            multiCommandInfo = new MultiCommandInfo[commandDescribes.Count];
+            for (int ci = 0; ci < commandDescribes.Count; ci++)
+            {
+                var cmdCols = commandDescribes[ci].Columns ?? [];
+                var cmdColNames = new string[cmdCols.Length];
+                var cmdColDescriptors = new TypeDescriptor[cmdCols.Length];
+                for (int j = 0; j < cmdCols.Length; j++)
+                {
+                    cmdColNames[j] = nameConverter(cmdCols[j].Name) ?? cmdCols[j].Name;
+                    cmdColDescriptors[j] = new TypeDescriptor(cmdCols[j].DataTypeName);
+                    ResolveCompositeType(cmdColDescriptors[j]);
+                }
 
-        // Derive endpoint name from filename
+                // Command name: annotation override or default pattern
+                var annotatedName = (ci < parseResult.CommandNames.Count) ? parseResult.CommandNames[ci] : null;
+                var commandName = annotatedName ?? string.Format(options.CommandNamePattern, ci + 1);
+
+                multiCommandInfo[ci] = new MultiCommandInfo
+                {
+                    Name = commandName,
+                    ColumnCount = cmdCols.Length,
+                    ColumnNames = cmdColNames,
+                    ColumnTypeDescriptors = cmdColDescriptors,
+                };
+            }
+        }
+
+        bool isVoid = columnCount == 0 && (multiCommandInfo?.All(c => c.ColumnCount == 0) ?? true);
+
+        // Join all statements with ; for execution
+        var fullSql = string.Join(";\n", parseResult.Statements);
+
         var fileName = Path.GetFileNameWithoutExtension(filePath);
 
         var routine = new Routine
@@ -200,11 +268,11 @@ public class SqlFileSource(SqlFileSourceOptions options) : IRoutineSource
             ColumnsTypeDescriptor = columnTypeDescriptors,
             ReturnsUnnamedSet = false,
             IsVoid = isVoid,
-            ParamCount = paramCount,
+            ParamCount = mergedMaxParam,
             Parameters = parameters,
             ParamsHash = [.. parameters.Select(p => p.ConvertedName)],
             OriginalParamsHash = [.. parameters.Select(p => p.ActualName)],
-            Expression = sql,
+            Expression = fullSql,
             FullDefinition = $"-- SQL file: {filePath}",
             SimpleDefinition = $"SQL: {fileName}",
             FormatUrlPattern = null,
@@ -213,13 +281,16 @@ public class SqlFileSource(SqlFileSourceOptions options) : IRoutineSource
             Metadata = null,
         };
 
-        // Set array composite metadata for JSON array rendering
         if (arrayCompositeColumnInfo is not null)
         {
             routine.ArrayCompositeColumnInfo = arrayCompositeColumnInfo;
         }
+        if (multiCommandInfo is not null)
+        {
+            routine.MultiCommandInfo = multiCommandInfo;
+        }
 
-        var formatter = new SqlFileParameterFormatter(sql);
+        var formatter = new SqlFileParameterFormatter(fullSql);
         return (routine, formatter);
     }
 

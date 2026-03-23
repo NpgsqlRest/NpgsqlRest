@@ -151,4 +151,42 @@ public class Routine
     /// Value: (fieldNames for the composite element type, fieldDescriptors for each field)
     /// </summary>
     public Dictionary<int, (string[] FieldNames, TypeDescriptor[] FieldDescriptors)>? ArrayCompositeColumnInfo { get; set; } = null;
+
+    /// <summary>
+    /// For multi-command SQL files: per-command column metadata and command names.
+    /// When not null, the rendering uses NextResult() to iterate result sets and wraps
+    /// them in a JSON object {commandName: [rows], ...}. Void commands are omitted.
+    /// </summary>
+    public MultiCommandInfo[]? MultiCommandInfo { get; set; } = null;
+
+    /// <summary>
+    /// True if this routine uses multi-command rendering (JSON object with named result sets).
+    /// </summary>
+    public bool IsMultiCommand => MultiCommandInfo is not null;
+}
+
+/// <summary>
+/// Metadata for one command in a multi-command SQL file endpoint.
+/// </summary>
+public class MultiCommandInfo
+{
+    /// <summary>
+    /// Command name used as JSON object key. From @command_name annotation or default pattern.
+    /// </summary>
+    public required string Name { get; init; }
+
+    /// <summary>
+    /// Column count for this command's result set. 0 for void commands.
+    /// </summary>
+    public required int ColumnCount { get; init; }
+
+    /// <summary>
+    /// Column names for this command's result set (camelCase converted).
+    /// </summary>
+    public required string[] ColumnNames { get; init; }
+
+    /// <summary>
+    /// Type descriptors for this command's result columns.
+    /// </summary>
+    public required TypeDescriptor[] ColumnTypeDescriptors { get; init; }
 }

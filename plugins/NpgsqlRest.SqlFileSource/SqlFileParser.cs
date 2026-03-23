@@ -29,6 +29,12 @@ public class SqlFileParseResult
     public bool IsDoBlock { get; set; }
 
     /// <summary>
+    /// Per-statement command names from @command_name annotations.
+    /// Index matches Statements index. Null entries use default naming.
+    /// </summary>
+    public List<string?> CommandNames { get; } = [];
+
+    /// <summary>
     /// Errors encountered during parsing.
     /// </summary>
     public List<string> Errors { get; } = [];
@@ -318,10 +324,10 @@ public static class SqlFileParser
 
         result.Comment = commentBuilder.ToString();
 
-        // Validate: multi-statement files are not supported in v1
+        // Extract @command_name annotations from the comment text per statement
         if (result.Statements.Count > 1)
         {
-            result.Errors.Add("Multi-statement SQL files are not yet supported. Each .sql file must contain exactly one statement.");
+            ExtractCommandNames(result);
         }
 
         commentBuilder.Dispose();
@@ -335,6 +341,39 @@ public static class SqlFileParser
     private static bool ShouldCollectComment(CommentScope scope, bool firstStatementSeen)
     {
         return scope == CommentScope.All || (scope == CommentScope.Header && !firstStatementSeen);
+    }
+
+    /// <summary>
+    /// Extract @command_name annotations from the comment text.
+    /// Each @command_name applies to the next statement.
+    /// </summary>
+    private static void ExtractCommandNames(SqlFileParseResult result)
+    {
+        // Parse @command_name from comment lines
+        // The comment text is already extracted. We scan for lines containing @command_name
+        // and map them to statement indices based on their order of appearance.
+        var lines = result.Comment.Split(['\n', '\r'], StringSplitOptions.RemoveEmptyEntries);
+        var commandNameQueue = new Queue<string>();
+
+        foreach (var line in lines)
+        {
+            var trimmed = line.Trim();
+            if (trimmed.StartsWith("@command_name ", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.StartsWith("command_name ", StringComparison.OrdinalIgnoreCase))
+            {
+                var parts = trimmed.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length >= 2)
+                {
+                    commandNameQueue.Enqueue(parts[1]);
+                }
+            }
+        }
+
+        // Assign command names to statements in order
+        for (int i = 0; i < result.Statements.Count; i++)
+        {
+            result.CommandNames.Add(commandNameQueue.Count > 0 ? commandNameQueue.Dequeue() : null);
+        }
     }
 
     private static void DetectMutation(ReadOnlySpan<char> word, SqlFileParseResult result)
