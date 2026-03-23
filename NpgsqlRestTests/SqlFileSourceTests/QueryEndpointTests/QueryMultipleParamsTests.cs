@@ -1,5 +1,17 @@
 namespace NpgsqlRestTests.SqlFileSourceTests;
 
+public static partial class SqlFiles
+{
+    public static void QueryMultipleParamsTests()
+    {
+        File.WriteAllText(Path.Combine(Dir, "search_test.sql"), """
+            -- @param $1 name_filter
+            -- @param $2 active_filter
+            select id, name, active from sql_describe_test where name like $1 and active = $2;
+            """);
+    }
+}
+
 [Collection("SqlFileSourceFixture")]
 public class QueryMultipleParamsTests(SqlFileSourceTestFixture test)
 {

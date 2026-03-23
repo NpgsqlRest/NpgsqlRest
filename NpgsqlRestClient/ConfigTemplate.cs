@@ -1019,7 +1019,8 @@ public static partial class ConfigSchemaGenerator
         //
         // List of static file patterns that will require authorization.
         // File paths are relative to the RootPath property and pattern matching is case-insensitive.
-        // Pattern can include wildcards or question marks. For example: *.html, /user/*, etc
+        // Pattern can include wildcards (* matches any chars, ** matches recursively including /, ? matches single char).
+        // For example: *.html, /user/*, /admin/**/*.html
         //
         "AuthorizePaths": [],
         "UnauthorizedRedirectPath": "/",
@@ -1047,7 +1048,8 @@ public static partial class ConfigSchemaGenerator
           //
           // List of static file patterns that will parse the content and replace the tags with the values from the claims collection.
           // File paths are relative to the RootPath property and pattern matching is case-insensitive.
-          // Pattern can include wildcards or question marks. For example: *.html, *.htm, *.txt, *.json, *.xml, *.css, *.js
+          // Pattern can include wildcards (* matches any chars, ** matches recursively including /, ? matches single char).
+          // For example: *.html, *.htm, *.txt, /pages/**/*.html
           // 
           "FilePaths": [ "*.html" ],
           //
@@ -2584,6 +2586,11 @@ public static partial class ConfigSchemaGenerator
           // Empty string disables the feature.
           //
           "FilePattern": "",
+          //
+          // How comment annotations are processed for SQL file endpoints.
+          // Possible values: Ignore, ParseAll, OnlyWithHttpTag.
+          //
+          "CommentsMode": "ParseAll",
           //
           // Which comments in the SQL file to parse as annotations.
           // Possible values: All (default), Header (only comments before the first statement).

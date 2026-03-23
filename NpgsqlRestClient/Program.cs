@@ -457,7 +457,7 @@ NpgsqlRestOptions options = new()
     DefaultSseEventNoticeLevel = config.GetConfigEnum<PostgresNoticeLevels?>("DefaultServerSentEventsEventNoticeLevel", config.NpgsqlRestCfg) ?? PostgresNoticeLevels.INFO,
     SseResponseHeaders = builder.GetSseResponseHeaders(),
 
-    RoutineSources = appInstance.CreateRoutineSources(),
+    EndpointSources = appInstance.CreateEndpointSources(),
     UploadOptions = appInstance.CreateUploadOptions(),
     
     CacheOptions = builder.BuildCacheOptions(app, cacheType),

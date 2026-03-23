@@ -37,7 +37,7 @@ public class NestedCompositeFixture : IDisposable
         {
             IncludeSchemas = ["public"],
             CommentsMode = CommentsMode.ParseAll,
-            RoutineSources = [new RoutineSource(resolveNestedCompositeTypes: true)]
+            EndpointSources = [new RoutineSource(resolveNestedCompositeTypes: true)]
         });
 
         _app.StartAsync().GetAwaiter().GetResult();

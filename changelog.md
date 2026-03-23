@@ -101,11 +101,34 @@ This enhancement benefits all existing `IsPatternMatch` consumers (static files,
 - `Routine.CompositeColumnInfo` and `Routine.ArrayCompositeColumnInfo` — changed from `internal` to `public` to allow plugins to set composite column metadata for proper nested JSON rendering.
 - `CompositeTypeCache.GetType` — improved lookup with schema-prefix fallback. `GetDataTypeName` returns `public.my_type` but `regtype::text` cache keys omit the `public` schema. The lookup now strips the schema prefix on miss, resolving composite types from all sources consistently.
 
+### Interface Refactoring: `IEndpointSource` / `IRoutineSource`
+
+The `IRoutineSource` interface has been split into two:
+
+- **`IEndpointSource`** — base interface with `CommentsMode` and `Read()`. Used by sources that don't need database catalog filtering (e.g., `SqlFileSource`).
+- **`IRoutineSource : IEndpointSource`** — extended interface that adds `Query`, schema/name filtering properties, and `NestedJsonForCompositeTypes`. Used by `RoutineSource` and `CrudSource`.
+
+`NpgsqlRestOptions.RoutineSources` renamed to `EndpointSources`. `SourcesCreated` callback renamed to `EndpointSourcesCreated`.
+
+### SqlFileSource: Unnamed Column Handling
+
+SQL files with unnamed columns (e.g., `SELECT $1, $2` without `AS` aliases) now produce valid JSON with unique column names (`column1`, `column2`, ...) instead of duplicate `?column?` keys. Duplicate named columns are also deduplicated.
+
+### SqlFileSource: `CommentsMode` Support
+
+`SqlFileSourceOptions` now exposes `CommentsMode` (default: `ParseAll`). This is passed to the core pipeline to control annotation parsing behavior per source. `ParseAll` is the appropriate default for SQL files since the file's existence is the opt-in — unlike functions where `OnlyWithHttpTag` filters thousands of database objects.
+
+### SqlFileSource: No-Op Parameter Formatter
+
+`SqlFileParameterFormatter` simplified to a static singleton with `IsFormattable = false`. The formatter delegates entirely to `routine.Expression` — no per-endpoint allocation, no redundant SQL copy.
+
 ### Internal Changes
 
 - `NpgsqlRestParameter.ConvertedName` and `ActualName` — changed from `private set` to `internal set` to support the `@param` rename annotation
 - `ParameterHandler.HandleParameter` — extended with `words` parameter for original-case access, added `HandleParameterRename` for all rename/retype forms
 - Three new log messages: `CommentParamNotExistsCantRename`, `CommentParamRenamed`, `CommentParamRetyped`
+- `SqlFileSourceTestFixture` refactored: SQL file content colocated with tests via reflection-based `SqlFiles` partial class (same pattern as `Database` partial class)
+- New endpoint tests: bare params with/without aliases, typed params, trailing semicolons, syntax error resilience, comment position variations
 
 ---
 

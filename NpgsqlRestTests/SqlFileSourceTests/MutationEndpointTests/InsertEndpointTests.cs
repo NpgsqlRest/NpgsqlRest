@@ -1,5 +1,17 @@
 namespace NpgsqlRestTests.SqlFileSourceTests;
 
+public static partial class SqlFiles
+{
+    public static void InsertEndpointTests()
+    {
+        File.WriteAllText(Path.Combine(Dir, "insert_test.sql"), """
+            -- @param $1 id
+            -- @param $2 name
+            insert into sql_describe_test (id, name) values ($1, $2) returning id, name;
+            """);
+    }
+}
+
 [Collection("SqlFileSourceFixture")]
 public class InsertEndpointTests(SqlFileSourceTestFixture test)
 {

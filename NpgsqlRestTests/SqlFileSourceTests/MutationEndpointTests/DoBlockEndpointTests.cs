@@ -1,5 +1,15 @@
 namespace NpgsqlRestTests.SqlFileSourceTests;
 
+public static partial class SqlFiles
+{
+    public static void DoBlockEndpointTests()
+    {
+        File.WriteAllText(Path.Combine(Dir, "do_block.sql"), """
+            do $$ begin perform 1; end; $$;
+            """);
+    }
+}
+
 [Collection("SqlFileSourceFixture")]
 public class DoBlockEndpointTests(SqlFileSourceTestFixture test)
 {

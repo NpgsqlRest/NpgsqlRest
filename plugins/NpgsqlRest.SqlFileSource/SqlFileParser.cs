@@ -96,246 +96,252 @@ public static class SqlFileParser
         int i = 0;
         int len = content.Length;
 
-        while (i < len)
+        try
         {
-            char c = content[i];
-
-            switch (state)
+            while (i < len)
             {
-                case State.Normal:
-                    // Check for line comment: --
-                    if (c == '-' && i + 1 < len && content[i + 1] == '-')
-                    {
-                        // Extract comment text until end of line
-                        i += 2;
-                        int commentStart = i;
-                        while (i < len && content[i] != '\n' && content[i] != '\r')
-                            i++;
+                char c = content[i];
 
-                        if (ShouldCollectComment(commentScope, firstStatementSeen))
+                switch (state)
+                {
+                    case State.Normal:
+                        // Check for line comment: --
+                        if (c == '-' && i + 1 < len && content[i + 1] == '-')
                         {
-                            if (commentBuilder.Length > 0) commentBuilder.Append('\n');
-                            commentBuilder.Append(content[commentStart..i]);
-                        }
-                        // Skip \r\n
-                        if (i < len && content[i] == '\r') i++;
-                        if (i < len && content[i] == '\n') i++;
-                        continue;
-                    }
+                            // Extract comment text until end of line
+                            i += 2;
+                            int commentStart = i;
+                            while (i < len && content[i] != '\n' && content[i] != '\r')
+                                i++;
 
-                    // Check for block comment: /*
-                    if (c == '/' && i + 1 < len && content[i + 1] == '*')
-                    {
-                        state = State.BlockComment;
-                        blockCommentDepth = 1;
-                        i += 2;
-                        if (ShouldCollectComment(commentScope, firstStatementSeen))
-                        {
-                            if (commentBuilder.Length > 0) commentBuilder.Append('\n');
-                        }
-                        continue;
-                    }
-
-                    // Check for single quote: '
-                    if (c == '\'')
-                    {
-                        state = State.SingleQuote;
-                        stmtBuilder.Append(c);
-                        lastTokenIsWord = false;
-                        lastToken.Clear();
-                        i++;
-                        continue;
-                    }
-
-                    // Check for dollar quote: $tag$  or $$
-                    if (c == '$')
-                    {
-                        int tagStart = i;
-                        i++;
-                        // Collect tag name (alphanumeric + underscore)
-                        while (i < len && (char.IsLetterOrDigit(content[i]) || content[i] == '_'))
-                            i++;
-                        if (i < len && content[i] == '$')
-                        {
-                            // Valid dollar quote opening
-                            dollarTag.Clear();
-                            dollarTag.Append(content[tagStart..(i + 1)]);
-                            state = State.DollarQuote;
-
-                            // Check if the last token before this dollar-quote was DO
-                            if (lastTokenIsWord && lastToken.Length == 2 &&
-                                char.ToUpperInvariant(lastToken[0]) == 'D' &&
-                                char.ToUpperInvariant(lastToken[1]) == 'O')
+                            if (ShouldCollectComment(commentScope, firstStatementSeen))
                             {
-                                result.IsDoBlock = true;
+                                if (commentBuilder.Length > 0) commentBuilder.Append('\n');
+                                commentBuilder.Append(content[commentStart..i]);
                             }
+                            // Skip \r\n
+                            if (i < len && content[i] == '\r') i++;
+                            if (i < len && content[i] == '\n') i++;
+                            continue;
+                        }
 
-                            // Append the dollar-quote opening to statement
-                            stmtBuilder.Append(content[tagStart..(i + 1)]);
+                        // Check for block comment: /*
+                        if (c == '/' && i + 1 < len && content[i + 1] == '*')
+                        {
+                            state = State.BlockComment;
+                            blockCommentDepth = 1;
+                            i += 2;
+                            if (ShouldCollectComment(commentScope, firstStatementSeen))
+                            {
+                                if (commentBuilder.Length > 0) commentBuilder.Append('\n');
+                            }
+                            continue;
+                        }
+
+                        // Check for single quote: '
+                        if (c == '\'')
+                        {
+                            state = State.SingleQuote;
+                            stmtBuilder.Append(c);
                             lastTokenIsWord = false;
                             lastToken.Clear();
                             i++;
                             continue;
                         }
-                        else
-                        {
-                            // Not a valid dollar quote, treat $ as normal char
-                            stmtBuilder.Append(content[tagStart..i]);
-                            // Don't increment i — we've already advanced past the $+tag chars
-                            continue;
-                        }
-                    }
 
-                    // Check for semicolon: statement separator
-                    if (c == ';')
-                    {
-                        var stmt = stmtBuilder.ToString().Trim();
-                        if (stmt.Length > 0)
+                        // Check for dollar quote: $tag$  or $$
+                        if (c == '$')
                         {
-                            result.Statements.Add(stmt);
-                            firstStatementSeen = true;
-                        }
-                        stmtBuilder.Clear();
-                        lastTokenIsWord = false;
-                        lastToken.Clear();
-                        i++;
-                        continue;
-                    }
-
-                    // Track tokens for mutation detection and DO block detection
-                    if (char.IsLetter(c) || c == '_')
-                    {
-                        int wordStart = i;
-                        while (i < len && (char.IsLetterOrDigit(content[i]) || content[i] == '_'))
+                            int tagStart = i;
                             i++;
-
-                        var word = content[wordStart..i];
-                        stmtBuilder.Append(word);
-
-                        // Track last token for DO detection
-                        lastToken.Clear();
-                        lastToken.Append(word);
-                        lastTokenIsWord = true;
-
-                        // Mutation detection (case-insensitive)
-                        DetectMutation(word, result);
-                        continue;
-                    }
-
-                    // Whitespace and other characters
-                    if (char.IsWhiteSpace(c))
-                    {
-                        stmtBuilder.Append(c);
-                        // Don't clear lastToken on whitespace — DO $$ has space between
-                    }
-                    else
-                    {
-                        stmtBuilder.Append(c);
-                        lastTokenIsWord = false;
-                        lastToken.Clear();
-                    }
-                    i++;
-                    break;
-
-                case State.LineComment:
-                    // Shouldn't reach here — line comments handled inline above
-                    i++;
-                    break;
-
-                case State.BlockComment:
-                    if (c == '/' && i + 1 < len && content[i + 1] == '*')
-                    {
-                        blockCommentDepth++;
-                        if (ShouldCollectComment(commentScope, firstStatementSeen))
-                            commentBuilder.Append("/*");
-                        i += 2;
-                        continue;
-                    }
-                    if (c == '*' && i + 1 < len && content[i + 1] == '/')
-                    {
-                        blockCommentDepth--;
-                        if (blockCommentDepth == 0)
-                        {
-                            state = State.Normal;
-                            i += 2;
-                            continue;
-                        }
-                        if (ShouldCollectComment(commentScope, firstStatementSeen))
-                            commentBuilder.Append("*/");
-                        i += 2;
-                        continue;
-                    }
-                    if (ShouldCollectComment(commentScope, firstStatementSeen))
-                        commentBuilder.Append(c);
-                    i++;
-                    break;
-
-                case State.SingleQuote:
-                    stmtBuilder.Append(c);
-                    if (c == '\'')
-                    {
-                        // Check for escaped quote ''
-                        if (i + 1 < len && content[i + 1] == '\'')
-                        {
-                            stmtBuilder.Append('\'');
-                            i += 2;
-                            continue;
-                        }
-                        state = State.Normal;
-                    }
-                    i++;
-                    break;
-
-                case State.DollarQuote:
-                    stmtBuilder.Append(c);
-                    // Check if we're at the closing dollar-quote tag
-                    if (c == '$' && i + dollarTag.Length - 1 <= len)
-                    {
-                        var candidate = content[i..(i + dollarTag.Length)];
-                        bool match = true;
-                        for (int j = 0; j < dollarTag.Length; j++)
-                        {
-                            if (candidate[j] != dollarTag[j])
+                            // Collect tag name (alphanumeric + underscore)
+                            while (i < len && (char.IsLetterOrDigit(content[i]) || content[i] == '_'))
+                                i++;
+                            if (i < len && content[i] == '$')
                             {
-                                match = false;
-                                break;
+                                // Valid dollar quote opening
+                                dollarTag.Clear();
+                                dollarTag.Append(content[tagStart..(i + 1)]);
+                                state = State.DollarQuote;
+
+                                // Check if the last token before this dollar-quote was DO
+                                if (lastTokenIsWord && lastToken.Length == 2 &&
+                                    char.ToUpperInvariant(lastToken[0]) == 'D' &&
+                                    char.ToUpperInvariant(lastToken[1]) == 'O')
+                                {
+                                    result.IsDoBlock = true;
+                                }
+
+                                // Append the dollar-quote opening to statement
+                                stmtBuilder.Append(content[tagStart..(i + 1)]);
+                                lastTokenIsWord = false;
+                                lastToken.Clear();
+                                i++;
+                                continue;
+                            }
+                            else
+                            {
+                                // Not a valid dollar quote, treat $ as normal char
+                                stmtBuilder.Append(content[tagStart..i]);
+                                // Don't increment i — we've already advanced past the $+tag chars
+                                continue;
                             }
                         }
-                        if (match)
+
+                        // Check for semicolon: statement separator
+                        if (c == ';')
                         {
-                            // Append rest of closing tag (we already appended c which is $)
-                            stmtBuilder.Append(content[(i + 1)..(i + dollarTag.Length)]);
-                            i += dollarTag.Length;
-                            state = State.Normal;
+                            var stmt = stmtBuilder.ToString().Trim();
+                            if (stmt.Length > 0)
+                            {
+                                result.Statements.Add(stmt);
+                                firstStatementSeen = true;
+                            }
+                            stmtBuilder.Clear();
+                            lastTokenIsWord = false;
+                            lastToken.Clear();
+                            i++;
                             continue;
                         }
-                    }
-                    i++;
-                    break;
+
+                        // Track tokens for mutation detection and DO block detection
+                        if (char.IsLetter(c) || c == '_')
+                        {
+                            int wordStart = i;
+                            while (i < len && (char.IsLetterOrDigit(content[i]) || content[i] == '_'))
+                                i++;
+
+                            var word = content[wordStart..i];
+                            stmtBuilder.Append(word);
+
+                            // Track last token for DO detection
+                            lastToken.Clear();
+                            lastToken.Append(word);
+                            lastTokenIsWord = true;
+
+                            // Mutation detection (case-insensitive)
+                            DetectMutation(word, result);
+                            continue;
+                        }
+
+                        // Whitespace and other characters
+                        if (char.IsWhiteSpace(c))
+                        {
+                            stmtBuilder.Append(c);
+                            // Don't clear lastToken on whitespace — DO $$ has space between
+                        }
+                        else
+                        {
+                            stmtBuilder.Append(c);
+                            lastTokenIsWord = false;
+                            lastToken.Clear();
+                        }
+                        i++;
+                        break;
+
+                    // ReSharper disable once UnreachableSwitchCaseDueToIntegerAnalysis
+                    case State.LineComment:
+                        // Shouldn't reach here — line comments handled inline above
+                        i++;
+                        break;
+
+                    case State.BlockComment:
+                        if (c == '/' && i + 1 < len && content[i + 1] == '*')
+                        {
+                            blockCommentDepth++;
+                            if (ShouldCollectComment(commentScope, firstStatementSeen))
+                                commentBuilder.Append("/*");
+                            i += 2;
+                            continue;
+                        }
+                        if (c == '*' && i + 1 < len && content[i + 1] == '/')
+                        {
+                            blockCommentDepth--;
+                            if (blockCommentDepth == 0)
+                            {
+                                state = State.Normal;
+                                i += 2;
+                                continue;
+                            }
+                            if (ShouldCollectComment(commentScope, firstStatementSeen))
+                                commentBuilder.Append("*/");
+                            i += 2;
+                            continue;
+                        }
+                        if (ShouldCollectComment(commentScope, firstStatementSeen))
+                            commentBuilder.Append(c);
+                        i++;
+                        break;
+
+                    case State.SingleQuote:
+                        stmtBuilder.Append(c);
+                        if (c == '\'')
+                        {
+                            // Check for escaped quote ''
+                            if (i + 1 < len && content[i + 1] == '\'')
+                            {
+                                stmtBuilder.Append('\'');
+                                i += 2;
+                                continue;
+                            }
+                            state = State.Normal;
+                        }
+                        i++;
+                        break;
+
+                    case State.DollarQuote:
+                        stmtBuilder.Append(c);
+                        // Check if we're at the closing dollar-quote tag
+                        if (c == '$' && i + dollarTag.Length - 1 <= len)
+                        {
+                            var candidate = content[i..(i + dollarTag.Length)];
+                            bool match = true;
+                            for (int j = 0; j < dollarTag.Length; j++)
+                            {
+                                if (candidate[j] != dollarTag[j])
+                                {
+                                    match = false;
+                                    break;
+                                }
+                            }
+                            if (match)
+                            {
+                                // Append rest of closing tag (we already appended c which is $)
+                                stmtBuilder.Append(content[(i + 1)..(i + dollarTag.Length)]);
+                                i += dollarTag.Length;
+                                state = State.Normal;
+                                continue;
+                            }
+                        }
+                        i++;
+                        break;
+                }
             }
-        }
 
-        // Handle remaining statement (no trailing semicolon)
-        var lastStmt = stmtBuilder.ToString().Trim();
-        if (lastStmt.Length > 0)
+            // Handle remaining statement (no trailing semicolon)
+            var lastStmt = stmtBuilder.ToString().Trim();
+            if (lastStmt.Length > 0)
+            {
+                result.Statements.Add(lastStmt);
+            }
+
+            result.Comment = commentBuilder.ToString();
+
+            // Extract @command_name annotations from the comment text per statement
+            if (result.Statements.Count > 1)
+            {
+                ExtractCommandNames(result);
+            }
+
+            return result;
+        }
+        finally
         {
-            result.Statements.Add(lastStmt);
+            commentBuilder.Dispose();
+            stmtBuilder.Dispose();
+            dollarTag.Dispose();
+            lastToken.Dispose();
         }
-
-        result.Comment = commentBuilder.ToString();
-
-        // Extract @command_name annotations from the comment text per statement
-        if (result.Statements.Count > 1)
-        {
-            ExtractCommandNames(result);
-        }
-
-        commentBuilder.Dispose();
-        stmtBuilder.Dispose();
-        dollarTag.Dispose();
-        lastToken.Dispose();
-
-        return result;
     }
 
     private static bool ShouldCollectComment(CommentScope scope, bool firstStatementSeen)

@@ -1,5 +1,15 @@
 namespace NpgsqlRestTests.SqlFileSourceTests;
 
+public static partial class SqlFiles
+{
+    public static void QueryEmptyResultTests()
+    {
+        File.WriteAllText(Path.Combine(Dir, "count_test.sql"), """
+            select count(*) as total from sql_describe_test;
+            """);
+    }
+}
+
 [Collection("SqlFileSourceFixture")]
 public class QueryEmptyResultTests(SqlFileSourceTestFixture test)
 {

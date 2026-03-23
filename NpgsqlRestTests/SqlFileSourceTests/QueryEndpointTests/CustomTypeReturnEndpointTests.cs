@@ -2,6 +2,27 @@ using NpgsqlRestTests.Setup;
 
 namespace NpgsqlRestTests.SqlFileSourceTests;
 
+public static partial class SqlFiles
+{
+    public static void CustomTypeReturnEndpointTests()
+    {
+        File.WriteAllText(Path.Combine(Dir, "custom_type_return.sql"), """
+            -- @param $1 id
+            select id, data from sql_file_custom_table where id = $1;
+            """);
+
+        File.WriteAllText(Path.Combine(Dir, "custom_array_query.sql"), """
+            -- @param $1 id
+            select id, items from sql_file_custom_array_table where id = $1;
+            """);
+
+        File.WriteAllText(Path.Combine(Dir, "custom_type_fields.sql"), """
+            -- @param $1 id
+            select id, (data).val1, (data).val2, (data).val3 from sql_file_custom_table where id = $1;
+            """);
+    }
+}
+
 [Collection("SqlFileSourceFixture")]
 public class CustomTypeReturnEndpointTests(SqlFileSourceTestFixture test)
 {

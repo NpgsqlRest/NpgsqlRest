@@ -2,6 +2,17 @@ using NpgsqlRestTests.Setup;
 
 namespace NpgsqlRestTests.SqlFileSourceTests;
 
+public static partial class SqlFiles
+{
+    public static void MultiSelectEndpointTests()
+    {
+        File.WriteAllText(Path.Combine(Dir, "multi_select.sql"), """
+            SELECT id, name FROM sql_describe_test WHERE id = $1;
+            SELECT count(*) as total FROM sql_describe_test;
+            """);
+    }
+}
+
 [Collection("SqlFileSourceFixture")]
 public class MultiSelectEndpointTests(SqlFileSourceTestFixture test)
 {

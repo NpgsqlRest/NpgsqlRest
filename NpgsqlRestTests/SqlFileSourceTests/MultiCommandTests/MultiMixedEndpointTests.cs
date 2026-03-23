@@ -2,6 +2,20 @@ using NpgsqlRestTests.Setup;
 
 namespace NpgsqlRestTests.SqlFileSourceTests;
 
+public static partial class SqlFiles
+{
+    public static void MultiMixedEndpointTests()
+    {
+        File.WriteAllText(Path.Combine(Dir, "multi_mixed.sql"), """
+            -- @command_name lookup
+            SELECT name FROM sql_describe_test WHERE id = $1;
+            INSERT INTO sql_describe_test (id, name) VALUES ($1 + 1000, 'multi_test');
+            -- @command_name verify
+            SELECT count(*) as total FROM sql_describe_test;
+            """);
+    }
+}
+
 [Collection("SqlFileSourceFixture")]
 public class MultiMixedEndpointTests(SqlFileSourceTestFixture test)
 {

@@ -136,11 +136,11 @@ public static class NpgsqlRestBuilder
             }
         }
 
-        Options.SourcesCreated(Options.RoutineSources);
+        Options.EndpointSourcesCreated(Options.EndpointSources);
         var hasCachedRoutine = false;
         CommentsMode optionsCommentsMode = Options.CommentsMode;
         bool hasStreamingEvents = false;
-        foreach (var source in Options.RoutineSources)
+        foreach (var source in Options.EndpointSources)
         {
             if (source.CommentsMode.HasValue)
             {
@@ -170,7 +170,7 @@ public static class NpgsqlRestBuilder
                 }
 
                 // Apply source's NestedJsonForCompositeTypes default if not set by comment annotation
-                if (endpoint.NestedJsonForCompositeTypes is null && source.NestedJsonForCompositeTypes)
+                if (endpoint.NestedJsonForCompositeTypes is null && source is IRoutineSource routineSource && routineSource.NestedJsonForCompositeTypes)
                 {
                     endpoint.NestedJsonForCompositeTypes = true;
                 }
