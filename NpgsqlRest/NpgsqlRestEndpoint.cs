@@ -2284,11 +2284,9 @@ public partial class NpgsqlRestEndpoint(
                             for (int pi = 0; pi < Math.Min(command.Parameters.Count, cmdInfo.ParamCount); pi++)
                             {
                                 var srcParam = command.Parameters[pi];
-                                batchCmd.Parameters.Add(new NpgsqlParameter
-                                {
-                                    NpgsqlDbType = srcParam.NpgsqlDbType,
-                                    Value = srcParam.Value ?? DBNull.Value
-                                });
+                                var batchParam = NpgsqlRestParameter.CreateParamWithType(srcParam.NpgsqlDbType);
+                                batchParam.Value = srcParam.Value ?? DBNull.Value;
+                                batchCmd.Parameters.Add(batchParam);
                             }
                             batch.BatchCommands.Add(batchCmd);
                         }
