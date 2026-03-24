@@ -225,8 +225,8 @@ internal static partial class DefaultCommentParser
         {
             ["name"] = "param",
             ["aliases"] = ToJsonArray(ParameterKey),
-            ["syntax"] = "param <name> is hash of <other_name> | param <name> is upload metadata",
-            ["description"] = "Configure parameter behavior: hash computation or upload metadata binding."
+            ["syntax"] = "param <name> is hash of <other_name> | param <name> is upload metadata | param <original> <new_name> [type] | param <original> is <new_name> [type]",
+            ["description"] = "Configure parameter behavior: hash computation, upload metadata binding, or rename/retype. Rename forms: 'param $1 user_id', 'param $1 user_id integer', 'param $1 is user_id', 'param _old_name better_name'. Works on all endpoint types."
         });
 
         annotations.Add((JsonNode)new JsonObject
@@ -387,6 +387,14 @@ internal static partial class DefaultCommentParser
             ["aliases"] = new JsonArray(),
             ["syntax"] = "Header-Name: header-value",
             ["description"] = "Add a response header (separated by :)."
+        });
+
+        annotations.Add((JsonNode)new JsonObject
+        {
+            ["name"] = "resultN",
+            ["aliases"] = new JsonArray("result1", "result2", "result3"),
+            ["syntax"] = "resultN <name> | resultN is <name>",
+            ["description"] = "Rename a result key in multi-command SQL file responses. N is the 1-based command index. Example: '@result1 validate' renames the first result from 'result1' to 'validate'. SQL file source only."
         });
 
         return annotations;
