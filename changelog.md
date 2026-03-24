@@ -306,6 +306,26 @@ This enhancement benefits all existing `IsPatternMatch` consumers (`StaticFiles.
 - `Routine.CompositeColumnInfo` and `Routine.ArrayCompositeColumnInfo` — changed from `internal` to `public` for plugin access
 - Schema-prefix fallback: `public.my_type` now matches cache key `my_type` (handles `GetDataTypeName` vs `regtype::text` format mismatch)
 
+#### TsClient: Multi-Command SQL File Support
+
+The TypeScript client generator now handles multi-command SQL file endpoints. For multi-command endpoints, TsClient generates a typed response interface with one property per result:
+
+```typescript
+interface IProcessOrderResponse {
+    validate: { count: number }[];
+    result2: number;  // void command → rows affected
+    confirm: { id: number, status: string }[];
+}
+
+export async function processOrder(
+    request: IProcessOrderRequest
+) : Promise<IProcessOrderResponse> { ... }
+```
+
+- Void commands are typed as `number` (rows affected count)
+- Data-returning commands are typed as arrays of inline object types
+- Single-command SQL file endpoints generate standard typed functions (no change)
+
 ---
 
 ### Internal Changes
