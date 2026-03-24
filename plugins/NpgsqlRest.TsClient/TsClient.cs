@@ -494,6 +494,48 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 responseName = "Response";
                 returnExp = "return response;";
             }
+            else if (routine.IsMultiCommand && routine.MultiCommandInfo is not null && !urlOnly)
+            {
+                // Multi-command SQL file: generate response interface with one property per command result
+                responseName = $"I{pascal}Response";
+                StringBuilder mcResp = new();
+
+                mcResp.AppendLine($"interface {responseName} {{");
+                foreach (var cmdInfo in routine.MultiCommandInfo)
+                {
+                    if (cmdInfo.ColumnCount == 0)
+                    {
+                        // Void command → rows affected count
+                        mcResp.AppendLine($"    {cmdInfo.Name}: number;");
+                    }
+                    else if (cmdInfo.ColumnCount == 1)
+                    {
+                        // Single column
+                        var tsType = GetTsType(cmdInfo.ColumnTypeDescriptors[0], true);
+                        mcResp.AppendLine($"    {cmdInfo.Name}: {{ {cmdInfo.ColumnNames[0]}: {tsType} }}[];");
+                    }
+                    else
+                    {
+                        // Multiple columns — inline object type
+                        var fields = new StringBuilder();
+                        for (int ci = 0; ci < cmdInfo.ColumnCount; ci++)
+                        {
+                            if (ci > 0) fields.Append(", ");
+                            fields.Append(cmdInfo.ColumnNames[ci]);
+                            fields.Append(": ");
+                            fields.Append(GetTsType(cmdInfo.ColumnTypeDescriptors[ci], true));
+                        }
+                        mcResp.AppendLine($"    {cmdInfo.Name}: {{ {fields} }}[];");
+                    }
+                }
+                mcResp.AppendLine("}");
+                mcResp.AppendLine();
+                if (!options.SkipTypes)
+                {
+                    interfaces.Append(mcResp);
+                }
+                returnExp = GetReturnExp($"await response.json() as {responseName}");
+            }
             else if (!isVoid && !urlOnly)
             {
                 if (endpoint.Upload)

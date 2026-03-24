@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using NpgsqlRest.SqlFileSource;
+using NpgsqlRest.TsClient;
 using NpgsqlRestTests.SqlFileSourceTests;
 
 namespace NpgsqlRestTests.Setup;
@@ -18,9 +19,11 @@ public class SqlFileSourceTestFixture : IDisposable
     private readonly WebApplication _app;
     private readonly HttpClient _client;
     private readonly string _sqlDir;
+    private readonly string _tsClientDir;
 
     public HttpClient Client => _client;
     public string SqlDir => _sqlDir;
+    public string TsClientDir => _tsClientDir;
 
     public SqlFileSourceTestFixture()
     {
@@ -34,6 +37,10 @@ public class SqlFileSourceTestFixture : IDisposable
 
         // Write SQL files for testing
         SqlFiles.WriteAll(_sqlDir, subDir);
+
+        // TsClient output directory
+        _tsClientDir = Path.Combine(Path.GetTempPath(), "npgsqlrest_tsclient_test_" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(_tsClientDir);
 
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseUrls("http://127.0.0.1:0");
@@ -53,6 +60,15 @@ public class SqlFileSourceTestFixture : IDisposable
                     ErrorMode = ParseErrorMode.Skip,
                 })
             ],
+            EndpointCreateHandlers =
+            [
+                new TsClient(new TsClientOptions
+                {
+                    FilePath = Path.Combine(_tsClientDir, "{0}.ts"),
+                    BySchema = true,
+                    IncludeStatusCode = false,
+                })
+            ],
         });
 
         _app.StartAsync().GetAwaiter().GetResult();
@@ -70,17 +86,8 @@ public class SqlFileSourceTestFixture : IDisposable
         _app.StopAsync().GetAwaiter().GetResult();
         _app.DisposeAsync().GetAwaiter().GetResult();
 
-        // Clean up temp SQL files
-        try
-        {
-            if (Directory.Exists(_sqlDir))
-            {
-                Directory.Delete(_sqlDir, true);
-            }
-        }
-        catch
-        {
-            // Ignore cleanup errors
-        }
+        // Clean up temp directories
+        try { if (Directory.Exists(_sqlDir)) Directory.Delete(_sqlDir, true); } catch { }
+        try { if (Directory.Exists(_tsClientDir)) Directory.Delete(_tsClientDir, true); } catch { }
     }
 }
