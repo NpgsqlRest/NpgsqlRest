@@ -51,9 +51,9 @@ public class SqlFileSourceOptions
     public ParseErrorMode ErrorMode { get; set; } = ParseErrorMode.Skip;
 
     /// <summary>
-    /// Name pattern for commands in multi-statement SQL files.
-    /// {0} is replaced with the 1-based command index.
-    /// Override per-file with @command_name annotation.
+    /// Prefix for result keys in multi-command JSON responses.
+    /// Default keys are "result1", "result2", etc.
+    /// Override per-result with @resultN annotation in the SQL file.
     /// </summary>
-    public string CommandNamePattern { get; set; } = "command{0}";
+    public string ResultPrefix { get; set; } = "result";
 }

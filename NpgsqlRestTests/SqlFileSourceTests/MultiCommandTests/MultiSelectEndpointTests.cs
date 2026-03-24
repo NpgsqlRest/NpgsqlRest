@@ -7,8 +7,9 @@ public static partial class SqlFiles
     public static void MultiSelectEndpointTests()
     {
         File.WriteAllText(Path.Combine(Dir, "multi_select.sql"), """
-            SELECT id, name FROM sql_describe_test WHERE id = $1;
-            SELECT count(*) as total FROM sql_describe_test;
+            -- @param $1 id
+            select id, name from sql_describe_test where id = $1;
+            select count(*) as total from sql_describe_test;
             """);
     }
 }
@@ -17,31 +18,15 @@ public static partial class SqlFiles
 public class MultiSelectEndpointTests(SqlFileSourceTestFixture test)
 {
     [Fact]
-    public async Task MultiSelect_ReturnsJsonObjectWithCommandKeys()
+    public async Task MultiSelect_ReturnsJsonObjectWithResultKeys()
     {
-        // multi_select.sql has two SELECTs, both return results
-        using var response = await test.Client.GetAsync("/api/multi-select?$1=1");
+        using var response = await test.Client.GetAsync("/api/multi-select?id=1");
         var content = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response: {content}");
-        content.Should().StartWith("{");
-        content.Should().EndWith("}");
 
-        using var doc = JsonDocument.Parse(content);
-        doc.RootElement.ValueKind.Should().Be(JsonValueKind.Object);
-
-        // Should have command1 and command2 keys
-        doc.RootElement.TryGetProperty("command1", out var cmd1).Should().BeTrue();
-        doc.RootElement.TryGetProperty("command2", out var cmd2).Should().BeTrue();
-
-        // command1: SELECT id, name WHERE id = 1
-        cmd1.ValueKind.Should().Be(JsonValueKind.Array);
-        cmd1.GetArrayLength().Should().Be(1);
-        cmd1[0].GetProperty("id").GetInt32().Should().Be(1);
-
-        // command2: SELECT count(*)
-        cmd2.ValueKind.Should().Be(JsonValueKind.Array);
-        cmd2.GetArrayLength().Should().Be(1);
-        cmd2[0].GetProperty("total").GetInt64().Should().BeGreaterThanOrEqualTo(2);
+        // result1 is deterministic (id=1 filter), result2 count(*) is non-deterministic
+        content.Should().Contain("\"result1\":[{\"id\":1,\"name\":\"test1\"}]");
+        content.Should().Contain("\"result2\":[{\"total\":");
     }
 }

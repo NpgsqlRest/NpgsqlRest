@@ -29,10 +29,10 @@ public class SqlFileParseResult
     public bool IsDoBlock { get; set; }
 
     /// <summary>
-    /// Per-statement command names from @command_name annotations.
-    /// Index matches Statements index. Null entries use default naming.
+    /// Result key overrides from @resultN annotations (e.g., @result1 validate).
+    /// Key is 1-based result index, value is the custom name.
     /// </summary>
-    public List<string?> CommandNames { get; } = [];
+    public Dictionary<int, string> ResultNames { get; } = [];
 
     /// <summary>
     /// Errors encountered during parsing.
@@ -327,10 +327,10 @@ public static class SqlFileParser
 
             result.Comment = commentBuilder.ToString();
 
-            // Extract @command_name annotations from the comment text per statement
+            // Extract @resultN annotations from the comment text for multi-command files
             if (result.Statements.Count > 1)
             {
-                ExtractCommandNames(result);
+                ExtractResultNames(result);
             }
 
             return result;
@@ -350,35 +350,68 @@ public static class SqlFileParser
     }
 
     /// <summary>
-    /// Extract @command_name annotations from the comment text.
-    /// Each @command_name applies to the next statement.
+    /// Extract @resultN annotations from comment text.
+    /// Supports: @result1 name, @result1 is name
+    /// The number after "result" is the 1-based index.
     /// </summary>
-    private static void ExtractCommandNames(SqlFileParseResult result)
+    private static void ExtractResultNames(SqlFileParseResult result)
     {
-        // Parse @command_name from comment lines
-        // The comment text is already extracted. We scan for lines containing @command_name
-        // and map them to statement indices based on their order of appearance.
         var lines = result.Comment.Split(['\n', '\r'], StringSplitOptions.RemoveEmptyEntries);
-        var commandNameQueue = new Queue<string>();
 
         foreach (var line in lines)
         {
             var trimmed = line.Trim();
-            if (trimmed.StartsWith("@command_name ", StringComparison.OrdinalIgnoreCase) ||
-                trimmed.StartsWith("command_name ", StringComparison.OrdinalIgnoreCase))
-            {
-                var parts = trimmed.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
-                if (parts.Length >= 2)
-                {
-                    commandNameQueue.Enqueue(parts[1]);
-                }
-            }
-        }
+            // Strip optional @ prefix
+            var s = trimmed.StartsWith('@') ? trimmed[1..] : trimmed;
 
-        // Assign command names to statements in order
-        for (int i = 0; i < result.Statements.Count; i++)
-        {
-            result.CommandNames.Add(commandNameQueue.Count > 0 ? commandNameQueue.Dequeue() : null);
+            // Match "resultN ..." where N is one or more digits
+            if (!s.StartsWith("result", StringComparison.OrdinalIgnoreCase) || s.Length < 7)
+            {
+                continue;
+            }
+
+            // Extract the number after "result"
+            int numStart = 6; // length of "result"
+            int numEnd = numStart;
+            while (numEnd < s.Length && char.IsDigit(s[numEnd]))
+            {
+                numEnd++;
+            }
+            if (numEnd == numStart)
+            {
+                continue; // no digits after "result"
+            }
+
+            if (!int.TryParse(s[numStart..numEnd], out int resultIndex) || resultIndex < 1)
+            {
+                continue;
+            }
+
+            // Rest after the number: " name" or " is name"
+            var rest = s[numEnd..].Trim();
+            if (rest.Length == 0)
+            {
+                continue;
+            }
+
+            var parts = rest.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+            string? name = null;
+
+            if (parts.Length >= 2 && string.Equals(parts[0], "is", StringComparison.OrdinalIgnoreCase))
+            {
+                // @resultN is name
+                name = parts[1];
+            }
+            else if (parts.Length >= 1)
+            {
+                // @resultN name
+                name = parts[0];
+            }
+
+            if (name is not null)
+            {
+                result.ResultNames[resultIndex] = name;
+            }
         }
     }
 

@@ -1857,6 +1857,226 @@ public class NpgsqlRestEndpoint(
                 return;
             }
 
+            // Multi-command rendering: execute each statement separately, build JSON object
+            if (routine.IsMultiCommand && routine.MultiCommandInfo is not null)
+            {
+                await OpenConnectionAsync(connection, context, endpoint, cancellationToken);
+
+                if (shouldLog)
+                {
+                    var allSql = string.Join(";\n", routine.MultiCommandInfo.Select(c => c.Statement));
+                    NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", allSql);
+                }
+
+                context.Response.ContentType = Application.Json;
+
+                // Write opening {
+                writer.Advance(Encoding.UTF8.GetBytes("{".AsSpan(), writer.GetSpan(1)));
+
+                for (int cmdIndex = 0; cmdIndex < routine.MultiCommandInfo.Length; cmdIndex++)
+                {
+                    var currentCmd = routine.MultiCommandInfo[cmdIndex];
+
+                    // Write comma between results
+                    if (cmdIndex > 0)
+                    {
+                        writer.Advance(Encoding.UTF8.GetBytes(",".AsSpan(), writer.GetSpan(1)));
+                    }
+
+                    // Write "resultName":
+                    var keyJson = string.Concat("\"", currentCmd.Name, "\":");
+                    writer.Advance(Encoding.UTF8.GetBytes(keyJson.AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(keyJson.Length))));
+
+                    // Build a command for this statement
+                    await using var mcCmd = new NpgsqlCommand(currentCmd.Statement, connection);
+                    if (endpoint.CommandTimeout.HasValue)
+                    {
+                        mcCmd.CommandTimeout = endpoint.CommandTimeout.Value.Seconds;
+                    }
+                    // Bind parameters that this statement uses
+                    for (int pi = 0; pi < Math.Min(currentCmd.ParamCount, command.Parameters.Count); pi++)
+                    {
+                        var srcParam = command.Parameters[pi];
+                        mcCmd.Parameters.Add(new NpgsqlParameter
+                        {
+                            NpgsqlDbType = srcParam.NpgsqlDbType,
+                            Value = srcParam.Value ?? DBNull.Value
+                        });
+                    }
+
+                    if (currentCmd.ColumnCount == 0)
+                    {
+                        // Void command — execute and write rows affected count
+                        var rowsAffected = await mcCmd.ExecuteNonQueryAsync(cancellationToken);
+                        var rowsStr = rowsAffected.ToString();
+                        writer.Advance(Encoding.UTF8.GetBytes(rowsStr.AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(rowsStr.Length))));
+                    }
+                    else
+                    {
+                        // Query command — read result set as JSON array
+                        // AllResultTypesAreUnknown forces all values to string — same as single-command path
+                        mcCmd.AllResultTypesAreUnknown = true;
+                        await using var mcReader = await mcCmd.ExecuteReaderAsync(CommandBehavior.SequentialAccess, cancellationToken);
+
+                        writer.Advance(Encoding.UTF8.GetBytes("[".AsSpan(), writer.GetSpan(1)));
+                        bool mcFirstRow = true;
+                        var mcRowBuilder = StringBuilderPool.Rent(512);
+                        var mcBufferRows = endpoint.BufferRows ?? Options.BufferRows;
+                        ulong mcRowCount = 0;
+
+                        // Note: response caching for multi-command is not yet supported
+                        // (cache key infrastructure is in the single-command path)
+
+                        // Nested composite column support (per-command)
+                        Dictionary<int, (string CompositeColumnName, string FieldName, bool IsFirstField, bool IsLastField, int FieldCount)>? mcNestedMap = null;
+                        if (endpoint.NestedJsonForCompositeTypes == true && routine.CompositeColumnInfo is not null)
+                        {
+                            mcNestedMap = new();
+                            foreach (var (_, ci) in routine.CompositeColumnInfo)
+                            {
+                                var indices = ci.ExpandedColumnIndices;
+                                for (int fi = 0; fi < indices.Length; fi++)
+                                {
+                                    if (indices[fi] < currentCmd.ColumnCount)
+                                    {
+                                        mcNestedMap[indices[fi]] = (ci.ConvertedColumnName, ci.FieldNames[fi], fi == 0, fi == indices.Length - 1, indices.Length);
+                                    }
+                                }
+                            }
+                            if (mcNestedMap.Count == 0) mcNestedMap = null;
+                        }
+                        StringBuilder? mcCompositeBuffer = mcNestedMap is not null ? StringBuilderPool.Rent(256) : null;
+                        bool mcCompositeHasValue = false;
+                        string? mcCurrentCompName = null;
+
+                        while (await mcReader.ReadAsync(cancellationToken))
+                        {
+                            mcRowCount++;
+                            if (!mcFirstRow)
+                            {
+                                mcRowBuilder.Append(Consts.Comma);
+                            }
+                            mcFirstRow = false;
+
+                            for (int col = 0; col < currentCmd.ColumnCount; col++)
+                            {
+                                object value = mcReader.GetValue(col);
+                                var raw = (value == DBNull.Value ? "" : (string)value).AsSpan();
+
+                                // Decrypt if needed
+                                if (value != DBNull.Value &&
+                                    Options.AuthenticationOptions.DefaultDataProtector is not null &&
+                                    (endpoint.DecryptAllColumns ||
+                                     (endpoint.DecryptColumns is not null &&
+                                      col < currentCmd.ColumnNames.Length &&
+                                      endpoint.DecryptColumns.Contains(currentCmd.ColumnNames[col]))))
+                                {
+                                    try
+                                    {
+                                        raw = Options.AuthenticationOptions.DefaultDataProtector.Unprotect((string)value).AsSpan();
+                                    }
+                                    catch { /* use raw as-is */ }
+                                }
+
+                                // Determine output buffer and handle composite nesting
+                                (string CompositeColumnName, string FieldName, bool IsFirstField, bool IsLastField, int FieldCount) mcCompMapping = default;
+                                bool mcIsInComposite = mcNestedMap is not null && mcNestedMap.TryGetValue(col, out mcCompMapping);
+                                StringBuilder mcOutput = (mcIsInComposite && mcCompositeBuffer is not null) ? mcCompositeBuffer : mcRowBuilder;
+
+                                // Column name / structure
+                                if (col == 0) mcRowBuilder.Append(Consts.OpenBrace);
+
+                                if (mcIsInComposite)
+                                {
+                                    if (mcCompMapping.IsFirstField)
+                                    {
+                                        mcCompositeBuffer!.Clear();
+                                        mcCompositeHasValue = false;
+                                        mcCurrentCompName = mcCompMapping.CompositeColumnName;
+                                    }
+                                    mcOutput.Append(Consts.DoubleQuote);
+                                    mcOutput.Append(mcCompMapping.FieldName);
+                                    mcOutput.Append(Consts.DoubleQuoteColon);
+                                }
+                                else
+                                {
+                                    mcRowBuilder.Append(Consts.DoubleQuote);
+                                    mcRowBuilder.Append(currentCmd.ColumnNames[col]);
+                                    mcRowBuilder.Append(Consts.DoubleQuoteColon);
+                                }
+
+                                // Value formatting — shared with single-command path
+                                JsonValueFormatter.FormatValue(
+                                    raw, value,
+                                    currentCmd.ColumnTypeDescriptors[col],
+                                    mcOutput,
+                                    routine.ArrayCompositeColumnInfo,
+                                    col);
+
+                                if (mcIsInComposite && value != DBNull.Value) mcCompositeHasValue = true;
+
+                                // Composite field closing
+                                if (mcIsInComposite && mcCompMapping.IsLastField)
+                                {
+                                    mcRowBuilder.Append(Consts.DoubleQuote);
+                                    mcRowBuilder.Append(mcCurrentCompName);
+                                    mcRowBuilder.Append(Consts.DoubleQuoteColon);
+                                    if (mcCompositeHasValue)
+                                    {
+                                        mcRowBuilder.Append(Consts.OpenBrace);
+                                        mcRowBuilder.Append(mcCompositeBuffer);
+                                        mcRowBuilder.Append(Consts.CloseBrace);
+                                    }
+                                    else
+                                    {
+                                        mcRowBuilder.Append(Consts.Null);
+                                    }
+                                }
+                                else if (mcIsInComposite)
+                                {
+                                    mcOutput.Append(Consts.Comma);
+                                }
+
+                                // Close brace and commas
+                                if (col == currentCmd.ColumnCount - 1)
+                                {
+                                    mcRowBuilder.Append(Consts.CloseBrace);
+                                }
+                                if (!mcIsInComposite && col < currentCmd.ColumnCount - 1)
+                                {
+                                    mcRowBuilder.Append(Consts.Comma);
+                                }
+                                else if (mcIsInComposite && mcCompMapping.IsLastField && col < currentCmd.ColumnCount - 1)
+                                {
+                                    mcRowBuilder.Append(Consts.Comma);
+                                }
+                            }
+
+                            // Buffer rows flush
+                            if (mcBufferRows > 0 && mcRowCount % mcBufferRows == 0)
+                            {
+                                WriteStringBuilderToWriter(mcRowBuilder, writer);
+                                await writer.FlushAsync(cancellationToken);
+                            }
+                        }
+
+                        if (mcRowBuilder.Length > 0)
+                        {
+                            WriteStringBuilderToWriter(mcRowBuilder, writer);
+                        }
+                        StringBuilderPool.Return(mcRowBuilder);
+                        if (mcCompositeBuffer is not null) StringBuilderPool.Return(mcCompositeBuffer);
+
+                        writer.Advance(Encoding.UTF8.GetBytes("]".AsSpan(), writer.GetSpan(1)));
+                    }
+                }
+
+                // Write closing }
+                writer.Advance(Encoding.UTF8.GetBytes("}".AsSpan(), writer.GetSpan(1)));
+                await writer.FlushAsync(cancellationToken);
+                return;
+            }
+
             if (routine.IsVoid)
             {
                 if (await PrepareCommand(connection, command, commandText, context, endpoint, true, cancellationToken) is false)
@@ -1868,8 +2088,8 @@ public class NpgsqlRestEndpoint(
                     NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", command.CommandText);
                 }
                 await command.ExecuteNonQueryWithRetryAsync(
-                    endpoint.RetryStrategy, 
-                    cancellationToken, 
+                    endpoint.RetryStrategy,
+                    cancellationToken,
                     errorCodePolicy: endpoint.ErrorCodePolicy ?? Options.ErrorHandlingOptions.DefaultErrorCodePolicy);
                 context.Response.StatusCode = (int)HttpStatusCode.NoContent;
                 return;
@@ -2053,19 +2273,55 @@ public class NpgsqlRestEndpoint(
                         }
                     }
 
-                    if (await PrepareCommand(connection, command, commandText, context, endpoint, true, cancellationToken) is false)
+                    NpgsqlDataReader reader;
+                    await using NpgsqlBatch? batch = routine.IsMultiCommand && routine.MultiCommandInfo is not null ? new NpgsqlBatch(connection) : null;
+
+                    if (batch is not null)
                     {
-                        return;
+                        // Multi-command: use NpgsqlBatch with one command per statement
+                        foreach (var cmdInfo in routine.MultiCommandInfo!)
+                        {
+                            var batchCmd = new NpgsqlBatchCommand(cmdInfo.Statement);
+                            // Copy bound parameters from the main command to each batch command
+                            for (int pi = 0; pi < Math.Min(command.Parameters.Count, cmdInfo.ParamCount); pi++)
+                            {
+                                var srcParam = command.Parameters[pi];
+                                batchCmd.Parameters.Add(new NpgsqlParameter
+                                {
+                                    NpgsqlDbType = srcParam.NpgsqlDbType,
+                                    Value = srcParam.Value ?? DBNull.Value
+                                });
+                            }
+                            batch.BatchCommands.Add(batchCmd);
+                        }
+                        reader = await batch.ExecuteBatchReaderWithRetryAsync(
+                            CommandBehavior.SequentialAccess,
+                            endpoint.RetryStrategy,
+                            cancellationToken,
+                            errorCodePolicy: endpoint.ErrorCodePolicy ?? Options.ErrorHandlingOptions.DefaultErrorCodePolicy);
+                        if (shouldLog)
+                        {
+                            NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", string.Join("; ", routine.MultiCommandInfo.Select(c => c.Statement)));
+                        }
                     }
-                    await using var reader = await command.ExecuteReaderWithRetryAsync(
-                        CommandBehavior.SequentialAccess,
-                        endpoint.RetryStrategy,
-                        cancellationToken,
-                        errorCodePolicy: endpoint.ErrorCodePolicy ?? Options.ErrorHandlingOptions.DefaultErrorCodePolicy);
-                    if (shouldLog)
+                    else
                     {
-                        NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", command.CommandText);
+                        // Single command: use NpgsqlCommand as before
+                        if (await PrepareCommand(connection, command, commandText, context, endpoint, true, cancellationToken) is false)
+                        {
+                            return;
+                        }
+                        reader = await command.ExecuteReaderWithRetryAsync(
+                            CommandBehavior.SequentialAccess,
+                            endpoint.RetryStrategy,
+                            cancellationToken,
+                            errorCodePolicy: endpoint.ErrorCodePolicy ?? Options.ErrorHandlingOptions.DefaultErrorCodePolicy);
+                        if (shouldLog)
+                        {
+                            NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", command.CommandText);
+                        }
                     }
+                    await using var _ = reader; // ensure disposal
 
                     // Pluggable table format renderer
                     if (Options.TableFormatHandlers is not null
@@ -2075,7 +2331,20 @@ public class NpgsqlRestEndpoint(
                     {
                         context.Response.ContentType = tableFormatHandler.ContentType;
                         var tfBufferRows = endpoint.BufferRows ?? Options.BufferRows;
-                        await tableFormatHandler.RenderAsync(reader, routine, endpoint, writer, context, tfBufferRows, customParameters, cancellationToken);
+                        if (routine.IsMultiCommand && routine.MultiCommandInfo is not null)
+                        {
+                            // Multi-command: call handler per result set
+                            var tfCmdIndex = 0;
+                            do
+                            {
+                                await tableFormatHandler.RenderAsync(reader, routine, endpoint, writer, context, tfBufferRows, customParameters, cancellationToken);
+                                tfCmdIndex++;
+                            } while (tfCmdIndex < routine.MultiCommandInfo.Length && await reader.NextResultAsync(cancellationToken));
+                        }
+                        else
+                        {
+                            await tableFormatHandler.RenderAsync(reader, routine, endpoint, writer, context, tfBufferRows, customParameters, cancellationToken);
+                        }
                         await writer.FlushAsync(cancellationToken);
                         return;
                     }
@@ -2097,11 +2366,12 @@ public class NpgsqlRestEndpoint(
                     var maxCacheableRows = Options.CacheOptions.MaxCacheableRows;
                     var shouldCache = canCacheRecordsAndSets;
 
-                    // Multi-command rendering: wrap result sets in JSON object
+                    // Multi-command rendering: wrap result sets in JSON object (not in raw/binary mode)
                     var multiCmd = routine.MultiCommandInfo;
                     int multiCmdIndex = 0;
                     bool multiCmdFirstWritten = false;
-                    if (multiCmd is not null && binary is false)
+                    bool multiCmdWriteWrapper = multiCmd is not null && binary is false && endpoint.Raw is false;
+                    if (multiCmdWriteWrapper)
                     {
                         writer.Advance(Encoding.UTF8.GetBytes("{".AsSpan(), writer.GetSpan(1)));
                     }
@@ -2116,24 +2386,35 @@ public class NpgsqlRestEndpoint(
                     if (multiCmd is not null && multiCmdIndex < multiCmd.Length)
                     {
                         var cmdInfo = multiCmd[multiCmdIndex];
+
+                        if (multiCmdWriteWrapper)
+                        {
+                            // Write command name key in JSON wrapper
+                            if (multiCmdFirstWritten)
+                            {
+                                writer.Advance(Encoding.UTF8.GetBytes(",".AsSpan(), writer.GetSpan(1)));
+                            }
+                            var nameJson = string.Concat("\"", cmdInfo.Name, "\":");
+                            writer.Advance(Encoding.UTF8.GetBytes(nameJson.AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(nameJson.Length))));
+                            multiCmdFirstWritten = true;
+                        }
+
                         if (cmdInfo.ColumnCount == 0)
                         {
-                            // Void command — skip (omit from response)
+                            if (multiCmdWriteWrapper)
+                            {
+                                // Void command — write rows-affected count
+                                var rowsAffected = reader.RecordsAffected;
+                                var rowsStr = rowsAffected.ToString();
+                                writer.Advance(Encoding.UTF8.GetBytes(rowsStr.AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(rowsStr.Length))));
+                            }
                             multiCmdIndex++;
                             continue;
                         }
+
                         currentColumnNames = cmdInfo.ColumnNames;
                         currentColumnDescriptors = cmdInfo.ColumnTypeDescriptors;
                         currentColumnCount = cmdInfo.ColumnCount;
-
-                        // Write command name key
-                        if (multiCmdFirstWritten)
-                        {
-                            writer.Advance(Encoding.UTF8.GetBytes(",".AsSpan(), writer.GetSpan(1)));
-                        }
-                        var nameJson = $"\"{cmdInfo.Name}\":";
-                        writer.Advance(Encoding.UTF8.GetBytes(nameJson.AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(nameJson.Length))));
-                        multiCmdFirstWritten = true;
                     }
 
                     if (routine.ReturnsSet && endpoint.Raw is false && binary is false)
@@ -2328,70 +2609,12 @@ public class NpgsqlRestEndpoint(
                                     }
 
                                     var descriptor = activeColumnDescriptors[i];
-                                    if (value == DBNull.Value)
+                                    JsonValueFormatter.FormatValue(
+                                        raw, value, descriptor, outputBuffer,
+                                        routine.ArrayCompositeColumnInfo, i);
+                                    if (isInComposite && value != DBNull.Value)
                                     {
-                                        outputBuffer.Append(Consts.Null);
-                                    }
-                                    else if (descriptor.IsArray && value is not null)
-                                    {
-                                        if (isInComposite) compositeHasNonNullValue = true;
-                                        // Check if this is an array of composite types - always serialize as nested JSON objects
-                                        if (routine.ArrayCompositeColumnInfo is not null &&
-                                            routine.ArrayCompositeColumnInfo.TryGetValue(i, out var arrayCompositeInfo))
-                                        {
-                                            outputBuffer.Append(PgCompositeArrayToJsonArray(raw, arrayCompositeInfo.FieldNames, arrayCompositeInfo.FieldDescriptors));
-                                        }
-                                        else
-                                        {
-                                            outputBuffer.Append(PgArrayToJsonArray(raw, descriptor));
-                                        }
-                                    }
-                                    else if ((descriptor.Category & (TypeCategory.Numeric | TypeCategory.Boolean | TypeCategory.Json)) != 0 && value is not null)
-                                    {
-                                        if (isInComposite) compositeHasNonNullValue = true;
-                                        if ((descriptor.Category & TypeCategory.Boolean) != 0)
-                                        {
-                                            if (raw.Length == 1 && raw[0] == 't')
-                                            {
-                                                outputBuffer.Append(Consts.True);
-                                            }
-                                            else if (raw.Length == 1 && raw[0] == 'f')
-                                            {
-                                                outputBuffer.Append(Consts.False);
-                                            }
-                                            else
-                                            {
-                                                outputBuffer.Append(raw);
-                                            }
-                                        }
-                                        else
-                                        {
-                                            // numeric and json
-                                            outputBuffer.Append(raw);
-                                        }
-                                    }
-                                    else
-                                    {
-                                        if (isInComposite) compositeHasNonNullValue = true;
-                                        if (descriptor.ActualDbType == NpgsqlDbType.Unknown)
-                                        {
-                                            outputBuffer.Append(PgUnknownToJsonArray(ref raw));
-                                        }
-                                        else if (descriptor.NeedsEscape)
-                                        {
-                                            outputBuffer.Append(SerializeString(ref raw));
-                                        }
-                                        else
-                                        {
-                                            if ((descriptor.Category & TypeCategory.DateTime) != 0)
-                                            {
-                                                outputBuffer.Append(QuoteDateTime(ref raw));
-                                            }
-                                            else
-                                            {
-                                                outputBuffer.Append(Quote(ref raw));
-                                            }
-                                        }
+                                        compositeHasNonNullValue = true;
                                     }
 
                                     // Handle closing braces and commas for nested JSON composite types
@@ -2495,7 +2718,7 @@ public class NpgsqlRestEndpoint(
                     } while (multiCmd is not null && multiCmdIndex < multiCmd.Length && await reader.NextResultAsync(cancellationToken));
 
                     // Close multi-command JSON object
-                    if (multiCmd is not null && binary is false)
+                    if (multiCmdWriteWrapper)
                     {
                         writer.Advance(Encoding.UTF8.GetBytes("}".AsSpan(), writer.GetSpan(1)));
                     }

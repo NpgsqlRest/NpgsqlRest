@@ -4,41 +4,31 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
-## Version [3.12.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.12.0) (2026-03-21)
+## Version [3.12.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.12.0) (2026-03-23)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.11.1...3.12.0)
 
-### New Plugin: `NpgsqlRest.SqlFileSource` — REST Endpoints from SQL Files
+---
 
-A new endpoint source plugin that scans a configured folder for `.sql` files and generates REST API endpoints from them. Each SQL file defines one statement, analyzed via the PostgreSQL wire protocol (`SchemaOnly`) at startup. This complements the existing function-based and CRUD sources for cases where a full PostgreSQL function would be overkill.
+### New Endpoint Source Plugin: `NpgsqlRest.SqlFileSource`
 
-**Features:**
+In addition to the existing endpoint sources — **RoutineSource** (PostgreSQL functions and procedures) and **CrudSource** (tables and views) — NpgsqlRest now supports a third source: **SQL files**.
 
-- **Single-statement SQL files** — SELECT, INSERT, UPDATE, DELETE, and `DO` blocks
-- **Automatic HTTP verb detection** — SELECT → GET, INSERT → PUT, UPDATE → POST, DELETE → DELETE, DO → POST. Priority for mixed: DELETE > POST > PUT. Explicit annotation override via `HTTP GET/POST/PUT/DELETE`
-- **Wire protocol introspection** — parameter types and return columns inferred from `SchemaOnly` Describe, no query execution at startup
-- **Full annotation support** — all existing NpgsqlRest comment annotations (`authorize`, `tag`, `sse`, `request_param_type`, etc.) work automatically from SQL comments (`--` and `/* */`)
-- **Custom/composite type support** — expanded composite fields (`SELECT (data).val1, (data).val2`) render as proper JSON. Arrays of composite types render as JSON arrays of objects
-- **Glob file patterns** — e.g., `sql/**/*.sql` for recursive scanning
-- **Configurable comment scope** — parse all comments (`All`) or only header comments before the first statement (`Header`)
-- **Error handling modes** — `Skip` (log + continue, production-safe) or `Throw` (halt startup, dev/CI)
+Generate REST API endpoints directly from `.sql` files. Place SQL files in a configured directory, and NpgsqlRest creates endpoints automatically — no PostgreSQL functions needed.
 
-**Configuration** (`appsettings.json`):
+#### How It Works
 
-```json
-"NpgsqlRest": {
-  "SqlFileSource": {
-    "Enabled": true,
-    "FilePattern": "sql/**/*.sql",
-    "CommentScope": "All",
-    "ErrorMode": "Skip"
-  }
-}
-```
+1. At startup, the plugin scans the directory matching the configured glob pattern (e.g., `sql/**/*.sql`)
+2. Each `.sql` file is parsed: comments are extracted as annotations, SQL is split into statements
+3. Each statement is analyzed via PostgreSQL's wire protocol (`SchemaOnly`) — parameter types and return columns are inferred without executing the query
+4. A REST endpoint is created for each file, with the URL path derived from the filename
 
-**Example SQL file** (`sql/get_report.sql`):
+#### Single-Command Files
+
+A file with one SQL statement produces a standard endpoint:
 
 ```sql
+-- sql/get_reports.sql
 -- HTTP GET
 -- @param $1 from_date
 -- @param $2 to_date
@@ -48,7 +38,219 @@ FROM reports
 WHERE created_at BETWEEN $1 AND $2;
 ```
 
-### New Core Annotation: `@param` / `@parameter` — Rename and Retype Parameters
+`GET /api/get-reports?from_date=2024-01-01&to_date=2024-12-31` → `[{"id": 1, "title": "Q1", "createdAt": "..."}]`
+
+**HTTP verb auto-detection** (when no explicit `HTTP` annotation):
+
+| SQL Statement | HTTP Verb | Rationale |
+|---|---|---|
+| `SELECT` / `WITH ... SELECT` | GET | Read-only |
+| `INSERT` | PUT | Creation |
+| `UPDATE` | POST | Modification |
+| `DELETE` | DELETE | Removal |
+| `DO $$ ... $$` | POST | Anonymous script |
+| Mixed mutations | Most destructive wins | DELETE > POST > PUT |
+
+An explicit `HTTP GET`, `HTTP POST`, etc. annotation always overrides auto-detection.
+
+**Note:** `DO` blocks do not support `$N` parameters — this is a PostgreSQL language limitation. A `DO` block always produces a parameterless endpoint. In multi-command files, `DO` blocks work alongside parameterized statements — the other commands receive the shared parameters, the `DO` block receives none.
+
+#### Multi-Command Files
+
+A file with multiple statements (separated by `;`) returns a JSON object. Each key corresponds to one command's result:
+
+```sql
+-- sql/process_order.sql
+-- HTTP POST
+-- @result1 validate
+-- @result3 confirm
+-- @param $1 order_id
+SELECT count(*) FROM orders WHERE id = $1;
+UPDATE orders SET status = 'processing' WHERE id = $1;
+SELECT id, status FROM orders WHERE id = $1;
+```
+
+`POST /api/process-order` with `{"order_id": 42}` →
+
+```json
+{
+  "validate": [{"count": 1}],
+  "result2": 1,
+  "confirm": [{"id": 42, "status": "processing"}]
+}
+```
+
+**Result set rules:**
+
+- Commands returning rows → JSON array of row objects (same format as single-command endpoints)
+- Void commands (INSERT/UPDATE/DELETE without RETURNING) → rows-affected count as integer
+- Multi-command endpoints are never void — they always return a JSON object
+
+**Result naming:**
+
+- Default keys: `result1`, `result2`, `result3`, ... (prefix configurable via `ResultPrefix` setting)
+- Override per-result with `@resultN` annotation in the file comments:
+  - `@result1 validate` — renames `result1` to `validate`
+  - `@result1 is validate` — same ("is" style)
+  - Unmatched results keep their default name
+
+**Execution:**
+
+- Uses `NpgsqlBatch` with one `NpgsqlBatchCommand` per statement — single database round-trip
+- All statements share the same parameters (`$1`, `$2`, etc.) — user sends each parameter once
+- Full retry logic via `ExecuteBatchReaderWithRetryAsync` with error code mapping and timeout handling
+- If any command fails, the entire request fails — no partial results
+
+#### Parameters
+
+SQL files use PostgreSQL positional parameters (`$1`, `$2`, ...). Parameters are passed via query string (GET) or JSON body (POST/PUT/DELETE):
+
+```
+GET /api/my-query?$1=hello&$2=42
+POST /api/my-mutation {"$1": "hello", "$2": 42}
+```
+
+Use the `@param` annotation for better names:
+
+```sql
+-- @param $1 user_name
+-- @param $2 age
+SELECT * FROM users WHERE name = $1 AND age > $2;
+```
+
+Now: `GET /api/my-query?user_name=hello&age=42`
+
+**For multi-command files:** Each statement is described individually. Parameter types are merged across all statements:
+- Same `$N` with same type across statements → use that type
+- Same `$N` with conflicting types → startup error with clear message (override with `@param $1 name type`)
+- `$N` used in only some statements → type from the statement(s) that reference it
+
+#### Comments and Annotations
+
+All comments in the SQL file are parsed as annotations, just like `COMMENT ON FUNCTION` in PostgreSQL:
+
+```sql
+-- Line comments are annotations
+/* Block comments are annotations too */
+SELECT * FROM table;
+-- Comments after statements also work
+```
+
+All existing NpgsqlRest annotations work: `@authorize`, `@allow_anonymous`, `@tag`, `@sse`, `@request_param_type`, `@path`, `@timeout`, `@cached`, `@raw`, `@header`, `@separator`, `@login`, `@logout`, `@encrypt`, `@decrypt`, etc.
+
+**New annotations for SQL files:**
+
+| Annotation | Description | Example |
+|---|---|---|
+| `@param $N name` | Rename positional parameter | `-- @param $1 user_id` |
+| `@param $N name type` | Rename + retype parameter | `-- @param $1 user_id integer` |
+| `@param $N is name` | Rename ("is" style) | `-- @param $1 is user_id` |
+| `@resultN name` | Rename multi-command result key | `-- @result1 validate` |
+| `@resultN is name` | Rename result key ("is" style) | `-- @result1 is validate` |
+
+**`CommentScope` setting** controls which comments are parsed:
+- `All` (default) — every comment in the file, regardless of position
+- `Header` — only comments before the first SQL statement
+
+#### Wire Protocol Introspection
+
+At startup, each statement is analyzed via PostgreSQL's Parse → Describe → Sync cycle (`CommandBehavior.SchemaOnly`):
+
+- **Parameter types** inferred from `ParameterDescription` message (authoritative OIDs)
+- **Return columns** inferred from `RowDescription` message (column names and types)
+- No query planning, no execution — roughly the cost of `SELECT 1`
+- Uses `reader.GetName()` / `reader.GetDataTypeName()` instead of `GetColumnSchema()` to avoid .NET type mapping failures for custom composite types
+- Unknown type OIDs (custom types returning `"-.-"`) resolved via `pg_catalog.pg_type` query
+
+#### Custom / Composite Type Support
+
+| Pattern | Result |
+|---|---|
+| `SELECT (data).val1, (data).val2 FROM table` | Proper JSON with scalar columns — recommended pattern |
+| `SELECT items FROM table` (where `items` is `my_type[]`) | JSON array of objects: `[{"val1": "a", "val2": 1}]` |
+| `SELECT data FROM table` (where `data` is `my_type`) | PostgreSQL tuple representation |
+
+Composite type resolution uses `CompositeTypeCache` which loads all composite types from `pg_catalog` at startup. Schema-qualified type names from `GetDataTypeName` (e.g., `public.my_type`) are matched against cache keys via fallback lookup.
+
+#### Unnamed and Duplicate Columns
+
+SQL without column aliases:
+```sql
+SELECT $1, $2;
+```
+
+Produces valid JSON with unique fallback names instead of duplicate `?column?` keys:
+```json
+[{"column1": "hello", "column2": "world"}]
+```
+
+Use `AS` aliases for meaningful names: `SELECT $1 AS name, $2 AS value`.
+
+#### URL Path Derivation
+
+The endpoint path is derived from the filename (without `.sql` extension) using the same `NameConverter` as functions. For example, with the default camelCase converter:
+
+- `get_reports.sql` → `/api/get-reports`
+- `user_profile.sql` → `/api/user-profile`
+
+Override with the `@path` annotation: `-- @path /custom/path/{id}`
+
+#### Error Handling
+
+| Mode | Behavior | Use Case |
+|---|---|---|
+| `ParseErrorMode.Skip` (default) | Logs warning, skips file, continues | Production |
+| `ParseErrorMode.Throw` | Throws exception, halts startup | Development / CI |
+
+Errors caught at startup:
+- Parse errors (malformed SQL, unclosed strings/quotes)
+- Describe errors (PostgreSQL syntax errors, invalid table/column references)
+- Parameter type conflicts in multi-command files
+
+#### Feature Parity
+
+SQL file endpoints support all features available to function/procedure endpoints:
+
+- Response caching (`cached`, `cache_expires_in`)
+- Raw mode (`raw`, `raw_value_separator`, `raw_new_line_separator`, `raw_column_names`)
+- Binary mode
+- Encryption/decryption (`encrypt`, `decrypt`)
+- Table format handlers (e.g., HTML table output)
+- SSE events
+- Authorization (`authorize`, `allow_anonymous`)
+- Custom headers (`header`)
+- Retry logic with error code mapping
+- Buffer rows configuration
+
+#### Configuration Reference
+
+```json
+"NpgsqlRest": {
+  "SqlFileSource": {
+    "Enabled": true,
+    "FilePattern": "sql/**/*.sql",
+    "CommentsMode": "ParseAll",
+    "CommentScope": "All",
+    "ErrorMode": "Skip",
+    "ResultPrefix": "result"
+  }
+}
+```
+
+| Setting | Type | Default | Description |
+|---|---|---|---|
+| `Enabled` | bool | `false` | Enable or disable SQL file source endpoints |
+| `FilePattern` | string | `""` | Glob pattern for SQL files. Supports `*`, `**` (recursive), `?`. Empty = disabled |
+| `CommentsMode` | enum | `ParseAll` | `ParseAll` = every file becomes an endpoint. `OnlyWithHttpTag` = requires `HTTP` annotation |
+| `CommentScope` | enum | `All` | `All` = parse all comments. `Header` = only before first statement |
+| `ErrorMode` | enum | `Skip` | `Skip` = log + continue. `Throw` = halt startup |
+| `ResultPrefix` | string | `"result"` | Prefix for multi-command result keys (e.g., `result1`, `result2`) |
+
+---
+
+### Other Changes
+
+#### New Core Annotation: `@param` / `@parameter` — Rename and Retype Parameters
 
 A new comment annotation that renames and optionally retypes individual parameters. Works on **all** endpoint types — functions, procedures, CRUD, and SQL file endpoints.
 
@@ -56,32 +258,25 @@ Positional parameters (`$1`, `$2`) already work as HTTP parameter names (`?$1=va
 
 ```sql
 -- Simplest form: rename only
-comment on function my_func(int, text) is '
-param $1 user_id
-param $2 search_query
-';
--- Result: ?user_id=123&search_query=hello instead of ?$1=123&$2=hello
+-- @param $1 user_id
 
--- With type override
-comment on function my_func(int) is '
-param $1 user_id integer
-';
+-- Simplest form: rename + retype
+-- @param $1 user_id integer
 
--- "is" style (consistent with existing @param X is hash of Y)
-comment on function my_func(int) is '
-param $1 is user_id
-param $1 is user_id integer
-';
+-- "is" style: rename only (consistent with existing @param X is hash of Y)
+-- @param $1 is user_id
 
--- Rename named parameters too
-comment on function my_func(_old_name int) is '
-param _old_name better_name
-';
+-- "is" style: rename + retype
+-- @param $1 is user_id integer
+
+-- Rename named parameters (works on function/procedure params too)
+-- @param _old_name better_name
+-- @param _old_name better_name text
 ```
 
-All forms coexist with existing `@param X is hash of Y` and `@param X is upload metadata` handlers without ambiguity.
+All forms coexist with existing `@param X is hash of Y` and `@param X is upload metadata` handlers without ambiguity. Both `@param` and `@parameter` (long form) are supported.
 
-### Glob Pattern Enhancement: `**` Recursive Matching
+#### Glob Pattern Enhancement: `**` Recursive Matching
 
 `Parser.IsPatternMatch` now supports `**` for recursive directory matching:
 
@@ -90,45 +285,39 @@ All forms coexist with existing `@param X is hash of Y` and `@param X is upload 
 - When `**` is present in the pattern, `*` stops matching `/` (standard glob semantics)
 
 Examples:
-- `sql/**/*.sql` — matches `sql/file.sql`, `sql/dir/file.sql`, `sql/a/b/c/file.sql`
-- `sql/*.sql` — with no `**`, matches everything including `sql/dir/file.sql` (backward-compatible)
+- `sql/**/*.sql` matches `sql/file.sql`, `sql/dir/file.sql`, `sql/a/b/c/file.sql`
+- `**/*.sql` matches any `.sql` file at any depth
+- `dir/**/file.sql` matches `dir/file.sql` and `dir/a/b/file.sql`
 
-This enhancement benefits all existing `IsPatternMatch` consumers (static files, upload MIME types) and enables the SQL file source's recursive file scanning.
+This enhancement benefits all existing `IsPatternMatch` consumers (`StaticFiles.AuthorizePaths`, `StaticFiles.ParseContentOptions.ParsePatterns`, upload MIME types) and enables the SQL file source's recursive file scanning.
 
-### Composite Type Cache: Public API for Plugins
+#### Interface Refactoring: `IEndpointSource` / `IRoutineSource`
 
-- `CompositeTypeCache.ResolveTypeDescriptor(TypeDescriptor)` — new public method that plugins can call to resolve composite type metadata. Sets `CompositeFieldNames`/`CompositeFieldDescriptors` on the descriptor (previously only accessible from the core library).
-- `Routine.CompositeColumnInfo` and `Routine.ArrayCompositeColumnInfo` — changed from `internal` to `public` to allow plugins to set composite column metadata for proper nested JSON rendering.
-- `CompositeTypeCache.GetType` — improved lookup with schema-prefix fallback. `GetDataTypeName` returns `public.my_type` but `regtype::text` cache keys omit the `public` schema. The lookup now strips the schema prefix on miss, resolving composite types from all sources consistently.
+`IRoutineSource` split into two interfaces:
 
-### Interface Refactoring: `IEndpointSource` / `IRoutineSource`
+- **`IEndpointSource`** — base interface with `CommentsMode` and `Read()`. Used by lightweight sources like `SqlFileSource`.
+- **`IRoutineSource : IEndpointSource`** — extended interface adding `Query`, schema/name filtering, `NestedJsonForCompositeTypes`. Used by `RoutineSource` and `CrudSource`.
 
-The `IRoutineSource` interface has been split into two:
+**Breaking:** `NpgsqlRestOptions.RoutineSources` renamed to `EndpointSources`. `SourcesCreated` callback renamed to `EndpointSourcesCreated`.
 
-- **`IEndpointSource`** — base interface with `CommentsMode` and `Read()`. Used by sources that don't need database catalog filtering (e.g., `SqlFileSource`).
-- **`IRoutineSource : IEndpointSource`** — extended interface that adds `Query`, schema/name filtering properties, and `NestedJsonForCompositeTypes`. Used by `RoutineSource` and `CrudSource`.
+#### Composite Type Cache: Public API
 
-`NpgsqlRestOptions.RoutineSources` renamed to `EndpointSources`. `SourcesCreated` callback renamed to `EndpointSourcesCreated`.
+- `CompositeTypeCache.ResolveTypeDescriptor(TypeDescriptor)` — new public method for plugins to resolve composite/array-of-composite type metadata
+- `Routine.CompositeColumnInfo` and `Routine.ArrayCompositeColumnInfo` — changed from `internal` to `public` for plugin access
+- Schema-prefix fallback: `public.my_type` now matches cache key `my_type` (handles `GetDataTypeName` vs `regtype::text` format mismatch)
 
-### SqlFileSource: Unnamed Column Handling
-
-SQL files with unnamed columns (e.g., `SELECT $1, $2` without `AS` aliases) now produce valid JSON with unique column names (`column1`, `column2`, ...) instead of duplicate `?column?` keys. Duplicate named columns are also deduplicated.
-
-### SqlFileSource: `CommentsMode` Support
-
-`SqlFileSourceOptions` now exposes `CommentsMode` (default: `ParseAll`). This is passed to the core pipeline to control annotation parsing behavior per source. `ParseAll` is the appropriate default for SQL files since the file's existence is the opt-in — unlike functions where `OnlyWithHttpTag` filters thousands of database objects.
-
-### SqlFileSource: No-Op Parameter Formatter
-
-`SqlFileParameterFormatter` simplified to a static singleton with `IsFormattable = false`. The formatter delegates entirely to `routine.Expression` — no per-endpoint allocation, no redundant SQL copy.
+---
 
 ### Internal Changes
 
-- `NpgsqlRestParameter.ConvertedName` and `ActualName` — changed from `private set` to `internal set` to support the `@param` rename annotation
-- `ParameterHandler.HandleParameter` — extended with `words` parameter for original-case access, added `HandleParameterRename` for all rename/retype forms
+- `NpgsqlRestParameter.ConvertedName` / `ActualName` — `internal set` (was `private set`) for `@param` rename support
+- `ParameterHandler.HandleParameterRename` — new method handling all rename/retype annotation forms
+- `SqlFileParameterFormatter` — static singleton, `IsFormattable = false`, zero per-endpoint allocation
+- `Routine.MultiCommandInfo` — per-command metadata array (statement SQL, column info, result names)
+- `NpgsqlRetryExtensions.ExecuteBatchReaderWithRetryAsync` — new retry extension for `NpgsqlBatch` readers
+- Multi-command rendering in `NpgsqlRestEndpoint.cs` — `NpgsqlBatch` execution, `do/while NextResultAsync()` loop, JSON object wrapper with `multiCmdWriteWrapper` flag (skipped in raw/binary mode), table format handler called per result set
+- `JsonValueFormatter.FormatValue` — shared value type dispatch for both single and multi-command rendering paths
 - Three new log messages: `CommentParamNotExistsCantRename`, `CommentParamRenamed`, `CommentParamRetyped`
-- `SqlFileSourceTestFixture` refactored: SQL file content colocated with tests via reflection-based `SqlFiles` partial class (same pattern as `Database` partial class)
-- New endpoint tests: bare params with/without aliases, typed params, trailing semicolons, syntax error resilience, comment position variations
 
 ---
 

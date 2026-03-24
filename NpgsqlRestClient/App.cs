@@ -580,13 +580,19 @@ public class App
             var filePattern = _config.GetConfigStr("FilePattern", sqlFileSourceCfg) ?? "";
             if (!string.IsNullOrEmpty(filePattern))
             {
-                sources.Add(new SqlFileSource(new SqlFileSourceOptions
+                var opts = new SqlFileSourceOptions
                 {
                     FilePattern = filePattern,
                     CommentsMode = _config.GetConfigEnum<CommentsMode>("CommentsMode", sqlFileSourceCfg),
                     CommentScope = _config.GetConfigEnum<CommentScope>("CommentScope", sqlFileSourceCfg),
                     ErrorMode = _config.GetConfigEnum<ParseErrorMode>("ErrorMode", sqlFileSourceCfg),
-                }));
+                };
+                var resultPrefix = _config.GetConfigStr("ResultPrefix", sqlFileSourceCfg);
+                if (resultPrefix is not null)
+                {
+                    opts.ResultPrefix = resultPrefix;
+                }
+                sources.Add(new SqlFileSource(opts));
                 _builder.ClientLogger?.LogDebug("Using {name} PostgreSQL Source with pattern {pattern}", nameof(SqlFileSource), filePattern);
             }
         }

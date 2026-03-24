@@ -2600,7 +2600,13 @@ public static partial class ConfigSchemaGenerator
           // Behavior when a SQL file fails to parse or describe.
           // Possible values: Skip (default — log error, continue), Throw (halt startup).
           //
-          "ErrorMode": "Skip"
+          "ErrorMode": "Skip",
+          //
+          // Prefix for result keys in multi-command JSON responses.
+          // Default keys are "result1", "result2", etc.
+          // Override per-result with @resultN annotation in the SQL file.
+          //
+          "ResultPrefix": "result"
         }
       }
     }

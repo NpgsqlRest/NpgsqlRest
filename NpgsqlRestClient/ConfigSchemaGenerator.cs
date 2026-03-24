@@ -455,6 +455,7 @@ public static partial class ConfigSchemaGenerator
         ["NpgsqlRest:SqlFileSource:CommentsMode"] = "How comment annotations are processed for SQL file endpoints.\nPossible values: Ignore, ParseAll, OnlyWithHttpTag.\nDefault: ParseAll — every SQL file becomes an endpoint, comments configure it.",
         ["NpgsqlRest:SqlFileSource:CommentScope"] = "Which comments in the SQL file to parse as annotations.\nPossible values: All (default — all comments), Header (only comments before the first statement).",
         ["NpgsqlRest:SqlFileSource:ErrorMode"] = "Behavior when a SQL file fails to parse or describe.\nPossible values: Skip (default — log error, continue), Throw (halt startup).",
+        ["NpgsqlRest:SqlFileSource:ResultPrefix"] = "Prefix for result keys in multi-command JSON responses.\nDefault keys are \"result1\", \"result2\", etc. Override per-result with @resultN annotation in the SQL file.",
     };
 
     /// <summary>

@@ -5,36 +5,74 @@ namespace NpgsqlRestTests.SqlFileSourceTests;
 public class MultiCommandParserTests
 {
     [Fact]
-    public void CommandNameAnnotation_ExtractedInOrder()
+    public void ResultAnnotation_SimpleForm_Extracted()
     {
         var sql = """
-            -- @command_name step1
-            SELECT 1;
-            -- @command_name step2
-            SELECT 2;
-            SELECT 3;
+            -- @result1 validate
+            -- @result2 process
+            select 1;
+            select 2;
+            select 3;
             """;
         var result = SqlFileParser.Parse(sql);
         result.Statements.Should().HaveCount(3);
-        result.CommandNames.Should().HaveCount(3);
-        result.CommandNames[0].Should().Be("step1");
-        result.CommandNames[1].Should().Be("step2");
-        result.CommandNames[2].Should().BeNull(); // no annotation for 3rd
+        result.ResultNames.Should().ContainKey(1);
+        result.ResultNames[1].Should().Be("validate");
+        result.ResultNames[2].Should().Be("process");
+        result.ResultNames.Should().NotContainKey(3);
     }
 
     [Fact]
-    public void NoAnnotations_AllCommandNamesNull()
+    public void ResultAnnotation_IsForm_Extracted()
     {
-        var result = SqlFileParser.Parse("SELECT 1; SELECT 2");
-        result.CommandNames.Should().HaveCount(2);
-        result.CommandNames[0].Should().BeNull();
-        result.CommandNames[1].Should().BeNull();
+        var sql = """
+            -- @result1 is lookup
+            -- @result3 is verify
+            select 1;
+            update foo set x = 1;
+            select 2;
+            """;
+        var result = SqlFileParser.Parse(sql);
+        result.ResultNames[1].Should().Be("lookup");
+        result.ResultNames.Should().NotContainKey(2);
+        result.ResultNames[3].Should().Be("verify");
     }
 
     [Fact]
-    public void SingleStatement_NoCommandNames()
+    public void NoAnnotations_EmptyResultNames()
     {
-        var result = SqlFileParser.Parse("SELECT 1");
-        result.CommandNames.Should().BeEmpty(); // not populated for single statements
+        var result = SqlFileParser.Parse("select 1; select 2");
+        result.ResultNames.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void SingleStatement_NoResultNames()
+    {
+        var result = SqlFileParser.Parse("select 1");
+        result.ResultNames.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ResultAnnotation_WithAtPrefix_Works()
+    {
+        var sql = """
+            -- @result1 step1
+            select 1;
+            select 2;
+            """;
+        var result = SqlFileParser.Parse(sql);
+        result.ResultNames[1].Should().Be("step1");
+    }
+
+    [Fact]
+    public void ResultAnnotation_WithoutAtPrefix_Works()
+    {
+        var sql = """
+            -- result1 step1
+            select 1;
+            select 2;
+            """;
+        var result = SqlFileParser.Parse(sql);
+        result.ResultNames[1].Should().Be("step1");
     }
 }

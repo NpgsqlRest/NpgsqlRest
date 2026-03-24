@@ -62,6 +62,8 @@ public static partial class SqlFileDescriber
             });
         }
 
+        cmd.LogCommand(nameof(SqlFileDescriber));
+
         try
         {
             // Use SchemaOnly without KeyInfo — avoids .NET type mapping overhead.
@@ -129,6 +131,7 @@ public static partial class SqlFileDescriber
             "SELECT (quote_ident(n.nspname) || '.' || quote_ident(t.typname))::regtype::text FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace WHERE t.oid = $1",
             connection);
         cmd.Parameters.AddWithValue(NpgsqlDbType.Oid, oid);
+        cmd.LogCommand(nameof(SqlFileDescriber));
         var result = cmd.ExecuteScalar();
         return result as string;
     }

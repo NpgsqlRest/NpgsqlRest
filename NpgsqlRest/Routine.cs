@@ -154,8 +154,8 @@ public class Routine
 
     /// <summary>
     /// For multi-command SQL files: per-command column metadata and command names.
-    /// When not null, the rendering uses NextResult() to iterate result sets and wraps
-    /// them in a JSON object {commandName: [rows], ...}. Void commands are omitted.
+    /// When not null, the rendering uses NpgsqlBatch + NextResult() to iterate result sets
+    /// and wraps them in a JSON object {resultName: [rows], ...}. Void commands get null.
     /// </summary>
     public MultiCommandInfo[]? MultiCommandInfo { get; set; } = null;
 
@@ -171,9 +171,19 @@ public class Routine
 public class MultiCommandInfo
 {
     /// <summary>
-    /// Command name used as JSON object key. From @command_name annotation or default pattern.
+    /// Result key name in the JSON response. From @resultN annotation or default pattern.
     /// </summary>
     public required string Name { get; init; }
+
+    /// <summary>
+    /// The SQL statement for this command.
+    /// </summary>
+    public required string Statement { get; init; }
+
+    /// <summary>
+    /// Number of parameters this command uses (max $N index).
+    /// </summary>
+    public required int ParamCount { get; init; }
 
     /// <summary>
     /// Column count for this command's result set. 0 for void commands.

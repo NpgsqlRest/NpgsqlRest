@@ -943,7 +943,8 @@ public static class ConfigDefaults
             ["FilePattern"] = "",
             ["CommentsMode"] = "ParseAll",
             ["CommentScope"] = "All",
-            ["ErrorMode"] = "Skip"
+            ["ErrorMode"] = "Skip",
+            ["ResultPrefix"] = "result"
         };
     }
 

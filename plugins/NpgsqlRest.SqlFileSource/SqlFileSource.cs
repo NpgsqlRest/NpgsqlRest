@@ -219,13 +219,26 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
                     ResolveCompositeType(cmdColDescriptors[j]);
                 }
 
-                // Command name: annotation override or default pattern
-                var annotatedName = (ci < parseResult.CommandNames.Count) ? parseResult.CommandNames[ci] : null;
-                var commandName = annotatedName ?? string.Format(options.CommandNamePattern, ci + 1);
+                // Result name: @resultN annotation override or default prefix + index
+                var resultIndex = ci + 1;
+                string resultName;
+                if (parseResult.ResultNames.TryGetValue(resultIndex, out var annotated))
+                {
+                    resultName = annotated;
+                    NpgsqlRestOptions.Logger?.LogDebug(
+                        "SqlFileSource: {FilePath} result{Index} renamed to \"{Name}\" by @result{Index} annotation",
+                        filePath, resultIndex, annotated, resultIndex);
+                }
+                else
+                {
+                    resultName = string.Concat(options.ResultPrefix, resultIndex.ToString());
+                }
 
                 multiCommandInfo[ci] = new MultiCommandInfo
                 {
-                    Name = commandName,
+                    Name = resultName,
+                    Statement = parseResult.Statements[ci],
+                    ParamCount = SqlFileDescriber.FindMaxParamIndex(parseResult.Statements[ci]),
                     ColumnCount = cmdCols.Length,
                     ColumnNames = cmdColNames,
                     ColumnTypeDescriptors = cmdColDescriptors,
@@ -233,10 +246,8 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
             }
         }
 
-        bool isVoid = columnCount == 0 && (multiCommandInfo?.All(c => c.ColumnCount == 0) ?? true);
-
-        // Join all statements with ; for execution
-        var fullSql = string.Join(";\n", parseResult.Statements);
+        // Multi-command is never void — always returns JSON object (with nulls for void commands)
+        bool isVoid = !isMultiCommand && columnCount == 0;
 
         var fileName = Path.GetFileNameWithoutExtension(filePath);
 
@@ -266,7 +277,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
             Parameters = parameters,
             ParamsHash = [.. parameters.Select(p => p.ConvertedName)],
             OriginalParamsHash = [.. parameters.Select(p => p.ActualName)],
-            Expression = fullSql,
+            Expression = parseResult.Statements[0], // first statement for display/logging; batch uses individual statements
             FullDefinition = $"-- SQL file: {filePath}",
             SimpleDefinition = $"SQL: {fileName}",
             FormatUrlPattern = null,
