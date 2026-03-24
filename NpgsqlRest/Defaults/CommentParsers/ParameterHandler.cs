@@ -182,11 +182,40 @@ internal static partial class DefaultCommentParser
 
         // Apply rename
         var oldConvertedName = param.ConvertedName;
+        var oldActualName = param.ActualName;
         param.ConvertedName = newName;
+
+        // Always update ActualName — the annotation is authoritative for the parameter identity.
+        // SQL formatting uses OriginalName (set once at construction, never changes).
+        if (oldActualName is null || !string.Equals(oldActualName, newName, StringComparison.Ordinal))
+        {
+            param.ActualName = newName;
+            if (oldActualName is not null)
+            {
+                routine.OriginalParamsHash.Remove(oldActualName);
+            }
+            routine.OriginalParamsHash.Add(newName);
+        }
 
         // Update ParamsHash: remove old, add new
         routine.ParamsHash.Remove(oldConvertedName);
         routine.ParamsHash.Add(newName);
+
+        // Re-evaluate claim mappings and other name-based bindings against the new name.
+        // At construction time, these were checked against the original ActualName (e.g., "$1").
+        // After rename, the new name may match a claim mapping (e.g., "_user_id").
+        if (Options.AuthenticationOptions.ParameterNameClaimsMapping.TryGetValue(newName, out var claimName))
+        {
+            param.UserClaim = claimName;
+        }
+        if (string.Equals(Options.AuthenticationOptions.IpAddressParameterName, newName, StringComparison.OrdinalIgnoreCase))
+        {
+            param.IsIpAddress = true;
+        }
+        if (string.Equals(Options.AuthenticationOptions.ClaimsJsonParameterName, newName, StringComparison.OrdinalIgnoreCase))
+        {
+            param.IsUserClaims = true;
+        }
 
         CommentLogger?.CommentParamRenamed(description, originalName, newName);
 

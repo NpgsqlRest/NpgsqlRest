@@ -10,6 +10,11 @@ public class NpgsqlRestParameter : NpgsqlParameter
     public int Ordinal { get; private set; }
     public string ConvertedName { get; internal set; }
     public string ActualName { get; internal set; }
+    /// <summary>
+    /// The original PostgreSQL parameter name as defined in the function/source.
+    /// Never changed by annotations. Used by RoutineSourceParameterFormatter for SQL generation.
+    /// </summary>
+    public string OriginalName { get; init; }
     public TypeDescriptor TypeDescriptor { get; init; }
 
     public ParamType ParamType { get; set; } = default!;
@@ -38,6 +43,7 @@ public class NpgsqlRestParameter : NpgsqlParameter
     {
         Ordinal = ordinal;
         ConvertedName = convertedName;
+        OriginalName = actualName;
 
         ActualName = actualName;
         TypeDescriptor = typeDescriptor;

@@ -16,16 +16,16 @@ public class RoutineSourceParameterFormatter : IRoutineSourceParameterFormatter
 
         if (index == 0)
         {
-            return parameter.ActualName is null ?
+            return parameter.OriginalName is null ?
                 string.Concat(Consts.FirstParam, suffix) :
-                string.Concat(parameter.ActualName, Consts.FirstNamedParam, suffix);
+                string.Concat(parameter.OriginalName, Consts.FirstNamedParam, suffix);
         }
 
         var indexStr = (index + 1).ToString(CultureInfo.InvariantCulture);
 
-        return parameter.ActualName is null ?
+        return parameter.OriginalName is null ?
             string.Concat(Consts.Comma, Consts.Dollar, indexStr, suffix) :
-            string.Concat(Consts.Comma, parameter.ActualName, Consts.NamedParam, indexStr, suffix);
+            string.Concat(Consts.Comma, parameter.OriginalName, Consts.NamedParam, indexStr, suffix);
     }
 
     public string? AppendEmpty() => Consts.CloseParenthesisStr;
@@ -60,7 +60,7 @@ public class RoutineSourceCustomTypesParameterFormatter : IRoutineSourceParamete
 
             if (typeDescriptor.CustomType is null)
             {
-                if (parameter.ActualName is null)
+                if (parameter.OriginalName is null)
                 {
                     sb.Append(Consts.Dollar)
                       .Append(indexStr)
@@ -68,7 +68,7 @@ public class RoutineSourceCustomTypesParameterFormatter : IRoutineSourceParamete
                 }
                 else
                 {
-                    sb.Append(parameter.ActualName)
+                    sb.Append(parameter.OriginalName)
                       .Append(Consts.NamedParam)
                       .Append(indexStr);
                 }

@@ -3,7 +3,9 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.DependencyInjection;
+using System.Threading.RateLimiting;
 using NpgsqlRest.Auth;
 using NpgsqlRest.SqlFileSource;
 using NpgsqlRest.TsClient;
@@ -61,6 +63,20 @@ public class SqlFileSourceTestFixture : IDisposable
         builder.WebHost.UseUrls("http://127.0.0.1:0");
 
         builder.Services.AddAuthentication().AddCookie();
+        builder.Services.AddRateLimiter(options =>
+        {
+            options.RejectionStatusCode = Microsoft.AspNetCore.Http.StatusCodes.Status429TooManyRequests;
+            options.OnRejected = async (ctx, ct) =>
+            {
+                await ctx.HttpContext.Response.WriteAsync("Rate limit exceeded. Please try again later.", ct);
+            };
+            options.AddFixedWindowLimiter("max 2 per second", config =>
+            {
+                config.PermitLimit = 2;
+                config.Window = TimeSpan.FromSeconds(1);
+                config.AutoReplenishment = true;
+            });
+        });
         builder.Services.AddProblemDetails(options =>
         {
             options.CustomizeProblemDetails = ctx =>
@@ -77,6 +93,22 @@ public class SqlFileSourceTestFixture : IDisposable
             DefaultUserIdClaimType = "name_identifier",
             DefaultNameClaimType = "name",
             DefaultRoleClaimType = "role",
+            BasicAuth = new NpgsqlRest.Auth.BasicAuthOptions
+            {
+                SslRequirement = SslRequirement.Ignore
+            },
+            ContextKeyClaimsMapping = new()
+            {
+                { "request.user_id", "name_identifier" },
+                { "request.user_name", "name" },
+                { "request.user_roles", "role" },
+            },
+            ParameterNameClaimsMapping = new()
+            {
+                { "_user_id", "name_identifier" },
+                { "_user_name", "name" },
+                { "_user_roles", "role" },
+            },
         };
 
         // Login endpoint for auth tests
@@ -90,6 +122,8 @@ public class SqlFileSourceTestFixture : IDisposable
                 new Claim(authOptions.DefaultRoleClaimType, "role3"),
             ],
             authenticationType: CookieAuthenticationDefaults.AuthenticationScheme))));
+
+        _app.UseRateLimiter();
 
         _app.UseNpgsqlRest(new NpgsqlRestOptions(connectionString)
         {
