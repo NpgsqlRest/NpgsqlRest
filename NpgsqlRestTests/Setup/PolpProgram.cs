@@ -1,5 +1,3 @@
-using Microsoft.AspNetCore.Builder;
-
 namespace NpgsqlRestTests.Setup;
 
 /// <summary>

@@ -1,6 +1,5 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.DataProtection;
-using Microsoft.AspNetCore.Http;
 
 namespace NpgsqlRest.Auth;
 

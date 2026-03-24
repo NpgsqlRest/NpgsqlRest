@@ -1,5 +1,4 @@
 using NpgsqlRest.SqlFileSource;
-using NpgsqlRestTests;
 
 namespace NpgsqlRestTests.SqlFileSourceTests;
 

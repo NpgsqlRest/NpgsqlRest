@@ -1,8 +1,6 @@
 using System.Diagnostics;
 using System.Text;
-using Microsoft.AspNetCore.Http;
 using Npgsql;
-using static NpgsqlRest.NpgsqlRestOptions;
 
 namespace NpgsqlRest.Proxy;
 

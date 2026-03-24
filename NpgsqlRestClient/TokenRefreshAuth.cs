@@ -2,7 +2,6 @@
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Options;
-using NpgsqlRest;
 
 namespace NpgsqlRestClient;
 

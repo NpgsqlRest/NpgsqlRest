@@ -1,6 +1,3 @@
-using System.Text.Json;
-using System.Text.Json.Nodes;
-
 namespace NpgsqlRestTests
 {
     public static partial class Database

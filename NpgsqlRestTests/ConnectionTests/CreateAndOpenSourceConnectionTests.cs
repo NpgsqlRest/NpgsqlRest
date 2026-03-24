@@ -1,7 +1,4 @@
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Npgsql;
-using NpgsqlRest.Auth;
 using System.Data;
 
 namespace NpgsqlRestTests;

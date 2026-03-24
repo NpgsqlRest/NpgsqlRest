@@ -1,5 +1,4 @@
 ﻿using System.Text.RegularExpressions;
-using Microsoft.Extensions.Primitives;
 
 namespace NpgsqlRest.Defaults;
 

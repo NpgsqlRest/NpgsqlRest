@@ -1,6 +1,3 @@
-using System.Net;
-using System.Security.Claims;
-
 namespace NpgsqlRestTests;
 
 public static partial class Database

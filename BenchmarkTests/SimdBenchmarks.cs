@@ -1,5 +1,4 @@
 using BenchmarkDotNet.Attributes;
-using BenchmarkDotNet.Jobs;
 using NpgsqlRest;
 
 namespace BenchmarkTests;

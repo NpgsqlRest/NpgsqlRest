@@ -2,7 +2,6 @@
 using System.Data;
 using System.IO.Pipelines;
 using System.Net;
-using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -14,7 +13,6 @@ using NpgsqlRest.Auth;
 using NpgsqlRest.HttpClientType;
 using NpgsqlRest.UploadHandlers;
 using NpgsqlRest.UploadHandlers.Handlers;
-using NpgsqlTypes;
 using static System.Net.Mime.MediaTypeNames;
 using static NpgsqlRest.ParameterParser;
 

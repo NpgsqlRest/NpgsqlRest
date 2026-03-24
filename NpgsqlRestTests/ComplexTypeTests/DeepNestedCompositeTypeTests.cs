@@ -1,5 +1,3 @@
-using NpgsqlRestTests.Setup;
-
 namespace NpgsqlRestTests;
 
 /// <summary>

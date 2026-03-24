@@ -1,9 +1,4 @@
 ﻿using System.Text;
-using Npgsql;
-using NpgsqlRest;
-using NpgsqlRest.CrudSource;
-using NpgsqlRest.HttpFiles;
-using NpgsqlRest.TsClient;
 
 namespace NpgsqlRestClient;
 

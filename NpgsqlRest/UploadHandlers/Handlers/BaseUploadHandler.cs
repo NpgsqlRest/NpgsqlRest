@@ -1,5 +1,4 @@
 ﻿using Npgsql;
-using static NpgsqlRest.NpgsqlRestOptions;
 
 namespace NpgsqlRest.UploadHandlers.Handlers;
 

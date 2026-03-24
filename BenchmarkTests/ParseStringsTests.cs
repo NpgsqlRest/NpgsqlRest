@@ -1,6 +1,4 @@
-﻿using System;
-using System.Text.RegularExpressions;
-using BenchmarkDotNet.Attributes;
+﻿using BenchmarkDotNet.Attributes;
 using NpgsqlRest;
 
 namespace BenchmarkTests;

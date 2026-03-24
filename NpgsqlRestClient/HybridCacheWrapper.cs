@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Caching.Hybrid;
-using Microsoft.Extensions.Logging;
 using NpgsqlRest;
 
 namespace NpgsqlRestClient;

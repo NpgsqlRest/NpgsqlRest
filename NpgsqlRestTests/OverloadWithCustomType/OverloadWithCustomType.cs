@@ -1,7 +1,3 @@
-using WireMock.Server;
-using WireMock.RequestBuilders;
-using WireMock.ResponseBuilders;
-
 namespace NpgsqlRestTests;
 
 public static partial class Database

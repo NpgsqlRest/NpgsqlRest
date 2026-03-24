@@ -5,7 +5,6 @@ using System.Text;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.FileProviders;
-using Microsoft.Extensions.Primitives;
 using Microsoft.Net.Http.Headers;
 using NpgsqlRest;
 using NpgsqlRest.Auth;

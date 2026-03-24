@@ -1,5 +1,3 @@
-using NpgsqlRest;
-
 namespace NpgsqlRestTests;
 
 public class CacheKeyHasherTests

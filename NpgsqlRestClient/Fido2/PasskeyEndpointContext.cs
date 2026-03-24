@@ -1,5 +1,4 @@
 using NpgsqlRest;
-using NpgsqlRest.Auth;
 
 namespace NpgsqlRestClient.Fido2;
 

@@ -1,7 +1,5 @@
-﻿using System;
-using BenchmarkDotNet.Attributes;
+﻿using BenchmarkDotNet.Attributes;
 using Npgsql;
-using NpgsqlRest;
 
 namespace BenchmarkTests;
 

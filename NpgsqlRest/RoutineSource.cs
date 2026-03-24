@@ -1,6 +1,5 @@
 ﻿using System.Text;
 using Npgsql;
-using NpgsqlTypes;
 
 namespace NpgsqlRest;
 

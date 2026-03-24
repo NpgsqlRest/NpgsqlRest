@@ -1,6 +1,4 @@
-﻿using System.Collections.Frozen;
-
-namespace NpgsqlRest;
+﻿namespace NpgsqlRest;
 
 public class Routine
 {

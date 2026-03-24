@@ -1,5 +1,3 @@
-using NpgsqlRestTests.Setup;
-
 namespace NpgsqlRestTests.SqlFileSourceTests;
 
 public static partial class SqlFiles
