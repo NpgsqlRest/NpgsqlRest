@@ -299,7 +299,7 @@ public partial class NpgsqlRestEndpoint(
                                 }
                             }
                         }
-                        command.Parameters.Add(parameter);
+                        if (!parameter.IsVirtual) command.Parameters.Add(parameter);
                         hasNulls = true;
                         if (formatter.IsFormattable is false)
                         {
@@ -420,7 +420,7 @@ public partial class NpgsqlRestEndpoint(
                                     }
                                 }
                             }
-                            command.Parameters.Add(parameter);
+                            if (!parameter.IsVirtual) command.Parameters.Add(parameter);
 
                             if (hasNulls is false && parameter.Value == DBNull.Value)
                             {
@@ -502,7 +502,7 @@ public partial class NpgsqlRestEndpoint(
                                         }
                                     }
                                 }
-                                command.Parameters.Add(parameter);
+                                if (!parameter.IsVirtual) command.Parameters.Add(parameter);
                                 if (hasNulls is false && parameter.Value == DBNull.Value)
                                 {
                                     hasNulls = true;
@@ -598,7 +598,7 @@ public partial class NpgsqlRestEndpoint(
                                     }
                                 }
                             }
-                            command.Parameters.Add(parameter);
+                            if (!parameter.IsVirtual) command.Parameters.Add(parameter);
 
                             if (hasNulls is false && parameter.Value == DBNull.Value)
                             {
@@ -691,7 +691,7 @@ public partial class NpgsqlRestEndpoint(
                                         }
                                     }
                                 }
-                                command.Parameters.Add(parameter);
+                                if (!parameter.IsVirtual) command.Parameters.Add(parameter);
 
                                 if (hasNulls is false && parameter.Value == DBNull.Value)
                                 {
@@ -955,7 +955,7 @@ public partial class NpgsqlRestEndpoint(
                                 }
                             }
                         }
-                        command.Parameters.Add(parameter);
+                        if (!parameter.IsVirtual) command.Parameters.Add(parameter);
                         hasNulls = true;
                         if (formatter.IsFormattable is false)
                         {
@@ -1079,7 +1079,7 @@ public partial class NpgsqlRestEndpoint(
                                     }
                                 }
                             }
-                            command.Parameters.Add(parameter);
+                            if (!parameter.IsVirtual) command.Parameters.Add(parameter);
 
                             if (hasNulls is false && parameter.Value == DBNull.Value)
                             {
@@ -1172,7 +1172,7 @@ public partial class NpgsqlRestEndpoint(
                                         }
                                     }
                                 }
-                                command.Parameters.Add(parameter);
+                                if (!parameter.IsVirtual) command.Parameters.Add(parameter);
 
                                 if (hasNulls is false && parameter.Value == DBNull.Value)
                                 {

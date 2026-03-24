@@ -26,6 +26,19 @@ public static partial class SqlFiles
         File.WriteAllText(Path.Combine(Dir, "comment_inline.sql"), """
             select $1 as result; -- @param $1 my_val
             """);
+
+        // Full multi-line block comment with multiple annotations
+        File.WriteAllText(Path.Combine(Dir, "comment_multiline_block.sql"), """
+            /*
+              HTTP GET
+              @param $1 user_id
+              @param $2 active_flag
+              @authorize
+            */
+            select id, name, active
+            from sql_describe_test
+            where id = $1 and active = $2;
+            """);
     }
 }
 
@@ -70,5 +83,27 @@ public class CommentPositionEndpointTests(SqlFileSourceTestFixture test)
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response: {content}");
         content.Should().Be("[{\"result\":\"hello\"}]");
+    }
+
+    [Fact]
+    public async Task MultiLineBlockComment_AllAnnotationsWork()
+    {
+        // Multi-line block comment with HTTP, @param, @authorize — all should be parsed
+        using var client = test.CreateClient();
+        // Must login because @authorize is set
+        await client.GetAsync("/login");
+        using var response = await client.GetAsync("/api/comment-multiline-block?user_id=1&active_flag=true");
+        var content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response: {content}");
+        content.Should().Be("[{\"id\":1,\"name\":\"test1\",\"active\":true}]");
+    }
+
+    [Fact]
+    public async Task MultiLineBlockComment_Unauthorized_WithoutLogin()
+    {
+        using var client = test.CreateClient();
+        using var response = await client.GetAsync("/api/comment-multiline-block?user_id=1&active_flag=true");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 }

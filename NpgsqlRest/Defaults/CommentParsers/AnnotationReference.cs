@@ -397,6 +397,14 @@ internal static partial class DefaultCommentParser
             ["description"] = "Rename a result key in multi-command SQL file responses. N is the 1-based command index. Example: '@result1 validate' renames the first result from 'result1' to 'validate'. SQL file source only."
         });
 
+        annotations.Add((JsonNode)new JsonObject
+        {
+            ["name"] = "define_param",
+            ["aliases"] = new JsonArray("define_param"),
+            ["syntax"] = "define_param <name> [type]",
+            ["description"] = "Define a virtual parameter that exists for HTTP matching and claim mapping but is NOT bound to the PostgreSQL command. Useful for SQL file endpoints where you need parameters for comment placeholders or claim mapping without referencing them in SQL. Default type is text. SQL file source only."
+        });
+
         return annotations;
     }
 }

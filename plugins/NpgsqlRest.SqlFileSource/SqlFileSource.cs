@@ -149,8 +149,10 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
             }
         }
 
-        // Build merged parameters
-        var parameters = new NpgsqlRestParameter[mergedMaxParam];
+        // Build merged parameters (real SQL params + virtual params from @define_param)
+        var virtualParams = parseResult.VirtualParams;
+        var totalParamCount = mergedMaxParam + virtualParams.Count;
+        var parameters = new NpgsqlRestParameter[totalParamCount];
         for (int i = 0; i < mergedMaxParam; i++)
         {
             var typeName = paramTypesByIndex.GetValueOrDefault(i, "unknown");
@@ -162,6 +164,20 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
                 convertedName: positionalName,
                 actualName: positionalName,
                 typeDescriptor: typeDescriptor);
+        }
+        // Add virtual parameters — exist for HTTP matching and claim mapping, not bound to PostgreSQL
+        for (int i = 0; i < virtualParams.Count; i++)
+        {
+            var vp = virtualParams[i];
+            var vpType = vp.Type ?? "text";
+            parameters[mergedMaxParam + i] = new NpgsqlRestParameter(
+                ordinal: mergedMaxParam + i,
+                convertedName: vp.Name,
+                actualName: vp.Name,
+                typeDescriptor: new TypeDescriptor(vpType))
+            {
+                IsVirtual = true
+            };
         }
 
         // For single-command: use first describe's columns
@@ -273,7 +289,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
             ColumnsTypeDescriptor = columnTypeDescriptors,
             ReturnsUnnamedSet = false,
             IsVoid = isVoid,
-            ParamCount = mergedMaxParam,
+            ParamCount = totalParamCount,
             Parameters = parameters,
             ParamsHash = [.. parameters.Select(p => p.ConvertedName)],
             OriginalParamsHash = [.. parameters.Select(p => p.ActualName)],

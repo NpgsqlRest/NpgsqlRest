@@ -35,6 +35,12 @@ public class SqlFileParseResult
     public Dictionary<int, string> ResultNames { get; } = [];
 
     /// <summary>
+    /// Virtual parameters from @define_param annotations.
+    /// Each entry is (name, type) where type may be null (defaults to text).
+    /// </summary>
+    public List<(string Name, string? Type)> VirtualParams { get; } = [];
+
+    /// <summary>
     /// Errors encountered during parsing.
     /// </summary>
     public List<string> Errors { get; } = [];
@@ -333,6 +339,9 @@ public static class SqlFileParser
                 ExtractResultNames(result);
             }
 
+            // Extract @define_param annotations
+            ExtractVirtualParams(result);
+
             return result;
         }
         finally
@@ -412,6 +421,38 @@ public static class SqlFileParser
             {
                 result.ResultNames[resultIndex] = name;
             }
+        }
+    }
+
+    /// <summary>
+    /// Extract @define_param annotations from comment text.
+    /// Supports: @define_param name, @define_param name type
+    /// </summary>
+    private static void ExtractVirtualParams(SqlFileParseResult result)
+    {
+        if (string.IsNullOrEmpty(result.Comment)) return;
+
+        var lines = result.Comment.Split(['\n', '\r'], StringSplitOptions.RemoveEmptyEntries);
+
+        foreach (var line in lines)
+        {
+            var trimmed = line.Trim();
+            var s = trimmed.StartsWith('@') ? trimmed[1..] : trimmed;
+
+            if (!s.StartsWith("define_param", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var parts = s.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 2)
+            {
+                continue; // no name provided
+            }
+
+            var name = parts[1];
+            var type = parts.Length >= 3 ? parts[2] : null;
+            result.VirtualParams.Add((name, type));
         }
     }
 

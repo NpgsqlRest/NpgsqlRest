@@ -125,6 +125,33 @@ Now: `GET /api/my-query?user_name=hello&age=42`
 - Same `$N` with conflicting types → startup error with clear message (override with `@param $1 name type`)
 - `$N` used in only some statements → type from the statement(s) that reference it
 
+#### Virtual Parameters
+
+Use `@define_param` to create HTTP parameters that are NOT bound to the PostgreSQL command. These parameters exist for HTTP request matching, custom parameter placeholders, and claim mapping — without appearing in the SQL query.
+
+**Use case: custom parameter placeholders** — pass HTTP parameters that control endpoint behavior (e.g., output format) without referencing them in SQL:
+
+```sql
+-- sql/users_report.sql
+-- @define_param format text
+-- table_format = {format}
+-- @param $1 department_id
+SELECT id, name, email FROM users WHERE department_id = $1;
+```
+
+`GET /api/users-report?department_id=5&format=html_table` — the `format` parameter feeds into the `table_format` custom parameter via `{format}` placeholder, selecting the output format (JSON, HTML table, etc.) without being part of the SQL query.
+
+**Use case: claim mapping** — auto-fill from user claims without SQL reference:
+
+```sql
+-- @authorize
+-- @user_parameters
+-- @define_param _user_id
+SELECT * FROM user_data;
+```
+
+Default type is `text`; specify a type with `@define_param name type`.
+
 #### Comments and Annotations
 
 All comments in the SQL file are parsed as annotations, just like `COMMENT ON FUNCTION` in PostgreSQL:
@@ -147,6 +174,7 @@ All existing NpgsqlRest annotations work: `@authorize`, `@allow_anonymous`, `@ta
 | `@param $N is name` | Rename ("is" style) | `-- @param $1 is user_id` |
 | `@resultN name` | Rename multi-command result key | `-- @result1 validate` |
 | `@resultN is name` | Rename result key ("is" style) | `-- @result1 is validate` |
+| `@define_param name [type]` | Define virtual parameter (not bound to SQL) | `-- @define_param _user_id` |
 
 **`CommentScope` setting** controls which comments are parsed:
 - `All` (default) — every comment in the file, regardless of position

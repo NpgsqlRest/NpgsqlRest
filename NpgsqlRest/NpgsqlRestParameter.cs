@@ -15,6 +15,11 @@ public class NpgsqlRestParameter : NpgsqlParameter
     /// Never changed by annotations. Used by RoutineSourceParameterFormatter for SQL generation.
     /// </summary>
     public string OriginalName { get; init; }
+    /// <summary>
+    /// Virtual parameters exist for HTTP matching and claim mapping but are NOT bound
+    /// to the PostgreSQL command. Created by @define_param annotation on SQL file endpoints.
+    /// </summary>
+    public bool IsVirtual { get; init; }
     public TypeDescriptor TypeDescriptor { get; init; }
 
     public ParamType ParamType { get; set; } = default!;
