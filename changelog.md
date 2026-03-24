@@ -318,6 +318,7 @@ This enhancement benefits all existing `IsPatternMatch` consumers (`StaticFiles.
 - Multi-command rendering in `NpgsqlRestEndpoint.cs` — `NpgsqlBatch` execution, `do/while NextResultAsync()` loop, JSON object wrapper with `multiCmdWriteWrapper` flag (skipped in raw/binary mode), table format handler called per result set
 - `JsonValueFormatter.FormatValue` — shared value type dispatch for both single and multi-command rendering paths
 - Three new log messages: `CommentParamNotExistsCantRename`, `CommentParamRenamed`, `CommentParamRetyped`
+- `NpgsqlRestEndpoint` split into partial class files: `NpgsqlRestEndpoint.cs` (request handling + rendering, ~2866 lines) and `NpgsqlRestEndpoint.Helpers.cs` (helper methods, ~352 lines) for easier maintenance
 
 ---
 
