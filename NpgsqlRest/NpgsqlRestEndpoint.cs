@@ -1882,7 +1882,7 @@ public partial class NpgsqlRestEndpoint(
                     }
 
                     // Write "resultName":
-                    var keyJson = string.Concat("\"", currentCmd.Name, "\":");
+                    var keyJson = string.Concat(PgConverters.SerializeString(currentCmd.Name), ":");
                     writer.Advance(Encoding.UTF8.GetBytes(keyJson.AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(keyJson.Length))));
 
                     // Build a command for this statement
@@ -1994,15 +1994,13 @@ public partial class NpgsqlRestEndpoint(
                                             mcCompositeHasValue = false;
                                             mcCurrentCompName = mcCompMapping.CompositeColumnName;
                                         }
-                                        mcOutput.Append(Consts.DoubleQuote);
-                                        mcOutput.Append(mcCompMapping.FieldName);
-                                        mcOutput.Append(Consts.DoubleQuoteColon);
+                                        mcOutput.Append(PgConverters.SerializeString(mcCompMapping.FieldName));
+                                        mcOutput.Append(Consts.Colon);
                                     }
                                     else
                                     {
-                                        mcRowBuilder.Append(Consts.DoubleQuote);
-                                        mcRowBuilder.Append(currentCmd.ColumnNames[col]);
-                                        mcRowBuilder.Append(Consts.DoubleQuoteColon);
+                                        mcRowBuilder.Append(PgConverters.SerializeString(currentCmd.ColumnNames[col]));
+                                        mcRowBuilder.Append(Consts.Colon);
                                     }
                                 }
 
@@ -2019,9 +2017,8 @@ public partial class NpgsqlRestEndpoint(
                                 // Composite field closing
                                 if (mcIsInComposite && mcCompMapping.IsLastField)
                                 {
-                                    mcRowBuilder.Append(Consts.DoubleQuote);
-                                    mcRowBuilder.Append(mcCurrentCompName);
-                                    mcRowBuilder.Append(Consts.DoubleQuoteColon);
+                                    mcRowBuilder.Append(PgConverters.SerializeString(mcCurrentCompName!));
+                                    mcRowBuilder.Append(Consts.Colon);
                                     if (mcCompositeHasValue)
                                     {
                                         mcRowBuilder.Append(Consts.OpenBrace);
@@ -2587,23 +2584,20 @@ public partial class NpgsqlRestEndpoint(
                                                 currentCompositeName = compositeMapping.CompositeColumnName;
 
                                                 // Write field name/value to buffer
-                                                outputBuffer.Append(Consts.DoubleQuote);
-                                                outputBuffer.Append(compositeMapping.FieldName);
-                                                outputBuffer.Append(Consts.DoubleQuoteColon);
+                                                outputBuffer.Append(PgConverters.SerializeString(compositeMapping.FieldName));
+                                                outputBuffer.Append(Consts.Colon);
                                             }
                                             else
                                             {
                                                 // Middle or end field in composite: just output field name
-                                                outputBuffer.Append(Consts.DoubleQuote);
-                                                outputBuffer.Append(compositeMapping.FieldName);
-                                                outputBuffer.Append(Consts.DoubleQuoteColon);
+                                                outputBuffer.Append(PgConverters.SerializeString(compositeMapping.FieldName));
+                                                outputBuffer.Append(Consts.Colon);
                                             }
                                         }
                                         else
                                         {
-                                            rowBuilder.Append(Consts.DoubleQuote);
-                                            rowBuilder.Append(activeColumnNames[i]);
-                                            rowBuilder.Append(Consts.DoubleQuoteColon);
+                                            rowBuilder.Append(PgConverters.SerializeString(activeColumnNames[i]));
+                                            rowBuilder.Append(Consts.Colon);
                                         }
                                     }
 
@@ -2620,9 +2614,8 @@ public partial class NpgsqlRestEndpoint(
                                     if (isInComposite && compositeMapping.IsLastField)
                                     {
                                         // End of composite: decide whether to output null or the buffered object
-                                        rowBuilder.Append(Consts.DoubleQuote);
-                                        rowBuilder.Append(currentCompositeName);
-                                        rowBuilder.Append(Consts.DoubleQuoteColon);
+                                        rowBuilder.Append(PgConverters.SerializeString(currentCompositeName!));
+                                        rowBuilder.Append(Consts.Colon);
 
                                         if (compositeHasNonNullValue)
                                         {

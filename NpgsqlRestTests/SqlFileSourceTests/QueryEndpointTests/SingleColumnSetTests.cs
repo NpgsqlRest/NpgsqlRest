@@ -24,6 +24,12 @@ public static partial class SqlFiles
                 values ('a', 1), ('b', 2)
             ) as t(name, id);
             """);
+
+        // Column names with JSON-special characters (double-quoted identifiers in PostgreSQL)
+        File.WriteAllText(Path.Combine(Dir, "escaped_col_names.sql"), """
+            -- HTTP GET
+            select 1 as "my""quote", 2 as "back\slash";
+            """);
     }
 }
 
@@ -48,6 +54,20 @@ public class SingleColumnSetTests(SqlFileSourceTestFixture test)
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Be("[1,2,3]");
+    }
+
+    [Fact]
+    public async Task EscapedColumnNames_JsonSpecialChars_ProducesValidJson()
+    {
+        using var response = await test.Client.GetAsync("/api/escaped-col-names");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+
+        // Verify it's valid JSON by parsing it
+        var doc = JsonDocument.Parse(content);
+        doc.RootElement.ValueKind.Should().Be(JsonValueKind.Array);
+        doc.RootElement.GetArrayLength().Should().Be(1);
     }
 
     [Fact]

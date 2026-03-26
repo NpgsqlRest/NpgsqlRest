@@ -61,6 +61,15 @@ public static partial class SqlFiles
             insert into sql_describe_test (id, name) values ($1, $2) returning id, name;
             select count(*) as total from sql_describe_test;
             """);
+
+        // Result name with JSON-special characters
+        File.WriteAllText(Path.Combine(Dir, "multi_escaped_name.sql"), """
+            -- HTTP GET
+            -- @result1 my"key
+            -- @result2 back\slash
+            select 1 as val;
+            select 2 as val;
+            """);
     }
 }
 
@@ -148,5 +157,15 @@ public class MultiCommandEdgeCaseTests(SqlFileSourceTestFixture test)
         conn.Open();
         using var cmd = new Npgsql.NpgsqlCommand($"delete from sql_describe_test where id = {uniqueId}", conn);
         cmd.ExecuteNonQuery();
+    }
+
+    [Fact]
+    public async Task EscapedResultName_JsonSpecialCharsInKey_ProducesValidJson()
+    {
+        using var response = await test.Client.GetAsync("/api/multi-escaped-name");
+        var content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response: {content}");
+        content.Should().Be("""{"my\"key":[1],"back\\slash":[2]}""");
     }
 }
