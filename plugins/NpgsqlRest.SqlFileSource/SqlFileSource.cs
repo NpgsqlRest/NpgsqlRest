@@ -269,7 +269,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
 
         var routine = new Routine
         {
-            Type = RoutineType.Other,
+            Type = RoutineType.SqlFile,
             Schema = "public",
             Name = fileName,
             Comment = string.IsNullOrEmpty(parseResult.Comment) ? null : parseResult.Comment,
