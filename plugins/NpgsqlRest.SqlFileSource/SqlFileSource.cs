@@ -54,11 +54,11 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
                 }
                 catch (Exception ex)
                 {
-                    if (options.ErrorMode == ParseErrorMode.Throw)
-                    {
-                        throw;
-                    }
                     NpgsqlRestOptions.Logger?.LogError("SqlFileSource: Error processing file {FilePath}: {Error}", filePath, ex.Message);
+                    if (options.ErrorMode == ParseErrorMode.Exit)
+                    {
+                        Environment.Exit(1);
+                    }
                 }
 
                 if (result is not null)
@@ -90,11 +90,11 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
         {
             foreach (var error in parseResult.Errors)
             {
-                if (options.ErrorMode == ParseErrorMode.Throw)
-                {
-                    throw new InvalidOperationException($"SqlFileSource: {filePath}: {error}");
-                }
                 NpgsqlRestOptions.Logger?.LogError("SqlFileSource: {FilePath}: {Error}", filePath, error);
+            }
+            if (options.ErrorMode == ParseErrorMode.Exit)
+            {
+                Environment.Exit(1);
             }
             return null;
         }
@@ -119,11 +119,11 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
             var describeResult = SqlFileDescriber.Describe(connection, stmt, stmtParamCount);
             if (describeResult.HasError)
             {
-                if (options.ErrorMode == ParseErrorMode.Throw)
-                {
-                    throw new InvalidOperationException($"SqlFileSource: {filePath}: Describe failed: {describeResult.Error}");
-                }
                 NpgsqlRestOptions.Logger?.LogError("SqlFileSource: {FilePath}: Describe failed: {Error}", filePath, describeResult.Error);
+                if (options.ErrorMode == ParseErrorMode.Exit)
+                {
+                    Environment.Exit(1);
+                }
                 return null;
             }
             commandDescribes.Add(describeResult);
@@ -140,11 +140,11 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
                         if (existing != "unknown" && existing != pType)
                         {
                             var error = $"Parameter ${i + 1} has conflicting types across statements: '{existing}' vs '{pType}'. Use @param annotation to override.";
-                            if (options.ErrorMode == ParseErrorMode.Throw)
-                            {
-                                throw new InvalidOperationException($"SqlFileSource: {filePath}: {error}");
-                            }
                             NpgsqlRestOptions.Logger?.LogError("SqlFileSource: {FilePath}: {Error}", filePath, error);
+                            if (options.ErrorMode == ParseErrorMode.Exit)
+                            {
+                                Environment.Exit(1);
+                            }
                             return null;
                         }
                     }

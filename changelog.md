@@ -227,8 +227,8 @@ Override with the `@path` annotation: `-- @path /custom/path/{id}`
 
 | Mode | Behavior | Use Case |
 |---|---|---|
-| `ParseErrorMode.Skip` (default) | Logs warning, skips file, continues | Production |
-| `ParseErrorMode.Throw` | Throws exception, halts startup | Development / CI |
+| `ParseErrorMode.Exit` (default) | Logs error, exits process | Fail-fast — catches SQL errors at startup |
+| `ParseErrorMode.Skip` | Logs error, skips file, continues | Production — tolerate partial failures |
 
 Errors caught at startup:
 - Parse errors (malformed SQL, unclosed strings/quotes)
@@ -271,7 +271,7 @@ SQL file endpoints support all features available to function/procedure endpoint
 | `FilePattern` | string | `""` | Glob pattern for SQL files. Supports `*`, `**` (recursive), `?`. Empty = disabled |
 | `CommentsMode` | enum | `ParseAll` | `ParseAll` = every file becomes an endpoint. `OnlyWithHttpTag` = requires `HTTP` annotation |
 | `CommentScope` | enum | `All` | `All` = parse all comments. `Header` = only before first statement |
-| `ErrorMode` | enum | `Skip` | `Skip` = log + continue. `Throw` = halt startup |
+| `ErrorMode` | enum | `Exit` | `Exit` = log error + exit process. `Skip` = log error + continue |
 | `ResultPrefix` | string | `"result"` | Prefix for multi-command result keys (e.g., `result1`, `result2`) |
 
 ---

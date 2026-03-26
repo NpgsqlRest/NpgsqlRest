@@ -23,6 +23,6 @@ public class ConfigurationTests
     {
         var options = new SqlFileSourceOptions();
         options.FilePattern.Should().NotBeNull();
-        options.ErrorMode.Should().Be(ParseErrorMode.Skip);
+        options.ErrorMode.Should().Be(ParseErrorMode.Exit);
     }
 }

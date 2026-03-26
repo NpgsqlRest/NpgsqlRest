@@ -16,10 +16,10 @@ public enum CommentScope
 /// </summary>
 public enum ParseErrorMode
 {
-    /// <summary>Log error, skip the file, continue — default (production-safe).</summary>
+    /// <summary>Log error, skip the file, continue.</summary>
     Skip,
-    /// <summary>Throw exception, halt startup (good for dev/CI).</summary>
-    Throw
+    /// <summary>Log error and exit the process — default.</summary>
+    Exit
 }
 
 /// <summary>
@@ -48,7 +48,7 @@ public class SqlFileSourceOptions
     /// <summary>
     /// Behavior when a file fails to parse or describe.
     /// </summary>
-    public ParseErrorMode ErrorMode { get; set; } = ParseErrorMode.Skip;
+    public ParseErrorMode ErrorMode { get; set; } = ParseErrorMode.Exit;
 
     /// <summary>
     /// Prefix for result keys in multi-command JSON responses.
