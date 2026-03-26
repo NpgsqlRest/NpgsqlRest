@@ -83,7 +83,11 @@ All sources share the same annotation system — `@authorize`, `@param`, `@cache
 
 ## PostgreSQL at the Center
 
-PostgreSQL is not just storage. It's a powerful computation engine with transactions, constraints, triggers, functions, and decades of optimization. NpgsqlRest puts PostgreSQL at the center and generates everything else:
+<p align="center">
+  <img src="system-diagram.png" alt="NpgsqlRest System Diagram" width="600">
+</p>
+
+PostgreSQL is not just storage. It's a powerful computation engine and development platform with decades of optimization. NpgsqlRest puts PostgreSQL at the center and generates everything else:
 
 - **SQL files as endpoints** — Write a `.sql` file, get a REST endpoint. No functions needed for simple queries
 - **Schema as contract** — Your tables, views, and functions become REST endpoints. One source of truth, zero drift
