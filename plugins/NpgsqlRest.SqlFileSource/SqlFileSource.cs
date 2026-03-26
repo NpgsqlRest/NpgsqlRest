@@ -57,6 +57,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
                     NpgsqlRestOptions.Logger?.LogError("SqlFileSource: Error processing file {FilePath}: {Error}", filePath, ex.Message);
                     if (options.ErrorMode == ParseErrorMode.Exit)
                     {
+                        NpgsqlRestOptions.Logger?.LogCritical("SqlFileSource: Exiting due to SQL file error. Set ErrorMode to Skip to continue past errors.");
                         Environment.Exit(1);
                     }
                 }
@@ -94,6 +95,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
             }
             if (options.ErrorMode == ParseErrorMode.Exit)
             {
+                NpgsqlRestOptions.Logger?.LogCritical("SqlFileSource: Exiting due to SQL file error. Set ErrorMode to Skip to continue past errors.");
                 Environment.Exit(1);
             }
             return null;
@@ -122,6 +124,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
                 NpgsqlRestOptions.Logger?.LogError("SqlFileSource: {FilePath}: Describe failed: {Error}", filePath, describeResult.Error);
                 if (options.ErrorMode == ParseErrorMode.Exit)
                 {
+                    NpgsqlRestOptions.Logger?.LogCritical("SqlFileSource: Exiting due to SQL file error. Set ErrorMode to Skip to continue past errors.");
                     Environment.Exit(1);
                 }
                 return null;
@@ -143,6 +146,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
                             NpgsqlRestOptions.Logger?.LogError("SqlFileSource: {FilePath}: {Error}", filePath, error);
                             if (options.ErrorMode == ParseErrorMode.Exit)
                             {
+                                NpgsqlRestOptions.Logger?.LogCritical("SqlFileSource: Exiting due to SQL file error. Set ErrorMode to Skip to continue past errors.");
                                 Environment.Exit(1);
                             }
                             return null;

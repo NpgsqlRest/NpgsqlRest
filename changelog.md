@@ -230,6 +230,10 @@ Override with the `@path` annotation: `-- @path /custom/path/{id}`
 | `ParseErrorMode.Exit` (default) | Logs error, exits process | Fail-fast — catches SQL errors at startup |
 | `ParseErrorMode.Skip` | Logs error, skips file, continues | Production — tolerate partial failures |
 
+All SQL file errors are logged at `Error` level. In `Exit` mode, a `Critical` log explains the exit and how to switch to `Skip` mode.
+
+A warning is logged when the configured file pattern matches no files.
+
 Errors caught at startup:
 - Parse errors (malformed SQL, unclosed strings/quotes)
 - Describe errors (PostgreSQL syntax errors, invalid table/column references)
