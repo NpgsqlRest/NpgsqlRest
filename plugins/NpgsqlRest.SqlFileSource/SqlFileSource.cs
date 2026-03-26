@@ -58,7 +58,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
                     {
                         throw;
                     }
-                    NpgsqlRestOptions.Logger?.LogWarning("SqlFileSource: Error processing file {FilePath}: {Error}", filePath, ex.Message);
+                    NpgsqlRestOptions.Logger?.LogError("SqlFileSource: Error processing file {FilePath}: {Error}", filePath, ex.Message);
                 }
 
                 if (result is not null)
@@ -94,7 +94,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
                 {
                     throw new InvalidOperationException($"SqlFileSource: {filePath}: {error}");
                 }
-                NpgsqlRestOptions.Logger?.LogWarning("SqlFileSource: {FilePath}: {Error}", filePath, error);
+                NpgsqlRestOptions.Logger?.LogError("SqlFileSource: {FilePath}: {Error}", filePath, error);
             }
             return null;
         }
@@ -123,7 +123,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
                 {
                     throw new InvalidOperationException($"SqlFileSource: {filePath}: Describe failed: {describeResult.Error}");
                 }
-                NpgsqlRestOptions.Logger?.LogWarning("SqlFileSource: {FilePath}: Describe failed: {Error}", filePath, describeResult.Error);
+                NpgsqlRestOptions.Logger?.LogError("SqlFileSource: {FilePath}: Describe failed: {Error}", filePath, describeResult.Error);
                 return null;
             }
             commandDescribes.Add(describeResult);
@@ -144,7 +144,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
                             {
                                 throw new InvalidOperationException($"SqlFileSource: {filePath}: {error}");
                             }
-                            NpgsqlRestOptions.Logger?.LogWarning("SqlFileSource: {FilePath}: {Error}", filePath, error);
+                            NpgsqlRestOptions.Logger?.LogError("SqlFileSource: {FilePath}: {Error}", filePath, error);
                             return null;
                         }
                     }
