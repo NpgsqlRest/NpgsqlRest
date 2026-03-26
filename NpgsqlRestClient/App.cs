@@ -523,56 +523,62 @@ public class App
     {
         var sources = new List<IEndpointSource>(2);
 
-        var source = new RoutineSource();
         var routineOptionsCfg = _config.NpgsqlRestCfg.GetSection("RoutineOptions");
-        if (routineOptionsCfg.Exists() is true)
+        if (routineOptionsCfg.Exists() is true && _config.GetConfigBool("Enabled", routineOptionsCfg, true) is false)
         {
-            var customTypeParameterSeparator = _config.GetConfigStr("CustomTypeParameterSeparator", routineOptionsCfg);
-            if (customTypeParameterSeparator is not null)
-            {
-                source.CustomTypeParameterSeparator = customTypeParameterSeparator;
-            }
-            var includeLanguages = _config.GetConfigEnumerable("IncludeLanguages", routineOptionsCfg);
-            if (includeLanguages is not null)
-            {
-                source.IncludeLanguages = [.. includeLanguages];
-            }
-            var excludeLanguages = _config.GetConfigEnumerable("ExcludeLanguages", routineOptionsCfg);
-            if (excludeLanguages is not null)
-            {
-                source.ExcludeLanguages = [.. excludeLanguages];
-            }
-            source.NestedJsonForCompositeTypes = _config.GetConfigBool("NestedJsonForCompositeTypes", routineOptionsCfg);
-            source.ResolveNestedCompositeTypes = _config.GetConfigBool("ResolveNestedCompositeTypes", routineOptionsCfg, true);
+            _builder.ClientLogger?.LogDebug("{name} PostgreSQL Source is disabled", nameof(RoutineSource));
         }
-        sources.Add(source);
-        _builder.ClientLogger?.LogDebug("Using {name} PostrgeSQL Source", nameof(RoutineSource));
+        else
+        {
+            var source = new RoutineSource();
+            if (routineOptionsCfg.Exists() is true)
+            {
+                var customTypeParameterSeparator = _config.GetConfigStr("CustomTypeParameterSeparator", routineOptionsCfg);
+                if (customTypeParameterSeparator is not null)
+                {
+                    source.CustomTypeParameterSeparator = customTypeParameterSeparator;
+                }
+                var includeLanguages = _config.GetConfigEnumerable("IncludeLanguages", routineOptionsCfg);
+                if (includeLanguages is not null)
+                {
+                    source.IncludeLanguages = [.. includeLanguages];
+                }
+                var excludeLanguages = _config.GetConfigEnumerable("ExcludeLanguages", routineOptionsCfg);
+                if (excludeLanguages is not null)
+                {
+                    source.ExcludeLanguages = [.. excludeLanguages];
+                }
+                source.NestedJsonForCompositeTypes = _config.GetConfigBool("NestedJsonForCompositeTypes", routineOptionsCfg);
+                source.ResolveNestedCompositeTypes = _config.GetConfigBool("ResolveNestedCompositeTypes", routineOptionsCfg, true);
+            }
+            sources.Add(source);
+            _builder.ClientLogger?.LogDebug("Using {name} PostrgeSQL Source", nameof(RoutineSource));
+        }
 
         var crudSourceCfg = _config.NpgsqlRestCfg.GetSection("CrudSource");
-        if (crudSourceCfg.Exists() is false || _config.GetConfigBool("Enabled", crudSourceCfg, true) is false)
+        if (crudSourceCfg.Exists() is true && _config.GetConfigBool("Enabled", crudSourceCfg, true) is true)
         {
-            return sources;
-        }
-        sources.Add(new CrudSource()
-        {
-            SchemaSimilarTo = _config.GetConfigStr("SchemaSimilarTo", crudSourceCfg),
-            SchemaNotSimilarTo = _config.GetConfigStr("SchemaNotSimilarTo", crudSourceCfg),
-            IncludeSchemas = _config.GetConfigEnumerable("IncludeSchemas", crudSourceCfg)?.ToArray(),
-            ExcludeSchemas = _config.GetConfigEnumerable("ExcludeSchemas", crudSourceCfg)?.ToArray(),
-            NameSimilarTo = _config.GetConfigStr("NameSimilarTo", crudSourceCfg),
-            NameNotSimilarTo = _config.GetConfigStr("NameNotSimilarTo", crudSourceCfg),
-            IncludeNames = _config.GetConfigEnumerable("IncludeNames", crudSourceCfg)?.ToArray(),
-            ExcludeNames = _config.GetConfigEnumerable("ExcludeNames", crudSourceCfg)?.ToArray(),
-            CommentsMode = _config.GetConfigEnum<CommentsMode?>("CommentsMode", crudSourceCfg),
-            CrudTypes = _config.GetConfigFlag<CrudCommandType>("CrudTypes", crudSourceCfg),
+            sources.Add(new CrudSource()
+            {
+                SchemaSimilarTo = _config.GetConfigStr("SchemaSimilarTo", crudSourceCfg),
+                SchemaNotSimilarTo = _config.GetConfigStr("SchemaNotSimilarTo", crudSourceCfg),
+                IncludeSchemas = _config.GetConfigEnumerable("IncludeSchemas", crudSourceCfg)?.ToArray(),
+                ExcludeSchemas = _config.GetConfigEnumerable("ExcludeSchemas", crudSourceCfg)?.ToArray(),
+                NameSimilarTo = _config.GetConfigStr("NameSimilarTo", crudSourceCfg),
+                NameNotSimilarTo = _config.GetConfigStr("NameNotSimilarTo", crudSourceCfg),
+                IncludeNames = _config.GetConfigEnumerable("IncludeNames", crudSourceCfg)?.ToArray(),
+                ExcludeNames = _config.GetConfigEnumerable("ExcludeNames", crudSourceCfg)?.ToArray(),
+                CommentsMode = _config.GetConfigEnum<CommentsMode?>("CommentsMode", crudSourceCfg),
+                CrudTypes = _config.GetConfigFlag<CrudCommandType>("CrudTypes", crudSourceCfg),
 
-            ReturningUrlPattern = _config.GetConfigStr("ReturningUrlPattern", crudSourceCfg) ?? "{0}/returning",
-            OnConflictDoNothingUrlPattern = _config.GetConfigStr("OnConflictDoNothingUrlPattern", crudSourceCfg) ?? "{0}/on-conflict-do-nothing",
-            OnConflictDoNothingReturningUrlPattern = _config.GetConfigStr("OnConflictDoNothingReturningUrlPattern", crudSourceCfg) ?? "{0}/on-conflict-do-nothing/returning",
-            OnConflictDoUpdateUrlPattern = _config.GetConfigStr("OnConflictDoUpdateUrlPattern", crudSourceCfg) ?? "{0}/on-conflict-do-update",
-            OnConflictDoUpdateReturningUrlPattern = _config.GetConfigStr("OnConflictDoUpdateReturningUrlPattern", crudSourceCfg) ?? "{0}/on-conflict-do-update/returning",
-        });
-        _builder.ClientLogger?.LogDebug("Using {name} PostrgeSQL Source", nameof(CrudSource));
+                ReturningUrlPattern = _config.GetConfigStr("ReturningUrlPattern", crudSourceCfg) ?? "{0}/returning",
+                OnConflictDoNothingUrlPattern = _config.GetConfigStr("OnConflictDoNothingUrlPattern", crudSourceCfg) ?? "{0}/on-conflict-do-nothing",
+                OnConflictDoNothingReturningUrlPattern = _config.GetConfigStr("OnConflictDoNothingReturningUrlPattern", crudSourceCfg) ?? "{0}/on-conflict-do-nothing/returning",
+                OnConflictDoUpdateUrlPattern = _config.GetConfigStr("OnConflictDoUpdateUrlPattern", crudSourceCfg) ?? "{0}/on-conflict-do-update",
+                OnConflictDoUpdateReturningUrlPattern = _config.GetConfigStr("OnConflictDoUpdateReturningUrlPattern", crudSourceCfg) ?? "{0}/on-conflict-do-update/returning",
+            });
+            _builder.ClientLogger?.LogDebug("Using {name} PostrgeSQL Source", nameof(CrudSource));
+        }
 
         var sqlFileSourceCfg = _config.NpgsqlRestCfg.GetSection("SqlFileSource");
         if (sqlFileSourceCfg.Exists() is true && _config.GetConfigBool("Enabled", sqlFileSourceCfg, true) is true)

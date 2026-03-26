@@ -356,6 +356,34 @@ export async function processOrder(
 
 ---
 
+### RoutineSource: `Enabled` Configuration Option
+
+The `RoutineOptions` section now supports an `Enabled` setting (default `true`). Set to `false` to disable automatic endpoint creation from PostgreSQL functions and procedures:
+
+```json
+"RoutineOptions": {
+  "Enabled": false
+}
+```
+
+This is useful for SQL-files-only deployments where the overhead of querying the PostgreSQL catalog for routines is unnecessary.
+
+---
+
+### CrudSource Disabled by Default
+
+The `CrudSource:Enabled` setting now defaults to `false` (was `true`).
+
+CrudSource auto-generates CRUD endpoints for all PostgreSQL tables and views, which is rarely desired in production without explicit configuration. Users who need CRUD endpoints should explicitly set `"CrudSource": { "Enabled": true }`.
+
+---
+
+### CrudSource No Longer Blocks SqlFileSource
+
+Previously, when `CrudSource` was disabled (or its config section was missing), `CreateEndpointSources()` returned early, preventing `SqlFileSource` from being registered. All three endpoint sources (RoutineSource, CrudSource, SqlFileSource) are now independently enabled/disabled.
+
+---
+
 ### DataProtection Disabled by Default
 
 The `DataProtection:Enabled` setting now defaults to `false` (was `true`).
@@ -368,6 +396,7 @@ Users who enable Auth, Antiforgery, or encrypt/decrypt annotations should explic
 
 ### Internal Changes
 
+- `RoutineType.SqlFile` — new enum value for SQL file endpoints (was `Other`), shown in log messages
 - `NpgsqlRestParameter.ConvertedName` / `ActualName` — `internal set` (was `private set`) for `@param` rename support
 - `ParameterHandler.HandleParameterRename` — new method handling all rename/retype annotation forms
 - `SqlFileParameterFormatter` — static singleton, `IsFormattable = false`, zero per-endpoint allocation

@@ -1779,6 +1779,10 @@ public static partial class ConfigSchemaGenerator
         //
         "RoutineOptions": {
           //
+          // Set to false to disable the routine source (PostgreSQL functions and procedures). Default is true.
+          //
+          "Enabled": true,
+          //
           // Name separator for parameter names when using custom type parameters. 
           // Parameter names will be in the format: {ParameterName}{CustomTypeParameterSeparator}{CustomTypeFieldName}. When NULL, default underscore is used.
           // This is used when using custom types for parameters. For example: with "create type custom_type1 as (value text);" and parameter "_p custom_type1", this name will be merged into "_p_value"
@@ -2502,7 +2506,7 @@ public static partial class ConfigSchemaGenerator
           //
           // Enable or disable the creation of the endpoints for the PostgreSQL tables and views.
           //
-          "Enabled": true,
+          "Enabled": false,
           //
           // Filter schema names similar to this parameter or `null` to ignore this parameter.
           //

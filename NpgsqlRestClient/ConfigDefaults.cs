@@ -683,6 +683,7 @@ public static class ConfigDefaults
 
             ["RoutineOptions"] = new JsonObject
             {
+                ["Enabled"] = true,
                 ["CustomTypeParameterSeparator"] = null,
                 ["IncludeLanguages"] = null,
                 ["ExcludeLanguages"] = null,
@@ -916,7 +917,7 @@ public static class ConfigDefaults
     {
         return new JsonObject
         {
-            ["Enabled"] = true,
+            ["Enabled"] = false,
             ["SchemaSimilarTo"] = null,
             ["SchemaNotSimilarTo"] = null,
             ["IncludeSchemas"] = null,
