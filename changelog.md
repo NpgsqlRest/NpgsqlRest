@@ -356,6 +356,16 @@ export async function processOrder(
 
 ---
 
+### DataProtection Disabled by Default
+
+The `DataProtection:Enabled` setting now defaults to `false` (was `true`).
+
+DataProtection is only needed when using Cookie Authentication, Antiforgery tokens, or `@encrypt`/`@decrypt` annotations — all of which are themselves disabled by default. Enabling it unconditionally added unnecessary key management overhead and, on Linux/Docker with `Storage: "Default"`, caused silent key loss on restart (invalidating auth cookies without warning).
+
+Users who enable Auth, Antiforgery, or encrypt/decrypt annotations should explicitly set `"DataProtection": { "Enabled": true }` and choose an appropriate storage mode.
+
+---
+
 ### Internal Changes
 
 - `NpgsqlRestParameter.ConvertedName` / `ActualName` — `internal set` (was `private set`) for `@param` rename support
@@ -687,7 +697,7 @@ Two new comment annotations — `encrypt` and `decrypt` — enable transparent a
 
 This is useful for storing PII (SSN, medical records, credit card numbers) or other sensitive data that must be encrypted at rest but is only ever looked up by an unencrypted key (e.g., `user_id`, `patient_id`).
 
-> **Prerequisite**: The `DataProtection` section must be enabled in `appsettings.json` (it is by default). The `DefaultDataProtector` is automatically created from Data Protection configuration and passed to the NpgsqlRest authentication options.
+> **Prerequisite**: The `DataProtection` section must be enabled in `appsettings.json` (`"DataProtection": { "Enabled": true }`). The `DefaultDataProtector` is automatically created from Data Protection configuration and passed to the NpgsqlRest authentication options.
 
 #### Encrypt Parameters
 

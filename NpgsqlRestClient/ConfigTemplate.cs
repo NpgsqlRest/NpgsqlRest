@@ -164,7 +164,7 @@ public static partial class ConfigSchemaGenerator
       // Data protection settings. Encryption/decryption settings for Auth Cookies, Antiforgery tokens and custom data protection needs.
       //
       "DataProtection": {
-        "Enabled": true,
+        "Enabled": false,
         //
         // Set to null to use the current "ApplicationName" value.
         // This value determines encryption type or class. Meaning, different application names will not be able to decrypt each other's data.

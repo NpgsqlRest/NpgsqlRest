@@ -79,7 +79,7 @@ public static class ConfigDefaults
 
             ["DataProtection"] = new JsonObject
             {
-                ["Enabled"] = true,
+                ["Enabled"] = false,
                 ["CustomApplicationName"] = null,
                 ["DefaultKeyLifetimeDays"] = 90,
                 ["Storage"] = "Default",

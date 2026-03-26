@@ -22,7 +22,7 @@
     <PackageReference Include="Microsoft.Extensions.Caching.Hybrid" Version="10.4.0" />
     <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.5" />
     <PackageReference Include="SpreadCheetah" Version="1.27.0" />
-    <PackageReference Include="StackExchange.Redis" Version="2.12.4" />
+    <PackageReference Include="StackExchange.Redis" Version="2.12.8" />
   </ItemGroup>
   
   <ItemGroup>
