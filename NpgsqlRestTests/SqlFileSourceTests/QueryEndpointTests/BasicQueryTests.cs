@@ -25,6 +25,6 @@ public class BasicQueryTests(SqlFileSourceTestFixture test)
         using var doc = JsonDocument.Parse(content);
         doc.RootElement.ValueKind.Should().Be(JsonValueKind.Array);
         doc.RootElement.GetArrayLength().Should().Be(1);
-        doc.RootElement[0].TryGetProperty("currentTime", out _).Should().BeTrue();
+        doc.RootElement[0].ValueKind.Should().Be(JsonValueKind.String);
     }
 }

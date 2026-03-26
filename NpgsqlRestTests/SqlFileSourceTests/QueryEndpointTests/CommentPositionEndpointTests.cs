@@ -52,7 +52,7 @@ public class CommentPositionEndpointTests(SqlFileSourceTestFixture test)
         var content = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response: {content}");
-        content.Should().Be("[{\"result\":\"hello\"}]");
+        content.Should().Be("[\"hello\"]");
     }
 
     [Fact]
@@ -62,7 +62,7 @@ public class CommentPositionEndpointTests(SqlFileSourceTestFixture test)
         var content = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response: {content}");
-        content.Should().Be("[{\"result\":\"hello\"}]");
+        content.Should().Be("[\"hello\"]");
     }
 
     [Fact]
@@ -72,7 +72,7 @@ public class CommentPositionEndpointTests(SqlFileSourceTestFixture test)
         var content = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response: {content}");
-        content.Should().Be("[{\"result\":\"hello\"}]");
+        content.Should().Be("[\"hello\"]");
     }
 
     [Fact]
@@ -82,7 +82,7 @@ public class CommentPositionEndpointTests(SqlFileSourceTestFixture test)
         var content = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response: {content}");
-        content.Should().Be("[{\"result\":\"hello\"}]");
+        content.Should().Be("[\"hello\"]");
     }
 
     [Fact]

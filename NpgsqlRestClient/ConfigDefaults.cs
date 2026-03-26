@@ -945,7 +945,8 @@ public static class ConfigDefaults
             ["CommentsMode"] = "ParseAll",
             ["CommentScope"] = "All",
             ["ErrorMode"] = "Exit",
-            ["ResultPrefix"] = "result"
+            ["ResultPrefix"] = "result",
+            ["UnnamedSingleColumnSet"] = true
         };
     }
 

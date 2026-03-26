@@ -2610,7 +2610,13 @@ public static partial class ConfigSchemaGenerator
           // Default keys are "result1", "result2", etc.
           // Override per-result with @resultN annotation in the SQL file.
           //
-          "ResultPrefix": "result"
+          "ResultPrefix": "result",
+          //
+          // When true, queries returning a single column produce a flat JSON array of values
+          // (e.g., ["a", "b", "c"]) instead of an array of objects (e.g., [{"col": "a"}, {"col": "b"}]).
+          // This matches the behavior of PostgreSQL functions returning setof single values.
+          //
+          "UnnamedSingleColumnSet": true
         }
       }
     }

@@ -24,7 +24,7 @@ public class TrailingSemicolonTests(SqlFileSourceTestFixture test)
         var content = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response: {content}");
-        content.Should().Be("[{\"val\":\"test\"}]");
+        content.Should().Be("[\"test\"]");
     }
 
     [Fact]
@@ -34,6 +34,6 @@ public class TrailingSemicolonTests(SqlFileSourceTestFixture test)
         var content = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response: {content}");
-        content.Should().Be("[{\"val\":\"test\"}]");
+        content.Should().Be("[\"test\"]");
     }
 }

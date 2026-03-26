@@ -98,7 +98,7 @@ public class MultiCommandEdgeCaseTests(SqlFileSourceTestFixture test)
         var content = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response: {content}");
-        content.Should().Be("""{"result1":[{"a":1}],"result2":[{"b":2}],"result3":[{"c":3}],"result4":[{"d":4}],"result5":[{"e":5}]}""");
+        content.Should().Be("""{"result1":[1],"result2":[2],"result3":[3],"result4":[4],"result5":[5]}""");
     }
 
     [Fact]
@@ -110,7 +110,7 @@ public class MultiCommandEdgeCaseTests(SqlFileSourceTestFixture test)
         response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response: {content}");
 
         // Third result contains now() which is non-deterministic
-        content.Should().Contain("""{"single_col":[{"greeting":"hello"}],"two_cols":[{"num":1,"str":"text"}],"three_cols":[{"flag":true,"value":42,"ts":""");
+        content.Should().Contain("""{"single_col":["hello"],"two_cols":[{"num":1,"str":"text"}],"three_cols":[{"flag":true,"value":42,"ts":""");
     }
 
     [Fact]
@@ -123,8 +123,8 @@ public class MultiCommandEdgeCaseTests(SqlFileSourceTestFixture test)
 
         // count(*) is non-deterministic; active and lookup are deterministic
         content.Should().Contain("\"first_lookup\":[{\"id\":1,\"name\":\"test1\"}]");
-        content.Should().Contain("\"all_count\":[{\"total\":");
-        content.Should().Contain("\"active_check\":[{\"active\":true}]");
+        content.Should().Contain("\"all_count\":[");
+        content.Should().Contain("\"active_check\":[true]");
     }
 
     [Fact]
@@ -141,7 +141,7 @@ public class MultiCommandEdgeCaseTests(SqlFileSourceTestFixture test)
 
         // ID is random and count is non-deterministic, use Contain for key parts
         content.Should().Contain($"\"inserted\":[{{\"id\":{uniqueId},\"name\":\"returning_test\"}}]");
-        content.Should().Contain("\"count\":[{\"total\":");
+        content.Should().Contain("\"count\":[");
 
         // Cleanup
         using var conn = Database.CreateConnection();

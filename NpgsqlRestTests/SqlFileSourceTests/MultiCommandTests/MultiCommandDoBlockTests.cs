@@ -36,9 +36,9 @@ public class MultiCommandDoBlockTests(SqlFileSourceTestFixture test)
         response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response: {content}");
 
         // count(*) is non-deterministic (depends on other test side effects), use Contain for structure
-        content.Should().Contain("\"before_count\":[{\"total\":");
+        content.Should().Contain("\"before_count\":[");
         content.Should().Contain("\"result2\":-1");
-        content.Should().Contain("\"after_count\":[{\"total\":");
+        content.Should().Contain("\"after_count\":[");
     }
 
     [Fact]

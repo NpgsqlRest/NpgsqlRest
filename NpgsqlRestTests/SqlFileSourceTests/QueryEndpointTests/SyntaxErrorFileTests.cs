@@ -33,6 +33,6 @@ public class SyntaxErrorFileTests(SqlFileSourceTestFixture test)
         var content = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response: {content}");
-        content.Should().Be("[{\"ok\":1}]");
+        content.Should().Be("[1]");
     }
 }

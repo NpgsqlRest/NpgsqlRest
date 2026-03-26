@@ -58,7 +58,7 @@ public class MultiCommandParamCombinationTests(SqlFileSourceTestFixture test)
         var content = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response: {content}");
-        content.Should().Be("""{"result1":[{"name":"test2"}],"result2":1,"result3":[{"name":"shared_test"}]}""");
+        content.Should().Be("""{"result1":["test2"],"result2":1,"result3":["shared_test"]}""");
 
         // Restore
         using var restore = new StringContent(
@@ -90,7 +90,7 @@ public class MultiCommandParamCombinationTests(SqlFileSourceTestFixture test)
         var content = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response: {content}");
-        content.Should().Be("""{"check_exists":[{"cnt":1}],"update_result":1,"final_check":[{"id":1,"name":"complex_test"}]}""");
+        content.Should().Be("""{"check_exists":[1],"update_result":1,"final_check":[{"id":1,"name":"complex_test"}]}""");
 
         // Restore original values
         using var restore = new StringContent(
@@ -108,8 +108,8 @@ public class MultiCommandParamCombinationTests(SqlFileSourceTestFixture test)
         response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response: {content}");
 
         // count(*), min/max, and now() are all non-deterministic
-        content.Should().Contain("\"result1\":[{\"total\":");
+        content.Should().Contain("\"result1\":[");
         content.Should().Contain("\"result2\":[{\"minId\":");
-        content.Should().Contain("\"result3\":[{\"serverTime\":");
+        content.Should().Contain("\"result3\":[\"");
     }
 }

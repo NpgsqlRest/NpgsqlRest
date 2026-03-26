@@ -592,6 +592,7 @@ public class App
                     CommentsMode = _config.GetConfigEnum<CommentsMode>("CommentsMode", sqlFileSourceCfg),
                     CommentScope = _config.GetConfigEnum<CommentScope>("CommentScope", sqlFileSourceCfg),
                     ErrorMode = _config.GetConfigEnum<ParseErrorMode>("ErrorMode", sqlFileSourceCfg),
+                    UnnamedSingleColumnSet = _config.GetConfigBool("UnnamedSingleColumnSet", sqlFileSourceCfg, true),
                 };
                 var resultPrefix = _config.GetConfigStr("ResultPrefix", sqlFileSourceCfg);
                 if (resultPrefix is not null)

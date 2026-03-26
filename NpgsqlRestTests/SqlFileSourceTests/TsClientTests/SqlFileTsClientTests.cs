@@ -34,7 +34,7 @@ public class SqlFileTsClientTests(SqlFileSourceTestFixture test)
     public void TsClient_SingleCommand_NoParams()
     {
         var content = ReadGeneratedFile();
-        content.Should().Contain("export async function getTime() : Promise<IGetTimeResponse[]>");
+        content.Should().Contain("export async function getTime() : Promise<string[]>");
     }
 
     // Multi-command endpoints

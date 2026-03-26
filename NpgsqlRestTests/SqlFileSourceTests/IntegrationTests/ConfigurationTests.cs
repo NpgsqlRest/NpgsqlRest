@@ -24,5 +24,6 @@ public class ConfigurationTests
         var options = new SqlFileSourceOptions();
         options.FilePattern.Should().NotBeNull();
         options.ErrorMode.Should().Be(ParseErrorMode.Exit);
+        options.UnnamedSingleColumnSet.Should().BeTrue();
     }
 }

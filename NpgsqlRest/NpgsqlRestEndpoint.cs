@@ -1982,25 +1982,28 @@ public partial class NpgsqlRestEndpoint(
                                 StringBuilder mcOutput = (mcIsInComposite && mcCompositeBuffer is not null) ? mcCompositeBuffer : mcRowBuilder;
 
                                 // Column name / structure
-                                if (col == 0) mcRowBuilder.Append(Consts.OpenBrace);
+                                if (currentCmd.ReturnsUnnamedSet == false)
+                                {
+                                    if (col == 0) mcRowBuilder.Append(Consts.OpenBrace);
 
-                                if (mcIsInComposite)
-                                {
-                                    if (mcCompMapping.IsFirstField)
+                                    if (mcIsInComposite)
                                     {
-                                        mcCompositeBuffer!.Clear();
-                                        mcCompositeHasValue = false;
-                                        mcCurrentCompName = mcCompMapping.CompositeColumnName;
+                                        if (mcCompMapping.IsFirstField)
+                                        {
+                                            mcCompositeBuffer!.Clear();
+                                            mcCompositeHasValue = false;
+                                            mcCurrentCompName = mcCompMapping.CompositeColumnName;
+                                        }
+                                        mcOutput.Append(Consts.DoubleQuote);
+                                        mcOutput.Append(mcCompMapping.FieldName);
+                                        mcOutput.Append(Consts.DoubleQuoteColon);
                                     }
-                                    mcOutput.Append(Consts.DoubleQuote);
-                                    mcOutput.Append(mcCompMapping.FieldName);
-                                    mcOutput.Append(Consts.DoubleQuoteColon);
-                                }
-                                else
-                                {
-                                    mcRowBuilder.Append(Consts.DoubleQuote);
-                                    mcRowBuilder.Append(currentCmd.ColumnNames[col]);
-                                    mcRowBuilder.Append(Consts.DoubleQuoteColon);
+                                    else
+                                    {
+                                        mcRowBuilder.Append(Consts.DoubleQuote);
+                                        mcRowBuilder.Append(currentCmd.ColumnNames[col]);
+                                        mcRowBuilder.Append(Consts.DoubleQuoteColon);
+                                    }
                                 }
 
                                 // Value formatting — shared with single-command path
@@ -2036,7 +2039,7 @@ public partial class NpgsqlRestEndpoint(
                                 }
 
                                 // Close brace and commas
-                                if (col == currentCmd.ColumnCount - 1)
+                                if (currentCmd.ReturnsUnnamedSet == false && col == currentCmd.ColumnCount - 1)
                                 {
                                     mcRowBuilder.Append(Consts.CloseBrace);
                                 }

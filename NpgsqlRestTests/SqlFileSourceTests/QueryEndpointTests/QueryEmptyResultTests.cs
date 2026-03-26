@@ -23,6 +23,6 @@ public class QueryEmptyResultTests(SqlFileSourceTestFixture test)
         using var doc = JsonDocument.Parse(content);
         doc.RootElement.ValueKind.Should().Be(JsonValueKind.Array);
         doc.RootElement.GetArrayLength().Should().Be(1);
-        doc.RootElement[0].GetProperty("total").GetInt64().Should().BeGreaterThanOrEqualTo(2);
+        doc.RootElement[0].GetInt64().Should().BeGreaterThanOrEqualTo(2);
     }
 }

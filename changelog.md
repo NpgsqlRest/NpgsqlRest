@@ -263,8 +263,9 @@ SQL file endpoints support all features available to function/procedure endpoint
     "FilePattern": "sql/**/*.sql",
     "CommentsMode": "ParseAll",
     "CommentScope": "All",
-    "ErrorMode": "Skip",
-    "ResultPrefix": "result"
+    "ErrorMode": "Exit",
+    "ResultPrefix": "result",
+    "UnnamedSingleColumnSet": true
   }
 }
 ```
@@ -277,6 +278,7 @@ SQL file endpoints support all features available to function/procedure endpoint
 | `CommentScope` | enum | `All` | `All` = parse all comments. `Header` = only before first statement |
 | `ErrorMode` | enum | `Exit` | `Exit` = log error + exit process. `Skip` = log error + continue |
 | `ResultPrefix` | string | `"result"` | Prefix for multi-command result keys (e.g., `result1`, `result2`) |
+| `UnnamedSingleColumnSet` | bool | `true` | Single-column queries return flat arrays (`["a","b"]`) instead of object arrays (`[{"col":"a"},{"col":"b"}]`). Applies to both single-command and per-result in multi-command files. Matches function behavior for `setof` single values |
 
 ---
 

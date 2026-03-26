@@ -457,6 +457,7 @@ public static partial class ConfigSchemaGenerator
         ["NpgsqlRest:SqlFileSource:CommentScope"] = "Which comments in the SQL file to parse as annotations.\nPossible values: All (default — all comments), Header (only comments before the first statement).",
         ["NpgsqlRest:SqlFileSource:ErrorMode"] = "Behavior when a SQL file fails to parse or describe.\nPossible values: Exit (default — log error, exit process), Skip (log error, continue).",
         ["NpgsqlRest:SqlFileSource:ResultPrefix"] = "Prefix for result keys in multi-command JSON responses.\nDefault keys are \"result1\", \"result2\", etc. Override per-result with @resultN annotation in the SQL file.",
+        ["NpgsqlRest:SqlFileSource:UnnamedSingleColumnSet"] = "When true, queries returning a single column produce a flat JSON array of values (e.g., [\"a\", \"b\", \"c\"]) instead of an array of objects (e.g., [{\"col\": \"a\"}, {\"col\": \"b\"}]). This matches the behavior of PostgreSQL functions returning setof single values. Default is true.",
     };
 
     /// <summary>

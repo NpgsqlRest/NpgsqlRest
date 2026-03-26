@@ -30,8 +30,8 @@ public class MultiMixedEndpointTests(SqlFileSourceTestFixture test)
         response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response: {content}");
 
         // lookup and result2 are deterministic; verify count(*) is non-deterministic
-        content.Should().Contain("\"lookup\":[{\"name\":\"test1\"}]");
+        content.Should().Contain("\"lookup\":[\"test1\"]");
         content.Should().Contain("\"result2\":1");
-        content.Should().Contain("\"verify\":[{\"total\":");
+        content.Should().Contain("\"verify\":[");
     }
 }

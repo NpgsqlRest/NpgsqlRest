@@ -269,6 +269,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
                     ColumnCount = cmdCols.Length,
                     ColumnNames = cmdColNames,
                     ColumnTypeDescriptors = cmdColDescriptors,
+                    ReturnsUnnamedSet = options.UnnamedSingleColumnSet && cmdCols.Length == 1,
                 };
             }
         }
@@ -298,7 +299,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
             OriginalColumnNames = originalColumnNames,
             ColumnNames = columnNames,
             ColumnsTypeDescriptor = columnTypeDescriptors,
-            ReturnsUnnamedSet = false,
+            ReturnsUnnamedSet = options.UnnamedSingleColumnSet && columnCount == 1 && !isMultiCommand,
             IsVoid = isVoid,
             ParamCount = totalParamCount,
             Parameters = parameters,

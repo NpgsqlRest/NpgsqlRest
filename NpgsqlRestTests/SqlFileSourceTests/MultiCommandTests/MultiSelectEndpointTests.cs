@@ -25,6 +25,6 @@ public class MultiSelectEndpointTests(SqlFileSourceTestFixture test)
 
         // result1 is deterministic (id=1 filter), result2 count(*) is non-deterministic
         content.Should().Contain("\"result1\":[{\"id\":1,\"name\":\"test1\"}]");
-        content.Should().Contain("\"result2\":[{\"total\":");
+        content.Should().Contain("\"result2\":[");
     }
 }

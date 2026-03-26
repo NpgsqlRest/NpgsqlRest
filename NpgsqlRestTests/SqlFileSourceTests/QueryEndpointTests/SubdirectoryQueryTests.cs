@@ -23,6 +23,6 @@ public class SubdirectoryQueryTests(SqlFileSourceTestFixture test)
         using var doc = JsonDocument.Parse(content);
         doc.RootElement.ValueKind.Should().Be(JsonValueKind.Array);
         doc.RootElement.GetArrayLength().Should().Be(1);
-        doc.RootElement[0].GetProperty("answer").GetInt32().Should().Be(42);
+        doc.RootElement[0].GetInt32().Should().Be(42);
     }
 }

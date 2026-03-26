@@ -51,6 +51,14 @@ public class SqlFileSourceOptions
     public ParseErrorMode ErrorMode { get; set; } = ParseErrorMode.Exit;
 
     /// <summary>
+    /// When true, queries returning a single column produce a flat JSON array of values
+    /// (e.g., ["a", "b", "c"]) instead of an array of objects (e.g., [{"col": "a"}, {"col": "b"}]).
+    /// This matches the behavior of PostgreSQL functions returning setof single values.
+    /// Default is true.
+    /// </summary>
+    public bool UnnamedSingleColumnSet { get; set; } = true;
+
+    /// <summary>
     /// Prefix for result keys in multi-command JSON responses.
     /// Default keys are "result1", "result2", etc.
     /// Override per-result with @resultN annotation in the SQL file.

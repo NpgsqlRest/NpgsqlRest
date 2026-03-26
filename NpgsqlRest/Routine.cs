@@ -197,4 +197,9 @@ public class MultiCommandInfo
     /// Type descriptors for this command's result columns.
     /// </summary>
     public required TypeDescriptor[] ColumnTypeDescriptors { get; init; }
+
+    /// <summary>
+    /// When true, this command returns a flat array of values instead of objects.
+    /// </summary>
+    public bool ReturnsUnnamedSet { get; init; }
 }
