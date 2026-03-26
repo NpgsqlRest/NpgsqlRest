@@ -229,6 +229,12 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
             }
         }
 
+        var jsonColumnNames = new string[columnCount];
+        for (int i = 0; i < columnCount; i++)
+        {
+            jsonColumnNames[i] = PgConverters.SerializeString(columnNames[i]);
+        }
+
         // Build multi-command info if needed
         MultiCommandInfo[]? multiCommandInfo = null;
         if (isMultiCommand)
@@ -238,10 +244,12 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
             {
                 var cmdCols = commandDescribes[ci].Columns ?? [];
                 var cmdColNames = new string[cmdCols.Length];
+                var cmdJsonColNames = new string[cmdCols.Length];
                 var cmdColDescriptors = new TypeDescriptor[cmdCols.Length];
                 for (int j = 0; j < cmdCols.Length; j++)
                 {
                     cmdColNames[j] = nameConverter(cmdCols[j].Name) ?? cmdCols[j].Name;
+                    cmdJsonColNames[j] = PgConverters.SerializeString(cmdColNames[j]);
                     cmdColDescriptors[j] = new TypeDescriptor(cmdCols[j].DataTypeName);
                     ResolveCompositeType(cmdColDescriptors[j]);
                 }
@@ -264,10 +272,12 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
                 multiCommandInfo[ci] = new MultiCommandInfo
                 {
                     Name = resultName,
+                    JsonName = PgConverters.SerializeString(resultName),
                     Statement = parseResult.Statements[ci],
                     ParamCount = SqlFileDescriber.FindMaxParamIndex(parseResult.Statements[ci]),
                     ColumnCount = cmdCols.Length,
                     ColumnNames = cmdColNames,
+                    JsonColumnNames = cmdJsonColNames,
                     ColumnTypeDescriptors = cmdColDescriptors,
                     ReturnsUnnamedSet = options.UnnamedSingleColumnSet && cmdCols.Length == 1,
                 };
@@ -298,6 +308,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
             ColumnCount = columnCount,
             OriginalColumnNames = originalColumnNames,
             ColumnNames = columnNames,
+            JsonColumnNames = jsonColumnNames,
             ColumnsTypeDescriptor = columnTypeDescriptors,
             ReturnsUnnamedSet = options.UnnamedSingleColumnSet && columnCount == 1 && !isMultiCommand,
             IsVoid = isVoid,

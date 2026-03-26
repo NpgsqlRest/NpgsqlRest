@@ -126,6 +126,7 @@ public class TestSource : IRoutineSource
             ReturnsSet = default,
             ColumnCount = columnCount,
             ColumnNames = default!,
+            JsonColumnNames = default!,
             OriginalColumnNames = default!,
             ColumnsTypeDescriptor = columnsTypeDescriptor,
             ReturnsUnnamedSet = default,

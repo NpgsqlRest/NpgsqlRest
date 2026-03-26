@@ -472,6 +472,12 @@ public class RoutineSource(
                     formatter = new RoutineSourceCustomTypesParameterFormatter();
                 }
 
+                string[] jsonColumnNames = new string[convertedRecordNames.Length];
+                for (int i = 0; i < convertedRecordNames.Length; i++)
+                {
+                    jsonColumnNames[i] = PgConverters.SerializeString(convertedRecordNames[i]);
+                }
+
                 yield return (
                     new Routine
                     {
@@ -487,6 +493,7 @@ public class RoutineSource(
                         ColumnCount = returnRecordCount,
                         OriginalColumnNames = returnRecordNames,
                         ColumnNames = convertedRecordNames,
+                        JsonColumnNames = jsonColumnNames,
                         ReturnsUnnamedSet = isUnnamedRecord,
                         ColumnsTypeDescriptor = returnTypeDescriptor,
                         IsVoid = isVoid,

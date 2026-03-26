@@ -58,6 +58,11 @@ public class Routine
     public required string[] ColumnNames { get; init; }
 
     /// <summary>
+    /// Pre-escaped JSON key strings for the returned columns (output of PgConverters.SerializeString).
+    /// </summary>
+    public required string[] JsonColumnNames { get; init; }
+
+    /// <summary>
     /// The type descriptors for the returned columns.
     /// </summary>
     public required TypeDescriptor[] ColumnsTypeDescriptor { get; init; }
@@ -174,6 +179,11 @@ public class MultiCommandInfo
     public required string Name { get; init; }
 
     /// <summary>
+    /// Pre-escaped JSON key string for the result name (output of PgConverters.SerializeString).
+    /// </summary>
+    public required string JsonName { get; init; }
+
+    /// <summary>
     /// The SQL statement for this command.
     /// </summary>
     public required string Statement { get; init; }
@@ -192,6 +202,11 @@ public class MultiCommandInfo
     /// Column names for this command's result set (camelCase converted).
     /// </summary>
     public required string[] ColumnNames { get; init; }
+
+    /// <summary>
+    /// Pre-escaped JSON key strings for this command's result columns.
+    /// </summary>
+    public required string[] JsonColumnNames { get; init; }
 
     /// <summary>
     /// Type descriptors for this command's result columns.

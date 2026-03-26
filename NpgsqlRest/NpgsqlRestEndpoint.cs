@@ -1882,7 +1882,7 @@ public partial class NpgsqlRestEndpoint(
                     }
 
                     // Write "resultName":
-                    var keyJson = string.Concat(PgConverters.SerializeString(currentCmd.Name), ":");
+                    var keyJson = string.Concat(currentCmd.JsonName, ":");
                     writer.Advance(Encoding.UTF8.GetBytes(keyJson.AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(keyJson.Length))));
 
                     // Build a command for this statement
@@ -1926,7 +1926,7 @@ public partial class NpgsqlRestEndpoint(
                         // (cache key infrastructure is in the single-command path)
 
                         // Nested composite column support (per-command)
-                        Dictionary<int, (string CompositeColumnName, string FieldName, bool IsFirstField, bool IsLastField, int FieldCount)>? mcNestedMap = null;
+                        Dictionary<int, (string CompositeColumnName, string FieldName, bool IsFirstField, bool IsLastField, int FieldCount, string JsonCompositeColumnName, string JsonFieldName)>? mcNestedMap = null;
                         if (endpoint.NestedJsonForCompositeTypes == true && routine.CompositeColumnInfo is not null)
                         {
                             mcNestedMap = new();
@@ -1937,7 +1937,7 @@ public partial class NpgsqlRestEndpoint(
                                 {
                                     if (indices[fi] < currentCmd.ColumnCount)
                                     {
-                                        mcNestedMap[indices[fi]] = (ci.ConvertedColumnName, ci.FieldNames[fi], fi == 0, fi == indices.Length - 1, indices.Length);
+                                        mcNestedMap[indices[fi]] = (ci.ConvertedColumnName, ci.FieldNames[fi], fi == 0, fi == indices.Length - 1, indices.Length, PgConverters.SerializeString(ci.ConvertedColumnName), PgConverters.SerializeString(ci.FieldNames[fi]));
                                     }
                                 }
                             }
@@ -1946,6 +1946,7 @@ public partial class NpgsqlRestEndpoint(
                         StringBuilder? mcCompositeBuffer = mcNestedMap is not null ? StringBuilderPool.Rent(256) : null;
                         bool mcCompositeHasValue = false;
                         string? mcCurrentCompName = null;
+                        string? mcCurrentJsonCompName = null;
 
                         while (await mcReader.ReadAsync(cancellationToken))
                         {
@@ -1977,7 +1978,7 @@ public partial class NpgsqlRestEndpoint(
                                 }
 
                                 // Determine output buffer and handle composite nesting
-                                (string CompositeColumnName, string FieldName, bool IsFirstField, bool IsLastField, int FieldCount) mcCompMapping = default;
+                                (string CompositeColumnName, string FieldName, bool IsFirstField, bool IsLastField, int FieldCount, string JsonCompositeColumnName, string JsonFieldName) mcCompMapping = default;
                                 bool mcIsInComposite = mcNestedMap is not null && mcNestedMap.TryGetValue(col, out mcCompMapping);
                                 StringBuilder mcOutput = (mcIsInComposite && mcCompositeBuffer is not null) ? mcCompositeBuffer : mcRowBuilder;
 
@@ -1993,13 +1994,14 @@ public partial class NpgsqlRestEndpoint(
                                             mcCompositeBuffer!.Clear();
                                             mcCompositeHasValue = false;
                                             mcCurrentCompName = mcCompMapping.CompositeColumnName;
+                                            mcCurrentJsonCompName = mcCompMapping.JsonCompositeColumnName;
                                         }
-                                        mcOutput.Append(PgConverters.SerializeString(mcCompMapping.FieldName));
+                                        mcOutput.Append(mcCompMapping.JsonFieldName);
                                         mcOutput.Append(Consts.Colon);
                                     }
                                     else
                                     {
-                                        mcRowBuilder.Append(PgConverters.SerializeString(currentCmd.ColumnNames[col]));
+                                        mcRowBuilder.Append(currentCmd.JsonColumnNames[col]);
                                         mcRowBuilder.Append(Consts.Colon);
                                     }
                                 }
@@ -2017,7 +2019,7 @@ public partial class NpgsqlRestEndpoint(
                                 // Composite field closing
                                 if (mcIsInComposite && mcCompMapping.IsLastField)
                                 {
-                                    mcRowBuilder.Append(PgConverters.SerializeString(mcCurrentCompName!));
+                                    mcRowBuilder.Append(mcCurrentJsonCompName!);
                                     mcRowBuilder.Append(Consts.Colon);
                                     if (mcCompositeHasValue)
                                     {
@@ -2377,6 +2379,7 @@ public partial class NpgsqlRestEndpoint(
                     {
                     // For multi-command: determine current command metadata and skip void commands
                     string[]? currentColumnNames = null;
+                    string[]? currentJsonColumnNames = null;
                     TypeDescriptor[]? currentColumnDescriptors = null;
                     int currentColumnCount = routine.ColumnCount;
                     if (multiCmd is not null && multiCmdIndex < multiCmd.Length)
@@ -2390,7 +2393,7 @@ public partial class NpgsqlRestEndpoint(
                             {
                                 writer.Advance(Encoding.UTF8.GetBytes(",".AsSpan(), writer.GetSpan(1)));
                             }
-                            var nameJson = string.Concat("\"", cmdInfo.Name, "\":");
+                            var nameJson = string.Concat(cmdInfo.JsonName, ":");
                             writer.Advance(Encoding.UTF8.GetBytes(nameJson.AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(nameJson.Length))));
                             multiCmdFirstWritten = true;
                         }
@@ -2409,6 +2412,7 @@ public partial class NpgsqlRestEndpoint(
                         }
 
                         currentColumnNames = cmdInfo.ColumnNames;
+                        currentJsonColumnNames = cmdInfo.JsonColumnNames;
                         currentColumnDescriptors = cmdInfo.ColumnTypeDescriptors;
                         currentColumnCount = cmdInfo.ColumnCount;
                     }
@@ -2425,14 +2429,15 @@ public partial class NpgsqlRestEndpoint(
                     bool first = true;
                     var routineReturnRecordCount = currentColumnCount;
                     var activeColumnNames = currentColumnNames ?? routine.ColumnNames;
+                    var activeJsonColumnNames = currentJsonColumnNames ?? routine.JsonColumnNames;
                     var activeColumnDescriptors = currentColumnDescriptors ?? routine.ColumnsTypeDescriptor;
 
                     rowBuilder = StringBuilderPool.Rent(512);
                     ulong rowCount = 0;
 
                     // Precompute nested JSON composite column mapping
-                    // Maps column index to: (compositeColumnName, fieldName, isFirstField, isLastField, fieldCount)
-                    Dictionary<int, (string CompositeColumnName, string FieldName, bool IsFirstField, bool IsLastField, int FieldCount)>? nestedJsonColumnMap = null;
+                    // Maps column index to: (compositeColumnName, fieldName, isFirstField, isLastField, fieldCount, jsonCompositeColumnName, jsonFieldName)
+                    Dictionary<int, (string CompositeColumnName, string FieldName, bool IsFirstField, bool IsLastField, int FieldCount, string JsonCompositeColumnName, string JsonFieldName)>? nestedJsonColumnMap = null;
                     if (endpoint.NestedJsonForCompositeTypes == true && routine.CompositeColumnInfo is not null)
                     {
                         nestedJsonColumnMap = new();
@@ -2448,7 +2453,9 @@ public partial class NpgsqlRestEndpoint(
                                     compositeInfo.FieldNames[fieldIdx],
                                     fieldIdx == 0,
                                     fieldIdx == indices.Length - 1,
-                                    fieldCount
+                                    fieldCount,
+                                    PgConverters.SerializeString(compositeInfo.ConvertedColumnName),
+                                    PgConverters.SerializeString(compositeInfo.FieldNames[fieldIdx])
                                 );
                             }
                         }
@@ -2461,6 +2468,7 @@ public partial class NpgsqlRestEndpoint(
                     }
                     bool compositeHasNonNullValue = false;
                     string? currentCompositeName = null;
+                    string? currentJsonCompositeName = null;
 
                     if (endpoint.Raw is true && endpoint.RawColumnNames is true && binary is false)
                     {
@@ -2561,7 +2569,7 @@ public partial class NpgsqlRestEndpoint(
                                 else
                                 {
                                     // Handle nested JSON composite types
-                                    (string CompositeColumnName, string FieldName, bool IsFirstField, bool IsLastField, int FieldCount) compositeMapping = default;
+                                    (string CompositeColumnName, string FieldName, bool IsFirstField, bool IsLastField, int FieldCount, string JsonCompositeColumnName, string JsonFieldName) compositeMapping = default;
                                     bool isInComposite = nestedJsonColumnMap is not null && nestedJsonColumnMap.TryGetValue(i, out compositeMapping);
 
                                     // Determine which buffer to write to
@@ -2582,21 +2590,22 @@ public partial class NpgsqlRestEndpoint(
                                                 compositeFieldBuffer!.Clear();
                                                 compositeHasNonNullValue = false;
                                                 currentCompositeName = compositeMapping.CompositeColumnName;
+                                                currentJsonCompositeName = compositeMapping.JsonCompositeColumnName;
 
                                                 // Write field name/value to buffer
-                                                outputBuffer.Append(PgConverters.SerializeString(compositeMapping.FieldName));
+                                                outputBuffer.Append(compositeMapping.JsonFieldName);
                                                 outputBuffer.Append(Consts.Colon);
                                             }
                                             else
                                             {
                                                 // Middle or end field in composite: just output field name
-                                                outputBuffer.Append(PgConverters.SerializeString(compositeMapping.FieldName));
+                                                outputBuffer.Append(compositeMapping.JsonFieldName);
                                                 outputBuffer.Append(Consts.Colon);
                                             }
                                         }
                                         else
                                         {
-                                            rowBuilder.Append(PgConverters.SerializeString(activeColumnNames[i]));
+                                            rowBuilder.Append(activeJsonColumnNames[i]);
                                             rowBuilder.Append(Consts.Colon);
                                         }
                                     }
@@ -2614,7 +2623,7 @@ public partial class NpgsqlRestEndpoint(
                                     if (isInComposite && compositeMapping.IsLastField)
                                     {
                                         // End of composite: decide whether to output null or the buffered object
-                                        rowBuilder.Append(PgConverters.SerializeString(currentCompositeName!));
+                                        rowBuilder.Append(currentJsonCompositeName!);
                                         rowBuilder.Append(Consts.Colon);
 
                                         if (compositeHasNonNullValue)

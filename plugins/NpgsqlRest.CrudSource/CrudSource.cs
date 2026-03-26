@@ -277,6 +277,12 @@ public class CrudSource(
                 convertedColumnNames[i] = options.NameConverter(columnNames[i]) ?? columnNames[i];
             }
 
+            string[] jsonColumnNames = new string[convertedColumnNames.Length];
+            for (int i = 0; i < convertedColumnNames.Length; i++)
+            {
+                jsonColumnNames[i] = PgConverters.SerializeString(convertedColumnNames[i]);
+            }
+
             var columnTypes = reader.Get<string[]>(6);//"column_types");
 
             var primaryKeys = new HashSet<string>(reader.Get<string[]>(10));//"primary_keys"));
@@ -353,6 +359,7 @@ public class CrudSource(
                     ColumnCount = columnCount,
                     OriginalColumnNames = columnNames,
                     ColumnNames = convertedColumnNames,
+                    JsonColumnNames = jsonColumnNames,
                     ReturnsUnnamedSet = false,
                     ColumnsTypeDescriptor = ts,
                     IsVoid = isVoid,

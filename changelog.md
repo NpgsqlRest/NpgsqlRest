@@ -412,6 +412,7 @@ Users who enable Auth, Antiforgery, or encrypt/decrypt annotations should explic
 - `JsonValueFormatter.FormatValue` — shared value type dispatch for both single and multi-command rendering paths
 - Three new log messages: `CommentParamNotExistsCantRename`, `CommentParamRenamed`, `CommentParamRetyped`
 - `NpgsqlRestEndpoint` split into partial class files: `NpgsqlRestEndpoint.cs` (request handling + rendering, ~2866 lines) and `NpgsqlRestEndpoint.Helpers.cs` (helper methods, ~352 lines) for easier maintenance
+- JSON key escaping: column names, composite field names, and multi-command result keys are now properly escaped with `PgConverters.SerializeString`. Pre-escaped values stored in `Routine.JsonColumnNames`, `MultiCommandInfo.JsonName`/`JsonColumnNames` at startup to avoid per-row escaping overhead during request execution
 
 ---
 
