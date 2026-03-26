@@ -21,6 +21,13 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
             yield break;
         }
 
+        var files = FindMatchingFiles(options.FilePattern).ToArray();
+        if (files.Length == 0)
+        {
+            NpgsqlRestOptions.Logger?.LogWarning("SqlFileSource: No SQL files found matching pattern \"{FilePattern}\"", options.FilePattern);
+            yield break;
+        }
+
         // Open a single connection for all Describe calls — same as RoutineSource and CrudSource
         NpgsqlConnection? connection = null;
         bool shouldDispose = true;
@@ -38,7 +45,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
             // Initialize composite type cache for custom type column resolution
             CompositeTypeCache.Initialize(connection, nameConverter);
 
-            foreach (var filePath in FindMatchingFiles(options.FilePattern))
+            foreach (var filePath in files)
             {
                 (Routine, IRoutineSourceParameterFormatter)? result = null;
                 try
