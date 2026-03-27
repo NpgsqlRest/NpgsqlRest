@@ -444,6 +444,19 @@ Users who enable Auth, Antiforgery, or encrypt/decrypt annotations should explic
 
 ---
 
+### Internal Self-Call Optimization: Zero HTTP Overhead
+
+Self-referencing endpoints (HTTP client types and proxy definitions with relative paths like `/api/endpoint`) now bypass the HTTP stack entirely. Instead of making a loopback HTTP call through TCP, the endpoint handler is invoked directly in-process via `InternalRequestHandler`.
+
+This enables efficient parallel query composition: a single endpoint can fan out to multiple internal endpoints in parallel (via `Task.WhenAll`), collect the results, and combine them — all without network overhead. Use cases include:
+- Parallel data aggregation across multiple queries
+- Orchestrating multiple mutations in a single request
+- Composing responses from several independent data sources
+
+**Performance:** Microseconds instead of milliseconds per internal call. No TCP connection, no HTTP parsing, no serialization/deserialization at the transport layer.
+
+---
+
 ### Internal Changes
 
 - `RoutineType.SqlFile` — new enum value for SQL file endpoints (was `Other`), shown in log messages
@@ -460,6 +473,7 @@ Users who enable Auth, Antiforgery, or encrypt/decrypt annotations should explic
 - `HttpClientOptions.SelfBaseUrl` — configurable base URL for relative-path HTTP client type definitions. Auto-detected from server addresses at runtime when not configured
 - `HttpClientTypeHandler.SetSelfClient` — allows injecting a custom `HttpClient` for self-referencing calls (used by `WebApplicationFactory` in tests)
 - `HttpClientTypes` initialization moved before `Build()` in `NpgsqlRestBuilder` so definitions are available when endpoint sources process files
+- `InternalRequestHandler` — direct in-process endpoint invocation for self-referencing calls. Endpoint handlers stored in `FrozenDictionary` keyed by path. Uses `NonClosingMemoryStream` to prevent `PipeWriter.Complete` from closing the response stream. Supports path parameter matching via segment-by-segment template comparison with route value extraction
 
 ---
 

@@ -13,6 +13,44 @@ public static partial class Database
         );
         comment on type http_self_call is 'POST /api/hello-world';
 
+        -- HTTP type that targets an endpoint with path parameters
+        create type http_self_path_param as (
+            body text,
+            status_code int
+        );
+        comment on type http_self_path_param is 'GET /api/categories/5/products/10';
+
+        create function get_http_self_path_param(
+            req http_self_path_param
+        )
+        returns text
+        language plpgsql
+        as
+        $$
+        begin
+            return (req).body;
+        end;
+        $$;
+
+        -- HTTP type targeting a non-existent endpoint (404 case)
+        create type http_self_not_found as (
+            body text,
+            status_code int
+        );
+        comment on type http_self_not_found is 'GET /api/does-not-exist';
+
+        create function get_http_self_not_found(
+            req http_self_not_found
+        )
+        returns int
+        language plpgsql
+        as
+        $$
+        begin
+            return (req).status_code;
+        end;
+        $$;
+
         create function get_http_self_call(
             req http_self_call
         )
@@ -84,5 +122,26 @@ public class HttpClientTypeSelfCallTests(TestFixture test)
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response: {content}");
         content.Should().Be("t");
+    }
+
+    [Fact]
+    public async Task SelfCall_PathParameter_ReturnsBody()
+    {
+        // Self-call to /api/categories/5/products/10 — endpoint has {_category_id} and {_product_id} path params
+        using var response = await test.Client.GetAsync("/api/get-http-self-path-param");
+        var content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response: {content}");
+        content.Should().Contain("Product Name");
+    }
+
+    [Fact]
+    public async Task SelfCall_NonExistentEndpoint_Returns404StatusCode()
+    {
+        using var response = await test.Client.GetAsync("/api/get-http-self-not-found");
+        var content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response: {content}");
+        content.Should().Be("404");
     }
 }

@@ -68,11 +68,18 @@ public static class NpgsqlRestBuilder
         {
             return builder;
         }
-        
+
+        // Initialize internal request handler for self-referencing calls (bypass HTTP).
+        // Store root service provider for creating scoped contexts.
+        // The RequestDelegate is set lazily on the first self-call request.
+        InternalRequestHandler.Initialize(((IApplicationBuilder)builder).ApplicationServices);
+
         if (hasStreamingEvents is true)
         {
             builder.UseMiddleware<NpgsqlRestSseEventSource>();
         }
+
+        var internalHandlers = new Dictionary<string, Func<HttpContext, Task>>(entries.Count, StringComparer.OrdinalIgnoreCase);
 
         foreach (var entry in entries)
         {
@@ -81,6 +88,10 @@ public static class NpgsqlRestBuilder
             var methodStr = endpoint.Method.ToString();
             var urlInfo = string.Concat(methodStr, " ", endpoint.Path);
             var routeBuilder = builder.MapMethods(endpoint.Path, [methodStr], handler.InvokeAsync);
+
+            // Register for internal self-calls by path (capture handler for direct invocation)
+            internalHandlers[endpoint.Path] = ctx =>
+                handler.InvokeAsync(ctx, ctx.RequestServices, ctx.RequestAborted);
 
             if (options.CommandTimeout is not null && endpoint.CommandTimeout is null)
             {
@@ -112,7 +123,10 @@ public static class NpgsqlRestBuilder
                 Logger?.EndpointSsePath($"{endpoint.Method} {endpoint.Path}", endpoint.SseEventsPath, endpoint.SseEventNoticeLevel);
             }
         }
-        
+
+        // Register internal handlers for self-referencing calls (bypass HTTP)
+        InternalRequestHandler.SetEndpointHandlers(internalHandlers);
+
         return builder;
     }
     

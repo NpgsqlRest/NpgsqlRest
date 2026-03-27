@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using Npgsql;
+using NpgsqlRest.HttpClientType;
 
 namespace NpgsqlRest.Proxy;
 
@@ -78,6 +79,54 @@ public static class ProxyRequestHandler
 
         try
         {
+            // Use internal request handler for self-calls (bypasses HTTP stack entirely)
+            if (isSelfCall && InternalRequestHandler.IsAvailable)
+            {
+                // Build headers from the proxy request
+                Dictionary<string, string>? proxyHeaders = null;
+                if (proxyOptions.ForwardHeaders)
+                {
+                    proxyHeaders = new();
+                    foreach (var header in context.Request.Headers)
+                    {
+                        if (!string.Equals(header.Key, "Host", StringComparison.OrdinalIgnoreCase))
+                        {
+                            proxyHeaders[header.Key] = header.Value.ToString();
+                        }
+                    }
+                }
+                if (userContextHeaders is not null)
+                {
+                    proxyHeaders ??= new();
+                    foreach (var header in userContextHeaders)
+                    {
+                        proxyHeaders[header.Key] = header.Value;
+                    }
+                }
+
+                var internalResponse = await InternalRequestHandler.ExecuteAsync(
+                    method,
+                    targetUrl,
+                    proxyHeaders,
+                    requestBody,
+                    context.Request.ContentType,
+                    cancellationToken);
+
+                var elapsed = Stopwatch.GetElapsedTime(startTimestamp);
+                Logger?.LogDebug("Internal proxy request to '{Url}' completed with status {StatusCode} in {Elapsed}ms",
+                    targetUrl, internalResponse.StatusCode, elapsed.TotalMilliseconds.ToString("F1"));
+
+                return new ProxyResponse
+                {
+                    StatusCode = internalResponse.StatusCode,
+                    Body = internalResponse.Body,
+                    RawBody = internalResponse.Body is not null ? Encoding.UTF8.GetBytes(internalResponse.Body) : null,
+                    ContentType = internalResponse.ContentType,
+                    Headers = internalResponse.Headers,
+                    IsSuccess = internalResponse.IsSuccess
+                };
+            }
+
             using var request = await CreateRequestAsync(context, method, targetUrl, requestBody, proxyOptions, userContextHeaders);
             using var cts = CreateTimeoutCancellationTokenSource(proxyOptions.DefaultTimeout, cancellationToken);
 
@@ -384,6 +433,27 @@ public static class ProxyRequestHandler
 
         try
         {
+            // Use internal request handler for self-calls (bypasses HTTP stack entirely)
+            if (isSelfCall && InternalRequestHandler.IsAvailable)
+            {
+                var bodyStr = functionBodyBytes.Length > 0 ? Encoding.UTF8.GetString(functionBodyBytes) : null;
+                var internalResponse = await InternalRequestHandler.ExecuteAsync(
+                    method, targetUrl, null, bodyStr, "application/json", cancellationToken);
+
+                var elapsed = Stopwatch.GetElapsedTime(startTimestamp);
+                Logger?.LogDebug("Internal proxyOut request to '{Url}' completed with status {StatusCode} in {Elapsed}ms",
+                    targetUrl, internalResponse.StatusCode, elapsed.TotalMilliseconds.ToString("F1"));
+
+                return new ProxyResponse
+                {
+                    StatusCode = internalResponse.StatusCode,
+                    Body = internalResponse.Body,
+                    ContentType = internalResponse.ContentType,
+                    Headers = internalResponse.Headers,
+                    IsSuccess = internalResponse.IsSuccess
+                };
+            }
+
             using var request = new HttpRequestMessage(new HttpMethod(method), targetUrl);
 
             if (HasRequestBody(method) && functionBodyBytes.Length > 0)

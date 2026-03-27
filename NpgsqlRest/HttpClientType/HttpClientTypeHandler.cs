@@ -60,6 +60,45 @@ public class HttpClientTypeHandler(HttpTypeDefinition definition, Dictionary<str
             try
             {
                 bool isSelfCall = definition.Url.StartsWith('/');
+
+                // Use internal request handler for self-calls (bypasses HTTP stack entirely)
+                if (isSelfCall && InternalRequestHandler.IsAvailable)
+                {
+                    var url = definition.NeedsParsing && replacements is not null
+                        ? Formatter.FormatString(definition.Url.AsSpan(), replacements.Value).ToString()
+                        : definition.Url;
+
+                    var internalResponse = await InternalRequestHandler.ExecuteAsync(
+                        definition.Method,
+                        url,
+                        definition.Headers,
+                        definition.NeedsParsing && definition.Body is not null && replacements is not null
+                            ? Formatter.FormatString(definition.Body.AsSpan(), replacements.Value).ToString()
+                            : definition.Body,
+                        definition.ContentType,
+                        cancellationToken);
+
+                    StatusCode = internalResponse.StatusCode;
+                    Body = internalResponse.Body;
+                    ContentType = internalResponse.ContentType;
+                    ResponseHeaders = internalResponse.Headers;
+                    IsSuccess = internalResponse.IsSuccess;
+                    ErrorMessage = IsSuccess ? null : $"Internal request returned {StatusCode}";
+
+                    var elapsed = Stopwatch.GetElapsedTime(startTimestamp);
+                    Logger?.LogDebug("Internal request to '{Url}' completed with status {StatusCode} in {Elapsed}ms",
+                        definition.Url, StatusCode, elapsed.TotalMilliseconds.ToString("F1"));
+
+                    if (!IsSuccess && attempt < maxRetries && ShouldRetry(StatusCode))
+                    {
+                        Logger?.LogWarning("Internal request to '{Url}' returned {StatusCode}, retrying after {Delay}ms",
+                            definition.Url, StatusCode, definition.RetryDelays![attempt].TotalMilliseconds);
+                        await Task.Delay(definition.RetryDelays![attempt], cancellationToken);
+                        continue;
+                    }
+                    return;
+                }
+
                 using var request = CreateRequest();
                 using var cts = CreateTimeoutCancellationTokenSource(cancellationToken);
 
