@@ -1,4 +1,6 @@
+using System.Text.RegularExpressions;
 using Npgsql;
+using NpgsqlRest.HttpClientType;
 
 namespace NpgsqlRest.SqlFileSource;
 
@@ -108,6 +110,17 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
 
         bool isMultiCommand = parseResult.Statements.Count > 1;
 
+        // Check @param annotations for HTTP client type parameters and expand them
+        Dictionary<int, (string TypeName, string ParamName, string[] FieldNames, string[] FieldTypes)>? httpTypeExpansions = null;
+        if (NpgsqlRestOptions.Options.HttpClientOptions.Enabled && HttpClientTypes.Definitions.Count > 0)
+        {
+            httpTypeExpansions = DetectHttpTypeParams(parseResult.Comment, connection);
+            if (httpTypeExpansions is not null)
+            {
+                ExpandHttpTypeParams(parseResult.Statements, httpTypeExpansions);
+            }
+        }
+
         // Describe each statement individually and merge parameters
         int mergedMaxParam = 0;
         var paramTypesByIndex = new Dictionary<int, string>(); // $N index → type name
@@ -160,6 +173,13 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
             }
         }
 
+        // Build mapping of expanded param index → (httpTypeName, fieldName) for HTTP type fields
+        Dictionary<int, (string HttpTypeName, string FieldName, short Position)>? expandedHttpFields = null;
+        if (httpTypeExpansions is not null)
+        {
+            expandedHttpFields = BuildExpandedFieldMap(httpTypeExpansions);
+        }
+
         // Build merged parameters (real SQL params + virtual params from @define_param)
         var virtualParams = parseResult.VirtualParams;
         var totalParamCount = mergedMaxParam + virtualParams.Count;
@@ -167,12 +187,38 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
         for (int i = 0; i < mergedMaxParam; i++)
         {
             var typeName = paramTypesByIndex.GetValueOrDefault(i, "unknown");
-            var typeDescriptor = new TypeDescriptor(typeName);
+
+            string? customType = null;
+            string? customTypeName = null;
+            short? customTypePosition = null;
+            string? originalParameterName = null;
+            string convertedName;
+
+            if (expandedHttpFields is not null && expandedHttpFields.TryGetValue(i, out var httpField))
+            {
+                customType = httpField.HttpTypeName;
+                customTypeName = httpField.FieldName;
+                customTypePosition = httpField.Position;
+                originalParameterName = $"${i + 1}";
+                convertedName = httpField.FieldName;
+            }
+            else
+            {
+                convertedName = $"${i + 1}";
+            }
+
+            var typeDescriptor = new TypeDescriptor(
+                typeName,
+                hasDefault: customType is not null, // HTTP type fields default to null (auto-filled)
+                customType: customType,
+                customTypePosition: customTypePosition,
+                originalParameterName: originalParameterName,
+                customTypeName: customTypeName);
             var positionalName = $"${i + 1}";
 
             parameters[i] = new NpgsqlRestParameter(
                 ordinal: i,
-                convertedName: positionalName,
+                convertedName: convertedName,
                 actualName: positionalName,
                 typeDescriptor: typeDescriptor);
         }
@@ -344,6 +390,202 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
     private static void ResolveCompositeType(TypeDescriptor descriptor)
     {
         CompositeTypeCache.ResolveTypeDescriptor(descriptor);
+    }
+
+    /// <summary>
+    /// Scan @param annotations in the comment for HTTP client type parameters.
+    /// Returns null if no HTTP types found, otherwise a dictionary keyed by 0-based param index.
+    /// </summary>
+    private static Dictionary<int, (string TypeName, string ParamName, string[] FieldNames, string[] FieldTypes)>?
+        DetectHttpTypeParams(string comment, NpgsqlConnection connection)
+    {
+        Dictionary<int, (string TypeName, string ParamName, string[] FieldNames, string[] FieldTypes)>? result = null;
+
+        // Match @param $N name type patterns
+        foreach (Match match in Regex.Matches(comment, @"@param\s+\$(\d+)\s+(\w+)\s+(\S+)", RegexOptions.IgnoreCase))
+        {
+            var paramIndex = int.Parse(match.Groups[1].Value) - 1; // 0-based
+            var paramName = match.Groups[2].Value;
+            var typeName = match.Groups[3].Value;
+
+            // Check if this type is an HTTP client type (try with and without public. prefix)
+            string? resolvedTypeName = null;
+            if (HttpClientTypes.Definitions.ContainsKey(typeName))
+            {
+                resolvedTypeName = typeName;
+            }
+            else if (HttpClientTypes.Definitions.ContainsKey($"public.{typeName}"))
+            {
+                resolvedTypeName = $"public.{typeName}";
+            }
+
+            if (resolvedTypeName is null)
+            {
+                continue;
+            }
+
+            // Query composite type fields from pg_catalog
+            var (fieldNames, fieldTypes) = QueryCompositeFields(connection, typeName);
+            if (fieldNames.Length == 0)
+            {
+                continue;
+            }
+
+            result ??= new();
+            result[paramIndex] = (resolvedTypeName, paramName, fieldNames, fieldTypes);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Query composite type field names and types from pg_catalog.
+    /// </summary>
+    private static (string[] FieldNames, string[] FieldTypes) QueryCompositeFields(NpgsqlConnection connection, string typeName)
+    {
+        using var cmd = connection.CreateCommand();
+        // Handle schema-qualified names
+        var parts = typeName.Split('.');
+        var schema = parts.Length > 1 ? parts[0] : "public";
+        var name = parts.Length > 1 ? parts[1] : parts[0];
+
+        cmd.CommandText = @"
+            select a.attname, format_type(a.atttypid, a.atttypmod)
+            from pg_catalog.pg_attribute a
+            join pg_catalog.pg_type t on a.attrelid = t.typrelid
+            join pg_catalog.pg_namespace n on t.typnamespace = n.oid
+            where t.typname = $1 and n.nspname = $2
+            and a.attnum > 0 and not a.attisdropped
+            order by a.attnum";
+        cmd.Parameters.AddWithValue(name);
+        cmd.Parameters.AddWithValue(schema);
+        cmd.LogCommand(nameof(SqlFileSource));
+
+        var fieldNames = new List<string>();
+        var fieldTypes = new List<string>();
+
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            fieldNames.Add(reader.GetString(0));
+            fieldTypes.Add(reader.GetString(1));
+        }
+
+        return (fieldNames.ToArray(), fieldTypes.ToArray());
+    }
+
+    /// <summary>
+    /// Expand HTTP type parameters in SQL statements.
+    /// Replaces $N with ROW($N, $N+1, ...)::type_name and shifts subsequent indices.
+    /// </summary>
+    private static void ExpandHttpTypeParams(
+        List<string> statements,
+        Dictionary<int, (string TypeName, string ParamName, string[] FieldNames, string[] FieldTypes)> expansions)
+    {
+        // Process expansions in reverse order of param index to avoid shifting issues
+        foreach (var (origIndex, expansion) in expansions.OrderByDescending(e => e.Key))
+        {
+            int fieldCount = expansion.FieldNames.Length;
+            if (fieldCount <= 0) continue;
+
+            int shift = fieldCount - 1; // How many extra params are added
+
+            for (int s = 0; s < statements.Count; s++)
+            {
+                var sql = statements[s];
+
+                // First shift all $M where M > origIndex+1 by 'shift'
+                for (int m = 99; m > origIndex + 1; m--)
+                {
+                    var oldRef = $"${m}";
+                    var newRef = $"${m + shift}";
+                    sql = ReplaceParamRef(sql, oldRef, newRef);
+                }
+
+                // Replace $N (the HTTP type param) with ROW($N, $N+1, ...)::type_name
+                var expandedParams = string.Join(", ", Enumerable.Range(origIndex + 1, fieldCount).Select(i => $"${i}"));
+                var rowExpr = $"ROW({expandedParams})::{expansion.TypeName}";
+
+                // First try replacing $N::type_name (user wrote explicit cast)
+                var castRef = $"${origIndex + 1}::{expansion.TypeName}";
+                var shortTypeName = expansion.TypeName.Contains('.') ? expansion.TypeName.Split('.')[1] : expansion.TypeName;
+                var shortCastRef = $"${origIndex + 1}::{shortTypeName}";
+
+                if (sql.Contains(castRef))
+                {
+                    sql = sql.Replace(castRef, rowExpr);
+                }
+                else if (sql.Contains(shortCastRef))
+                {
+                    sql = sql.Replace(shortCastRef, rowExpr);
+                }
+                else
+                {
+                    // Replace bare $N
+                    sql = ReplaceParamRef(sql, $"${origIndex + 1}", rowExpr);
+                }
+
+                statements[s] = sql;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Replace a parameter reference ($N) in SQL, being careful not to match $N inside $NN (e.g., $1 inside $10).
+    /// </summary>
+    private static string ReplaceParamRef(string sql, string oldRef, string newRef)
+    {
+        int pos = 0;
+        var result = new System.Text.StringBuilder(sql.Length + 16);
+        while (pos < sql.Length)
+        {
+            int idx = sql.IndexOf(oldRef, pos, StringComparison.Ordinal);
+            if (idx < 0)
+            {
+                result.Append(sql, pos, sql.Length - pos);
+                break;
+            }
+
+            // Check that the character after the match is not a digit (to avoid $1 matching inside $10)
+            int afterIdx = idx + oldRef.Length;
+            if (afterIdx < sql.Length && char.IsDigit(sql[afterIdx]))
+            {
+                result.Append(sql, pos, afterIdx - pos);
+                pos = afterIdx;
+                continue;
+            }
+
+            result.Append(sql, pos, idx - pos);
+            result.Append(newRef);
+            pos = afterIdx;
+        }
+
+        return result.ToString();
+    }
+
+    /// <summary>
+    /// Build a mapping from expanded parameter index to (httpTypeName, fieldName, position).
+    /// </summary>
+    private static Dictionary<int, (string HttpTypeName, string FieldName, short Position)> BuildExpandedFieldMap(
+        Dictionary<int, (string TypeName, string ParamName, string[] FieldNames, string[] FieldTypes)> expansions)
+    {
+        var map = new Dictionary<int, (string, string, short)>();
+
+        // Calculate cumulative shifts
+        var sortedExpansions = expansions.OrderBy(e => e.Key).ToList();
+        int cumulativeShift = 0;
+
+        foreach (var (origIndex, expansion) in sortedExpansions)
+        {
+            int expandedStartIndex = origIndex + cumulativeShift;
+            for (int f = 0; f < expansion.FieldNames.Length; f++)
+            {
+                map[expandedStartIndex + f] = (expansion.TypeName, expansion.FieldNames[f], (short)(f + 1));
+            }
+            cumulativeShift += expansion.FieldNames.Length - 1;
+        }
+
+        return map;
     }
 
     /// <summary>

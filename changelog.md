@@ -253,6 +253,7 @@ SQL file endpoints support all features available to function/procedure endpoint
 - Custom headers (`header`)
 - Retry logic with error code mapping
 - Buffer rows configuration
+- HTTP client types (`@param $1 name http_type_name` — composite type parameters with HTTP definitions)
 
 #### Configuration Reference
 

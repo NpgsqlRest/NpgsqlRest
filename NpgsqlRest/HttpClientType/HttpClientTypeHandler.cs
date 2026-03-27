@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Text;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace NpgsqlRest.HttpClientType;
 
@@ -236,18 +237,14 @@ public class HttpClientTypeHandler(HttpTypeDefinition definition, Dictionary<str
                 continue;
             }
             
+            // For parameters with NpgsqlDbType.Unknown (e.g., SQL file source), all values must be strings
+            bool asText = parameter.NpgsqlDbType == NpgsqlDbType.Unknown || parameter.TypeDescriptor.IsText;
+
             if (string.Equals(parameter.TypeDescriptor.CustomTypeName, Options.HttpClientOptions.ResponseStatusCodeField, StringComparison.InvariantCulture))
             {
-                if (parameter.TypeDescriptor.IsText)
-                {
-                    parameter.Value = handler.StatusCode.ToString();
-                }
-                else
-                {
-                    parameter.Value = handler.StatusCode;
-                }
+                parameter.Value = asText ? handler.StatusCode.ToString() : handler.StatusCode;
             }
-            else  if (string.Equals(parameter.TypeDescriptor.CustomTypeName, Options.HttpClientOptions.ResponseBodyField, StringComparison.InvariantCulture))
+            else if (string.Equals(parameter.TypeDescriptor.CustomTypeName, Options.HttpClientOptions.ResponseBodyField, StringComparison.InvariantCulture))
             {
                 parameter.Value = (object?)handler.Body ?? DBNull.Value;
             }
@@ -258,10 +255,10 @@ public class HttpClientTypeHandler(HttpTypeDefinition definition, Dictionary<str
             else if (string.Equals(parameter.TypeDescriptor.CustomTypeName, Options.HttpClientOptions.ResponseContentTypeField, StringComparison.InvariantCulture))
             {
                 parameter.Value = (object?)handler.ContentType ?? DBNull.Value;
-            } 
+            }
             else if (string.Equals(parameter.TypeDescriptor.CustomTypeName, Options.HttpClientOptions.ResponseSuccessField, StringComparison.InvariantCulture))
             {
-                parameter.Value = (object?)handler.IsSuccess ?? DBNull.Value;
+                parameter.Value = asText ? (object)handler.IsSuccess.ToString().ToLowerInvariant() : handler.IsSuccess;
             }
             else if (string.Equals(parameter.TypeDescriptor.CustomTypeName, Options.HttpClientOptions.ResponseErrorMessageField, StringComparison.InvariantCulture))
             {

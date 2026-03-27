@@ -53,20 +53,20 @@ public static class NpgsqlRestBuilder
             }
         }
         
+        if (Options.HttpClientOptions.Enabled is true)
+        {
+            new HttpClientTypes(builder, defaultStrategy);
+        }
+
         var (
             entries,
             overloads,
             hasStreamingEvents
             ) = Build(builder, defaultStrategy);
-            
+
         if (entries.Count == 0)
         {
             return builder;
-        }
-
-        if (Options.HttpClientOptions.Enabled is true)
-        {
-            new HttpClientTypes(builder, defaultStrategy);
         }
         
         if (hasStreamingEvents is true)
