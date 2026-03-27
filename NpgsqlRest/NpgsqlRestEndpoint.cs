@@ -1599,6 +1599,21 @@ public partial class NpgsqlRestEndpoint(
 
             if (Options.HttpClientOptions.Enabled && customHttpTypes.Count > 0)
             {
+                // Set self base URL for relative path resolution (lazy, once)
+                if (HttpClientTypeHandler.SelfBaseUrl is null)
+                {
+                    if (Options.HttpClientOptions.SelfBaseUrl is not null)
+                    {
+                        HttpClientTypeHandler.SelfBaseUrl = Options.HttpClientOptions.SelfBaseUrl.TrimEnd('/');
+                    }
+                    else
+                    {
+                        var server = context.RequestServices.GetService(typeof(Microsoft.AspNetCore.Hosting.Server.IServer)) as Microsoft.AspNetCore.Hosting.Server.IServer;
+                        var addresses = server?.Features.Get<Microsoft.AspNetCore.Hosting.Server.Features.IServerAddressesFeature>();
+                        var addr = addresses?.Addresses.FirstOrDefault();
+                        HttpClientTypeHandler.SelfBaseUrl = addr ?? $"{context.Request.Scheme}://{context.Request.Host}";
+                    }
+                }
                 await HttpClientTypeHandler.InvokeAllAsync(customHttpTypes, lookup, command.Parameters, cancellationToken);
             }
 

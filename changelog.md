@@ -254,6 +254,7 @@ SQL file endpoints support all features available to function/procedure endpoint
 - Retry logic with error code mapping
 - Buffer rows configuration
 - HTTP client types (`@param $1 name http_type_name` — composite type parameters with HTTP definitions)
+- Self-referencing HTTP client types — relative paths (e.g., `GET /api/endpoint`) call back to the same server instance, enabling parallel internal endpoint composition
 
 #### Configuration Reference
 
@@ -414,6 +415,9 @@ Users who enable Auth, Antiforgery, or encrypt/decrypt annotations should explic
 - Three new log messages: `CommentParamNotExistsCantRename`, `CommentParamRenamed`, `CommentParamRetyped`
 - `NpgsqlRestEndpoint` split into partial class files: `NpgsqlRestEndpoint.cs` (request handling + rendering, ~2866 lines) and `NpgsqlRestEndpoint.Helpers.cs` (helper methods, ~352 lines) for easier maintenance
 - JSON key escaping: column names, composite field names, and multi-command result keys are now properly escaped with `PgConverters.SerializeString`. Pre-escaped values stored in `Routine.JsonColumnNames`, `MultiCommandInfo.JsonName`/`JsonColumnNames` at startup to avoid per-row escaping overhead during request execution
+- `HttpClientOptions.SelfBaseUrl` — configurable base URL for relative-path HTTP client type definitions. Auto-detected from server addresses at runtime when not configured
+- `HttpClientTypeHandler.SetSelfClient` — allows injecting a custom `HttpClient` for self-referencing calls (used by `WebApplicationFactory` in tests)
+- `HttpClientTypes` initialization moved before `Build()` in `NpgsqlRestBuilder` so definitions are available when endpoint sources process files
 
 ---
 

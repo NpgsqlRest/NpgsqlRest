@@ -36,4 +36,12 @@ public class HttpClientOptions
     /// Default name for the response error message field within annotated types.
     /// </summary>
     public string ResponseErrorMessageField { get; set; } = "error_message";
+
+    /// <summary>
+    /// Base URL for resolving relative paths in HTTP type definitions (e.g., "GET /api/test").
+    /// When set, relative URLs are prefixed with this base URL. When null, the server's
+    /// own listening address is auto-detected at runtime from the first incoming request.
+    /// Example: "http://localhost:5000"
+    /// </summary>
+    public string? SelfBaseUrl { get; set; }
 }

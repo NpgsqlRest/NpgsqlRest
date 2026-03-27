@@ -16,6 +16,11 @@ public class TestFixture : IDisposable
         _application = new WebApplicationFactory<Program>();
         _client = _application.CreateClient();
         _client.Timeout = TimeSpan.FromHours(1);
+
+        // Enable self-referencing HTTP client type calls via TestServer's in-memory handler
+        var selfClient = _application.CreateClient();
+        selfClient.Timeout = TimeSpan.FromHours(1);
+        NpgsqlRest.HttpClientType.HttpClientTypeHandler.SetSelfClient(selfClient);
     }
 
 #pragma warning disable CA1816 // Dispose methods should call SuppressFinalize

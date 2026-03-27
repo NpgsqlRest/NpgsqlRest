@@ -13,6 +13,25 @@ public class HttpClientTypeHandler(HttpTypeDefinition definition, Dictionary<str
         Timeout = Timeout.InfiniteTimeSpan // We handle timeout per-request
     };
 
+    /// <summary>
+    /// HttpClient for self-referencing calls (relative paths). Uses SelfBaseUrl or a custom handler.
+    /// </summary>
+    private static HttpClient? _selfClient;
+
+    /// <summary>
+    /// Base URL for resolving relative paths (e.g., "/api/test" → "http://localhost:5000/api/test").
+    /// Auto-detected from the server's listening address, or set via HttpClientOptions.SelfBaseUrl.
+    /// </summary>
+    internal static string? SelfBaseUrl { get; set; }
+
+    /// <summary>
+    /// Set a custom HttpClient for self-referencing calls (e.g., from WebApplicationFactory TestServer).
+    /// </summary>
+    internal static void SetSelfClient(HttpClient client)
+    {
+        _selfClient = client;
+    }
+
     // Response properties
     private int StatusCode { get; set; }
     private string? Body { get; set; }
@@ -40,10 +59,12 @@ public class HttpClientTypeHandler(HttpTypeDefinition definition, Dictionary<str
 
             try
             {
+                bool isSelfCall = definition.Url.StartsWith('/');
                 using var request = CreateRequest();
                 using var cts = CreateTimeoutCancellationTokenSource(cancellationToken);
 
-                using var response = await SharedClient.SendAsync(request, cts?.Token ?? cancellationToken);
+                var client = isSelfCall && _selfClient is not null ? _selfClient : SharedClient;
+                using var response = await client.SendAsync(request, cts?.Token ?? cancellationToken);
 
                 await ProcessResponseAsync(response, startTimestamp);
 
@@ -109,6 +130,13 @@ public class HttpClientTypeHandler(HttpTypeDefinition definition, Dictionary<str
     private HttpRequestMessage CreateRequest()
     {
         var url = ResolveValue(definition.Url);
+
+        // Resolve relative paths against the server's own base URL (skip if _selfClient handles it via BaseAddress)
+        if (url.StartsWith('/') && _selfClient is null && SelfBaseUrl is not null)
+        {
+            url = string.Concat(SelfBaseUrl, url);
+        }
+
         var method = new HttpMethod(definition.Method);
 
         var request = new HttpRequestMessage(method, url);
