@@ -100,4 +100,12 @@ public class ProxyOptions
     /// and upload metadata will not be available to the proxy.
     /// </summary>
     public bool ForwardUploadContent { get; set; } = false;
+
+    /// <summary>
+    /// Base URL for resolving relative paths in proxy annotations (e.g., "proxy /api/test").
+    /// When set, relative URLs are prefixed with this base URL. When null, the server's
+    /// own listening address is auto-detected at runtime from the first incoming request.
+    /// Example: "http://localhost:5000"
+    /// </summary>
+    public string? SelfBaseUrl { get; set; }
 }

@@ -1623,6 +1623,22 @@ public partial class NpgsqlRestEndpoint(
             // Handle reverse proxy endpoints
             if (endpoint.IsProxy && Options.ProxyOptions.Enabled)
             {
+                // Set self base URL for relative path proxy resolution (lazy, once)
+                if (Proxy.ProxyRequestHandler.SelfBaseUrl is null)
+                {
+                    if (Options.ProxyOptions.SelfBaseUrl is not null)
+                    {
+                        Proxy.ProxyRequestHandler.SelfBaseUrl = Options.ProxyOptions.SelfBaseUrl.TrimEnd('/');
+                    }
+                    else
+                    {
+                        var proxyServer = context.RequestServices.GetService(typeof(Microsoft.AspNetCore.Hosting.Server.IServer)) as Microsoft.AspNetCore.Hosting.Server.IServer;
+                        var proxyAddresses = proxyServer?.Features.Get<Microsoft.AspNetCore.Hosting.Server.Features.IServerAddressesFeature>();
+                        var proxyAddr = proxyAddresses?.Addresses.FirstOrDefault();
+                        Proxy.ProxyRequestHandler.SelfBaseUrl = proxyAddr ?? $"{context.Request.Scheme}://{context.Request.Host}";
+                    }
+                }
+
                 // Check cache for passthrough proxy endpoints (those without proxy response parameters)
                 bool isPassthroughProxy = !endpoint.HasProxyResponseParameters;
                 if (isPassthroughProxy &&

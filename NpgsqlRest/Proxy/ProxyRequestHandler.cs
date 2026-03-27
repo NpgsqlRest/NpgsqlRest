@@ -15,6 +15,25 @@ public static class ProxyRequestHandler
     };
 
     /// <summary>
+    /// HttpClient for self-referencing proxy calls (relative paths).
+    /// When set, relative URL proxy requests use this client (e.g., TestServer in-memory handler).
+    /// </summary>
+    private static HttpClient? _selfClient;
+
+    /// <summary>
+    /// Base URL for resolving relative proxy paths. Auto-detected from server addresses or set via ProxyOptions.SelfBaseUrl.
+    /// </summary>
+    internal static string? SelfBaseUrl { get; set; }
+
+    /// <summary>
+    /// Set a custom HttpClient for self-referencing proxy calls.
+    /// </summary>
+    internal static void SetSelfClient(HttpClient client)
+    {
+        _selfClient = client;
+    }
+
+    /// <summary>
     /// Forward the incoming request to the proxy target and return the response.
     /// </summary>
     public static async Task<ProxyResponse> InvokeAsync(
@@ -40,8 +59,17 @@ public static class ProxyRequestHandler
             };
         }
 
+        // Resolve relative paths for self-referencing proxy calls
+        bool isSelfCall = host.StartsWith('/');
+        if (isSelfCall && _selfClient is null && SelfBaseUrl is not null)
+        {
+            host = string.Concat(SelfBaseUrl, host);
+        }
+
         // Build the target URL with user claim parameters
-        var targetUrl = BuildTargetUrl(host, context.Request, parameters);
+        var targetUrl = isSelfCall && _selfClient is not null
+            ? BuildSelfTargetUrl(host, context.Request, parameters)
+            : BuildTargetUrl(host, context.Request, parameters);
 
         // Determine HTTP method
         var method = endpoint.ProxyMethod?.ToString().ToUpperInvariant() ?? context.Request.Method;
@@ -53,7 +81,8 @@ public static class ProxyRequestHandler
             using var request = await CreateRequestAsync(context, method, targetUrl, requestBody, proxyOptions, userContextHeaders);
             using var cts = CreateTimeoutCancellationTokenSource(proxyOptions.DefaultTimeout, cancellationToken);
 
-            using var response = await SharedClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts?.Token ?? cancellationToken);
+            var client = isSelfCall && _selfClient is not null ? _selfClient : SharedClient;
+            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts?.Token ?? cancellationToken);
 
             return await ProcessResponseAsync(response, proxyOptions, startTimestamp, targetUrl);
         }
@@ -88,6 +117,16 @@ public static class ProxyRequestHandler
                 ErrorMessage = ex.Message
             };
         }
+    }
+
+    /// <summary>
+    /// Build target URL for self-referencing proxy calls. Uses the host as the full path (no appending of request path).
+    /// </summary>
+    private static string BuildSelfTargetUrl(string host, HttpRequest request, NpgsqlParameterCollection? parameters)
+    {
+        // For self-calls, host IS the full relative path (e.g., /api/hello-world)
+        // Don't append the incoming request path
+        return host;
     }
 
     private static string BuildTargetUrl(string host, HttpRequest request, NpgsqlParameterCollection? parameters)
@@ -320,10 +359,24 @@ public static class ProxyRequestHandler
             };
         }
 
-        host = host.TrimEnd('/');
-        var path = context.Request.Path.Value ?? "";
-        var queryString = context.Request.QueryString.Value ?? "";
-        var targetUrl = $"{host}{path}{queryString}";
+        bool isSelfCall = host.StartsWith('/');
+        if (isSelfCall && _selfClient is null && SelfBaseUrl is not null)
+        {
+            host = string.Concat(SelfBaseUrl, host);
+        }
+
+        string targetUrl;
+        if (isSelfCall && _selfClient is not null)
+        {
+            targetUrl = host; // relative path, _selfClient handles BaseAddress
+        }
+        else
+        {
+            host = host.TrimEnd('/');
+            var path = context.Request.Path.Value ?? "";
+            var queryString = context.Request.QueryString.Value ?? "";
+            targetUrl = $"{host}{path}{queryString}";
+        }
 
         var method = endpoint.ProxyOutMethod?.ToString().ToUpperInvariant() ?? context.Request.Method;
 
@@ -341,7 +394,8 @@ public static class ProxyRequestHandler
 
             using var cts = CreateTimeoutCancellationTokenSource(proxyOptions.DefaultTimeout, cancellationToken);
 
-            using var response = await SharedClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts?.Token ?? cancellationToken);
+            var client = isSelfCall && _selfClient is not null ? _selfClient : SharedClient;
+            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts?.Token ?? cancellationToken);
 
             return await ProcessResponseAsync(response, proxyOptions, startTimestamp, targetUrl);
         }

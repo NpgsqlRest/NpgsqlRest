@@ -72,8 +72,9 @@ internal static partial class DefaultCommentParser
 
     private static bool IsValidUrl(string url)
     {
-        return Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
-               (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+        return url.StartsWith('/') ||
+               (Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
+                (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps));
     }
 
     private static void DetectProxyResponseParameters(Routine routine, RoutineEndpoint endpoint)

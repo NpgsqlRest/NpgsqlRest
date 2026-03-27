@@ -392,6 +392,48 @@ Previously, when `CrudSource` was disabled (or its config section was missing), 
 
 ---
 
+### Self-Referencing Calls: Relative Path Support for Proxy and HTTP Client Types
+
+Both `proxy` annotations and HTTP client type definitions now support **relative paths** that call back to the same server instance:
+
+```sql
+-- Proxy to another endpoint on the same server
+comment on function my_aggregator() is 'HTTP GET
+proxy POST /api/data-source';
+
+-- HTTP client type calling a local endpoint
+comment on type local_api as 'POST /api/process';
+```
+
+**Parallel query composition:** Combined with HTTP client types that execute all requests in parallel (`Task.WhenAll`), this enables a single endpoint to fan out to multiple internal endpoints simultaneously — effectively running parallel queries without client-side orchestration:
+
+```sql
+-- Two HTTP types calling different internal endpoints
+create type api_users as (body text);
+comment on type api_users is 'GET /api/users';
+
+create type api_orders as (body text);
+comment on type api_orders is 'GET /api/orders';
+
+-- Function that composes both in parallel
+create function get_dashboard(
+    _users api_users,
+    _orders api_orders
+) returns json language plpgsql as $$
+begin
+    return json_build_object('users', (_users).body::json, 'orders', (_orders).body::json);
+end;
+$$;
+-- One request → two parallel internal calls → combined response
+```
+
+Configuration:
+- `HttpClientOptions.SelfBaseUrl` / `ProxyOptions.SelfBaseUrl` — explicit base URL for relative path resolution (auto-detected from server addresses when not set)
+- In production, relative paths resolve via loopback HTTP to the server's own address
+- In test environments, `SetSelfClient()` injects an in-memory handler that bypasses the network entirely
+
+---
+
 ### DataProtection Disabled by Default
 
 The `DataProtection:Enabled` setting now defaults to `false` (was `true`).
