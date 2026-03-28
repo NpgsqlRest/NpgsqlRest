@@ -336,6 +336,13 @@ This is essential for SQL files because positional parameters (`$1`, `$2`) must 
 -- Combined rename + default on a single line:
 -- @param $1 user_id default null
 
+-- "is" style rename + default:
+-- @param $1 is user_id default null
+
+-- Rename + retype + default:
+-- @param $1 user_id integer default 42
+-- @param $1 is user_id integer default 42
+
 -- Default without rename:
 -- @param $1 default 'fallback'
 
