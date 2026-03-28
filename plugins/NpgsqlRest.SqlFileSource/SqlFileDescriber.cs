@@ -117,6 +117,10 @@ public static partial class SqlFileDescriber
                 }
             }
         }
+        catch (Npgsql.PostgresException pgEx)
+        {
+            result.Error = FormatPostgresError(pgEx, sql);
+        }
         catch (Exception ex)
         {
             result.Error = ex.Message;
@@ -134,6 +138,64 @@ public static partial class SqlFileDescriber
         cmd.LogCommand(nameof(SqlFileDescriber));
         var result = cmd.ExecuteScalar();
         return result as string;
+    }
+
+    /// <summary>
+    /// Format a PostgresException into a compiler-like multi-line error message.
+    /// Includes the error position as a line:column reference and a caret pointing at the error.
+    /// </summary>
+    private static string FormatPostgresError(Npgsql.PostgresException pgEx, string sql)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append("error ");
+        sb.Append(pgEx.SqlState);
+        sb.Append(": ");
+        sb.AppendLine(pgEx.MessageText);
+
+        // If we have a position, show the line/column and a caret
+        if (pgEx.Position > 0 && pgEx.Position <= sql.Length)
+        {
+            int pos = pgEx.Position - 1; // 0-based
+            int line = 1;
+            int lineStart = 0;
+            for (int i = 0; i < pos && i < sql.Length; i++)
+            {
+                if (sql[i] == '\n')
+                {
+                    line++;
+                    lineStart = i + 1;
+                }
+            }
+            int col = pos - lineStart + 1;
+
+            // Extract the source line
+            int lineEnd = sql.IndexOf('\n', pos);
+            if (lineEnd < 0) lineEnd = sql.Length;
+            var sourceLine = sql[lineStart..lineEnd].TrimEnd('\r');
+
+            sb.Append("  at line ");
+            sb.Append(line);
+            sb.Append(", column ");
+            sb.AppendLine(col.ToString());
+            sb.Append("  ");
+            sb.AppendLine(sourceLine.ToString());
+            sb.Append("  ");
+            sb.Append(new string(' ', col - 1));
+            sb.AppendLine("^");
+        }
+
+        if (pgEx.Detail is not null)
+        {
+            sb.Append("  detail: ");
+            sb.AppendLine(pgEx.Detail);
+        }
+        if (pgEx.Hint is not null)
+        {
+            sb.Append("  hint: ");
+            sb.AppendLine(pgEx.Hint);
+        }
+
+        return sb.ToString().TrimEnd();
     }
 
     private static string MapNpgsqlDbTypeToTypeName(NpgsqlDbType dbType)

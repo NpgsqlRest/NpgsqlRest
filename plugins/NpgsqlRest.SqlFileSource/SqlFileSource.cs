@@ -134,7 +134,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
             var describeResult = SqlFileDescriber.Describe(connection, stmt, stmtParamCount);
             if (describeResult.HasError)
             {
-                NpgsqlRestOptions.Logger?.LogError("SqlFileSource: {FilePath}: Describe failed: {Error}", filePath, describeResult.Error);
+                NpgsqlRestOptions.Logger?.LogError("SqlFileSource: {FilePath}:\n{Error}", filePath, describeResult.Error);
                 if (options.ErrorMode == ParseErrorMode.Exit)
                 {
                     NpgsqlRestOptions.Logger?.LogCritical("SqlFileSource: Exiting due to SQL file error. Set ErrorMode to Skip to continue past errors.");
