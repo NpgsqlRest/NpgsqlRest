@@ -62,6 +62,12 @@ public static partial class SqlFiles
             select coalesce($1, 'no_id') as user_id, coalesce($2, 'no_name') as username, $3 as email;
             """);
 
+        // "is" style rename + default: @param $1 is name default value
+        File.WriteAllText(Path.Combine(Dir, "default_is_style.sql"), """
+            -- @param $1 is greeting default 'hey'
+            select $1 as result;
+            """);
+
         // Default without rename — use positional param name directly
         File.WriteAllText(Path.Combine(Dir, "default_no_rename.sql"), """
             -- @param $1 default 'fallback'
@@ -241,6 +247,28 @@ public class ParamDefaultValueTests(SqlFileSourceTestFixture test)
         doc.RootElement[0].GetProperty("userId").GetString().Should().Be("no_id");
         doc.RootElement[0].GetProperty("username").GetString().Should().Be("no_name");
         doc.RootElement[0].GetProperty("email").GetString().Should().Be("test@example.com");
+    }
+
+    // --- "is" style rename + default ---
+
+    [Fact]
+    public async Task IsStyle_NotProvided_ReturnsDefault()
+    {
+        using var response = await test.Client.GetAsync("/api/default-is-style");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("hey");
+    }
+
+    [Fact]
+    public async Task IsStyle_Provided_ReturnsProvided()
+    {
+        using var response = await test.Client.GetAsync("/api/default-is-style?greeting=yo");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("yo");
     }
 
     // --- Default without rename (use $1 directly) ---

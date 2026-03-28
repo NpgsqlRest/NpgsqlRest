@@ -167,6 +167,11 @@ internal static partial class DefaultCommentParser
             else if (len >= 5)
             {
                 newType = wordsLower[4];
+                // Check for "default" after type: "param $1 is _name integer default [value]"
+                if (len >= 6 && StrEquals(wordsLower[5], "default"))
+                {
+                    defaultStartIndex = 6;
+                }
             }
         }
         else if (len == 3 && StrEquals(wordsLower[2], "is"))
@@ -187,6 +192,11 @@ internal static partial class DefaultCommentParser
             else if (len >= 4)
             {
                 newType = wordsLower[3];
+                // Check for "default" after type: "param $1 _name integer default [value]"
+                if (len >= 5 && StrEquals(wordsLower[4], "default"))
+                {
+                    defaultStartIndex = 5;
+                }
             }
         }
         else if (len == 2)
