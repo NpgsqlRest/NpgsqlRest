@@ -60,14 +60,10 @@ internal static partial class DefaultCommentParser
             }
         }
 
-        // Detect proxy response parameters
-        DetectProxyResponseParameters(routine, endpoint);
-
-        Logger?.LogInformation("Endpoint {Description} configured as proxy to {Host} with method {Method}. HasProxyResponseParameters: {HasParams}",
+        Logger?.LogInformation("Endpoint {Description} configured as proxy to {Host} with method {Method}",
             description,
             endpoint.ProxyHost ?? Options.ProxyOptions.Host ?? "(not set)",
-            endpoint.ProxyMethod?.ToString() ?? "(same as request)",
-            endpoint.HasProxyResponseParameters);
+            endpoint.ProxyMethod?.ToString() ?? "(same as request)");
     }
 
     private static bool IsValidUrl(string url)

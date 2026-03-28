@@ -415,6 +415,25 @@ internal static partial class DefaultCommentParser
             {
                 return null;
             }
+
+            // Detect proxy response parameters after all annotations are processed.
+            // This must run after param renames so that renamed parameters (e.g., $1 → _proxy_body)
+            // are detected correctly regardless of annotation order.
+            if (routineEndpoint.IsProxy)
+            {
+                DetectProxyResponseParameters(routine, routineEndpoint);
+                Logger?.LogDebug("Proxy endpoint {Description} HasProxyResponseParameters: {HasParams}",
+                    description, routineEndpoint.HasProxyResponseParameters);
+            }
+
+            // For SQL file routines: update column type descriptors when @param annotations
+            // retyped parameters. Describe resolves column types before annotations run, so columns
+            // from "select $1 as col" are typed as text when the parameter type was unknown.
+            // After "param $1 _name integer" retypes to integer, the column descriptor should match.
+            if (routine.Type == RoutineType.SqlFile)
+            {
+                UpdateColumnDescriptorsFromRetypedParams(routine);
+            }
         }
 
         return routineEndpoint;
