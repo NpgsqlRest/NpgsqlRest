@@ -34,7 +34,9 @@ internal static partial class DefaultCommentParser
         }
         else
         {
-            var routineDescription = string.Concat(routine.Type, " ", routine.Schema, ".", routine.Name);
+            var routineDescription = routine.Type == RoutineType.SqlFile
+                ? routine.SimpleDefinition
+                : string.Concat(routine.Type, " ", routine.Schema, ".", routine.Name);
             var urlDescription = string.Concat(routineEndpoint.Method.ToString(), " ", routineEndpoint.Path);
             var description = string.Concat(routineDescription, " mapped to ", urlDescription);
 

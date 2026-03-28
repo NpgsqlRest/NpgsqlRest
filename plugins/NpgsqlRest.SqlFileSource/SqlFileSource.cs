@@ -30,6 +30,9 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
             yield break;
         }
 
+        // Compute the base directory from the file pattern for subdirectory-as-schema resolution
+        var baseDir = GetBaseDirectory(options.FilePattern);
+
         // Open a single connection for all Describe calls — same as RoutineSource and CrudSource
         NpgsqlConnection? connection = null;
         bool shouldDispose = true;
@@ -52,7 +55,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
                 (Routine, IRoutineSourceParameterFormatter)? result = null;
                 try
                 {
-                    result = ProcessFile(filePath, connection, nameConverter, options);
+                    result = ProcessFile(filePath, baseDir, connection, nameConverter, options);
                 }
                 catch (Exception ex)
                 {
@@ -81,6 +84,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
 
     private static (Routine, IRoutineSourceParameterFormatter)? ProcessFile(
         string filePath,
+        string baseDir,
         NpgsqlConnection connection,
         Func<string?, string?> nameConverter,
         SqlFileSourceOptions options)
@@ -368,7 +372,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
             FormatUrlPattern = null,
             Tags = null,
             EndpointHandler = null,
-            Metadata = null,
+            Metadata = DeriveTsClientModule(filePath, baseDir),
         };
 
         if (arrayCompositeColumnInfo is not null)
@@ -639,5 +643,46 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
                 yield return file;
             }
         }
+    }
+
+    /// <summary>
+    /// Extract the base directory from a file pattern (everything before the first wildcard).
+    /// Returns the full path of the base directory.
+    /// </summary>
+    private static string GetBaseDirectory(string filePattern)
+    {
+        int firstWildcard = filePattern.IndexOfAny(['*', '?']);
+        if (firstWildcard < 0)
+        {
+            return Path.GetFullPath(Path.GetDirectoryName(filePattern) ?? ".");
+        }
+        int lastSlash = filePattern.LastIndexOf('/', firstWildcard);
+        return Path.GetFullPath(lastSlash >= 0 ? filePattern[..lastSlash] : ".");
+    }
+
+    /// <summary>
+    /// Derive a module name from the file's position relative to the base scan directory.
+    /// Stored in Routine.Metadata as the raw directory name.
+    /// - sql/get-order.sql → "sql" (base dir name)
+    /// - sql/orders/get-order.sql → "orders" (first subdirectory)
+    /// - sql/my_orders/get-order.sql → "my_orders"
+    /// </summary>
+    private static string? DeriveTsClientModule(string filePath, string baseDir)
+    {
+        var fullPath = Path.GetFullPath(filePath);
+        var fullBase = Path.GetFullPath(baseDir);
+
+        var fileDir = Path.GetDirectoryName(fullPath) ?? fullBase;
+        var relative = Path.GetRelativePath(fullBase, fileDir).Replace('\\', '/');
+
+        if (relative == ".")
+        {
+            // File is directly in the base directory — use the base dir name
+            return Path.GetFileName(fullBase) ?? "sql";
+        }
+
+        // Use the first subdirectory segment
+        var firstSlash = relative.IndexOf('/');
+        return firstSlash >= 0 ? relative[..firstSlash] : relative;
     }
 }

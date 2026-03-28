@@ -53,10 +53,70 @@ internal static class DefaultEndpoint
         if (routine.EndpointHandler is not null)
         {
             var parsed = DefaultCommentParser.Parse(routine, routineEndpoint);
-
+            ApplyTsClientModule(routine, parsed);
             return routine.EndpointHandler(parsed);
         }
 
-        return DefaultCommentParser.Parse(routine, routineEndpoint);
+        var result = DefaultCommentParser.Parse(routine, routineEndpoint);
+        ApplyTsClientModule(routine, result);
+        return result;
+    }
+
+    /// <summary>
+    /// Apply TsClient module from Routine.Metadata if no explicit tsclient_module annotation was set.
+    /// SQL file source stores the derived module name (from directory structure) in Metadata.
+    /// </summary>
+    private static void ApplyTsClientModule(Routine routine, RoutineEndpoint? endpoint)
+    {
+        if (endpoint is null || routine.Metadata is not string moduleName)
+        {
+            return;
+        }
+
+        // Don't override explicit annotation
+        if (endpoint.CustomParameters?.ContainsKey("tsclient_module") is true)
+        {
+            return;
+        }
+
+        endpoint.CustomParameters ??= new();
+        endpoint.CustomParameters["tsclient_module"] = ToCamelCase(moduleName);
+    }
+
+    /// <summary>
+    /// Convert a name to camelCase.
+    /// "orders" → "orders", "my_orders" → "myOrders", "My-Reports" → "myReports"
+    /// </summary>
+    private static string ToCamelCase(string name)
+    {
+        var sb = new System.Text.StringBuilder(name.Length);
+        bool capitalizeNext = false;
+        bool isFirst = true;
+
+        foreach (var c in name)
+        {
+            if (c is '_' or '-' or ' ')
+            {
+                capitalizeNext = true;
+                continue;
+            }
+
+            if (isFirst)
+            {
+                sb.Append(char.ToLowerInvariant(c));
+                isFirst = false;
+            }
+            else if (capitalizeNext)
+            {
+                sb.Append(char.ToUpperInvariant(c));
+                capitalizeNext = false;
+            }
+            else
+            {
+                sb.Append(c);
+            }
+        }
+
+        return sb.ToString();
     }
 }

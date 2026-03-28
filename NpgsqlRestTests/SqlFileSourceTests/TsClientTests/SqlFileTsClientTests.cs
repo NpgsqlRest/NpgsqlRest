@@ -7,9 +7,12 @@ public class SqlFileTsClientTests(SqlFileSourceTestFixture test)
 {
     private string ReadGeneratedFile()
     {
-        var tsFile = Path.Combine(test.TsClientDir, "public.ts");
-        File.Exists(tsFile).Should().BeTrue($"Expected TsClient output at {tsFile}");
-        return File.ReadAllText(tsFile);
+        // SQL file endpoints get tsclient_module set from directory name,
+        // so look for any .ts file in the output directory
+        var tsFiles = Directory.GetFiles(test.TsClientDir, "*.ts");
+        tsFiles.Should().NotBeEmpty($"Expected TsClient output files in {test.TsClientDir}");
+        // Concatenate all files (covers both public.ts and module-specific files)
+        return string.Join("\n", tsFiles.Select(File.ReadAllText));
     }
 
     // Single-command endpoints

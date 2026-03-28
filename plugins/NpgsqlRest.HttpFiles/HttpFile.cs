@@ -191,7 +191,8 @@ public class HttpFile(HttpFileOptions httpFileOptions) : IEndpointCreateHandler
         string FormatFileName()
         {
             var name = GetName();
-            var schema = httpFileOptions.FileMode != HttpFileMode.Schema ? "" : endpoint.Routine.Schema;
+            var schema = httpFileOptions.FileMode != HttpFileMode.Schema ? "" :
+                (endpoint.Routine.Metadata is string moduleName ? moduleName : endpoint.Routine.Schema);
             return string.Concat(string.Format(httpFileOptions.NamePattern, name, schema), ".http");
         }
     }
@@ -264,22 +265,38 @@ public class HttpFile(HttpFileOptions httpFileOptions) : IEndpointCreateHandler
         {
             return;
         }
-        foreach (var (line, index) in lines.Select((l, i) => (l, i)))
+        if (routine.Type == RoutineType.SqlFile)
         {
-            if (line == "\r" && index > 0)
+            // SQL files: output comment lines directly
+            foreach (var line in lines)
             {
-                continue;
+                if (line == "\r")
+                {
+                    continue;
+                }
+                sb.AppendLine(string.Concat("// ", line.TrimEnd('\r')));
             }
-            var comment = line.Replace("'", "''").TrimEnd('\r');
-            if (index == 0)
+        }
+        else
+        {
+            // Functions/procedures: wrap in COMMENT ON statement
+            foreach (var (line, index) in lines.Select((l, i) => (l, i)))
             {
-                comment = string.Concat($"comment on function {routine.Schema}.{routine.Name} is '", comment);
+                if (line == "\r" && index > 0)
+                {
+                    continue;
+                }
+                var comment = line.Replace("'", "''").TrimEnd('\r');
+                if (index == 0)
+                {
+                    comment = string.Concat($"comment on {routine.Type.ToString().ToLowerInvariant()} {routine.Schema}.{routine.Name} is '", comment);
+                }
+                else if (index == lines.Length - 1)
+                {
+                    comment = string.Concat(comment, "';");
+                }
+                sb.AppendLine(string.Concat("// ", comment));
             }
-            else if (index == lines.Length - 1)
-            {
-                comment = string.Concat(comment, "';");
-            }
-            sb.AppendLine(string.Concat("// ", comment));
         }
     }
 
