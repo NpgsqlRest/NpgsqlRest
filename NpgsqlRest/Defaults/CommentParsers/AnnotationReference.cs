@@ -359,6 +359,14 @@ internal static partial class DefaultCommentParser
 
         annotations.Add((JsonNode)new JsonObject
         {
+            ["name"] = "internal",
+            ["aliases"] = ToJsonArray(InternalKey),
+            ["syntax"] = "internal",
+            ["description"] = "Mark endpoint as internal-only. Not exposed as an HTTP route, only accessible via self-referencing calls (proxy, HTTP client types)."
+        });
+
+        annotations.Add((JsonNode)new JsonObject
+        {
             ["name"] = "encrypt",
             ["aliases"] = ToJsonArray(EncryptKey),
             ["syntax"] = "encrypt [param1, param2, ...]",

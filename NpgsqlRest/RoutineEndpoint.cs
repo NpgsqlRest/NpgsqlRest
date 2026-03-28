@@ -98,6 +98,11 @@ public class RoutineEndpoint(
     public string? ErrorCodePolicy { get; set; } = null;
     public TimeSpan? CommandTimeout { get; set; } = null;
     /// <summary>
+    /// When true, this endpoint is only accessible via internal self-referencing calls
+    /// (InternalRequestHandler). It is NOT registered as an HTTP route.
+    /// </summary>
+    public bool InternalOnly { get; set; } = false;
+    /// <summary>
     /// When true, encrypt ALL text parameters using the default data protector.
     /// </summary>
     public bool EncryptAllParameters { get; set; } = encryptAllParameters;

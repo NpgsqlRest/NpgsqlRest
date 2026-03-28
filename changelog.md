@@ -455,6 +455,36 @@ This enables efficient parallel query composition: a single endpoint can fan out
 
 **Performance:** Microseconds instead of milliseconds per internal call. No TCP connection, no HTTP parsing, no serialization/deserialization at the transport layer.
 
+**Internal handler routing** now matches by HTTP method + path (e.g., `GET /api/data`) instead of path alone. Two endpoints with the same path but different methods (GET vs POST) are correctly distinguished for internal calls.
+
+---
+
+### New Core Annotation: `@internal` / `@internal_only`
+
+Mark an endpoint as **internal-only** — accessible via self-referencing calls (proxy, HTTP client types) but NOT exposed as a public HTTP route:
+
+```sql
+-- Helper endpoint: returns data but is not callable from outside
+create function get_cached_rates()
+returns json language sql as $$
+    select rates from exchange_rates order by fetched_at desc limit 1
+$$;
+comment on function get_cached_rates() is 'HTTP GET
+internal';
+
+-- Public endpoint that composes the internal one
+create function convert_currency(_amount numeric, _from text, _to text)
+returns json language plpgsql as $$
+...
+$$;
+comment on function convert_currency(numeric, text, text) is 'HTTP GET
+proxy GET /api/get-cached-rates';
+```
+
+Direct HTTP call to `/api/get-cached-rates` returns 404. But `proxy GET /api/get-cached-rates` and HTTP client types with relative paths can still invoke it internally.
+
+Works on all endpoint sources: functions, procedures, tables/views (CRUD), and SQL files.
+
 ---
 
 ### Internal Changes

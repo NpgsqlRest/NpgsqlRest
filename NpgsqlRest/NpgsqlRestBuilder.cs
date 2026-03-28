@@ -87,16 +87,29 @@ public static class NpgsqlRestBuilder
             var endpoint = entry.Endpoint;
             var methodStr = endpoint.Method.ToString();
             var urlInfo = string.Concat(methodStr, " ", endpoint.Path);
-            var routeBuilder = builder.MapMethods(endpoint.Path, [methodStr], handler.InvokeAsync);
 
-            // Register for internal self-calls by path (capture handler for direct invocation)
-            internalHandlers[endpoint.Path] = ctx =>
+            // Register for internal self-calls by method + path (capture handler for direct invocation)
+            // Internal-only endpoints are still callable via InternalRequestHandler.
+            internalHandlers[$"{methodStr} {endpoint.Path}"] = ctx =>
                 handler.InvokeAsync(ctx, ctx.RequestServices, ctx.RequestAborted);
 
             if (options.CommandTimeout is not null && endpoint.CommandTimeout is null)
             {
                 endpoint.CommandTimeout = options.CommandTimeout;
             }
+
+            // Internal-only endpoints skip HTTP route registration — they are only
+            // accessible via self-referencing calls (proxy, HTTP client types).
+            if (endpoint.InternalOnly)
+            {
+                if (Options.DebugLogEndpointCreateEvents)
+                {
+                    Logger?.LogInformation("Internal-only endpoint {UrlInfo} (no HTTP route)", urlInfo);
+                }
+                continue;
+            }
+
+            var routeBuilder = builder.MapMethods(endpoint.Path, [methodStr], handler.InvokeAsync);
 
             if (endpoint.RateLimiterPolicy is not null || options.DefaultRateLimitingPolicy is not null)
             {

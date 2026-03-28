@@ -23,7 +23,7 @@ internal static class InternalRequestHandler
     }
 
     /// <summary>
-    /// Register endpoint handlers for internal routing. Key is the endpoint path.
+    /// Register endpoint handlers for internal routing. Key is "METHOD /path".
     /// </summary>
     internal static void SetEndpointHandlers(Dictionary<string, Func<HttpContext, Task>> handlers)
     {
@@ -59,11 +59,12 @@ internal static class InternalRequestHandler
             pathOnly = path[..queryIndex];
         }
 
-        // Look up the endpoint handler by path (exact match first, then template matching)
+        // Look up the endpoint handler by "METHOD /path" (exact match first, then template matching)
+        var lookupKey = string.Concat(method, " ", pathOnly);
         RouteValueDictionary? routeValues = null;
-        if (!_endpointHandlers.TryGetValue(pathOnly, out var handler))
+        if (!_endpointHandlers.TryGetValue(lookupKey, out var handler))
         {
-            (handler, routeValues) = MatchTemplatedPath(pathOnly);
+            (handler, routeValues) = MatchTemplatedPath(method, pathOnly);
             if (handler is null)
             {
                 return new InternalResponse { StatusCode = 404, IsSuccess = false };
@@ -159,19 +160,25 @@ internal static class InternalRequestHandler
     }
 
     /// <summary>
-    /// Match a concrete path (e.g., "/api/users/42") against registered template paths (e.g., "/api/users/{id}").
-    /// Compares segment-by-segment: literal segments must match exactly, {param} segments match anything.
-    /// Returns the handler and extracted route values.
+    /// Match a concrete "METHOD /path" (e.g., "GET /api/users/42") against registered template keys
+    /// (e.g., "GET /api/users/{id}"). Compares segment-by-segment: literal segments must match exactly,
+    /// {param} segments match anything. Returns the handler and extracted route values.
     /// </summary>
-    private static (Func<HttpContext, Task>? Handler, RouteValueDictionary? RouteValues) MatchTemplatedPath(string path)
+    private static (Func<HttpContext, Task>? Handler, RouteValueDictionary? RouteValues) MatchTemplatedPath(string method, string path)
     {
         if (_endpointHandlers is null) return (null, null);
 
         var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
 
-        foreach (var (template, handler) in _endpointHandlers)
+        foreach (var (key, handler) in _endpointHandlers)
         {
-            if (!template.Contains('{')) continue;
+            if (!key.Contains('{')) continue;
+
+            // Key format is "METHOD /path" — extract method and template path
+            var spaceIndex = key.IndexOf(' ');
+            if (spaceIndex < 0) continue;
+            if (!key.AsSpan(0, spaceIndex).Equals(method.AsSpan(), StringComparison.OrdinalIgnoreCase)) continue;
+            var template = key[(spaceIndex + 1)..];
 
             var templateSegments = template.Split('/', StringSplitOptions.RemoveEmptyEntries);
             if (templateSegments.Length != segments.Length) continue;

@@ -98,6 +98,14 @@ internal static partial class DefaultCommentParser
                     HandleEnabled(routine, wordsLower, len, ref disabled);
                 }
 
+                // internal
+                // internal_only
+                else if (haveTag is true && StrEqualsToArray(wordsLower[0], InternalKey))
+                {
+                    routineEndpoint.InternalOnly = true;
+                    CommentLogger?.LogDebug("Endpoint {Description} marked as internal-only", description);
+                }
+
                 // HTTP
                 // HTTP [ GET | POST | PUT | DELETE ]
                 // HTTP [ GET | POST | PUT | DELETE ] path
