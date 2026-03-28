@@ -230,7 +230,15 @@ Override with the `@path` annotation: `-- @path /custom/path/{id}`
 | `ParseErrorMode.Exit` (default) | Logs error, exits process | Fail-fast — catches SQL errors at startup |
 | `ParseErrorMode.Skip` | Logs error, skips file, continues | Production — tolerate partial failures |
 
-All SQL file errors are logged at `Error` level. In `Exit` mode, a `Critical` log explains the exit and how to switch to `Skip` mode.
+All SQL file errors are logged at `Error` level. In `Exit` mode, a `Critical` log explains the exit and how to switch to `Skip` mode. PostgreSQL errors include compiler-like formatting with line:column position, source line excerpt, and a caret pointing at the error location:
+
+```
+SqlFileSource: /path/to/get-posts.sql:
+error 42703: column u.id does not exist
+  at line 3, column 12
+  select u.id, u.name from users u
+             ^
+```
 
 A warning is logged when the configured file pattern matches no files.
 
@@ -276,7 +284,7 @@ SQL file endpoints support all features available to function/procedure endpoint
 |---|---|---|---|
 | `Enabled` | bool | `false` | Enable or disable SQL file source endpoints |
 | `FilePattern` | string | `""` | Glob pattern for SQL files. Supports `*`, `**` (recursive), `?`. Empty = disabled |
-| `CommentsMode` | enum | `ParseAll` | `ParseAll` = every file becomes an endpoint. `OnlyWithHttpTag` = requires `HTTP` annotation |
+| `CommentsMode` | enum | `OnlyWithHttpTag` | `OnlyWithHttpTag` = requires explicit `HTTP` annotation. `ParseAll` = every file becomes an endpoint |
 | `CommentScope` | enum | `All` | `All` = parse all comments. `Header` = only before first statement |
 | `ErrorMode` | enum | `Exit` | `Exit` = log error + exit process. `Skip` = log error + continue |
 | `ResultPrefix` | string | `"result"` | Prefix for multi-command result keys (e.g., `result1`, `result2`) |
@@ -360,7 +368,15 @@ export async function processOrder(
 
 - Void commands are typed as `number` (rows affected count)
 - Data-returning commands are typed as arrays of inline object types
+- Single-column commands with `UnnamedSingleColumnSet` enabled generate flat array types (e.g., `string[]`) instead of object arrays
 - Single-command SQL file endpoints generate standard typed functions (no change)
+
+#### TsClient: SQL File Comment Headers
+
+The TypeScript client generator now produces correct JSDoc comment headers for SQL file endpoints:
+
+- Header line shows the full file path (e.g., `SQL file: /path/to/get-posts.sql`) instead of just the filename
+- The `@remarks` section outputs SQL file comments directly instead of incorrectly wrapping them in `comment on function ...` syntax
 
 ---
 
