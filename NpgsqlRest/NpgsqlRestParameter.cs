@@ -35,6 +35,14 @@ public class NpgsqlRestParameter : NpgsqlParameter
 
     public bool IsUploadMetadata { get; set; } = false;
 
+    /// <summary>
+    /// Explicit default value set by annotation (e.g., @param my_param default null).
+    /// null = no explicit default (use existing HasDefault/PostgreSQL behavior).
+    /// DBNull.Value = default is SQL NULL.
+    /// Any other value = the default value as a string to be bound.
+    /// </summary>
+    public object? DefaultValue { get; set; } = null;
+
     public bool IsIpAddress { get; set; } = false;
     public string? UserClaim { get; set; } = null;
     public bool IsUserClaims { get; set; } = false;

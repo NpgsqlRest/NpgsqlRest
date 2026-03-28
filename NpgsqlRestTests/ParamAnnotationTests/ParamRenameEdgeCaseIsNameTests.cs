@@ -23,12 +23,10 @@ param $1 is
 public class ParamRenameEdgeCaseIsNameTests(TestFixture test)
 {
     [Fact]
-    public async Task Test_Param_Renamed_To_Literal_Is()
+    public async Task Test_Param_Renamed_To_Literal_Is_Rejected()
     {
+        // "is" is a reserved annotation keyword — rename is rejected by validation
         using var result = await test.Client.GetAsync("/api/case-param-rename-to-is/?is=99");
-        var response = await result.Content.ReadAsStringAsync();
-
-        result?.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Should().Be("99");
+        result?.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 }

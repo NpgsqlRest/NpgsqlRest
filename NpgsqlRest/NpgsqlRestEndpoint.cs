@@ -775,6 +775,12 @@ public partial class NpgsqlRestEndpoint(
                                     await context.Response.CompleteAsync();
                                     return;
                                 }
+                                else if (parameter.DefaultValue is not null)
+                                {
+                                    // Explicit default value (SQL file annotation) — bind it
+                                    parameter.Value = parameter.DefaultValue;
+                                    parameter.ParamType = ParamType.QueryString;
+                                }
                                 else
                                 {
                                     continue;
@@ -799,6 +805,11 @@ public partial class NpgsqlRestEndpoint(
                             context.Response.StatusCode = StatusCodes.Status404NotFound;
                             await context.Response.CompleteAsync();
                             return;
+                        }
+                        else if (parameter.DefaultValue is not null)
+                        {
+                            parameter.Value = parameter.DefaultValue;
+                            parameter.ParamType = ParamType.QueryString;
                         }
                         else
                         {
@@ -1256,6 +1267,12 @@ public partial class NpgsqlRestEndpoint(
                                     await context.Response.CompleteAsync();
                                     return;
                                 }
+                                else if (parameter.DefaultValue is not null)
+                                {
+                                    // Explicit default value (SQL file annotation) — bind it
+                                    parameter.Value = parameter.DefaultValue;
+                                    parameter.ParamType = ParamType.BodyJson;
+                                }
                                 else
                                 {
                                     continue;
@@ -1280,6 +1297,11 @@ public partial class NpgsqlRestEndpoint(
                             context.Response.StatusCode = StatusCodes.Status404NotFound;
                             await context.Response.CompleteAsync();
                             return;
+                        }
+                        else if (parameter.DefaultValue is not null)
+                        {
+                            parameter.Value = parameter.DefaultValue;
+                            parameter.ParamType = ParamType.BodyJson;
                         }
                         else
                         {

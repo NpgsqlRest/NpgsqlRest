@@ -289,4 +289,13 @@ public static partial class Log
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has RETYPED parameter {paramName} to {newType} by the comment annotation.")]
     public static partial void CommentParamRetyped(this ILogger logger, string description, string paramName, string newType);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has set DEFAULT VALUE for parameter {paramName} to {defaultValue} by the comment annotation.")]
+    public static partial void CommentParamDefault(this ILogger logger, string description, string paramName, string defaultValue);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "{description} parameter name {param} does not exist in parameter collection either as original or translated name. DEFAULT could not be set by the comment annotation.")]
+    public static partial void CommentParamNotExistsCantDefault(this ILogger logger, string description, string param);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "{description} cannot rename parameter to '{newName}': {reason}.")]
+    public static partial void CommentParamInvalidName(this ILogger logger, string description, string newName, string reason);
 }

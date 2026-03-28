@@ -320,6 +320,79 @@ Positional parameters (`$1`, `$2`) already work as HTTP parameter names (`?$1=va
 
 All forms coexist with existing `@param X is hash of Y` and `@param X is upload metadata` handlers without ambiguity. Both `@param` and `@parameter` (long form) are supported.
 
+#### `@param` Default Values for SQL File Parameters
+
+SQL file parameters can now have default values via the `@param` annotation. When a parameter with a default is not provided in the request, the default value is bound instead of returning 404.
+
+This is essential for SQL files because positional parameters (`$1`, `$2`) must always be bound — unlike PostgreSQL functions where the engine applies its own defaults.
+
+**Syntax:**
+
+```sql
+-- Separate annotations (rename first, then set default):
+-- @param $1 user_id
+-- @param user_id default null
+
+-- Combined rename + default on a single line:
+-- @param $1 user_id default null
+
+-- Default without rename:
+-- @param $1 default 'fallback'
+
+-- Various value types:
+-- @param $1 status default 'active'     -- text (single-quoted)
+-- @param $1 amount default 42           -- number
+-- @param $1 enabled default true        -- boolean
+-- @param $1 filter default null         -- SQL NULL (unquoted)
+-- @param $1 tag default 'null'          -- literal text "null" (quoted)
+-- @param $1 val default                 -- no value = NULL
+```
+
+**Value parsing rules (SQL conventions):**
+- Unquoted `null` (case-insensitive) → `DBNull.Value`
+- Single-quoted `'text value'` → string literal (supports multi-word)
+- Unquoted value → raw string (Npgsql handles type conversion via `NpgsqlDbType`)
+
+**Real-world example** — user identity endpoint with claim-filled parameters that fall back to NULL:
+
+```sql
+/* HTTP GET
+@authorize
+@user_parameters
+@param $1 _user_id default null
+@param $2 _username default null
+@param $3 _email default null
+*/
+select $1 as user_id, $2 as username, $3 as email;
+```
+
+When authenticated, claims fill the parameters automatically. The defaults ensure the parameters are always bindable.
+
+**Effects on generated output:**
+- **TsClient**: Parameters with defaults get `?` suffix in TypeScript interfaces (optional)
+- **OpenAPI**: Parameters with defaults are marked `required: false`
+
+#### `@param` Rename Validation
+
+Parameter names are now validated when renaming via `@param`. Invalid renames are rejected with a warning log instead of silently creating broken endpoints.
+
+**Rules:**
+- Must be a valid PostgreSQL identifier: starts with letter or `_`, followed by letters, digits, `_`, or `$`
+- Positional parameters (`$1`, `$2`) are allowed
+- Reserved annotation keywords cannot be used as parameter names: `default`, `is`, `hash`, `of`, `upload`, `metadata`, `type`
+
+```sql
+-- Valid:
+-- @param $1 user_id        ✓
+-- @param $1 _val$1         ✓
+
+-- Rejected (with warning log):
+-- @param $1 default        ✗ reserved keyword
+-- @param $1 is             ✗ reserved keyword
+-- @param $1 1bad           ✗ starts with digit
+-- @param $1 my-param       ✗ invalid character (hyphen)
+```
+
 #### Glob Pattern Enhancement: `**` Recursive Matching
 
 `Parser.IsPatternMatch` now supports `**` for recursive directory matching:
