@@ -364,7 +364,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
             OriginalParamsHash = [.. parameters.Select(p => p.ActualName)],
             Expression = parseResult.Statements[0], // first statement for display/logging; batch uses individual statements
             FullDefinition = $"-- SQL file: {filePath}",
-            SimpleDefinition = $"SQL: {fileName}",
+            SimpleDefinition = $"SQL file: {filePath}",
             FormatUrlPattern = null,
             Tags = null,
             EndpointHandler = null,

@@ -1449,22 +1449,39 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 var lines = routine
                     .Comment
                     .Split('\n', StringSplitOptions.RemoveEmptyEntries);
-                foreach (var (line, index) in lines.Select((l, i) => (l, i)))
+
+                if (routine.Type == RoutineType.SqlFile)
                 {
-                    if (line == "\r" && index > 0)
+                    // SQL files: output comment lines directly (they're from the file itself)
+                    foreach (var line in lines)
                     {
-                        continue;
+                        if (line == "\r")
+                        {
+                            continue;
+                        }
+                        sb.AppendLine(string.Concat("* ", line.TrimEnd('\r')));
                     }
-                    var commentLine = line.Replace("'", "''").TrimEnd('\r');
-                    if (index == 0)
+                }
+                else
+                {
+                    // Functions/procedures: wrap in COMMENT ON statement
+                    foreach (var (line, index) in lines.Select((l, i) => (l, i)))
                     {
-                        commentLine = string.Concat($"comment on function {routine.Schema}.{routine.Name} is '", commentLine);
+                        if (line == "\r" && index > 0)
+                        {
+                            continue;
+                        }
+                        var commentLine = line.Replace("'", "''").TrimEnd('\r');
+                        if (index == 0)
+                        {
+                            commentLine = string.Concat($"comment on {routine.Type.ToString().ToLowerInvariant()} {routine.Schema}.{routine.Name} is '", commentLine);
+                        }
+                        else if (index == lines.Length - 1)
+                        {
+                            commentLine = string.Concat(commentLine, "';");
+                        }
+                        sb.AppendLine(string.Concat("* ", commentLine));
                     }
-                    else if (index == lines.Length - 1)
-                    {
-                        commentLine = string.Concat(commentLine, "';");
-                    }
-                    sb.AppendLine(string.Concat("* ", commentLine));
                 }
             }
         }
