@@ -112,7 +112,10 @@ public partial class NpgsqlRestEndpoint
 
             if (string.Equals(paramName, proxyOptions.ResponseStatusCodeParameter, StringComparison.OrdinalIgnoreCase))
             {
-                if (parameter.TypeDescriptor.IsText)
+                // Use NpgsqlDbType (which reflects @param retype) rather than TypeDescriptor
+                // (which reflects the original Describe type and may be stale for SQL files)
+                var dbType = parameter.NpgsqlDbType;
+                if (dbType == NpgsqlTypes.NpgsqlDbType.Text || dbType == NpgsqlTypes.NpgsqlDbType.Varchar || dbType == NpgsqlTypes.NpgsqlDbType.Unknown)
                 {
                     parameter.Value = proxyResponse.StatusCode.ToString();
                 }
