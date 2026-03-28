@@ -508,9 +508,15 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                         // Void command → rows affected count
                         mcResp.AppendLine($"    {cmdInfo.Name}: number;");
                     }
+                    else if (cmdInfo.ColumnCount == 1 && cmdInfo.ReturnsUnnamedSet)
+                    {
+                        // Single column with UnnamedSingleColumnSet — flat array
+                        var tsType = GetTsType(cmdInfo.ColumnTypeDescriptors[0], true);
+                        mcResp.AppendLine($"    {cmdInfo.Name}: {tsType}[];");
+                    }
                     else if (cmdInfo.ColumnCount == 1)
                     {
-                        // Single column
+                        // Single column — object array
                         var tsType = GetTsType(cmdInfo.ColumnTypeDescriptors[0], true);
                         mcResp.AppendLine($"    {cmdInfo.Name}: {{ {cmdInfo.ColumnNames[0]}: {tsType} }}[];");
                     }
