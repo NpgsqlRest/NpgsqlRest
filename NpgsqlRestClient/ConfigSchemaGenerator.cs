@@ -453,7 +453,7 @@ public static partial class ConfigSchemaGenerator
         ["NpgsqlRest:SqlFileSource"] = "SQL file source for generating REST API endpoints from .sql files.",
         ["NpgsqlRest:SqlFileSource:Enabled"] = "Enable or disable SQL file source endpoints. Default is false.",
         ["NpgsqlRest:SqlFileSource:FilePattern"] = "Glob pattern for SQL files, e.g. \"sql/**/*.sql\", \"queries/*.sql\".\nSupports * (any chars), ** (recursive, any including /), ? (single char).\nEmpty string disables the feature.",
-        ["NpgsqlRest:SqlFileSource:CommentsMode"] = "How comment annotations are processed for SQL file endpoints.\nPossible values: Ignore, ParseAll, OnlyWithHttpTag.\nDefault: ParseAll — every SQL file becomes an endpoint, comments configure it.",
+        ["NpgsqlRest:SqlFileSource:CommentsMode"] = "How comment annotations are processed for SQL file endpoints.\nPossible values: Ignore, ParseAll, OnlyWithHttpTag.\nDefault: OnlyWithHttpTag — SQL files must contain an explicit HTTP annotation (e.g., '-- HTTP GET') to become endpoints.",
         ["NpgsqlRest:SqlFileSource:CommentScope"] = "Which comments in the SQL file to parse as annotations.\nPossible values: All (default — all comments), Header (only comments before the first statement).",
         ["NpgsqlRest:SqlFileSource:ErrorMode"] = "Behavior when a SQL file fails to parse or describe.\nPossible values: Exit (default — log error, exit process), Skip (log error, continue).",
         ["NpgsqlRest:SqlFileSource:ResultPrefix"] = "Prefix for result keys in multi-command JSON responses.\nDefault keys are \"result1\", \"result2\", etc. Override per-result with @resultN annotation in the SQL file.",

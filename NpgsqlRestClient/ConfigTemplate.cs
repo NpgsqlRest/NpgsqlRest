@@ -2593,8 +2593,9 @@ public static partial class ConfigSchemaGenerator
           //
           // How comment annotations are processed for SQL file endpoints.
           // Possible values: Ignore, ParseAll, OnlyWithHttpTag.
+          // OnlyWithHttpTag requires an explicit HTTP annotation (e.g., "-- HTTP GET") in the file.
           //
-          "CommentsMode": "ParseAll",
+          "CommentsMode": "OnlyWithHttpTag",
           //
           // Which comments in the SQL file to parse as annotations.
           // Possible values: All (default), Header (only comments before the first statement).

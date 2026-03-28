@@ -36,9 +36,11 @@ public class SqlFileSourceOptions
 
     /// <summary>
     /// How comment annotations are processed for this source.
-    /// Default is ParseAll — every SQL file becomes an endpoint, comments configure it.
+    /// Default is OnlyWithHttpTag — SQL files must contain an explicit HTTP annotation
+    /// (e.g., "-- HTTP GET") to become endpoints. This prevents accidental exposure of
+    /// utility scripts or migration files that match the glob pattern.
     /// </summary>
-    public CommentsMode CommentsMode { get; set; } = CommentsMode.ParseAll;
+    public CommentsMode CommentsMode { get; set; } = CommentsMode.OnlyWithHttpTag;
 
     /// <summary>
     /// Which comments in the file to parse as annotations.

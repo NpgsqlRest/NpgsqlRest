@@ -942,7 +942,7 @@ public static class ConfigDefaults
         {
             ["Enabled"] = false,
             ["FilePattern"] = "",
-            ["CommentsMode"] = "ParseAll",
+            ["CommentsMode"] = "OnlyWithHttpTag",
             ["CommentScope"] = "All",
             ["ErrorMode"] = "Exit",
             ["ResultPrefix"] = "result",
