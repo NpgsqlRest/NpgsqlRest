@@ -691,6 +691,64 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                             }
 
                             var descriptor = columnsTypeDescriptor[i];
+
+                            // SQL file composite type column: expand fields to match actual JSON response
+                            if (descriptor.IsCompositeType &&
+                                descriptor.CompositeFieldNames is not null &&
+                                descriptor.CompositeFieldDescriptors is not null)
+                            {
+                                if (useNestedCompositeTypes)
+                                {
+                                    // Nested mode: generate nested interface under column name
+                                    var compositeInterfaceName = GetOrCreateCompositeInterface(
+                                        descriptor.CompositeFieldNames,
+                                        descriptor.CompositeFieldDescriptors,
+                                        routine.ColumnNames[i],
+                                        compositeTypeInterfaces,
+                                        compositeInterfaces);
+                                    resp.AppendLine($"    {routine.ColumnNames[i]}: {compositeInterfaceName} | null;");
+                                }
+                                else
+                                {
+                                    // Flat mode: inline each composite field as a separate property
+                                    for (var fi = 0; fi < descriptor.CompositeFieldNames.Length; fi++)
+                                    {
+                                        var fieldName = ConvertToCamelCase(descriptor.CompositeFieldNames[fi]);
+                                        var fieldDescriptor = descriptor.CompositeFieldDescriptors[fi];
+
+                                        // Handle nested composite fields
+                                        if (fieldDescriptor.CompositeFieldNames is not null &&
+                                            fieldDescriptor.CompositeFieldDescriptors is not null)
+                                        {
+                                            var nestedInterfaceName = GetOrCreateCompositeInterface(
+                                                fieldDescriptor.CompositeFieldNames,
+                                                fieldDescriptor.CompositeFieldDescriptors,
+                                                fieldName,
+                                                compositeTypeInterfaces,
+                                                compositeInterfaces);
+                                            resp.AppendLine($"    {fieldName}: {nestedInterfaceName} | null;");
+                                        }
+                                        else if (fieldDescriptor.ArrayCompositeFieldNames is not null &&
+                                                 fieldDescriptor.ArrayCompositeFieldDescriptors is not null)
+                                        {
+                                            var nestedInterfaceName = GetOrCreateCompositeInterface(
+                                                fieldDescriptor.ArrayCompositeFieldNames,
+                                                fieldDescriptor.ArrayCompositeFieldDescriptors,
+                                                fieldName,
+                                                compositeTypeInterfaces,
+                                                compositeInterfaces);
+                                            resp.AppendLine($"    {fieldName}: {nestedInterfaceName}[] | null;");
+                                        }
+                                        else
+                                        {
+                                            var fieldType = GetTsType(fieldDescriptor, false);
+                                            resp.AppendLine($"    {fieldName}: {fieldType} | null;");
+                                        }
+                                    }
+                                }
+                                continue;
+                            }
+
                             var type = GetTsType(descriptor, false);
                             if (descriptor.IsJson)
                             {

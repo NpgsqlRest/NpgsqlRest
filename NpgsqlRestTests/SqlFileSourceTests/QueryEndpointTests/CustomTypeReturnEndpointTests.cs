@@ -45,26 +45,16 @@ public class CustomTypeReturnEndpointTests(SqlFileSourceTestFixture test)
     }
 
     [Fact]
-    public async Task CustomTypeWholeColumn_ReturnsCompositeAsTupleArray()
+    public async Task CustomTypeWholeColumn_ReturnsFlatFields()
     {
         // SQL: SELECT id, data FROM sql_file_custom_table WHERE id = $1
-        // Whole composite columns are returned as tuple arrays.
-        // For proper field expansion, use: SELECT (data).val1, (data).val2 in your SQL.
+        // Composite column is expanded to flat fields (same as routine default behavior)
         using var response = await test.Client.GetAsync("/api/custom-type-return?id=1");
         var content = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        content.Should().NotBeNullOrEmpty();
-
-        using var doc = JsonDocument.Parse(content);
-        doc.RootElement.ValueKind.Should().Be(JsonValueKind.Array);
-        doc.RootElement.GetArrayLength().Should().Be(1);
-
-        var row = doc.RootElement[0];
-        row.GetProperty("id").GetInt32().Should().Be(1);
-        // Composite column is present — rendered as tuple array
-        row.TryGetProperty("data", out _).Should().BeTrue();
-        content.Should().Contain("hello");
+        // Flat mode: composite fields are inline with the scalar columns
+        content.Should().Be("[{\"id\":1,\"val1\":\"hello\",\"val2\":42,\"val3\":true}]");
     }
 
     [Fact]

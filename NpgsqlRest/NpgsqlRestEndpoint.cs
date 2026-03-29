@@ -2030,6 +2030,78 @@ public partial class NpgsqlRestEndpoint(
                                     catch { /* use raw as-is */ }
                                 }
 
+                                var mcDescriptor = currentCmd.ColumnTypeDescriptors[col];
+
+                                // SQL file composite type column in multi-command
+                                if (mcDescriptor.IsCompositeType &&
+                                    mcDescriptor.CompositeFieldNames is not null &&
+                                    mcDescriptor.CompositeFieldDescriptors is not null)
+                                {
+                                    if (currentCmd.ReturnsUnnamedSet == false && col == 0)
+                                    {
+                                        mcRowBuilder.Append(Consts.OpenBrace);
+                                    }
+
+                                    if (endpoint.NestedJsonForCompositeTypes == true)
+                                    {
+                                        if (currentCmd.ReturnsUnnamedSet == false)
+                                        {
+                                            mcRowBuilder.Append(currentCmd.JsonColumnNames[col]);
+                                            mcRowBuilder.Append(Consts.Colon);
+                                        }
+                                        if (value == DBNull.Value)
+                                        {
+                                            mcRowBuilder.Append(Consts.Null);
+                                        }
+                                        else
+                                        {
+                                            mcRowBuilder.Append(PgTupleToJsonObject(
+                                                raw,
+                                                mcDescriptor.CompositeFieldNames,
+                                                mcDescriptor.CompositeFieldDescriptors));
+                                        }
+                                    }
+                                    else
+                                    {
+                                        // Flat mode: splice fields inline
+                                        if (value == DBNull.Value)
+                                        {
+                                            for (int fi = 0; fi < mcDescriptor.CompositeFieldNames.Length; fi++)
+                                            {
+                                                if (fi > 0) mcRowBuilder.Append(Consts.Comma);
+                                                mcRowBuilder.Append(PgConverters.SerializeString(mcDescriptor.CompositeFieldNames[fi]));
+                                                mcRowBuilder.Append(Consts.Colon);
+                                                mcRowBuilder.Append(Consts.Null);
+                                            }
+                                        }
+                                        else
+                                        {
+                                            var compositeJsonObj = PgTupleToJsonObject(
+                                                raw,
+                                                mcDescriptor.CompositeFieldNames,
+                                                mcDescriptor.CompositeFieldDescriptors);
+                                            if (compositeJsonObj.Length >= 2 && compositeJsonObj[0] == '{' && compositeJsonObj[compositeJsonObj.Length - 1] == '}')
+                                            {
+                                                mcRowBuilder.Append(compositeJsonObj[1..^1]);
+                                            }
+                                            else
+                                            {
+                                                mcRowBuilder.Append(compositeJsonObj);
+                                            }
+                                        }
+                                    }
+
+                                    if (currentCmd.ReturnsUnnamedSet == false && col == currentCmd.ColumnCount - 1)
+                                    {
+                                        mcRowBuilder.Append(Consts.CloseBrace);
+                                    }
+                                    if (col < currentCmd.ColumnCount - 1)
+                                    {
+                                        mcRowBuilder.Append(Consts.Comma);
+                                    }
+                                }
+                                else
+                                {
                                 // Determine output buffer and handle composite nesting
                                 (string CompositeColumnName, string FieldName, bool IsFirstField, bool IsLastField, int FieldCount, string JsonCompositeColumnName, string JsonFieldName) mcCompMapping = default;
                                 bool mcIsInComposite = mcNestedMap is not null && mcNestedMap.TryGetValue(col, out mcCompMapping);
@@ -2062,7 +2134,7 @@ public partial class NpgsqlRestEndpoint(
                                 // Value formatting — shared with single-command path
                                 JsonValueFormatter.FormatValue(
                                     raw, value,
-                                    currentCmd.ColumnTypeDescriptors[col],
+                                    mcDescriptor,
                                     mcOutput,
                                     routine.ArrayCompositeColumnInfo,
                                     col);
@@ -2103,6 +2175,7 @@ public partial class NpgsqlRestEndpoint(
                                 {
                                     mcRowBuilder.Append(Consts.Comma);
                                 }
+                                } // end non-composite mc else
                             }
 
                             // Buffer rows flush
@@ -2621,7 +2694,84 @@ public partial class NpgsqlRestEndpoint(
                                 }
                                 else
                                 {
-                                    // Handle nested JSON composite types
+                                    var descriptor = activeColumnDescriptors[i];
+
+                                    // SQL file composite type column: value is a PostgreSQL tuple string
+                                    // Expand inline (flat) or wrap as nested JSON object
+                                    if (descriptor.IsCompositeType &&
+                                        descriptor.CompositeFieldNames is not null &&
+                                        descriptor.CompositeFieldDescriptors is not null)
+                                    {
+                                        if (routine.ReturnsUnnamedSet == false && i == 0)
+                                        {
+                                            rowBuilder.Append(Consts.OpenBrace);
+                                        }
+
+                                        if (endpoint.NestedJsonForCompositeTypes == true)
+                                        {
+                                            // Nested mode: "columnName": {parsed object} or "columnName": null
+                                            if (routine.ReturnsUnnamedSet == false)
+                                            {
+                                                rowBuilder.Append(activeJsonColumnNames[i]);
+                                                rowBuilder.Append(Consts.Colon);
+                                            }
+                                            if (value == DBNull.Value)
+                                            {
+                                                rowBuilder.Append(Consts.Null);
+                                            }
+                                            else
+                                            {
+                                                rowBuilder.Append(PgTupleToJsonObject(
+                                                    raw,
+                                                    descriptor.CompositeFieldNames,
+                                                    descriptor.CompositeFieldDescriptors));
+                                            }
+                                        }
+                                        else
+                                        {
+                                            // Flat mode: splice individual fields inline
+                                            if (value == DBNull.Value)
+                                            {
+                                                // All fields null — emit "field1":null,"field2":null,...
+                                                for (int fi = 0; fi < descriptor.CompositeFieldNames.Length; fi++)
+                                                {
+                                                    if (fi > 0) rowBuilder.Append(Consts.Comma);
+                                                    rowBuilder.Append(PgConverters.SerializeString(descriptor.CompositeFieldNames[fi]));
+                                                    rowBuilder.Append(Consts.Colon);
+                                                    rowBuilder.Append(Consts.Null);
+                                                }
+                                            }
+                                            else
+                                            {
+                                                // Parse tuple to JSON object, strip outer braces to get inline fields
+                                                var compositeJsonObj = PgTupleToJsonObject(
+                                                    raw,
+                                                    descriptor.CompositeFieldNames,
+                                                    descriptor.CompositeFieldDescriptors);
+                                                // PgTupleToJsonObject returns {"field":val,...} — strip { and }
+                                                if (compositeJsonObj.Length >= 2 && compositeJsonObj[0] == '{' && compositeJsonObj[compositeJsonObj.Length - 1] == '}')
+                                                {
+                                                    rowBuilder.Append(compositeJsonObj[1..^1]);
+                                                }
+                                                else
+                                                {
+                                                    rowBuilder.Append(compositeJsonObj);
+                                                }
+                                            }
+                                        }
+
+                                        if (routine.ReturnsUnnamedSet == false && i == routineReturnRecordCount - 1)
+                                        {
+                                            rowBuilder.Append(Consts.CloseBrace);
+                                        }
+                                        if (i < routineReturnRecordCount - 1)
+                                        {
+                                            rowBuilder.Append(Consts.Comma);
+                                        }
+                                    }
+                                    else
+                                    {
+                                    // Handle nested JSON composite types (routine expanded columns)
                                     (string CompositeColumnName, string FieldName, bool IsFirstField, bool IsLastField, int FieldCount, string JsonCompositeColumnName, string JsonFieldName) compositeMapping = default;
                                     bool isInComposite = nestedJsonColumnMap is not null && nestedJsonColumnMap.TryGetValue(i, out compositeMapping);
 
@@ -2663,7 +2813,6 @@ public partial class NpgsqlRestEndpoint(
                                         }
                                     }
 
-                                    var descriptor = activeColumnDescriptors[i];
                                     JsonValueFormatter.FormatValue(
                                         raw, value, descriptor, outputBuffer,
                                         routine.ArrayCompositeColumnInfo, i);
@@ -2712,6 +2861,7 @@ public partial class NpgsqlRestEndpoint(
                                     {
                                         rowBuilder.Append(Consts.Comma);
                                     }
+                                    } // end non-composite-type else
                                 }
                             }
                         } // end for

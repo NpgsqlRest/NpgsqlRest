@@ -194,9 +194,16 @@ At startup, each statement is analyzed via PostgreSQL's Parse → Describe → S
 
 | Pattern | Result |
 |---|---|
-| `SELECT (data).val1, (data).val2 FROM table` | Proper JSON with scalar columns — recommended pattern |
+| `SELECT (data).val1, (data).val2 FROM table` | Proper JSON with scalar columns |
 | `SELECT items FROM table` (where `items` is `my_type[]`) | JSON array of objects: `[{"val1": "a", "val2": 1}]` |
-| `SELECT data FROM table` (where `data` is `my_type`) | PostgreSQL tuple representation |
+| `SELECT data FROM table` (where `data` is `my_type`) | **Flat fields** (default): `{"val1": "a", "val2": 1}` — same as routines |
+| `SELECT data FROM table` with `@nested` annotation | **Nested object**: `{"data": {"val1": "a", "val2": 1}}` |
+
+Composite type columns are automatically expanded to match routine endpoint behavior:
+
+- **Default (flat):** Composite fields are spliced inline into the JSON row. `SELECT id, data FROM table` where `data` is `my_type(val1 text, val2 int)` produces `{"id": 1, "val1": "a", "val2": 42}` — identical to how `RETURNS TABLE(id int, data my_type)` works for functions.
+- **Nested (`@nested` annotation or `NestedJsonForCompositeTypes: true`):** Composite wrapped under column name: `{"id": 1, "data": {"val1": "a", "val2": 42}}`.
+- **NULL composites:** Flat → all fields emitted as `null`. Nested → `"data": null`.
 
 Composite type resolution uses `CompositeTypeCache` which loads all composite types from `pg_catalog` at startup. Schema-qualified type names from `GetDataTypeName` (e.g., `public.my_type`) are matched against cache keys via fallback lookup.
 
@@ -251,6 +258,7 @@ Errors caught at startup:
 
 SQL file endpoints support all features available to function/procedure endpoints:
 
+- Composite type expansion (flat by default, nested with `@nested` annotation)
 - Response caching (`cached`, `cache_expires_in`)
 - Raw mode (`raw`, `raw_value_separator`, `raw_new_line_separator`, `raw_column_names`)
 - Binary mode
@@ -275,7 +283,8 @@ SQL file endpoints support all features available to function/procedure endpoint
     "CommentScope": "All",
     "ErrorMode": "Exit",
     "ResultPrefix": "result",
-    "UnnamedSingleColumnSet": true
+    "UnnamedSingleColumnSet": true,
+    "NestedJsonForCompositeTypes": false
   }
 }
 ```
@@ -289,6 +298,7 @@ SQL file endpoints support all features available to function/procedure endpoint
 | `ErrorMode` | enum | `Exit` | `Exit` = log error + exit process. `Skip` = log error + continue |
 | `ResultPrefix` | string | `"result"` | Prefix for multi-command result keys (e.g., `result1`, `result2`) |
 | `UnnamedSingleColumnSet` | bool | `true` | Single-column queries return flat arrays (`["a","b"]`) instead of object arrays (`[{"col":"a"},{"col":"b"}]`). Applies to both single-command and per-result in multi-command files. Matches function behavior for `setof` single values |
+| `NestedJsonForCompositeTypes` | bool | `false` | When `true`, composite type columns are serialized as nested JSON objects under their column name. When `false` (default), composite fields are flattened inline — matching routine behavior. Can also be enabled per-endpoint with the `nested` annotation |
 
 ---
 
@@ -419,16 +429,49 @@ This enhancement benefits all existing `IsPatternMatch` consumers (`StaticFiles.
 
 `IRoutineSource` split into two interfaces:
 
-- **`IEndpointSource`** — base interface with `CommentsMode` and `Read()`. Used by lightweight sources like `SqlFileSource`.
-- **`IRoutineSource : IEndpointSource`** — extended interface adding `Query`, schema/name filtering, `NestedJsonForCompositeTypes`. Used by `RoutineSource` and `CrudSource`.
+- **`IEndpointSource`** — base interface with `CommentsMode`, `NestedJsonForCompositeTypes`, and `Read()`. Used by lightweight sources like `SqlFileSource`.
+- **`IRoutineSource : IEndpointSource`** — extended interface adding `Query`, schema/name filtering. Used by `RoutineSource` and `CrudSource`.
 
-**Breaking:** `NpgsqlRestOptions.RoutineSources` renamed to `EndpointSources`. `SourcesCreated` callback renamed to `EndpointSourcesCreated`.
+`NestedJsonForCompositeTypes` moved from `IRoutineSource` to `IEndpointSource` so that all endpoint sources (including `SqlFileSource`) support composite type nesting configuration.
+
+**Breaking:** `NpgsqlRestOptions.RoutineSources` renamed to `EndpointSources`. `SourcesCreated` callback renamed to `EndpointSourcesCreated`. Custom `IEndpointSource` implementations must now implement `NestedJsonForCompositeTypes`.
 
 #### Composite Type Cache: Public API
 
 - `CompositeTypeCache.ResolveTypeDescriptor(TypeDescriptor)` — new public method for plugins to resolve composite/array-of-composite type metadata
 - `Routine.CompositeColumnInfo` and `Routine.ArrayCompositeColumnInfo` — changed from `internal` to `public` for plugin access
 - Schema-prefix fallback: `public.my_type` now matches cache key `my_type` (handles `GetDataTypeName` vs `regtype::text` format mismatch)
+
+#### TsClient: Composite Type Support for SQL Files
+
+The TypeScript client generator now correctly generates interfaces matching the actual JSON response for SQL file endpoints with composite type columns:
+
+- **Flat mode (default):** Composite fields are inlined as individual interface properties, matching the flat JSON response. `SELECT id, data FROM table` (where `data` is `my_type(val1 text, val2 int)`) generates:
+  ```typescript
+  interface IMyQueryResponse {
+      id: number | null;
+      val1: string | null;
+      val2: number | null;
+  }
+  ```
+
+- **Nested mode (`@nested`):** Composite column generates a nested interface:
+  ```typescript
+  interface IData {
+      val1: string | null;
+      val2: number | null;
+  }
+  interface IMyQueryResponse {
+      id: number | null;
+      data: IData | null;
+  }
+  ```
+
+Nested composites and arrays of composites within composite fields are handled recursively.
+
+#### Fix: `OnlyWithHttpTag` Mode Skips Files Before Describe
+
+When `CommentsMode` is `OnlyWithHttpTag` (the default), SQL files without an HTTP tag are now skipped **before** the PostgreSQL describe step. Previously, files without an HTTP tag were still described against the database, causing errors on invalid SQL files (e.g., migration scripts, utility files) instead of being silently skipped. With `ErrorMode.Exit`, this would crash the process.
 
 #### TsClient: Multi-Command SQL File Support
 

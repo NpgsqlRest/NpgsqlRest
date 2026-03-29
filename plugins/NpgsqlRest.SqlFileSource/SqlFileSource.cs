@@ -13,6 +13,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
     private const string UnnamedColumnPrefix = "column";
 
     public CommentsMode? CommentsMode { get; set; } = options.CommentsMode; // Always has a value from options default
+    public bool NestedJsonForCompositeTypes { get; set; } = false;
 
     public IEnumerable<(Routine, IRoutineSourceParameterFormatter)> Read(
         IServiceProvider? serviceProvider,
@@ -336,7 +337,8 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
                     ColumnNames = cmdColNames,
                     JsonColumnNames = cmdJsonColNames,
                     ColumnTypeDescriptors = cmdColDescriptors,
-                    ReturnsUnnamedSet = options.UnnamedSingleColumnSet && cmdCols.Length == 1,
+                    ReturnsUnnamedSet = options.UnnamedSingleColumnSet && cmdCols.Length == 1
+                        && !cmdColDescriptors[0].IsCompositeType,
                 };
             }
         }
@@ -367,7 +369,8 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
             ColumnNames = columnNames,
             JsonColumnNames = jsonColumnNames,
             ColumnsTypeDescriptor = columnTypeDescriptors,
-            ReturnsUnnamedSet = options.UnnamedSingleColumnSet && columnCount == 1 && !isMultiCommand,
+            ReturnsUnnamedSet = options.UnnamedSingleColumnSet && columnCount == 1 && !isMultiCommand
+                && !columnTypeDescriptors[0].IsCompositeType,
             IsVoid = isVoid,
             ParamCount = totalParamCount,
             Parameters = parameters,

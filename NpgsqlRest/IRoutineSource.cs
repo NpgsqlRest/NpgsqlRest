@@ -12,6 +12,14 @@ public interface IEndpointSource
     CommentsMode? CommentsMode { get; set; }
 
     /// <summary>
+    /// When true, composite type columns in the response are serialized as nested JSON objects.
+    /// For example, a column "req" of type "my_request(id int, name text)" becomes {"req": {"id": 1, "name": "test"}}
+    /// instead of the default flat structure {"id": 1, "name": "test"}.
+    /// Default is false.
+    /// </summary>
+    bool NestedJsonForCompositeTypes { get; set; }
+
+    /// <summary>
     /// Yield all routines with the formatters from the current source.
     /// </summary>
     /// <param name="serviceProvider">Service provider</param>
@@ -73,11 +81,4 @@ public interface IRoutineSource : IEndpointSource
     /// </summary>
     string[]? ExcludeNames { get; set; }
 
-    /// <summary>
-    /// When true, composite type columns in the response are serialized as nested JSON objects.
-    /// For example, a column "req" of type "my_request(id int, name text)" becomes {"req": {"id": 1, "name": "test"}}
-    /// instead of the default flat structure {"id": 1, "name": "test"}.
-    /// Default is false.
-    /// </summary>
-    bool NestedJsonForCompositeTypes { get; set; }
 }

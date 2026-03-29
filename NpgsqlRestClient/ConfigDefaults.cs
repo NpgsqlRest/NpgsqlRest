@@ -946,7 +946,8 @@ public static class ConfigDefaults
             ["CommentScope"] = "All",
             ["ErrorMode"] = "Exit",
             ["ResultPrefix"] = "result",
-            ["UnnamedSingleColumnSet"] = true
+            ["UnnamedSingleColumnSet"] = true,
+            ["NestedJsonForCompositeTypes"] = false
         };
     }
 

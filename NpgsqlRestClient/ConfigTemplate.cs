@@ -2617,7 +2617,14 @@ public static partial class ConfigSchemaGenerator
           // (e.g., ["a", "b", "c"]) instead of an array of objects (e.g., [{"col": "a"}, {"col": "b"}]).
           // This matches the behavior of PostgreSQL functions returning setof single values.
           //
-          "UnnamedSingleColumnSet": true
+          "UnnamedSingleColumnSet": true,
+          //
+          // When true, composite type columns in return results are serialized as nested JSON objects.
+          // For example, a column "data" of type "my_type(id int, name text)" becomes {"data": {"id": 1, "name": "test"}}
+          // instead of the default flat structure {"id": 1, "name": "test"}.
+          // Default is false for backward compatibility. Can also be enabled per-endpoint with the 'nested' annotation.
+          //
+          "NestedJsonForCompositeTypes": false
         }
       }
     }

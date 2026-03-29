@@ -599,7 +599,11 @@ public class App
                 {
                     opts.ResultPrefix = resultPrefix;
                 }
-                sources.Add(new SqlFileSource(opts));
+                var sqlFileSource = new SqlFileSource(opts)
+                {
+                    NestedJsonForCompositeTypes = _config.GetConfigBool("NestedJsonForCompositeTypes", sqlFileSourceCfg)
+                };
+                sources.Add(sqlFileSource);
                 _builder.ClientLogger?.LogDebug("Using {name} PostgreSQL Source with pattern {pattern}", nameof(SqlFileSource), filePattern);
             }
         }
