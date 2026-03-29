@@ -92,6 +92,13 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
         var content = File.ReadAllText(filePath);
         var parseResult = SqlFileParser.Parse(content, options.CommentScope);
 
+        // When CommentsMode is OnlyWithHttpTag, skip files that don't have an HTTP tag
+        // BEFORE attempting to describe — avoids errors on non-endpoint SQL files (migrations, utility scripts, etc.)
+        if (options.CommentsMode == NpgsqlRest.CommentsMode.OnlyWithHttpTag && !HasHttpTag(parseResult.Comment))
+        {
+            return null;
+        }
+
         // Check for parse errors
         if (parseResult.Errors.Count > 0)
         {
@@ -658,6 +665,29 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
         }
         int lastSlash = filePattern.LastIndexOf('/', firstWildcard);
         return Path.GetFullPath(lastSlash >= 0 ? filePattern[..lastSlash] : ".");
+    }
+
+    /// <summary>
+    /// Check whether the parsed comment contains an HTTP tag (a line starting with "http").
+    /// Mirrors the detection logic in DefaultCommentParser.
+    /// </summary>
+    private static bool HasHttpTag(string comment)
+    {
+        if (string.IsNullOrEmpty(comment))
+        {
+            return false;
+        }
+        foreach (var line in comment.Split('\n'))
+        {
+            var trimmed = line.Trim();
+            if (trimmed.Length >= 4 &&
+                trimmed.StartsWith("http", StringComparison.OrdinalIgnoreCase) &&
+                (trimmed.Length == 4 || trimmed[4] == ' ' || trimmed[4] == '\t'))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     /// <summary>
