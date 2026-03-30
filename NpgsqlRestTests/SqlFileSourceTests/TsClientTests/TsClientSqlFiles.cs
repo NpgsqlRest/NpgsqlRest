@@ -36,5 +36,22 @@ public static partial class SqlFiles
             insert into sql_describe_test (id, name) values ($1 + 2000, 'ts_test');
             select count(*) as total from sql_describe_test;
             """);
+
+        // Single record — multi-column returns object type (no array)
+        File.WriteAllText(Path.Combine(Dir, "ts_single_record.sql"), """
+            -- HTTP GET
+            -- tsclient_module=ts_single_record
+            -- single
+            -- @param $1 id
+            select id, name, active from sql_describe_test where id = $1;
+            """);
+
+        // Single record — unnamed single column returns scalar (no array)
+        File.WriteAllText(Path.Combine(Dir, "ts_single_record_scalar.sql"), """
+            -- HTTP GET
+            -- tsclient_module=ts_single_record_scalar
+            -- single
+            select name from sql_describe_test limit 1;
+            """);
     }
 }

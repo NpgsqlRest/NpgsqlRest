@@ -10,6 +10,40 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+### New Comment Annotation: `@single`
+
+New comment annotation `single` (aliases: `single_record`, `single_result`) that returns a single record as a JSON object instead of a JSON array.
+
+Works across all endpoint sources: PostgreSQL functions, SQL files, and CRUD endpoints.
+
+**Usage:**
+
+```sql
+-- PostgreSQL function
+CREATE FUNCTION get_user(int) RETURNS TABLE(id int, name text) ...
+COMMENT ON FUNCTION get_user IS 'HTTP GET
+@single';
+
+-- SQL file
+-- HTTP GET
+-- @single
+-- @param $1 id
+SELECT id, name FROM users WHERE id = $1;
+```
+
+**Without `@single`:** `[{"id": 1, "name": "alice"}]` (array)
+**With `@single`:** `{"id": 1, "name": "alice"}` (object)
+
+**Behavior:**
+
+- Multi-column results return a JSON object (no array wrapping)
+- Single unnamed column results return a bare JSON value (e.g., `"hello"`, `42`)
+- If the query returns multiple rows, only the first row is returned (early exit from rendering loop)
+- Empty results respect the `response_null` annotation: `empty_string` (default), `null_literal`, or `no_content` (204)
+- TypeScript client generates `Promise<IResponse>` instead of `Promise<IResponse[]>`
+
+---
+
 ### New Endpoint Source Plugin: `NpgsqlRest.SqlFileSource`
 
 In addition to the existing endpoint sources — **RoutineSource** (PostgreSQL functions and procedures) and **CrudSource** (tables and views) — NpgsqlRest now supports a third source: **SQL files**.

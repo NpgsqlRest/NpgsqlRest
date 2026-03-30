@@ -779,7 +779,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                             }
                         }
                     }
-                    if (returnsSet)
+                    if (returnsSet && !endpoint.ReturnSingleRecord)
                     {
                         responseName = string.Concat(responseName, "[]");
                     }

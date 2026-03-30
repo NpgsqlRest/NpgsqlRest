@@ -81,4 +81,20 @@ public class SqlFileTsClientTests(SqlFileSourceTestFixture test)
         content.Should().Contain("IMultiDifferentShapesResponse");
         content.Should().Contain("Promise<IMultiDifferentShapesResponse>");
     }
+
+    [Fact]
+    public void TsClient_SingleRecord_ReturnsObjectNotArray()
+    {
+        var content = ReadGeneratedFile();
+        content.Should().Contain("Promise<ITsSingleRecordResponse>");
+        content.Should().NotContain("ITsSingleRecordResponse[]");
+    }
+
+    [Fact]
+    public void TsClient_SingleRecordScalar_ReturnsScalarNotArray()
+    {
+        var content = ReadGeneratedFile();
+        content.Should().Contain("tsSingleRecordScalar");
+        content.Should().Contain("Promise<string>");
+    }
 }

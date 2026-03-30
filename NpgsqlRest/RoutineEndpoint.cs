@@ -253,6 +253,13 @@ public class RoutineEndpoint(
     public Dictionary<string, List<ValidationRule>>? ParameterValidations { get; set; } = null;
 
     /// <summary>
+    /// When true, only the first row is returned and the result is serialized as a JSON object
+    /// instead of a JSON array. If the query returns multiple rows, only the first row is used.
+    /// Configured via the "single" comment annotation.
+    /// </summary>
+    public bool ReturnSingleRecord { get; set; } = false;
+
+    /// <summary>
     /// When true, composite type columns in the response are serialized as nested JSON objects.
     /// For example, a column "req" of type "my_request(id int, name text)" becomes {"req": {"id": 1, "name": "test"}}
     /// instead of the default flat structure {"id": 1, "name": "test"}.

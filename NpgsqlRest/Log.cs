@@ -101,6 +101,9 @@ public static partial class Log
     [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has set RAW MODE by the comment annotation.")]
     public static partial void CommentSetRawMode(this ILogger logger, string description);
 
+    [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has set SINGLE RECORD by the comment annotation.")]
+    public static partial void CommentSetSingleRecord(this ILogger logger, string description);
+
     [LoggerMessage(Level = LogLevel.Debug, Message = "{description} has set SEPARATOR by the comment annotation to {value}.")]
     public static partial void CommentSetRawValueSeparator(this ILogger logger, string description, string value);
 

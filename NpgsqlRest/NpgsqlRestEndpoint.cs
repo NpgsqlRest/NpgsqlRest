@@ -2543,7 +2543,7 @@ public partial class NpgsqlRestEndpoint(
                         currentColumnCount = cmdInfo.ColumnCount;
                     }
 
-                    if (routine.ReturnsSet && endpoint.Raw is false && binary is false)
+                    if (routine.ReturnsSet && endpoint.Raw is false && binary is false && endpoint.ReturnSingleRecord is false)
                     {
                         writer.Advance(Encoding.UTF8.GetBytes(Consts.OpenBracket.ToString().AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(1))));
                         if (shouldCache)
@@ -2873,6 +2873,11 @@ public partial class NpgsqlRestEndpoint(
                             cacheBuffer = null; // Release memory
                         }
 
+                        if (endpoint.ReturnSingleRecord)
+                        {
+                            break;
+                        }
+
                         if (bufferRows != 1 && rowCount % bufferRows == 0)
                         {
                             // Append to cache buffer before clearing row
@@ -2886,7 +2891,20 @@ public partial class NpgsqlRestEndpoint(
                         }
                     } // end while
 
-                    if (binary is true)
+                    if (endpoint.ReturnSingleRecord && rowCount == 0)
+                    {
+                        if (endpoint.TextResponseNullHandling == TextResponseNullHandling.NullLiteral)
+                        {
+                            writer.Advance(Encoding.UTF8.GetBytes(Consts.Null.AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(Consts.Null.Length))));
+                            await writer.FlushAsync(cancellationToken);
+                        }
+                        else if (endpoint.TextResponseNullHandling == TextResponseNullHandling.NoContent)
+                        {
+                            context.Response.StatusCode = (int)HttpStatusCode.NoContent;
+                        }
+                        // else EmptyString: empty 200 OK (default)
+                    }
+                    else if (binary is true)
                     {
                         await writer.FlushAsync(cancellationToken);
                     }
@@ -2902,7 +2920,7 @@ public partial class NpgsqlRestEndpoint(
                             WriteStringBuilderToWriter(rowBuilder, writer);
                             await writer.FlushAsync(cancellationToken);
                         }
-                        if (routine.ReturnsSet && endpoint.Raw is false)
+                        if (routine.ReturnsSet && endpoint.Raw is false && endpoint.ReturnSingleRecord is false)
                         {
                             writer.Advance(Encoding.UTF8.GetBytes(Consts.CloseBracket.ToString().AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(1))));
                             if (shouldCache)

@@ -222,6 +222,7 @@ public class SqlFileAdvancedFixture : IDisposable
             -- Content-Type: text/csv
             select 123 as n, true as b, 'hello' as t;
             """);
+
     }
 
 #pragma warning disable CA1816

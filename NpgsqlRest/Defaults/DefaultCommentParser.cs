@@ -221,6 +221,13 @@ internal static partial class DefaultCommentParser
                     HandleRaw(routineEndpoint, description);
                 }
 
+                // single
+                // single_record
+                else if (haveTag is true && StrEqualsToArray(wordsLower[0], SingleKey))
+                {
+                    HandleSingle(routineEndpoint, description);
+                }
+
                 // separator [ value ]
                 // raw_separator [ value ]
                 else if (haveTag is true && line.StartsWith(string.Concat(SeparatorKey[0], " ")))
@@ -465,6 +472,13 @@ internal static partial class DefaultCommentParser
             if (bool.TryParse(value, out var parsedRaw))
             {
                 endpoint.Raw = parsedRaw;
+            }
+        }
+        else if (StrEqualsToArray(name, SingleKey))
+        {
+            if (bool.TryParse(value, out var parsedSingle))
+            {
+                endpoint.ReturnSingleRecord = parsedSingle;
             }
         }
         else if (StrEqualsToArray(name, SeparatorKey))
