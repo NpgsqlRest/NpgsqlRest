@@ -53,5 +53,17 @@ public static partial class SqlFiles
             -- single
             select name from sql_describe_test limit 1;
             """);
+
+        // Multi-command with per-command @single
+        File.WriteAllText(Path.Combine(Dir, "ts_multi_single.sql"), """
+            -- HTTP GET
+            -- tsclient_module=ts_multi_single
+            -- @param $1 id
+            -- @single
+            -- @result user
+            select id, name from sql_describe_test where id = $1;
+            -- @result items
+            select id, name from sql_describe_test order by id;
+            """);
     }
 }

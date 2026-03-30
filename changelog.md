@@ -74,7 +74,7 @@ SELECT id, status FROM orders WHERE id = $1;
 
 ```json
 {
-  "validate": [{"count": 1}],
+  "validate": [1],
   "result2": 1,
   "confirm": [{"id": 42, "status": "processing"}]
 }
@@ -479,7 +479,7 @@ The TypeScript client generator now handles multi-command SQL file endpoints. Fo
 
 ```typescript
 interface IProcessOrderResponse {
-    validate: { count: number }[];
+    validate: number[];  // single-column → flat array (UnnamedSingleColumnSet)
     result2: number;  // void command → rows affected
     confirm: { id: number, status: string }[];
 }
@@ -677,6 +677,47 @@ SELECT id, name FROM users WHERE id = $1;
 - If the query returns multiple rows, only the first row is returned (early exit from rendering loop)
 - Empty results respect the `response_null` annotation: `empty_string` (default), `null_literal`, or `no_content` (204)
 - TypeScript client generates `Promise<IResponse>` instead of `Promise<IResponse[]>`
+
+**Per-command `@single` in multi-command files:**
+
+In multi-command SQL files, `@single` is positional — it applies to the next statement below it:
+
+```sql
+-- HTTP POST
+-- @param $1 id
+-- @single
+SELECT id, name FROM users WHERE id = $1;
+UPDATE orders SET status = 'done' WHERE id = $1;
+-- @single
+SELECT id, status FROM orders WHERE id = $1;
+```
+
+Result: `{"result1": {"id": 1, "name": "alice"}, "result2": 1, "result3": {"id": 1, "status": "done"}}`
+
+- First and third commands return objects (have `@single` above them)
+- Second command returns rows-affected count (void, no `@single`)
+- Empty per-command `@single` results render as `null`
+
+---
+
+### Positional `@result` Annotation for Multi-Command Files
+
+In addition to the existing `@resultN name` syntax, result keys can now be named positionally — place `@result name` between statements and it applies to the next command below:
+
+```sql
+-- @result users
+SELECT id, name FROM users;
+-- @result orders
+SELECT id, total FROM orders;
+```
+
+Result: `{"users": [...], "orders": [...]}`
+
+Both forms coexist:
+- `@resultN name` (numbered) — works from anywhere in the file
+- `@result name` (positional) — applies to the next statement below
+- Positional takes precedence when both target the same command
+- `@result is name` ("is" syntax) also supported
 
 ---
 

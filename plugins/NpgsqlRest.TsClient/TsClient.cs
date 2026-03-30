@@ -510,19 +510,21 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                     }
                     else if (cmdInfo.ColumnCount == 1 && cmdInfo.ReturnsUnnamedSet)
                     {
-                        // Single column with UnnamedSingleColumnSet — flat array
+                        // Single column with UnnamedSingleColumnSet — flat array or scalar with @single
                         var tsType = GetTsType(cmdInfo.ColumnTypeDescriptors[0], true);
-                        mcResp.AppendLine($"    {cmdInfo.Name}: {tsType}[];");
+                        var arraySuffix = cmdInfo.IsSingle ? "" : "[]";
+                        mcResp.AppendLine($"    {cmdInfo.Name}: {tsType}{arraySuffix};");
                     }
                     else if (cmdInfo.ColumnCount == 1)
                     {
-                        // Single column — object array
+                        // Single column — object array or object with @single
                         var tsType = GetTsType(cmdInfo.ColumnTypeDescriptors[0], true);
-                        mcResp.AppendLine($"    {cmdInfo.Name}: {{ {cmdInfo.ColumnNames[0]}: {tsType} }}[];");
+                        var arraySuffix = cmdInfo.IsSingle ? "" : "[]";
+                        mcResp.AppendLine($"    {cmdInfo.Name}: {{ {cmdInfo.ColumnNames[0]}: {tsType} }}{arraySuffix};");
                     }
                     else
                     {
-                        // Multiple columns — inline object type
+                        // Multiple columns — inline object type array or object with @single
                         var fields = new StringBuilder();
                         for (int ci = 0; ci < cmdInfo.ColumnCount; ci++)
                         {
@@ -531,7 +533,8 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                             fields.Append(": ");
                             fields.Append(GetTsType(cmdInfo.ColumnTypeDescriptors[ci], true));
                         }
-                        mcResp.AppendLine($"    {cmdInfo.Name}: {{ {fields} }}[];");
+                        var arraySuffix = cmdInfo.IsSingle ? "" : "[]";
+                        mcResp.AppendLine($"    {cmdInfo.Name}: {{ {fields} }}{arraySuffix};");
                     }
                 }
                 mcResp.AppendLine("}");

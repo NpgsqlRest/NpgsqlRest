@@ -93,6 +93,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
         var content = File.ReadAllText(filePath);
         var parseResult = SqlFileParser.Parse(content, options.CommentScope);
 
+
         // When CommentsMode is OnlyWithHttpTag, skip files that don't have an HTTP tag
         // BEFORE attempting to describe — avoids errors on non-endpoint SQL files (migrations, utility scripts, etc.)
         if (options.CommentsMode == NpgsqlRest.CommentsMode.OnlyWithHttpTag && !HasHttpTag(parseResult.Comment))
@@ -312,10 +313,17 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
                     ResolveCompositeType(cmdColDescriptors[j]);
                 }
 
-                // Result name: @resultN annotation override or default prefix + index
+                // Result name: positional @result > @resultN > default prefix + index
                 var resultIndex = ci + 1;
                 string resultName;
-                if (parseResult.ResultNames.TryGetValue(resultIndex, out var annotated))
+                if (parseResult.PositionalResultNames.TryGetValue(ci, out var positionalName))
+                {
+                    resultName = positionalName;
+                    NpgsqlRestOptions.Logger?.LogDebug(
+                        "SqlFileSource: {FilePath} result{Index} renamed to \"{Name}\" by positional @result annotation",
+                        filePath, resultIndex, positionalName);
+                }
+                else if (parseResult.ResultNames.TryGetValue(resultIndex, out var annotated))
                 {
                     resultName = annotated;
                     NpgsqlRestOptions.Logger?.LogDebug(
@@ -339,6 +347,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
                     ColumnTypeDescriptors = cmdColDescriptors,
                     ReturnsUnnamedSet = options.UnnamedSingleColumnSet && cmdCols.Length == 1
                         && !cmdColDescriptors[0].IsCompositeType,
+                    IsSingle = parseResult.SingleCommands.Contains(ci),
                 };
             }
         }

@@ -97,4 +97,14 @@ public class SqlFileTsClientTests(SqlFileSourceTestFixture test)
         content.Should().Contain("tsSingleRecordScalar");
         content.Should().Contain("Promise<string>");
     }
+
+    [Fact]
+    public void TsClient_MultiCommandSingle_ObjectNotArrayForSingleCommand()
+    {
+        var content = ReadGeneratedFile();
+        // "user" result has @single — object without []
+        content.Should().Contain("user: { id: number, name: string };");
+        // "items" result has no @single — array with []
+        content.Should().Contain("items: { id: number, name: string }[];");
+    }
 }

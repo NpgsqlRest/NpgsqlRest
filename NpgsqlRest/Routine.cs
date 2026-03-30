@@ -217,4 +217,10 @@ public class MultiCommandInfo
     /// When true, this command returns a flat array of values instead of objects.
     /// </summary>
     public bool ReturnsUnnamedSet { get; init; }
+
+    /// <summary>
+    /// When true, only the first row of this command's result set is returned as a JSON object
+    /// instead of a JSON array. Configured via positional @single annotation.
+    /// </summary>
+    public bool IsSingle { get; init; }
 }

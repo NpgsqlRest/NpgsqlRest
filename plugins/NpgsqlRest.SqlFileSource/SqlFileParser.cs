@@ -41,6 +41,19 @@ public class SqlFileParseResult
     public List<(string Name, string? Type)> VirtualParams { get; } = [];
 
     /// <summary>
+    /// Per-command @single annotations (positional).
+    /// Key is 0-based statement index, value is true if @single was placed before that statement.
+    /// </summary>
+    public HashSet<int> SingleCommands { get; } = [];
+
+    /// <summary>
+    /// Per-command @result annotations (positional, without a number).
+    /// Key is 0-based statement index, value is the custom result name.
+    /// Takes precedence over @resultN annotations.
+    /// </summary>
+    public Dictionary<int, string> PositionalResultNames { get; } = [];
+
+    /// <summary>
     /// Errors encountered during parsing.
     /// </summary>
     public List<string> Errors { get; } = [];
@@ -98,6 +111,10 @@ public static class SqlFileParser
         // Track the token before a dollar-quote for DO block detection
         var lastToken = new ValueStringBuilder(stackalloc char[16]);
         bool lastTokenIsWord = false;
+        // Track comments between statements for positional per-command annotations
+        var interStmtCommentBuilder = new ValueStringBuilder(stackalloc char[256]);
+        // Track header comment length (before first statement) for per-command annotation extraction
+        int headerCommentLength = -1;
 
         int i = 0;
         int len = content.Length;
@@ -125,6 +142,12 @@ public static class SqlFileParser
                                 if (commentBuilder.Length > 0) commentBuilder.Append('\n');
                                 commentBuilder.Append(content[commentStart..i]);
                             }
+                            // Collect inter-statement comments for positional annotations
+                            if (firstStatementSeen)
+                            {
+                                if (interStmtCommentBuilder.Length > 0) interStmtCommentBuilder.Append('\n');
+                                interStmtCommentBuilder.Append(content[commentStart..i]);
+                            }
                             // Skip \r\n
                             if (i < len && content[i] == '\r') i++;
                             if (i < len && content[i] == '\n') i++;
@@ -140,6 +163,10 @@ public static class SqlFileParser
                             if (ShouldCollectComment(commentScope, firstStatementSeen))
                             {
                                 if (commentBuilder.Length > 0) commentBuilder.Append('\n');
+                            }
+                            if (firstStatementSeen)
+                            {
+                                if (interStmtCommentBuilder.Length > 0) interStmtCommentBuilder.Append('\n');
                             }
                             continue;
                         }
@@ -200,6 +227,18 @@ public static class SqlFileParser
                             var stmt = stmtBuilder.ToString().Trim();
                             if (stmt.Length > 0)
                             {
+                                // Before adding this statement, extract per-command annotations
+                                // from comments collected between the previous statement and this one
+                                if (firstStatementSeen && interStmtCommentBuilder.Length > 0)
+                                {
+                                    var nextIndex = result.Statements.Count; // 0-based index of the statement about to be added
+                                    ExtractPerCommandAnnotations(interStmtCommentBuilder.ToString(), nextIndex, result);
+                                    interStmtCommentBuilder.Clear();
+                                }
+                                if (!firstStatementSeen)
+                                {
+                                    headerCommentLength = commentBuilder.Length;
+                                }
                                 result.Statements.Add(stmt);
                                 firstStatementSeen = true;
                             }
@@ -276,6 +315,8 @@ public static class SqlFileParser
                         }
                         if (ShouldCollectComment(commentScope, firstStatementSeen))
                             commentBuilder.Append(c);
+                        if (firstStatementSeen)
+                            interStmtCommentBuilder.Append(c);
                         i++;
                         break;
 
@@ -328,6 +369,12 @@ public static class SqlFileParser
             var lastStmt = stmtBuilder.ToString().Trim();
             if (lastStmt.Length > 0)
             {
+                if (firstStatementSeen && interStmtCommentBuilder.Length > 0)
+                {
+                    var nextIndex = result.Statements.Count;
+                    ExtractPerCommandAnnotations(interStmtCommentBuilder.ToString(), nextIndex, result);
+                    interStmtCommentBuilder.Clear();
+                }
                 result.Statements.Add(lastStmt);
             }
 
@@ -337,6 +384,11 @@ public static class SqlFileParser
             if (result.Statements.Count > 1)
             {
                 ExtractResultNames(result);
+                // Also extract positional annotations from header comments for the first command
+                if (headerCommentLength > 0)
+                {
+                    ExtractPerCommandAnnotations(result.Comment[..headerCommentLength], 0, result);
+                }
             }
 
             // Extract @define_param annotations
@@ -350,6 +402,7 @@ public static class SqlFileParser
             stmtBuilder.Dispose();
             dollarTag.Dispose();
             lastToken.Dispose();
+            interStmtCommentBuilder.Dispose();
         }
     }
 
@@ -420,6 +473,58 @@ public static class SqlFileParser
             if (name is not null)
             {
                 result.ResultNames[resultIndex] = name;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Extract positional per-command annotations from comments between statements.
+    /// Supports: @single, @result name, @result is name
+    /// </summary>
+    private static void ExtractPerCommandAnnotations(string comment, int statementIndex, SqlFileParseResult result)
+    {
+        var lines = comment.Split(['\n', '\r'], StringSplitOptions.RemoveEmptyEntries);
+
+        foreach (var line in lines)
+        {
+            var trimmed = line.Trim();
+            var s = trimmed.StartsWith('@') ? trimmed[1..] : trimmed;
+
+            // @single / @single_record / @single_result
+            if (s.Equals("single", StringComparison.OrdinalIgnoreCase) ||
+                s.Equals("single_record", StringComparison.OrdinalIgnoreCase) ||
+                s.Equals("single_result", StringComparison.OrdinalIgnoreCase))
+            {
+                result.SingleCommands.Add(statementIndex);
+                continue;
+            }
+
+            // @result name / @result is name (positional, no number)
+            if (s.StartsWith("result", StringComparison.OrdinalIgnoreCase) && s.Length > 6)
+            {
+                // Skip @resultN (numbered) — those are handled by ExtractResultNames
+                var afterResult = s[6..].TrimStart();
+                if (afterResult.Length == 0) continue;
+                if (char.IsDigit(afterResult[0])) continue;
+
+                var rest = afterResult;
+
+                var parts = rest.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+                string? name = null;
+
+                if (parts.Length >= 2 && string.Equals(parts[0], "is", StringComparison.OrdinalIgnoreCase))
+                {
+                    name = parts[1];
+                }
+                else if (parts.Length >= 1)
+                {
+                    name = parts[0];
+                }
+
+                if (name is not null)
+                {
+                    result.PositionalResultNames[statementIndex] = name;
+                }
             }
         }
     }

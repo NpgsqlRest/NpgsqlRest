@@ -1964,12 +1964,15 @@ public partial class NpgsqlRestEndpoint(
                     }
                     else
                     {
-                        // Query command — read result set as JSON array
+                        // Query command — read result set as JSON array (or object if @single)
                         // AllResultTypesAreUnknown forces all values to string — same as single-command path
                         mcCmd.AllResultTypesAreUnknown = true;
                         await using var mcReader = await mcCmd.ExecuteReaderAsync(CommandBehavior.SequentialAccess, cancellationToken);
 
-                        writer.Advance(Encoding.UTF8.GetBytes("[".AsSpan(), writer.GetSpan(1)));
+                        if (!currentCmd.IsSingle)
+                        {
+                            writer.Advance(Encoding.UTF8.GetBytes("[".AsSpan(), writer.GetSpan(1)));
+                        }
                         bool mcFirstRow = true;
                         var mcRowBuilder = StringBuilderPool.Rent(512);
                         var mcBufferRows = endpoint.BufferRows ?? Options.BufferRows;
@@ -2178,12 +2181,23 @@ public partial class NpgsqlRestEndpoint(
                                 } // end non-composite mc else
                             }
 
+                            if (currentCmd.IsSingle)
+                            {
+                                break;
+                            }
+
                             // Buffer rows flush
                             if (mcBufferRows > 0 && mcRowCount % mcBufferRows == 0)
                             {
                                 WriteStringBuilderToWriter(mcRowBuilder, writer);
                                 await writer.FlushAsync(cancellationToken);
                             }
+                        }
+
+                        if (currentCmd.IsSingle && mcRowCount == 0)
+                        {
+                            // Empty result with @single — write null
+                            writer.Advance(Encoding.UTF8.GetBytes(Consts.Null.AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(Consts.Null.Length))));
                         }
 
                         if (mcRowBuilder.Length > 0)
@@ -2193,7 +2207,10 @@ public partial class NpgsqlRestEndpoint(
                         StringBuilderPool.Return(mcRowBuilder);
                         if (mcCompositeBuffer is not null) StringBuilderPool.Return(mcCompositeBuffer);
 
-                        writer.Advance(Encoding.UTF8.GetBytes("]".AsSpan(), writer.GetSpan(1)));
+                        if (!currentCmd.IsSingle)
+                        {
+                            writer.Advance(Encoding.UTF8.GetBytes("]".AsSpan(), writer.GetSpan(1)));
+                        }
                     }
                 }
 
@@ -2543,7 +2560,16 @@ public partial class NpgsqlRestEndpoint(
                         currentColumnCount = cmdInfo.ColumnCount;
                     }
 
-                    if (routine.ReturnsSet && endpoint.Raw is false && binary is false && endpoint.ReturnSingleRecord is false)
+                    // Per-command single record: for multi-command, use per-command IsSingle only;
+                    // for single-command, use endpoint-level ReturnSingleRecord
+                    var isSingleRecord = multiCmd is not null
+                        ? (multiCmdIndex < multiCmd.Length && multiCmd[multiCmdIndex].IsSingle)
+                        : endpoint.ReturnSingleRecord;
+
+
+
+
+                    if (routine.ReturnsSet && endpoint.Raw is false && binary is false && isSingleRecord is false)
                     {
                         writer.Advance(Encoding.UTF8.GetBytes(Consts.OpenBracket.ToString().AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(1))));
                         if (shouldCache)
@@ -2873,7 +2899,7 @@ public partial class NpgsqlRestEndpoint(
                             cacheBuffer = null; // Release memory
                         }
 
-                        if (endpoint.ReturnSingleRecord)
+                        if (isSingleRecord)
                         {
                             break;
                         }
@@ -2891,9 +2917,14 @@ public partial class NpgsqlRestEndpoint(
                         }
                     } // end while
 
-                    if (endpoint.ReturnSingleRecord && rowCount == 0)
+                    if (isSingleRecord && rowCount == 0)
                     {
-                        if (endpoint.TextResponseNullHandling == TextResponseNullHandling.NullLiteral)
+                        if (multiCmd is not null)
+                        {
+                            // Multi-command: always write null for empty @single results
+                            writer.Advance(Encoding.UTF8.GetBytes(Consts.Null.AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(Consts.Null.Length))));
+                        }
+                        else if (endpoint.TextResponseNullHandling == TextResponseNullHandling.NullLiteral)
                         {
                             writer.Advance(Encoding.UTF8.GetBytes(Consts.Null.AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(Consts.Null.Length))));
                             await writer.FlushAsync(cancellationToken);
@@ -2920,7 +2951,7 @@ public partial class NpgsqlRestEndpoint(
                             WriteStringBuilderToWriter(rowBuilder, writer);
                             await writer.FlushAsync(cancellationToken);
                         }
-                        if (routine.ReturnsSet && endpoint.Raw is false && endpoint.ReturnSingleRecord is false)
+                        if (routine.ReturnsSet && endpoint.Raw is false && isSingleRecord is false)
                         {
                             writer.Advance(Encoding.UTF8.GetBytes(Consts.CloseBracket.ToString().AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(1))));
                             if (shouldCache)
