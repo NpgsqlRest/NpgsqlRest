@@ -10,60 +10,6 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
-### Aggregated Comment Annotation Logging
-
-Comment annotation debug logs are now aggregated into a single line per endpoint instead of one line per annotation. This significantly reduces log noise during development.
-
-**Before (multiple Debug lines per endpoint):**
-```
-[DBG] SQL file: who-am-i.sql mapped to GET /api/who-am-i has set HTTP by the comment annotation to GET /api/who-am-i
-[DBG] SQL file: who-am-i.sql mapped to GET /api/who-am-i has set REQUIRED AUTHORIZATION by the comment annotation.
-[DBG] SQL file: who-am-i.sql mapped to GET /api/who-am-i has set SINGLE RECORD by the comment annotation.
-```
-
-**After (one Debug line per endpoint):**
-```
-[DBG] SQL file: who-am-i.sql mapped to GET /api/who-am-i annotations: [HTTP GET, authorize, single]
-```
-
-The individual per-annotation log messages are still available at **Trace** level for detailed debugging.
-
----
-
-### New Comment Annotation: `@single`
-
-New comment annotation `single` (aliases: `single_record`, `single_result`) that returns a single record as a JSON object instead of a JSON array.
-
-Works across all endpoint sources: PostgreSQL functions, SQL files, and CRUD endpoints.
-
-**Usage:**
-
-```sql
--- PostgreSQL function
-CREATE FUNCTION get_user(int) RETURNS TABLE(id int, name text) ...
-COMMENT ON FUNCTION get_user IS 'HTTP GET
-@single';
-
--- SQL file
--- HTTP GET
--- @single
--- @param $1 id
-SELECT id, name FROM users WHERE id = $1;
-```
-
-**Without `@single`:** `[{"id": 1, "name": "alice"}]` (array)
-**With `@single`:** `{"id": 1, "name": "alice"}` (object)
-
-**Behavior:**
-
-- Multi-column results return a JSON object (no array wrapping)
-- Single unnamed column results return a bare JSON value (e.g., `"hello"`, `42`)
-- If the query returns multiple rows, only the first row is returned (early exit from rendering loop)
-- Empty results respect the `response_null` annotation: `empty_string` (default), `null_literal`, or `no_content` (204)
-- TypeScript client generates `Promise<IResponse>` instead of `Promise<IResponse[]>`
-
----
-
 ### New Endpoint Source Plugin: `NpgsqlRest.SqlFileSource`
 
 In addition to the existing endpoint sources — **RoutineSource** (PostgreSQL functions and procedures) and **CrudSource** (tables and views) — NpgsqlRest now supports a third source: **SQL files**.
@@ -697,6 +643,60 @@ Works on all endpoint sources: functions, procedures, tables/views (CRUD), and S
 - `HttpClientTypeHandler.SetSelfClient` — allows injecting a custom `HttpClient` for self-referencing calls (used by `WebApplicationFactory` in tests)
 - `HttpClientTypes` initialization moved before `Build()` in `NpgsqlRestBuilder` so definitions are available when endpoint sources process files
 - `InternalRequestHandler` — direct in-process endpoint invocation for self-referencing calls. Endpoint handlers stored in `FrozenDictionary` keyed by path. Uses `NonClosingMemoryStream` to prevent `PipeWriter.Complete` from closing the response stream. Supports path parameter matching via segment-by-segment template comparison with route value extraction
+
+---
+
+### New Comment Annotation: `@single`
+
+New comment annotation `single` (aliases: `single_record`, `single_result`) that returns a single record as a JSON object instead of a JSON array.
+
+Works across all endpoint sources: PostgreSQL functions, SQL files, and CRUD endpoints.
+
+**Usage:**
+
+```sql
+-- PostgreSQL function
+CREATE FUNCTION get_user(int) RETURNS TABLE(id int, name text) ...
+COMMENT ON FUNCTION get_user IS 'HTTP GET
+@single';
+
+-- SQL file
+-- HTTP GET
+-- @single
+-- @param $1 id
+SELECT id, name FROM users WHERE id = $1;
+```
+
+**Without `@single`:** `[{"id": 1, "name": "alice"}]` (array)
+**With `@single`:** `{"id": 1, "name": "alice"}` (object)
+
+**Behavior:**
+
+- Multi-column results return a JSON object (no array wrapping)
+- Single unnamed column results return a bare JSON value (e.g., `"hello"`, `42`)
+- If the query returns multiple rows, only the first row is returned (early exit from rendering loop)
+- Empty results respect the `response_null` annotation: `empty_string` (default), `null_literal`, or `no_content` (204)
+- TypeScript client generates `Promise<IResponse>` instead of `Promise<IResponse[]>`
+
+---
+
+### Aggregated Comment Annotation Logging
+
+Comment annotation debug logs are now aggregated into a single line per endpoint instead of one line per annotation. This significantly reduces log noise during development.
+
+**Before (multiple Debug lines per endpoint):**
+```
+[DBG] SQL file: who-am-i.sql mapped to GET /api/who-am-i has set HTTP by the comment annotation to GET /api/who-am-i
+[DBG] SQL file: who-am-i.sql mapped to GET /api/who-am-i has set REQUIRED AUTHORIZATION by the comment annotation.
+[DBG] SQL file: who-am-i.sql mapped to GET /api/who-am-i has set SINGLE RECORD by the comment annotation.
+```
+
+**After (one Debug line per endpoint):**
+```
+[DBG] SQL file: who-am-i.sql mapped to GET /api/who-am-i annotations: [HTTP GET, authorize, single]
+```
+
+The individual per-annotation log messages are still available at **Trace** level for detailed debugging.
 
 ---
 
