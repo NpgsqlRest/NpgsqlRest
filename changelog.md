@@ -10,6 +10,26 @@ Note: The changelog for the older version can be found here: [Changelog Archive]
 
 ---
 
+### Aggregated Comment Annotation Logging
+
+Comment annotation debug logs are now aggregated into a single line per endpoint instead of one line per annotation. This significantly reduces log noise during development.
+
+**Before (multiple Debug lines per endpoint):**
+```
+[DBG] SQL file: who-am-i.sql mapped to GET /api/who-am-i has set HTTP by the comment annotation to GET /api/who-am-i
+[DBG] SQL file: who-am-i.sql mapped to GET /api/who-am-i has set REQUIRED AUTHORIZATION by the comment annotation.
+[DBG] SQL file: who-am-i.sql mapped to GET /api/who-am-i has set SINGLE RECORD by the comment annotation.
+```
+
+**After (one Debug line per endpoint):**
+```
+[DBG] SQL file: who-am-i.sql mapped to GET /api/who-am-i annotations: [HTTP GET, authorize, single]
+```
+
+The individual per-annotation log messages are still available at **Trace** level for detailed debugging.
+
+---
+
 ### New Comment Annotation: `@single`
 
 New comment annotation `single` (aliases: `single_record`, `single_result`) that returns a single record as a JSON object instead of a JSON array.

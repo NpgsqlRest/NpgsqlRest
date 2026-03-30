@@ -6,9 +6,21 @@ internal static partial class DefaultCommentParser
 {
     /// <summary>
     /// Returns Logger only when DebugLogCommentAnnotationEvents is enabled, otherwise null.
-    /// This allows comment annotation debug logs to be suppressed when the option is disabled.
+    /// This allows comment annotation trace logs to be suppressed when the option is disabled.
     /// </summary>
     private static ILogger? CommentLogger => Options.DebugLogCommentAnnotationEvents ? Logger : null;
+
+    /// <summary>
+    /// Thread-static list collecting short annotation labels during Parse().
+    /// Used to emit a single aggregated Debug log per endpoint instead of many per-annotation Trace logs.
+    /// </summary>
+    [ThreadStatic]
+    private static List<string>? _annotationLabels;
+
+    private static void TrackAnnotation(string label)
+    {
+        _annotationLabels?.Add(label);
+    }
     // Regex to match path parameters like {param_name}, {paramName}, or {param_name?} (optional)
     [GeneratedRegex(@"\{(\w+)\??\}", RegexOptions.Compiled)]
     private static partial Regex PathParameterRegex();

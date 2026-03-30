@@ -40,6 +40,8 @@ internal static partial class DefaultCommentParser
             var urlDescription = string.Concat(routineEndpoint.Method.ToString(), " ", routineEndpoint.Path);
             var description = string.Concat(routineDescription, " mapped to ", urlDescription);
 
+            _annotationLabels = new List<string>();
+
             string[] lines = comment.Split(NewlineSeparator, StringSplitOptions.RemoveEmptyEntries);
             routineEndpoint.CommentWordLines = new string[lines.Length][];
             bool hasHttpTag = false;
@@ -77,6 +79,7 @@ internal static partial class DefaultCommentParser
                     {
                         HandleCustomParameter(routineEndpoint, customParamName, customParamValue, description);
                     }
+                    TrackAnnotation(line);
                 }
 
                 // key: value
@@ -84,6 +87,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && SplitBySeparatorChar(line, Consts.Colon, out var headerName, out var headerValue))
                 {
                     HandleHeader(routineEndpoint, headerName, headerValue, description);
+                    TrackAnnotation(line);
                 }
 
                 // disabled
@@ -91,6 +95,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && StrEquals(wordsLower[0], DisabledKey))
                 {
                     HandleDisabled(routine, wordsLower, len, ref disabled);
+                    TrackAnnotation(line);
                 }
 
                 // enabled
@@ -98,6 +103,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && StrEquals(wordsLower[0], EnabledKey))
                 {
                     HandleEnabled(routine, wordsLower, len, ref disabled);
+                    TrackAnnotation(line);
                 }
 
                 // internal
@@ -105,7 +111,8 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], InternalKey))
                 {
                     routineEndpoint.InternalOnly = true;
-                    CommentLogger?.LogDebug("Endpoint {Description} marked as internal-only", description);
+                    CommentLogger?.LogTrace("Endpoint {Description} marked as internal-only", description);
+                    TrackAnnotation(line);
                 }
 
                 // HTTP
@@ -115,12 +122,14 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && StrEquals(wordsLower[0], HttpKey))
                 {
                     HandleHttp(routineEndpoint, wordsLower, len, description, ref urlDescription, ref description, routineDescription, ref hasHttpTag);
+                    TrackAnnotation(line);
                 }
 
                 // PATH path
                 else if (haveTag is true && StrEquals(wordsLower[0], PathKey))
                 {
                     HandlePath(routineEndpoint, wordsLower, description, ref urlDescription, ref description, routineDescription);
+                    TrackAnnotation(line);
                 }
 
                 // request_param_type  [ [ query_string | query ] | [ body_json |  body ] ]
@@ -128,6 +137,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && len >= 2 && StrEqualsToArray(wordsLower[0], ParamTypeKey))
                 {
                     HandleParamType(routineEndpoint, wordsLower, description, originalParamType);
+                    TrackAnnotation(line);
                 }
 
                 // authorize
@@ -137,6 +147,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], AuthorizeKey))
                 {
                     HandleAuthorize(routineEndpoint, wordsLower, description);
+                    TrackAnnotation(line);
                 }
 
                 // allow_anonymous
@@ -146,6 +157,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], AllowAnonymousKey))
                 {
                     HandleAllowAnonymous(routineEndpoint, description);
+                    TrackAnnotation(line);
                 }
 
                 // command_timeout interval
@@ -153,6 +165,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && len >= 2 && StrEqualsToArray(wordsLower[0], TimeoutKey))
                 {
                     HandleTimeout(routineEndpoint, wordsLower, description);
+                    TrackAnnotation(line);
                 }
 
                 // request_headers_mode [ ignore | context | parameter ]
@@ -160,6 +173,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], RequestHeadersModeKey))
                 {
                     HandleRequestHeadersMode(routineEndpoint, wordsLower, description);
+                    TrackAnnotation(line);
                 }
 
                 // request_headers_parameter_name name
@@ -167,6 +181,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], RequestHeadersParameterNameKey))
                 {
                     HandleRequestHeadersParameterName(routineEndpoint, wordsLower, len, description);
+                    TrackAnnotation(line);
                 }
 
                 // body_parameter_name name
@@ -174,6 +189,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], BodyParameterNameKey))
                 {
                     HandleBodyParameterName(routineEndpoint, wordsLower, len, description);
+                    TrackAnnotation(line);
                 }
 
                 // response_null_handling [ empty_string | empty | null_literal | null | no_content | 204 | 204_no_content ]
@@ -181,6 +197,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], TextResponseNullHandlingKey))
                 {
                     HandleResponseNullHandling(routineEndpoint, wordsLower, description);
+                    TrackAnnotation(line);
                 }
 
                 // query_string_null_handling [ empty_string | empty | null_literal | null |  ignore ]
@@ -190,6 +207,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], QueryStringNullHandlingKey))
                 {
                     HandleQueryStringNullHandling(routineEndpoint, wordsLower, description);
+                    TrackAnnotation(line);
                 }
 
                 // login
@@ -197,6 +215,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], LoginKey))
                 {
                     HandleLogin(routineEndpoint, description);
+                    TrackAnnotation(line);
                 }
 
                 // logout
@@ -204,6 +223,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], LogoutKey))
                 {
                     HandleLogout(routineEndpoint, description);
+                    TrackAnnotation(line);
                 }
 
                 // buffer_rows number
@@ -211,6 +231,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && len >= 2 && StrEqualsToArray(wordsLower[0], BufferRowsKey))
                 {
                     HandleBufferRows(routineEndpoint, wordsLower, description);
+                    TrackAnnotation(line);
                 }
 
                 // raw
@@ -219,6 +240,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], RawKey))
                 {
                     HandleRaw(routineEndpoint, description);
+                    TrackAnnotation(line);
                 }
 
                 // single
@@ -226,6 +248,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], SingleKey))
                 {
                     HandleSingle(routineEndpoint, description);
+                    TrackAnnotation(line);
                 }
 
                 // separator [ value ]
@@ -233,6 +256,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && line.StartsWith(string.Concat(SeparatorKey[0], " ")))
                 {
                     HandleSeparator(routineEndpoint, line, wordsLower, description);
+                    TrackAnnotation(line);
                 }
 
                 // new_line [ value ]
@@ -240,6 +264,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && len >= 2 && line.StartsWith(string.Concat(NewLineKey[0], " ")))
                 {
                     HandleNewLine(routineEndpoint, line, wordsLower, description);
+                    TrackAnnotation(line);
                 }
 
                 // columns
@@ -248,6 +273,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], ColumnNamesKey))
                 {
                     HandleColumnNames(routineEndpoint, description);
+                    TrackAnnotation(line);
                 }
 
                 // sensitive
@@ -255,12 +281,14 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], SecuritySensitiveKey))
                 {
                     HandleSecuritySensitive(routineEndpoint, description);
+                    TrackAnnotation(line);
                 }
 
                 // user_context
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], UserContextKey))
                 {
                     HandleUserContext(routineEndpoint, description);
+                    TrackAnnotation(line);
                 }
 
                 // user_parameters
@@ -268,6 +296,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], UserParemetersKey))
                 {
                     HandleUserParameters(routineEndpoint, description);
+                    TrackAnnotation(line);
                 }
 
                 // cached
@@ -275,6 +304,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && StrEquals(wordsLower[0], CacheKey))
                 {
                     HandleCached(routine, routineEndpoint, words, len, description);
+                    TrackAnnotation(line);
                 }
 
                 // cache_expires [ value ]
@@ -282,6 +312,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && len >= 2 && StrEqualsToArray(wordsLower[0], CacheExpiresInKey))
                 {
                     HandleCacheExpiresIn(routineEndpoint, wordsLower, description);
+                    TrackAnnotation(line);
                 }
 
                 // connection
@@ -289,6 +320,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && len >= 2 && StrEqualsToArray(wordsLower[0], ConnectionNameKey))
                 {
                     HandleConnectionName(routineEndpoint, wordsLower, description);
+                    TrackAnnotation(line);
                 }
 
                 // upload
@@ -297,6 +329,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && StrEquals(wordsLower[0], UploadKey))
                 {
                     HandleUpload(routine, routineEndpoint, wordsLower, len, description);
+                    TrackAnnotation(line);
                 }
 
                 // param param_name1 is hash of param_name2
@@ -306,28 +339,32 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], ParameterKey))
                 {
                     HandleParameter(routine, routineEndpoint, wordsLower, words, len, description);
+                    TrackAnnotation(line);
                 }
-                
+
                 // sse path [ path ] [ on info | notice | warning ]
                 // sse_path [ path ] [ on info | notice | warning ]
                 // sse_events_path [ path ] [ on info | notice | warning ]
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], SseEventsStreamingPathKey))
                 {
                     HandleSseEventsPath(routineEndpoint, wordsLower, words, len, description);
+                    TrackAnnotation(line);
                 }
-                
+
                 // sse_level [ info | notice | warning ]
                 // sse_events_level [ info | notice | warning ]
                 else if (haveTag is true && len >= 2 && StrEqualsToArray(wordsLower[0], SseEventsLevelKey))
                 {
                     HandleSseEventsLevel(routineEndpoint, wordsLower, words, line, description);
+                    TrackAnnotation(line);
                 }
-                
+
                 // sse_scope [ [ matching | authorize | all ] | [ authorize [ role_or_user1, role_or_user1, role_or_user1 [, ...] ] ] ]
                 // sse_events_scope [ [ matching | authorize | all ] | [ authorize [ role_or_user1, role_or_user1, role_or_user1 [, ...] ] ] ]
                 else if (haveTag is true && len >= 2 && StrEqualsToArray(wordsLower[0], SseEventsStreamingScopeKey))
                 {
                     HandleSseEventsScope(routineEndpoint, wordsLower, line, description);
+                    TrackAnnotation(line);
                 }
 
                 // basic_authentication [ username ] [ password ]
@@ -335,6 +372,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], BasicAuthKey))
                 {
                     HandleBasicAuth(routineEndpoint, words, len, description);
+                    TrackAnnotation(line);
                 }
 
                 // basic_authentication_realm [ realm ]
@@ -343,6 +381,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && len > 1 && StrEqualsToArray(wordsLower[0], BasicAuthRealmKey))
                 {
                     HandleBasicAuthRealm(routineEndpoint, words, description);
+                    TrackAnnotation(line);
                 }
 
                 // basic_authentication_command [ command ]
@@ -351,6 +390,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && len > 1 && StrEqualsToArray(words[0], BasicAuthCommandKey))
                 {
                     HandleBasicAuthCommand(routineEndpoint, words, line, description);
+                    TrackAnnotation(line);
                 }
 
                 // retry_strategy_name [ name ]
@@ -359,22 +399,25 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && len >= 2 && StrEqualsToArray(wordsLower[0], RetryStrategyKey))
                 {
                     HandleRetryStrategy(routineEndpoint, words, description);
+                    TrackAnnotation(line);
                 }
-                
+
                 // rate_limiter_policy_name [ name ]
                 // rate_limiter_policy [ name ]
                 // rate_limiter [ name ]
                 else if (haveTag is true && len >= 2 && StrEqualsToArray(wordsLower[0], RateLimiterPolicyKey))
                 {
                     HandleRateLimiterPolicy(routineEndpoint, words, description);
+                    TrackAnnotation(line);
                 }
-                
+
                 // error_code_policy_name [ name ]
                 // error_code_policy [ name ]
                 // error_code [ name ]
                 else if (haveTag is true && len >= 2 && StrEqualsToArray(wordsLower[0], ErrorCodePolicyKey))
                 {
                     HandleErrorCodePolicy(routineEndpoint, words, description);
+                    TrackAnnotation(line);
                 }
 
                 // validate _param_name using rule_name
@@ -382,6 +425,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && len >= 4 && StrEqualsToArray(wordsLower[0], ValidateKey))
                 {
                     HandleValidate(routine, routineEndpoint, words, len, description);
+                    TrackAnnotation(line);
                 }
 
                 // proxy
@@ -392,6 +436,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], ProxyKey))
                 {
                     HandleProxy(routine, routineEndpoint, wordsLower, words, len, description);
+                    TrackAnnotation(line);
                 }
 
                 // proxy_out [ GET | POST | PUT | DELETE | PATCH ] [ host_url ] [ ?query={param} ]
@@ -399,6 +444,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], ProxyOutKey))
                 {
                     HandleProxyOut(routine, routineEndpoint, wordsLower, words, len, description);
+                    TrackAnnotation(line);
                 }
 
                 // encrypt
@@ -406,6 +452,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], EncryptKey))
                 {
                     HandleEncrypt(routine, routineEndpoint, wordsLower, len, description);
+                    TrackAnnotation(line);
                 }
 
                 // decrypt
@@ -413,6 +460,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], DecryptKey))
                 {
                     HandleDecrypt(routineEndpoint, wordsLower, len, description);
+                    TrackAnnotation(line);
                 }
 
                 // nested
@@ -421,6 +469,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], NestedJsonKey))
                 {
                     HandleNestedJson(routineEndpoint, description);
+                    TrackAnnotation(line);
                 }
             }
             if (disabled)
@@ -451,6 +500,12 @@ internal static partial class DefaultCommentParser
             {
                 UpdateColumnDescriptorsFromRetypedParams(routine);
             }
+
+            if (_annotationLabels is { Count: > 0 })
+            {
+                Logger?.CommentAnnotationsSummary(description, string.Join(", ", _annotationLabels));
+            }
+            _annotationLabels = null;
         }
 
         return routineEndpoint;
