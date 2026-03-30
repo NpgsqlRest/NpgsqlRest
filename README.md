@@ -49,14 +49,14 @@ select id, status from orders where id = $1;
 That gives you `POST /api/process-order`:
 
 ```json
-{"validate": [{"found": 1}], "result2": 1, "confirm": [{"id": 42, "status": "processing"}]}
+{"validate": [1], "result2": 1, "confirm": [{"id": 42, "status": "processing"}]}
 ```
 
 And a generated TypeScript client with full type safety:
 
 ```typescript
 export async function processOrder(orderid: number) : Promise<{
-    validate: { found: number }[],
+    validate: number[],
     result2: number,
     confirm: { id: number, status: string }[]
 }> {
@@ -84,10 +84,6 @@ SQL files are the easiest way to get started — drop a `.sql` file in a folder 
 All sources share the same annotation system: `@authorize`, `@param`, `@cached`, `@path`, and 50+ others.
 
 ## Features
-
-<p align="center">
-  <img src="system-diagram.png?v=2" alt="NpgsqlRest System Diagram" width="280">
-</p>
 
 - **Multi-command SQL scripts** — multiple statements in one file execute as a batch, returning named result sets
 - **TypeScript/JS code generation** and `.http` files — types flow from PostgreSQL to your frontend

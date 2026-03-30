@@ -107,7 +107,7 @@ SELECT id, status FROM orders WHERE id = $1;
 
 ```json
 {
-  "validate": [{"count": 1}],
+  "validate": [1],
   "result2": 1,
   "confirm": [{"id": 42, "status": "processing"}]
 }
