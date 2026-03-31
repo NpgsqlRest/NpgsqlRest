@@ -63,9 +63,9 @@ public class ExtraSemicolonTests
     public void InlineCommentsAfterSemicolon_StatementsClean()
     {
         var sql = """
-            SELECT 1; -- @result1 cmd1
-            SELECT 2; -- @result2 cmd2
-            SELECT 3; -- @result3 cmd3
+            SELECT 1; -- @result cmd1
+            SELECT 2; -- @result cmd2
+            SELECT 3; -- @result cmd3
             """;
         var result = SqlFileParser.Parse(sql);
         result.Statements.Should().HaveCount(3);
@@ -78,28 +78,31 @@ public class ExtraSemicolonTests
     public void InlineCommentsAfterSemicolon_AnnotationsExtracted()
     {
         var sql = """
-            SELECT 1; -- @result1 cmd1
-            SELECT 2; -- @result2 cmd2
-            SELECT 3; -- @result3 cmd3
+            SELECT 1; -- @result cmd1
+            SELECT 2; -- @result cmd2
+            SELECT 3; -- @result cmd3
             """;
         var result = SqlFileParser.Parse(sql);
-        result.Comment.Should().Contain("@result1 cmd1");
-        result.Comment.Should().Contain("@result2 cmd2");
-        result.Comment.Should().Contain("@result3 cmd3");
+        result.Comment.Should().Contain("@result cmd1");
+        result.Comment.Should().Contain("@result cmd2");
+        result.Comment.Should().Contain("@result cmd3");
     }
 
     [Fact]
-    public void InlineCommentsAfterSemicolon_ResultNamesResolved()
+    public void InlineCommentsAfterSemicolon_PositionalResultNamesResolved()
     {
+        // Comments on same line after ; apply to the SAME statement (the one just completed)
         var sql = """
-            SELECT 1; -- @result1 cmd1
-            SELECT 2; -- @result2 cmd2
-            SELECT 3; -- @result3 cmd3
+            SELECT 1; -- @result first
+            SELECT 2; -- @result second
+            SELECT 3;
             """;
         var result = SqlFileParser.Parse(sql);
-        result.ResultNames.Should().ContainKey(1);
-        result.ResultNames[1].Should().Be("cmd1");
-        result.ResultNames[2].Should().Be("cmd2");
-        result.ResultNames[3].Should().Be("cmd3");
+        // "first" is on same line as SELECT 1's ;, so it applies to command index 0
+        result.PositionalResultNames.Should().ContainKey(0).WhoseValue.Should().Be("first");
+        // "second" is on same line as SELECT 2's ;, so it applies to command index 1
+        result.PositionalResultNames.Should().ContainKey(1).WhoseValue.Should().Be("second");
+        // SELECT 3 has no annotation
+        result.PositionalResultNames.Should().NotContainKey(2);
     }
 }

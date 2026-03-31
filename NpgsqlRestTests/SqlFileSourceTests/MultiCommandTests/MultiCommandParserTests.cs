@@ -5,74 +5,121 @@ namespace NpgsqlRestTests.SqlFileSourceTests;
 public class MultiCommandParserTests
 {
     [Fact]
-    public void ResultAnnotation_SimpleForm_Extracted()
+    public void PositionalResult_InHeader_NamesFirstCommand()
     {
         var sql = """
-            -- @result1 validate
-            -- @result2 process
+            -- @result validate
             select 1;
-            select 2;
-            select 3;
-            """;
-        var result = SqlFileParser.Parse(sql);
-        result.Statements.Should().HaveCount(3);
-        result.ResultNames.Should().ContainKey(1);
-        result.ResultNames[1].Should().Be("validate");
-        result.ResultNames[2].Should().Be("process");
-        result.ResultNames.Should().NotContainKey(3);
-    }
-
-    [Fact]
-    public void ResultAnnotation_IsForm_Extracted()
-    {
-        var sql = """
-            -- @result1 is lookup
-            -- @result3 is verify
-            select 1;
-            update foo set x = 1;
             select 2;
             """;
         var result = SqlFileParser.Parse(sql);
-        result.ResultNames[1].Should().Be("lookup");
-        result.ResultNames.Should().NotContainKey(2);
-        result.ResultNames[3].Should().Be("verify");
+        result.Statements.Should().HaveCount(2);
+        result.PositionalResultNames.Should().ContainKey(0).WhoseValue.Should().Be("validate");
+        result.PositionalResultNames.Should().NotContainKey(1);
     }
 
     [Fact]
-    public void NoAnnotations_EmptyResultNames()
+    public void PositionalResult_BetweenStatements_NamesNextCommand()
+    {
+        var sql = """
+            select 1;
+            -- @result verify
+            select 2;
+            """;
+        var result = SqlFileParser.Parse(sql);
+        result.PositionalResultNames.Should().NotContainKey(0);
+        result.PositionalResultNames.Should().ContainKey(1).WhoseValue.Should().Be("verify");
+    }
+
+    [Fact]
+    public void PositionalResult_IsForm_Works()
+    {
+        var sql = """
+            -- @result is lookup
+            select 1;
+            -- @result is verify
+            select 2;
+            """;
+        var result = SqlFileParser.Parse(sql);
+        result.PositionalResultNames.Should().ContainKey(0).WhoseValue.Should().Be("lookup");
+        result.PositionalResultNames.Should().ContainKey(1).WhoseValue.Should().Be("verify");
+    }
+
+    [Fact]
+    public void NoAnnotations_EmptyPositionalResultNames()
     {
         var result = SqlFileParser.Parse("select 1; select 2");
-        result.ResultNames.Should().BeEmpty();
+        result.PositionalResultNames.Should().BeEmpty();
     }
 
     [Fact]
-    public void SingleStatement_NoResultNames()
+    public void SingleStatement_NoPositionalResultNames()
     {
         var result = SqlFileParser.Parse("select 1");
-        result.ResultNames.Should().BeEmpty();
+        result.PositionalResultNames.Should().BeEmpty();
     }
 
     [Fact]
-    public void ResultAnnotation_WithAtPrefix_Works()
+    public void PositionalResult_WithoutAtPrefix_Works()
     {
         var sql = """
-            -- @result1 step1
+            -- result step1
             select 1;
             select 2;
             """;
         var result = SqlFileParser.Parse(sql);
-        result.ResultNames[1].Should().Be("step1");
+        result.PositionalResultNames.Should().ContainKey(0).WhoseValue.Should().Be("step1");
     }
 
     [Fact]
-    public void ResultAnnotation_WithoutAtPrefix_Works()
+    public void Skip_InHeader_MarksFirstCommand()
     {
         var sql = """
-            -- result1 step1
+            -- @skip
+            begin;
             select 1;
+            """;
+        var result = SqlFileParser.Parse(sql);
+        result.SkipCommands.Should().Contain(0);
+        result.SkipCommands.Should().NotContain(1);
+    }
+
+    [Fact]
+    public void Skip_BetweenStatements_MarksNextCommand()
+    {
+        var sql = """
+            select 1;
+            -- @skip
+            do $$ begin perform 1; end; $$;
             select 2;
             """;
         var result = SqlFileParser.Parse(sql);
-        result.ResultNames[1].Should().Be("step1");
+        result.SkipCommands.Should().NotContain(0);
+        result.SkipCommands.Should().Contain(1);
+        result.SkipCommands.Should().NotContain(2);
+    }
+
+    [Fact]
+    public void SkipResult_Alias_Works()
+    {
+        var sql = """
+            -- @skip_result
+            begin;
+            select 1;
+            """;
+        var result = SqlFileParser.Parse(sql);
+        result.SkipCommands.Should().Contain(0);
+    }
+
+    [Fact]
+    public void NoResult_Alias_Works()
+    {
+        var sql = """
+            -- @no_result
+            begin;
+            select 1;
+            """;
+        var result = SqlFileParser.Parse(sql);
+        result.SkipCommands.Should().Contain(0);
     }
 }

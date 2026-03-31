@@ -6,11 +6,11 @@ public static partial class SqlFiles
     {
         File.WriteAllText(Path.Combine(Dir, "multi_mixed.sql"), """
             -- HTTP POST
-            -- @result1 lookup
-            -- @result3 verify
             -- @param $1 id
+            -- @result lookup
             select name from sql_describe_test where id = $1;
             insert into sql_describe_test (id, name) values ($1 + 1000, 'multi_test');
+            -- @result verify
             select count(*) as total from sql_describe_test;
             """);
     }

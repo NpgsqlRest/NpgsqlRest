@@ -1924,19 +1924,10 @@ public partial class NpgsqlRestEndpoint(
                 // Write opening {
                 writer.Advance(Encoding.UTF8.GetBytes("{".AsSpan(), writer.GetSpan(1)));
 
+                bool firstResultWritten = false;
                 for (int cmdIndex = 0; cmdIndex < routine.MultiCommandInfo.Length; cmdIndex++)
                 {
                     var currentCmd = routine.MultiCommandInfo[cmdIndex];
-
-                    // Write comma between results
-                    if (cmdIndex > 0)
-                    {
-                        writer.Advance(Encoding.UTF8.GetBytes(",".AsSpan(), writer.GetSpan(1)));
-                    }
-
-                    // Write "resultName":
-                    var keyJson = string.Concat(currentCmd.JsonName, ":");
-                    writer.Advance(Encoding.UTF8.GetBytes(keyJson.AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(keyJson.Length))));
 
                     // Build a command for this statement
                     await using var mcCmd = new NpgsqlCommand(currentCmd.Statement, connection);
@@ -1954,6 +1945,24 @@ public partial class NpgsqlRestEndpoint(
                             Value = srcParam.Value ?? DBNull.Value
                         });
                     }
+
+                    // Skipped commands: execute for side effects, no result key
+                    if (currentCmd.IsSkipped)
+                    {
+                        await mcCmd.ExecuteNonQueryAsync(cancellationToken);
+                        continue;
+                    }
+
+                    // Write comma between results
+                    if (firstResultWritten)
+                    {
+                        writer.Advance(Encoding.UTF8.GetBytes(",".AsSpan(), writer.GetSpan(1)));
+                    }
+                    firstResultWritten = true;
+
+                    // Write "resultName":
+                    var keyJson = string.Concat(currentCmd.JsonName, ":");
+                    writer.Advance(Encoding.UTF8.GetBytes(keyJson.AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(keyJson.Length))));
 
                     if (currentCmd.ColumnCount == 0)
                     {

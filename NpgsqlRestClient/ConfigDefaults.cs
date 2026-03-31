@@ -947,7 +947,8 @@ public static class ConfigDefaults
             ["ErrorMode"] = "Exit",
             ["ResultPrefix"] = "result",
             ["UnnamedSingleColumnSet"] = true,
-            ["NestedJsonForCompositeTypes"] = false
+            ["NestedJsonForCompositeTypes"] = false,
+            ["SkipNonQueryCommands"] = true
         };
     }
 

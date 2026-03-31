@@ -503,6 +503,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 mcResp.AppendLine($"interface {responseName} {{");
                 foreach (var cmdInfo in routine.MultiCommandInfo)
                 {
+                    if (cmdInfo.IsSkipped) continue;
                     if (cmdInfo.ColumnCount == 0)
                     {
                         // Void command → rows affected count

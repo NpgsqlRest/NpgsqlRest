@@ -26,13 +26,13 @@ public static partial class SqlFiles
         // Two params used naturally across three commands
         File.WriteAllText(Path.Combine(Dir, "multi_complex_params.sql"), """
             -- HTTP POST
-            -- @result1 check_exists
-            -- @result2 update_result
-            -- @result3 final_check
             -- @param $1 id
             -- @param $2 target_name
+            -- @result check_exists
             select count(*) as cnt from sql_describe_test where id = $1 and name != $2;
+            -- @result update_result
             update sql_describe_test set name = $2 where id = $1;
+            -- @result final_check
             select id, name from sql_describe_test where id = $1 and name = $2;
             """);
 

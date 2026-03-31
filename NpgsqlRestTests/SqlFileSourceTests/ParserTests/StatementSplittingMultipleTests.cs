@@ -29,9 +29,9 @@ public class StatementSplittingMultipleTests
     }
 
     [Fact]
-    public void MultiStatement_ResultNamesEmptyByDefault()
+    public void MultiStatement_PositionalResultNamesEmptyByDefault()
     {
         var result = SqlFileParser.Parse("SELECT 1; SELECT 2; SELECT 3");
-        result.ResultNames.Should().BeEmpty(); // no @resultN annotations
+        result.PositionalResultNames.Should().BeEmpty();
     }
 }

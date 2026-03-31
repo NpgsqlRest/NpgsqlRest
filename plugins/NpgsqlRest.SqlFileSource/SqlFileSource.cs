@@ -299,6 +299,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
         if (isMultiCommand)
         {
             multiCommandInfo = new MultiCommandInfo[commandDescribes.Count];
+            int resultCounter = 0; // Only incremented for non-skipped commands
             for (int ci = 0; ci < commandDescribes.Count; ci++)
             {
                 var cmdCols = commandDescribes[ci].Columns ?? [];
@@ -313,32 +314,36 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
                     ResolveCompositeType(cmdColDescriptors[j]);
                 }
 
-                // Result name: positional @result > @resultN > default prefix + index
-                var resultIndex = ci + 1;
+                // Determine if this command should be skipped
+                bool isSkipped = parseResult.SkipCommands.Contains(ci) ||
+                    (options.SkipNonQueryCommands && IsNonQueryCommand(parseResult.Statements[ci]));
+
+                // Result name: only assign meaningful names to non-skipped commands
                 string resultName;
-                if (parseResult.PositionalResultNames.TryGetValue(ci, out var positionalName))
+                if (isSkipped)
                 {
-                    resultName = positionalName;
-                    NpgsqlRestOptions.Logger?.LogDebug(
-                        "SqlFileSource: {FilePath} result{Index} renamed to \"{Name}\" by positional @result annotation",
-                        filePath, resultIndex, positionalName);
-                }
-                else if (parseResult.ResultNames.TryGetValue(resultIndex, out var annotated))
-                {
-                    resultName = annotated;
-                    NpgsqlRestOptions.Logger?.LogDebug(
-                        "SqlFileSource: {FilePath} result{Index} renamed to \"{Name}\" by @result{Index} annotation",
-                        filePath, resultIndex, annotated, resultIndex);
+                    resultName = "";
                 }
                 else
                 {
-                    resultName = string.Concat(options.ResultPrefix, resultIndex.ToString());
+                    resultCounter++;
+                    if (parseResult.PositionalResultNames.TryGetValue(ci, out var positionalName))
+                    {
+                        resultName = positionalName;
+                        NpgsqlRestOptions.Logger?.LogDebug(
+                            "SqlFileSource: {FilePath} result{Index} renamed to \"{Name}\" by positional @result annotation",
+                            filePath, resultCounter, positionalName);
+                    }
+                    else
+                    {
+                        resultName = string.Concat(options.ResultPrefix, resultCounter.ToString());
+                    }
                 }
 
                 multiCommandInfo[ci] = new MultiCommandInfo
                 {
                     Name = resultName,
-                    JsonName = PgConverters.SerializeString(resultName),
+                    JsonName = isSkipped ? "" : PgConverters.SerializeString(resultName),
                     Statement = parseResult.Statements[ci],
                     ParamCount = SqlFileDescriber.FindMaxParamIndex(parseResult.Statements[ci]),
                     ColumnCount = cmdCols.Length,
@@ -348,6 +353,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
                     ReturnsUnnamedSet = options.UnnamedSingleColumnSet && cmdCols.Length == 1
                         && !cmdColDescriptors[0].IsCompositeType,
                     IsSingle = parseResult.SingleCommands.Contains(ci),
+                    IsSkipped = isSkipped,
                 };
             }
         }
@@ -662,6 +668,37 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
                 yield return file;
             }
         }
+    }
+
+    /// <summary>
+    /// Keywords for non-query commands that produce no meaningful result in multi-command responses.
+    /// </summary>
+    private static readonly HashSet<string> NonQueryKeywords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "BEGIN", "COMMIT", "END", "ROLLBACK", "SAVEPOINT", "RELEASE",
+        "SET", "RESET", "DISCARD", "LOCK", "LISTEN", "NOTIFY", "DEALLOCATE"
+    };
+
+    /// <summary>
+    /// Check if a statement is a non-query command (transaction control, session, DO block, etc.)
+    /// that should be skipped from multi-command results.
+    /// </summary>
+    private static bool IsNonQueryCommand(string statement)
+    {
+        var trimmed = statement.AsSpan().TrimStart();
+        int end = 0;
+        while (end < trimmed.Length && char.IsLetter(trimmed[end]))
+            end++;
+        if (end == 0) return false;
+        var keyword = trimmed[..end].ToString();
+
+        // DO blocks: must be followed by whitespace or $ (to avoid matching identifiers starting with DO)
+        if (string.Equals(keyword, "DO", StringComparison.OrdinalIgnoreCase))
+        {
+            return end >= trimmed.Length || char.IsWhiteSpace(trimmed[end]) || trimmed[end] == '$';
+        }
+
+        return NonQueryKeywords.Contains(keyword);
     }
 
     /// <summary>

@@ -223,4 +223,11 @@ public class MultiCommandInfo
     /// instead of a JSON array. Configured via positional @single annotation.
     /// </summary>
     public bool IsSingle { get; init; }
+
+    /// <summary>
+    /// When true, this command is executed for side effects but produces no result key
+    /// in the JSON response. Used for transaction control, session commands, DO blocks,
+    /// and the @skip annotation.
+    /// </summary>
+    public bool IsSkipped { get; init; }
 }

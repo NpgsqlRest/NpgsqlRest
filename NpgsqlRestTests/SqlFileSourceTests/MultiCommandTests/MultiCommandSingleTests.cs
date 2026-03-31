@@ -90,13 +90,12 @@ public static partial class SqlFiles
             select count(*) as total from sql_describe_test;
             """);
 
-        // Mixed: @resultN (numbered) and positional @result coexist
+        // Both commands use positional @result
         File.WriteAllText(Path.Combine(Dir, "multi_mixed_result.sql"), """
             -- HTTP GET
             -- @param $1 id
-            -- @result2 count
             select id, name from sql_describe_test where id = $1;
-            -- @result first
+            -- @result count
             select id, name from sql_describe_test order by id limit 1;
             """);
     }
@@ -219,7 +218,7 @@ public class MultiCommandSingleTests(SqlFileSourceTestFixture test)
     }
 
     [Fact]
-    public async Task MultiMixedResult_NumberedAndPositionalCoexist()
+    public async Task MultiMixedResult_BothPositional()
     {
         using var response = await test.Client.GetAsync("/api/multi-mixed-result?id=1");
         var content = await response.Content.ReadAsStringAsync();
@@ -228,7 +227,7 @@ public class MultiCommandSingleTests(SqlFileSourceTestFixture test)
         using var doc = JsonDocument.Parse(content);
         // First result: no annotation → default "result1"
         doc.RootElement.TryGetProperty("result1", out _).Should().BeTrue();
-        // Second result: positional @result wins over @result2 (numbered)
-        doc.RootElement.TryGetProperty("first", out _).Should().BeTrue();
+        // Second result: positional @result count
+        doc.RootElement.TryGetProperty("count", out _).Should().BeTrue();
     }
 }

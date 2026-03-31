@@ -5,14 +5,15 @@ public static partial class SqlFiles
     public static void MultiCommandTransactionTests()
     {
         // Transactional script: BEGIN + mutations + COMMIT + verification SELECT
+        // BEGIN and COMMIT are auto-skipped (SkipNonQueryCommands=true by default)
         File.WriteAllText(Path.Combine(Dir, "multi_transaction.sql"), """
             -- HTTP POST
-            -- @result4 verification
             -- @param $1 id
             -- @param $2 new_name
             begin;
             update sql_describe_test set name = $2 where id = $1;
             commit;
+            -- @result verification
             select id, name from sql_describe_test where id = $1;
             """);
     }
@@ -31,7 +32,8 @@ public class MultiCommandTransactionTests(SqlFileSourceTestFixture test)
         var content = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response: {content}");
-        content.Should().Be("""{"result1":-1,"result2":1,"result3":-1,"verification":[{"id":2,"name":"txn_updated"}]}""");
+        // BEGIN and COMMIT are skipped, UPDATE is result1, SELECT is "verification"
+        content.Should().Be("{\"result1\":1,\"verification\":[{\"id\":2,\"name\":\"txn_updated\"}]}");
 
         // Restore original value
         using var restore = new StringContent(

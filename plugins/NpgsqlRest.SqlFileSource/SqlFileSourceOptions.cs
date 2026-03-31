@@ -63,7 +63,16 @@ public class SqlFileSourceOptions
     /// <summary>
     /// Prefix for result keys in multi-command JSON responses.
     /// Default keys are "result1", "result2", etc.
-    /// Override per-result with @resultN annotation in the SQL file.
+    /// Override per-result with positional @result annotation in the SQL file.
     /// </summary>
     public string ResultPrefix { get; set; } = "result";
+
+    /// <summary>
+    /// When true, non-query commands in multi-command files are still executed but excluded
+    /// from the JSON response result keys. This includes transaction control (BEGIN, COMMIT,
+    /// ROLLBACK), session commands (SET, RESET), DO blocks, and other utility statements
+    /// (DISCARD, LOCK, LISTEN, NOTIFY, DEALLOCATE).
+    /// Default is true.
+    /// </summary>
+    public bool SkipNonQueryCommands { get; set; } = true;
 }

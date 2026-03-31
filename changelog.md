@@ -702,7 +702,9 @@ Result: `{"result1": {"id": 1, "name": "alice"}, "result2": 1, "result3": {"id":
 
 ### Positional `@result` Annotation for Multi-Command Files
 
-In addition to the existing `@resultN name` syntax, result keys can now be named positionally — place `@result name` between statements and it applies to the next command below:
+Result keys in multi-command SQL files are named positionally. Annotations can be placed in two ways:
+
+**Before the statement** (on a separate line) — applies to the next statement below:
 
 ```sql
 -- @result users
@@ -711,13 +713,69 @@ SELECT id, name FROM users;
 SELECT id, total FROM orders;
 ```
 
-Result: `{"users": [...], "orders": [...]}`
+**Inline after the semicolon** (on the same line) — applies to the statement on that line:
 
-Both forms coexist:
-- `@resultN name` (numbered) — works from anywhere in the file
-- `@result name` (positional) — applies to the next statement below
-- Positional takes precedence when both target the same command
-- `@result is name` ("is" syntax) also supported
+```sql
+SELECT id, name FROM users; -- @result users
+SELECT id, total FROM orders; -- @result orders
+```
+
+Both produce: `{"users": [...], "orders": [...]}`
+
+This same placement rule applies to all positional annotations: `@result`, `@single`, and `@skip`.
+
+- `@result name` — names the result key for the associated statement
+- `@result is name` — "is" syntax also supported
+- Commands without `@result` get auto-generated keys: `result1`, `result2`, etc.
+
+---
+
+### `SkipNonQueryCommands` Setting and `@skip` Annotation
+
+#### `SkipNonQueryCommands` (default: `true`)
+
+Non-query commands in multi-command SQL files are now automatically excluded from the JSON response while still being executed. This eliminates noise like `"result1": -1` from transaction control and session statements.
+
+**Affected commands:** `BEGIN`, `COMMIT`, `END`, `ROLLBACK`, `SAVEPOINT`, `RELEASE`, `SET`, `RESET`, `DO` blocks, `DISCARD`, `LOCK`, `LISTEN`, `NOTIFY`, `DEALLOCATE`.
+
+```sql
+-- HTTP POST
+-- @param $1 id
+BEGIN;
+UPDATE users SET active = true WHERE id = $1;
+COMMIT;
+-- @result verification
+SELECT id, active FROM users WHERE id = $1;
+```
+
+**Before (without `SkipNonQueryCommands`):**
+```json
+{"result1":-1,"result2":1,"result3":-1,"verification":[{"id":1,"active":true}]}
+```
+
+**After (with `SkipNonQueryCommands`, default):**
+```json
+{"result1":1,"verification":[{"id":1,"active":true}]}
+```
+
+Skipped commands don't consume result numbers — the UPDATE gets `result1`, not `result2`.
+
+DML commands (`INSERT`, `UPDATE`, `DELETE`) are NOT skipped — their rows-affected count is meaningful.
+
+Set `"SkipNonQueryCommands": false` in `SqlFileSource` configuration to disable.
+
+#### `@skip` Annotation (aliases: `@skip_result`, `@no_result`)
+
+For cases not covered by `SkipNonQueryCommands`, use the `@skip` positional annotation to explicitly exclude any statement from the response:
+
+```sql
+-- @skip
+do $$ begin perform pg_notify('channel', 'event'); end; $$;
+-- @result data
+SELECT id, name FROM users;
+```
+
+Result: `{"data": [...]}`
 
 ---
 

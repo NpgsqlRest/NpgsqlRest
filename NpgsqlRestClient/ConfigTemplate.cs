@@ -2624,7 +2624,13 @@ public static partial class ConfigSchemaGenerator
           // instead of the default flat structure {"id": 1, "name": "test"}.
           // Default is false for backward compatibility. Can also be enabled per-endpoint with the 'nested' annotation.
           //
-          "NestedJsonForCompositeTypes": false
+          "NestedJsonForCompositeTypes": false,
+          //
+          // When true, non-query commands (BEGIN, COMMIT, SET, DO blocks, etc.) in multi-command SQL files
+          // are still executed but excluded from the JSON response result keys.
+          // Default is true.
+          //
+          "SkipNonQueryCommands": true
         }
       }
     }

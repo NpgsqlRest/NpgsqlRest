@@ -32,42 +32,42 @@ public static partial class SqlFiles
 
         // SELECT with different column shapes per command
         File.WriteAllText(Path.Combine(Dir, "multi_different_shapes.sql"), """
-            -- @result1 single_col
-            -- @result2 two_cols
-            -- @result3 three_cols
+            -- @result single_col
             select 'hello' as greeting;
+            -- @result two_cols
             select 1 as num, 'text' as str;
+            -- @result three_cols
             select true as flag, 42 as value, now() as ts;
             """);
 
         // Result annotations inline above each command (not in header)
         File.WriteAllText(Path.Combine(Dir, "multi_inline_annotations.sql"), """
             -- @param $1 id
-            -- @result1 first_lookup
+            -- @result first_lookup
             select id, name from sql_describe_test where id = $1;
-            -- @result2 all_count
+            -- @result all_count
             select count(*) as total from sql_describe_test;
-            -- @result3 active_check
+            -- @result active_check
             select active from sql_describe_test where id = $1;
             """);
 
         // INSERT with RETURNING (non-void mutation that returns data)
         File.WriteAllText(Path.Combine(Dir, "multi_insert_returning.sql"), """
             -- HTTP POST
-            -- @result1 inserted
-            -- @result2 count
             -- @param $1 id
             -- @param $2 name
+            -- @result inserted
             insert into sql_describe_test (id, name) values ($1, $2) returning id, name;
+            -- @result count
             select count(*) as total from sql_describe_test;
             """);
 
         // Result name with JSON-special characters
         File.WriteAllText(Path.Combine(Dir, "multi_escaped_name.sql"), """
             -- HTTP GET
-            -- @result1 my"key
-            -- @result2 back\slash
+            -- @result my"key
             select 1 as val;
+            -- @result back\slash
             select 2 as val;
             """);
     }

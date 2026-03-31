@@ -4,21 +4,21 @@ public static partial class SqlFiles
 {
     public static void MultiCommandDoBlockTests()
     {
-        // Multi-command with a DO block in the middle
+        // Multi-command with a DO block in the middle (auto-skipped)
         File.WriteAllText(Path.Combine(Dir, "multi_with_do.sql"), """
             -- HTTP POST
-            -- @result1 before_count
-            -- @result3 after_count
+            -- @result before_count
             select count(*) as total from sql_describe_test;
             do $$ begin perform 1; end; $$;
+            -- @result after_count
             select count(*) as total from sql_describe_test;
             """);
 
-        // DO block as first command followed by a SELECT
+        // DO block as first command (auto-skipped) followed by a SELECT
         File.WriteAllText(Path.Combine(Dir, "multi_do_then_select.sql"), """
             -- HTTP POST
-            -- @result2 data
             do $$ begin perform 1; end; $$;
+            -- @result data
             select id, name from sql_describe_test order by id limit 1;
             """);
     }
@@ -35,10 +35,10 @@ public class MultiCommandDoBlockTests(SqlFileSourceTestFixture test)
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response: {content}");
 
-        // count(*) is non-deterministic (depends on other test side effects), use Contain for structure
+        // DO block is auto-skipped, only two SELECT results remain
         content.Should().Contain("\"before_count\":[");
-        content.Should().Contain("\"result2\":-1");
         content.Should().Contain("\"after_count\":[");
+        content.Should().NotContain("-1");
     }
 
     [Fact]
@@ -48,6 +48,6 @@ public class MultiCommandDoBlockTests(SqlFileSourceTestFixture test)
         var content = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response: {content}");
-        content.Should().Be("""{"result1":-1,"data":[{"id":1,"name":"test1"}]}""");
+        content.Should().Be("{\"data\":[{\"id\":1,\"name\":\"test1\"}]}");
     }
 }
