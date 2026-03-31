@@ -1922,7 +1922,7 @@ public partial class NpgsqlRestEndpoint(
                 context.Response.ContentType = Application.Json;
 
                 // Write opening {
-                writer.Advance(Encoding.UTF8.GetBytes("{".AsSpan(), writer.GetSpan(1)));
+                Consts.Utf8OpenBrace.CopyTo(writer.GetSpan(1)); writer.Advance(1);
 
                 bool firstResultWritten = false;
                 for (int cmdIndex = 0; cmdIndex < routine.MultiCommandInfo.Length; cmdIndex++)
@@ -1956,7 +1956,7 @@ public partial class NpgsqlRestEndpoint(
                     // Write comma between results
                     if (firstResultWritten)
                     {
-                        writer.Advance(Encoding.UTF8.GetBytes(",".AsSpan(), writer.GetSpan(1)));
+                        Consts.Utf8Comma.CopyTo(writer.GetSpan(1)); writer.Advance(1);
                     }
                     firstResultWritten = true;
 
@@ -1980,7 +1980,7 @@ public partial class NpgsqlRestEndpoint(
 
                         if (!currentCmd.IsSingle)
                         {
-                            writer.Advance(Encoding.UTF8.GetBytes("[".AsSpan(), writer.GetSpan(1)));
+                            Consts.Utf8OpenBracket.CopyTo(writer.GetSpan(1)); writer.Advance(1);
                         }
                         bool mcFirstRow = true;
                         var mcRowBuilder = StringBuilderPool.Rent(512);
@@ -2206,7 +2206,7 @@ public partial class NpgsqlRestEndpoint(
                         if (currentCmd.IsSingle && mcRowCount == 0)
                         {
                             // Empty result with @single — write null
-                            writer.Advance(Encoding.UTF8.GetBytes(Consts.Null.AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(Consts.Null.Length))));
+                            Consts.Utf8Null.CopyTo(writer.GetSpan(4)); writer.Advance(4);
                         }
 
                         if (mcRowBuilder.Length > 0)
@@ -2218,13 +2218,13 @@ public partial class NpgsqlRestEndpoint(
 
                         if (!currentCmd.IsSingle)
                         {
-                            writer.Advance(Encoding.UTF8.GetBytes("]".AsSpan(), writer.GetSpan(1)));
+                            Consts.Utf8CloseBracket.CopyTo(writer.GetSpan(1)); writer.Advance(1);
                         }
                     }
                 }
 
                 // Write closing }
-                writer.Advance(Encoding.UTF8.GetBytes("}".AsSpan(), writer.GetSpan(1)));
+                Consts.Utf8CloseBrace.CopyTo(writer.GetSpan(1)); writer.Advance(1);
                 await writer.FlushAsync(cancellationToken);
                 return;
             }
@@ -2370,7 +2370,7 @@ public partial class NpgsqlRestEndpoint(
                         {
                             if (endpoint.TextResponseNullHandling == TextResponseNullHandling.NullLiteral)
                             {
-                                writer.Advance(Encoding.UTF8.GetBytes(Consts.Null.AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(Consts.Null.Length))));
+                                Consts.Utf8Null.CopyTo(writer.GetSpan(4)); writer.Advance(4);
                             }
                             else if (endpoint.TextResponseNullHandling == TextResponseNullHandling.NoContent)
                             {
@@ -2523,7 +2523,7 @@ public partial class NpgsqlRestEndpoint(
                     bool multiCmdWriteWrapper = multiCmd is not null && binary is false && endpoint.Raw is false;
                     if (multiCmdWriteWrapper)
                     {
-                        writer.Advance(Encoding.UTF8.GetBytes("{".AsSpan(), writer.GetSpan(1)));
+                        Consts.Utf8OpenBrace.CopyTo(writer.GetSpan(1)); writer.Advance(1);
                     }
 
                     // Begin result set loop (single pass for normal, do/while for multi-command)
@@ -2543,7 +2543,7 @@ public partial class NpgsqlRestEndpoint(
                             // Write command name key in JSON wrapper
                             if (multiCmdFirstWritten)
                             {
-                                writer.Advance(Encoding.UTF8.GetBytes(",".AsSpan(), writer.GetSpan(1)));
+                                Consts.Utf8Comma.CopyTo(writer.GetSpan(1)); writer.Advance(1);
                             }
                             var nameJson = string.Concat(cmdInfo.JsonName, ":");
                             writer.Advance(Encoding.UTF8.GetBytes(nameJson.AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(nameJson.Length))));
@@ -2580,7 +2580,7 @@ public partial class NpgsqlRestEndpoint(
 
                     if (routine.ReturnsSet && endpoint.Raw is false && binary is false && isSingleRecord is false)
                     {
-                        writer.Advance(Encoding.UTF8.GetBytes(Consts.OpenBracket.ToString().AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(1))));
+                        Consts.Utf8OpenBracket.CopyTo(writer.GetSpan(1)); writer.Advance(1);
                         if (shouldCache)
                         {
                             cacheBuffer!.Append(Consts.OpenBracket);
@@ -2931,11 +2931,11 @@ public partial class NpgsqlRestEndpoint(
                         if (multiCmd is not null)
                         {
                             // Multi-command: always write null for empty @single results
-                            writer.Advance(Encoding.UTF8.GetBytes(Consts.Null.AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(Consts.Null.Length))));
+                            Consts.Utf8Null.CopyTo(writer.GetSpan(4)); writer.Advance(4);
                         }
                         else if (endpoint.TextResponseNullHandling == TextResponseNullHandling.NullLiteral)
                         {
-                            writer.Advance(Encoding.UTF8.GetBytes(Consts.Null.AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(Consts.Null.Length))));
+                            Consts.Utf8Null.CopyTo(writer.GetSpan(4)); writer.Advance(4);
                             await writer.FlushAsync(cancellationToken);
                         }
                         else if (endpoint.TextResponseNullHandling == TextResponseNullHandling.NoContent)
@@ -2962,7 +2962,7 @@ public partial class NpgsqlRestEndpoint(
                         }
                         if (routine.ReturnsSet && endpoint.Raw is false && isSingleRecord is false)
                         {
-                            writer.Advance(Encoding.UTF8.GetBytes(Consts.CloseBracket.ToString().AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(1))));
+                            Consts.Utf8CloseBracket.CopyTo(writer.GetSpan(1)); writer.Advance(1);
                             if (shouldCache)
                             {
                                 cacheBuffer!.Append(Consts.CloseBracket);
@@ -2982,7 +2982,7 @@ public partial class NpgsqlRestEndpoint(
                     // Close multi-command JSON object
                     if (multiCmdWriteWrapper)
                     {
-                        writer.Advance(Encoding.UTF8.GetBytes("}".AsSpan(), writer.GetSpan(1)));
+                        Consts.Utf8CloseBrace.CopyTo(writer.GetSpan(1)); writer.Advance(1);
                     }
 
                     return;

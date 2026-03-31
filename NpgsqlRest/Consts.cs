@@ -33,4 +33,14 @@ public static class Consts
     public const string EmptyArray = "[]";
     public const string EmptyObj = "{}";
     public const string SetContext = "select set_config($1,$2,false)";
+
+    // Pre-computed UTF8 bytes for JSON structure characters used in rendering hot paths.
+    // Eliminates per-request Encoding.UTF8.GetBytes() calls for constant values.
+    public static readonly byte[] Utf8OpenBrace = [(byte)'{'];
+    public static readonly byte[] Utf8CloseBrace = [(byte)'}'];
+    public static readonly byte[] Utf8OpenBracket = [(byte)'['];
+    public static readonly byte[] Utf8CloseBracket = [(byte)']'];
+    public static readonly byte[] Utf8Comma = [(byte)','];
+    public static readonly byte[] Utf8Colon = [(byte)':'];
+    public static readonly byte[] Utf8Null = "null"u8.ToArray();
 }
