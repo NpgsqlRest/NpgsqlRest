@@ -200,7 +200,7 @@ public class App
         var provider = app.Services.GetService<IDataProtectionProvider>();
         IDataProtector? protector = dataProtectionName is null ? null : provider?.CreateProtector(dataProtectionName);
 
-        return (new()
+        var result = new NpgsqlRestAuthenticationOptions()
         {
             DefaultAuthenticationType = _config.GetConfigStr("DefaultAuthenticationType", authCfg),
 
@@ -238,11 +238,30 @@ public class App
             },
             ClaimsJsonParameterName = _config.GetConfigStr("ClaimsJsonParameterName", authCfg) ?? "_user_claims",
             IpAddressParameterName = _config.GetConfigStr("IpAddressParameterName", authCfg) ?? "_ip_address",
-            
+
             BasicAuth = basicAuth,
             DefaultDataProtector = protector,
             CustomLoginHandler = CreateJwtLoginHandler()
-        }, authCfg);
+        };
+
+        var requiresAuth = _config.GetConfigBool("RequiresAuthorization", _config.NpgsqlRestCfg, true);
+        if (requiresAuth || !string.IsNullOrEmpty(result.DefaultAuthenticationType))
+        {
+            if (result.ParameterNameClaimsMapping.Count > 0)
+            {
+                _builder.ClientLogger?.LogDebug(
+                    "UserParameters claim mapping (parameter name -> claim type): {Mapping}",
+                    string.Join(", ", result.ParameterNameClaimsMapping.Select(kv => $"{kv.Key} -> {kv.Value}")));
+            }
+            if (result.ContextKeyClaimsMapping.Count > 0)
+            {
+                _builder.ClientLogger?.LogDebug(
+                    "UserContext claim mapping (context key -> claim type): {Mapping}",
+                    string.Join(", ", result.ContextKeyClaimsMapping.Select(kv => $"{kv.Key} -> {kv.Value}")));
+            }
+        }
+
+        return (result, authCfg);
     }
 
     private Func<HttpContext, ClaimsPrincipal, string?, Task<bool>>? CreateJwtLoginHandler()
