@@ -589,12 +589,18 @@ public class App
                 var opts = new SqlFileSourceOptions
                 {
                     FilePattern = filePattern,
-                    CommentsMode = _config.GetConfigEnum<CommentsMode>("CommentsMode", sqlFileSourceCfg),
                     CommentScope = _config.GetConfigEnum<CommentScope>("CommentScope", sqlFileSourceCfg),
-                    ErrorMode = _config.GetConfigEnum<ParseErrorMode>("ErrorMode", sqlFileSourceCfg),
                     UnnamedSingleColumnSet = _config.GetConfigBool("UnnamedSingleColumnSet", sqlFileSourceCfg, true),
                     SkipNonQueryCommands = _config.GetConfigBool("SkipNonQueryCommands", sqlFileSourceCfg, true),
                 };
+                if (_config.GetConfigStr("CommentsMode", sqlFileSourceCfg) is not null)
+                {
+                    opts.CommentsMode = _config.GetConfigEnum<CommentsMode>("CommentsMode", sqlFileSourceCfg);
+                }
+                if (_config.GetConfigStr("ErrorMode", sqlFileSourceCfg) is not null)
+                {
+                    opts.ErrorMode = _config.GetConfigEnum<ParseErrorMode>("ErrorMode", sqlFileSourceCfg);
+                }
                 var resultPrefix = _config.GetConfigStr("ResultPrefix", sqlFileSourceCfg);
                 if (resultPrefix is not null)
                 {
