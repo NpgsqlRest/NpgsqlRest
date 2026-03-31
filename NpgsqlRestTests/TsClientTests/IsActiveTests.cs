@@ -74,6 +74,9 @@ export async function tsclientTestIsActive() : Promise<boolean> {
         private const string ExpectedStatus = """
 const baseUrl = "";
 
+type ApiError = {status: number; title: string; detail?: string | null};
+type ApiResult<T> = {status: number, response: T, error: ApiError | undefined};
+
 
 /**
 * function tsclient_test.is_active_status()
@@ -83,18 +86,18 @@ const baseUrl = "";
 * comment on function tsclient_test.is_active_status is 'tsclient_module=is_active_status
 * tsclient_status_code=true';
 * 
-* @returns {status: number, response: boolean, error: {status: number; title: string; detail?: string | null} | undefined}
+* @returns {ApiResult<boolean>}
 * 
 * @see FUNCTION tsclient_test.is_active_status
 */
-export async function tsclientTestIsActiveStatus() : Promise<{status: number, response: boolean, error: {status: number; title: string; detail?: string | null} | undefined}> {
+export async function tsclientTestIsActiveStatus() : Promise<ApiResult<boolean>> {
     const response = await fetch(baseUrl + "/api/tsclient-test/is-active-status", {
         method: "POST",
     });
     return {
         status: response.status,
         response: response.ok ? await response.text() == "t" : undefined!,
-        error: !response.ok && response.headers.get("content-length") !== "0" ? await response.json() as {status: number; title: string; detail?: string | null} : undefined
+        error: !response.ok && response.headers.get("content-length") !== "0" ? await response.json() as ApiError : undefined
     };
 }
 

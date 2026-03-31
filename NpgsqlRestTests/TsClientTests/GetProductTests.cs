@@ -164,6 +164,9 @@ export async function categoriesCategoryIdProductsProductId(
         private const string ExpectedStatus = """
 const baseUrl = "";
 
+type ApiError = {status: number; title: string; detail?: string | null};
+type ApiResult<T> = {status: number, response: T, error: ApiError | undefined};
+
 interface ICategoriesCategoryIdProductsProductIdStatusRequest {
     categoryId: number | null;
     productId: number | null;
@@ -196,13 +199,13 @@ interface ICategoriesCategoryIdProductsProductIdStatusResponse {
 * tsclient_status_code=true';
 * 
 * @param request - Object containing request parameters.
-* @returns {status: number, response: ICategoriesCategoryIdProductsProductIdStatusResponse[], error: {status: number; title: string; detail?: string | null} | undefined}
+* @returns {ApiResult<ICategoriesCategoryIdProductsProductIdStatusResponse[]>}
 * 
 * @see FUNCTION tsclient_test.get_product_status
 */
 export async function categoriesCategoryIdProductsProductIdStatus(
     request: ICategoriesCategoryIdProductsProductIdStatusRequest
-) : Promise<{status: number, response: ICategoriesCategoryIdProductsProductIdStatusResponse[], error: {status: number; title: string; detail?: string | null} | undefined}> {
+) : Promise<ApiResult<ICategoriesCategoryIdProductsProductIdStatusResponse[]>> {
     const response = await fetch(`${baseUrl}/api/categories/${request._category_id}/products/${request._product_id}/status`, {
         method: "GET",
         headers: {
@@ -212,7 +215,7 @@ export async function categoriesCategoryIdProductsProductIdStatus(
     return {
         status: response.status,
         response: response.ok ? await response.json() as ICategoriesCategoryIdProductsProductIdStatusResponse[] : undefined!,
-        error: !response.ok && response.headers.get("content-length") !== "0" ? await response.json() as {status: number; title: string; detail?: string | null} : undefined
+        error: !response.ok && response.headers.get("content-length") !== "0" ? await response.json() as ApiError : undefined
     };
 }
 

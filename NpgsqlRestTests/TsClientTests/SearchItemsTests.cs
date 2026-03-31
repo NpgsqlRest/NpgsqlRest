@@ -140,6 +140,9 @@ const parseQuery = (query: Record<any, any>) => "?" + Object.keys(query ? query 
     })
     .join("&");
 
+type ApiError = {status: number; title: string; detail?: string | null};
+type ApiResult<T> = {status: number, response: T, error: ApiError | undefined};
+
 interface ITsclientTestSearchItemsStatusRequest {
     query: string | null;
     page: number | null;
@@ -172,13 +175,13 @@ interface ITsclientTestSearchItemsStatusResponse {
 * tsclient_status_code=true';
 * 
 * @param request - Object containing request parameters.
-* @returns {status: number, response: ITsclientTestSearchItemsStatusResponse[], error: {status: number; title: string; detail?: string | null} | undefined}
+* @returns {ApiResult<ITsclientTestSearchItemsStatusResponse[]>}
 * 
 * @see FUNCTION tsclient_test.search_items_status
 */
 export async function tsclientTestSearchItemsStatus(
     request: ITsclientTestSearchItemsStatusRequest
-) : Promise<{status: number, response: ITsclientTestSearchItemsStatusResponse[], error: {status: number; title: string; detail?: string | null} | undefined}> {
+) : Promise<ApiResult<ITsclientTestSearchItemsStatusResponse[]>> {
     const response = await fetch(baseUrl + "/api/tsclient-test/search-items-status" + parseQuery(request), {
         method: "GET",
         headers: {
@@ -188,7 +191,7 @@ export async function tsclientTestSearchItemsStatus(
     return {
         status: response.status,
         response: response.ok ? await response.json() as ITsclientTestSearchItemsStatusResponse[] : undefined!,
-        error: !response.ok && response.headers.get("content-length") !== "0" ? await response.json() as {status: number; title: string; detail?: string | null} : undefined
+        error: !response.ok && response.headers.get("content-length") !== "0" ? await response.json() as ApiError : undefined
     };
 }
 

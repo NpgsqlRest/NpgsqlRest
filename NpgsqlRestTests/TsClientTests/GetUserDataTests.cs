@@ -107,6 +107,9 @@ export async function tsclientTestGetUserData() : Promise<ITsclientTestGetUserDa
         private const string ExpectedStatus = """
 const baseUrl = "";
 
+type ApiError = {status: number; title: string; detail?: string | null};
+type ApiResult<T> = {status: number, response: T, error: ApiError | undefined};
+
 interface ITsclientTestGetUserDataStatusResponse {
     id: number | null;
     name: string | null;
@@ -128,11 +131,11 @@ interface ITsclientTestGetUserDataStatusResponse {
 * comment on function tsclient_test.get_user_data_status is 'tsclient_module=get_user_data_status
 * tsclient_status_code=true';
 * 
-* @returns {status: number, response: ITsclientTestGetUserDataStatusResponse[], error: {status: number; title: string; detail?: string | null} | undefined}
+* @returns {ApiResult<ITsclientTestGetUserDataStatusResponse[]>}
 * 
 * @see FUNCTION tsclient_test.get_user_data_status
 */
-export async function tsclientTestGetUserDataStatus() : Promise<{status: number, response: ITsclientTestGetUserDataStatusResponse[], error: {status: number; title: string; detail?: string | null} | undefined}> {
+export async function tsclientTestGetUserDataStatus() : Promise<ApiResult<ITsclientTestGetUserDataStatusResponse[]>> {
     const response = await fetch(baseUrl + "/api/tsclient-test/get-user-data-status", {
         method: "GET",
         headers: {
@@ -142,7 +145,7 @@ export async function tsclientTestGetUserDataStatus() : Promise<{status: number,
     return {
         status: response.status,
         response: response.ok ? await response.json() as ITsclientTestGetUserDataStatusResponse[] : undefined!,
-        error: !response.ok && response.headers.get("content-length") !== "0" ? await response.json() as {status: number; title: string; detail?: string | null} : undefined
+        error: !response.ok && response.headers.get("content-length") !== "0" ? await response.json() as ApiError : undefined
     };
 }
 

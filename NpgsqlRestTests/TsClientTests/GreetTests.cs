@@ -84,6 +84,9 @@ export async function tsclientTestGreet(
         private const string ExpectedStatus = """
 const baseUrl = "";
 
+type ApiError = {status: number; title: string; detail?: string | null};
+type ApiResult<T> = {status: number, response: T, error: ApiError | undefined};
+
 interface ITsclientTestGreetStatusRequest {
     name: string | null;
 }
@@ -100,13 +103,13 @@ interface ITsclientTestGreetStatusRequest {
 * tsclient_status_code=true';
 * 
 * @param request - Object containing request parameters.
-* @returns {status: number, response: string, error: {status: number; title: string; detail?: string | null} | undefined}
+* @returns {ApiResult<string>}
 * 
 * @see FUNCTION tsclient_test.greet_status
 */
 export async function tsclientTestGreetStatus(
     request: ITsclientTestGreetStatusRequest
-) : Promise<{status: number, response: string, error: {status: number; title: string; detail?: string | null} | undefined}> {
+) : Promise<ApiResult<string>> {
     const response = await fetch(baseUrl + "/api/tsclient-test/greet-status", {
         method: "POST",
         body: JSON.stringify(request)
@@ -114,7 +117,7 @@ export async function tsclientTestGreetStatus(
     return {
         status: response.status,
         response: response.ok ? await response.text() : undefined!,
-        error: !response.ok && response.headers.get("content-length") !== "0" ? await response.json() as {status: number; title: string; detail?: string | null} : undefined
+        error: !response.ok && response.headers.get("content-length") !== "0" ? await response.json() as ApiError : undefined
     };
 }
 

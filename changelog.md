@@ -799,6 +799,43 @@ The individual per-annotation log messages are still available at **Trace** leve
 
 ---
 
+### TsClient: Type Alias Extraction for Error and Result Types
+
+When `IncludeStatusCode` is enabled, the TypeScript client generator now emits reusable type aliases at the top of each generated file instead of repeating the full inline types everywhere:
+
+```typescript
+type ApiError = {status: number; title: string; detail?: string | null};
+type ApiResult<T> = {status: number, response: T, error: ApiError | undefined};
+```
+
+These aliases are used in function signatures, JSDoc comments, and `as` casts — significantly reducing repetition and line length:
+
+```typescript
+// Before (repeated 3x per function):
+) : Promise<{status: number, response: string, error: {status: number; title: string; detail?: string | null} | undefined}>
+
+// After:
+) : Promise<ApiResult<string>>
+```
+
+The type aliases are **not exported**, so importing multiple generated files causes no naming conflicts. TypeScript's structural typing ensures full compatibility.
+
+Two new options control the alias names:
+- `ErrorTypeName` (default: `"ApiError"`) — name for the error type alias
+- `ResultTypeName` (default: `"ApiResult"`) — name for the generic result type alias
+
+---
+
+### TsClient: Fix `SkipTypes` Generating Invalid JavaScript
+
+Fixed two bugs when `SkipTypes` is enabled (pure JavaScript output):
+
+1. **Invalid `as` cast in error handling**: The error expression was always generated with a TypeScript `as` type cast (e.g., `await response.json() as {status: number; ...}`), which is invalid JavaScript syntax. The `as` cast is now omitted when `SkipTypes` is true.
+
+2. **No file output with `CreateSeparateTypeFile = false`**: When both `SkipTypes` and `CreateSeparateTypeFile = false` were set, no file was written at all. The code-only content is now written correctly.
+
+---
+
 ## Version [3.11.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.11.1) (2026-03-13)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.11.0...3.11.1)

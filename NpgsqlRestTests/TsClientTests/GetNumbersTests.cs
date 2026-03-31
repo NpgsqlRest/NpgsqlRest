@@ -77,6 +77,9 @@ export async function tsclientTestGetNumbers() : Promise<number[]> {
         private const string ExpectedStatus = """
 const baseUrl = "";
 
+type ApiError = {status: number; title: string; detail?: string | null};
+type ApiResult<T> = {status: number, response: T, error: ApiError | undefined};
+
 
 /**
 * function tsclient_test.get_numbers_status()
@@ -86,11 +89,11 @@ const baseUrl = "";
 * comment on function tsclient_test.get_numbers_status is 'tsclient_module=get_numbers_status
 * tsclient_status_code=true';
 * 
-* @returns {status: number, response: number[], error: {status: number; title: string; detail?: string | null} | undefined}
+* @returns {ApiResult<number[]>}
 * 
 * @see FUNCTION tsclient_test.get_numbers_status
 */
-export async function tsclientTestGetNumbersStatus() : Promise<{status: number, response: number[], error: {status: number; title: string; detail?: string | null} | undefined}> {
+export async function tsclientTestGetNumbersStatus() : Promise<ApiResult<number[]>> {
     const response = await fetch(baseUrl + "/api/tsclient-test/get-numbers-status", {
         method: "GET",
         headers: {
@@ -100,7 +103,7 @@ export async function tsclientTestGetNumbersStatus() : Promise<{status: number, 
     return {
         status: response.status,
         response: response.ok ? await response.json() : undefined!,
-        error: !response.ok && response.headers.get("content-length") !== "0" ? await response.json() as {status: number; title: string; detail?: string | null} : undefined
+        error: !response.ok && response.headers.get("content-length") !== "0" ? await response.json() as ApiError : undefined
     };
 }
 

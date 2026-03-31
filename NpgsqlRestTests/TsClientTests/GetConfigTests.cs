@@ -74,6 +74,9 @@ export async function tsclientTestGetConfig() : Promise<any> {
         private const string ExpectedStatus = """
 const baseUrl = "";
 
+type ApiError = {status: number; title: string; detail?: string | null};
+type ApiResult<T> = {status: number, response: T, error: ApiError | undefined};
+
 
 /**
 * function tsclient_test.get_config_status()
@@ -83,18 +86,18 @@ const baseUrl = "";
 * comment on function tsclient_test.get_config_status is 'tsclient_module=get_config_status
 * tsclient_status_code=true';
 * 
-* @returns {status: number, response: any, error: {status: number; title: string; detail?: string | null} | undefined}
+* @returns {ApiResult<any>}
 * 
 * @see FUNCTION tsclient_test.get_config_status
 */
-export async function tsclientTestGetConfigStatus() : Promise<{status: number, response: any, error: {status: number; title: string; detail?: string | null} | undefined}> {
+export async function tsclientTestGetConfigStatus() : Promise<ApiResult<any>> {
     const response = await fetch(baseUrl + "/api/tsclient-test/get-config-status", {
         method: "GET",
     });
     return {
         status: response.status,
         response: response.ok ? await response.json() : undefined!,
-        error: !response.ok && response.headers.get("content-length") !== "0" ? await response.json() as {status: number; title: string; detail?: string | null} : undefined
+        error: !response.ok && response.headers.get("content-length") !== "0" ? await response.json() as ApiError : undefined
     };
 }
 

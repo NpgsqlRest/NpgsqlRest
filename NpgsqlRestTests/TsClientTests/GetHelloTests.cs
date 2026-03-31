@@ -74,6 +74,9 @@ export async function tsclientTestGetHello() : Promise<string> {
         private const string ExpectedStatus = """
 const baseUrl = "";
 
+type ApiError = {status: number; title: string; detail?: string | null};
+type ApiResult<T> = {status: number, response: T, error: ApiError | undefined};
+
 
 /**
 * function tsclient_test.get_hello_status()
@@ -83,18 +86,18 @@ const baseUrl = "";
 * comment on function tsclient_test.get_hello_status is 'tsclient_module=get_hello_status
 * tsclient_status_code=true';
 * 
-* @returns {status: number, response: string, error: {status: number; title: string; detail?: string | null} | undefined}
+* @returns {ApiResult<string>}
 * 
 * @see FUNCTION tsclient_test.get_hello_status
 */
-export async function tsclientTestGetHelloStatus() : Promise<{status: number, response: string, error: {status: number; title: string; detail?: string | null} | undefined}> {
+export async function tsclientTestGetHelloStatus() : Promise<ApiResult<string>> {
     const response = await fetch(baseUrl + "/api/tsclient-test/get-hello-status", {
         method: "GET",
     });
     return {
         status: response.status,
         response: response.ok ? await response.text() : undefined!,
-        error: !response.ok && response.headers.get("content-length") !== "0" ? await response.json() as {status: number; title: string; detail?: string | null} : undefined
+        error: !response.ok && response.headers.get("content-length") !== "0" ? await response.json() as ApiError : undefined
     };
 }
 

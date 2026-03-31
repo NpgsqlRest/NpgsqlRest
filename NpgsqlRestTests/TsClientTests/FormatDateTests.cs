@@ -84,6 +84,9 @@ export async function tsclientTestFormatDate(
         private const string ExpectedStatus = """
 const baseUrl = "";
 
+type ApiError = {status: number; title: string; detail?: string | null};
+type ApiResult<T> = {status: number, response: T, error: ApiError | undefined};
+
 interface ITsclientTestFormatDateStatusRequest {
     dt: string | null;
 }
@@ -100,13 +103,13 @@ interface ITsclientTestFormatDateStatusRequest {
 * tsclient_status_code=true';
 * 
 * @param request - Object containing request parameters.
-* @returns {status: number, response: string, error: {status: number; title: string; detail?: string | null} | undefined}
+* @returns {ApiResult<string>}
 * 
 * @see FUNCTION tsclient_test.format_date_status
 */
 export async function tsclientTestFormatDateStatus(
     request: ITsclientTestFormatDateStatusRequest
-) : Promise<{status: number, response: string, error: {status: number; title: string; detail?: string | null} | undefined}> {
+) : Promise<ApiResult<string>> {
     const response = await fetch(baseUrl + "/api/tsclient-test/format-date-status", {
         method: "POST",
         body: JSON.stringify(request)
@@ -114,7 +117,7 @@ export async function tsclientTestFormatDateStatus(
     return {
         status: response.status,
         response: response.ok ? await response.text() : undefined!,
-        error: !response.ok && response.headers.get("content-length") !== "0" ? await response.json() as {status: number; title: string; detail?: string | null} : undefined
+        error: !response.ok && response.headers.get("content-length") !== "0" ? await response.json() as ApiError : undefined
     };
 }
 

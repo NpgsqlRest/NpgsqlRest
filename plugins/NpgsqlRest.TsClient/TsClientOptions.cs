@@ -156,4 +156,20 @@ public class TsClientOptions
     /// Only used when IncludeStatusCode is true.
     /// </summary>
     public string ErrorType { get; set; } = "{status: number; title: string; detail?: string | null} | undefined";
+
+    /// <summary>
+    /// Name for the error type alias emitted at the top of the generated file.
+    /// The alias body is derived from ErrorType (with " | undefined" stripped).
+    /// Only used when IncludeStatusCode is true and SkipTypes is false.
+    /// Default is "ApiError".
+    /// </summary>
+    public string ErrorTypeName { get; set; } = "ApiError";
+
+    /// <summary>
+    /// Name for the generic result type alias emitted at the top of the generated file.
+    /// Defined as: type {ResultTypeName}&lt;T&gt; = {status: number, response: T, error: {ErrorTypeName} | undefined}.
+    /// Only used when IncludeStatusCode is true and SkipTypes is false.
+    /// Default is "ApiResult".
+    /// </summary>
+    public string ResultTypeName { get; set; } = "ApiResult";
 }

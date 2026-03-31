@@ -86,6 +86,9 @@ export async function tsclientTestAddNumbers(
         private const string ExpectedStatus = """
 const baseUrl = "";
 
+type ApiError = {status: number; title: string; detail?: string | null};
+type ApiResult<T> = {status: number, response: T, error: ApiError | undefined};
+
 interface ITsclientTestAddNumbersStatusRequest {
     a: number | null;
     b: number | null;
@@ -104,13 +107,13 @@ interface ITsclientTestAddNumbersStatusRequest {
 * tsclient_status_code=true';
 * 
 * @param request - Object containing request parameters.
-* @returns {status: number, response: number, error: {status: number; title: string; detail?: string | null} | undefined}
+* @returns {ApiResult<number>}
 * 
 * @see FUNCTION tsclient_test.add_numbers_status
 */
 export async function tsclientTestAddNumbersStatus(
     request: ITsclientTestAddNumbersStatusRequest
-) : Promise<{status: number, response: number, error: {status: number; title: string; detail?: string | null} | undefined}> {
+) : Promise<ApiResult<number>> {
     const response = await fetch(baseUrl + "/api/tsclient-test/add-numbers-status", {
         method: "POST",
         body: JSON.stringify(request)
@@ -118,7 +121,7 @@ export async function tsclientTestAddNumbersStatus(
     return {
         status: response.status,
         response: response.ok ? Number(await response.text()) : undefined!,
-        error: !response.ok && response.headers.get("content-length") !== "0" ? await response.json() as {status: number; title: string; detail?: string | null} : undefined
+        error: !response.ok && response.headers.get("content-length") !== "0" ? await response.json() as ApiError : undefined
     };
 }
 

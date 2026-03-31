@@ -106,6 +106,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
         StringBuilder content = new();
         StringBuilder interfaces = new();
         StringBuilder compositeInterfaces = new();
+        bool needsStatusTypes = false;
 
         foreach (var import in options.CustomImports)
         {
@@ -200,6 +201,17 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             }
         }
 
+        // Emit type aliases for error and result types when needed
+        if (needsStatusTypes && !options.SkipTypes)
+        {
+            var errorTypeBody = options.ErrorType.EndsWith(" | undefined")
+                ? options.ErrorType[..^12]
+                : options.ErrorType;
+            contentHeader.AppendLine();
+            contentHeader.AppendLine($"type {options.ErrorTypeName} = {errorTypeBody};");
+            contentHeader.AppendLine($"type {options.ResultTypeName}<T> = {{status: number, response: T, error: {options.ErrorTypeName} | undefined}};");
+        }
+
         if (!handled)
         {
             if (filtered.Length == 0 && options.FileOverwrite)
@@ -259,6 +271,16 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 File.WriteAllText(fileName, interfaces.ToString());
                 Logger?.LogDebug("Created Typescript file: {fileName}", fileName);
             }
+            else
+            {
+                if (contentHeader.Length > 0)
+                {
+                    content.Insert(0, contentHeader.ToString());
+                }
+                AddHeader(content);
+                File.WriteAllText(fileName, content.ToString());
+                Logger?.LogDebug("Created Javascript file: {fileName}", fileName);
+            }
         }
         else
         {
@@ -311,6 +333,10 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             var includeParseUrlParam = endpoint.CustomParameters.ParameterEnabled(IncludeParseUrl) ?? options.IncludeParseUrlParam;
             var includeParseRequestParam = endpoint.CustomParameters.ParameterEnabled(IncludeParseRequest) ?? options.IncludeParseRequestParam;
             var includeStatusCode = endpoint.CustomParameters.ParameterEnabled(IncludeStatusCode) ?? options.IncludeStatusCode;
+            if (includeStatusCode)
+            {
+                needsStatusTypes = true;
+            }
             var exportUrl = endpoint.CustomParameters.ParameterEnabled(ExportUrl) ?? options.ExportUrls;
             var urlOnly = endpoint.CustomParameters.ParameterEnabled(UrlOnly) is true;
             if (urlOnly)
@@ -466,9 +492,9 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             {
                 if (includeStatusCode)
                 {
-                    var errorType = options.ErrorType.EndsWith(" | undefined")
-                        ? options.ErrorType[..^12]  // Remove " | undefined" suffix for inline use
-                        : options.ErrorType;
+                    var errorCast = options.SkipTypes
+                        ? options.ErrorExpression
+                        : $"{options.ErrorExpression} as {options.ErrorTypeName}";
                     return string.Concat(
                         "return {",
                         Environment.NewLine,
@@ -480,7 +506,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                             string.Concat("response.ok ? ", responseExp, " : undefined!")),
                         ",",
                         Environment.NewLine,
-                        $"        error: !response.ok && response.headers.get(\"content-length\") !== \"0\" ? {options.ErrorExpression} as {errorType} : undefined",
+                        $"        error: !response.ok && response.headers.get(\"content-length\") !== \"0\" ? {errorCast} : undefined",
                         Environment.NewLine,
                         "    };");
                 }
@@ -801,15 +827,15 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             {
                 if (includeStatusCode)
                 {
-                    var errorType = options.ErrorType.EndsWith(" | undefined")
-                        ? options.ErrorType[..^12]  // Remove " | undefined" suffix for inline use
-                        : options.ErrorType;
+                    var errorCast = options.SkipTypes
+                        ? options.ErrorExpression
+                        : $"{options.ErrorExpression} as {options.ErrorTypeName}";
                     returnExp = string.Concat(
                         "return {",
                         Environment.NewLine,
                         "        status: response.status,",
                         Environment.NewLine,
-                        $"        error: !response.ok && response.headers.get(\"content-length\") !== \"0\" ? {options.ErrorExpression} as {errorType} : undefined",
+                        $"        error: !response.ok && response.headers.get(\"content-length\") !== \"0\" ? {errorCast} : undefined",
                         Environment.NewLine,
                         "    };");
                 }
@@ -1085,15 +1111,29 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             string resultType;
             if (string.Equals(responseName, "void", StringComparison.OrdinalIgnoreCase))
             {
-                resultType = includeStatusCode ?
-                    string.Concat("{status: number, error: ", options.ErrorType, "}") :
-                    responseName;
+                if (includeStatusCode)
+                {
+                    resultType = options.SkipTypes
+                        ? string.Concat("{status: number, error: ", options.ErrorType, "}")
+                        : string.Concat("{status: number, error: ", options.ErrorTypeName, " | undefined}");
+                }
+                else
+                {
+                    resultType = responseName;
+                }
             }
             else
             {
-                resultType = includeStatusCode ?
-                    string.Concat("{status: number, response: ", responseName, ", error: ", options.ErrorType, "}") :
-                    responseName;
+                if (includeStatusCode)
+                {
+                    resultType = options.SkipTypes
+                        ? string.Concat("{status: number, response: ", responseName, ", error: ", options.ErrorType, "}")
+                        : string.Concat(options.ResultTypeName, "<", responseName, ">");
+                }
+                else
+                {
+                    resultType = responseName;
+                }
             }
 
             if (endpoint.Upload)
@@ -1101,9 +1141,9 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 string onloadExp;
                 if (!isVoid)
                 {
-                    var uploadErrorType = options.ErrorType.EndsWith(" | undefined")
-                        ? options.ErrorType[..^12]  // Remove " | undefined" suffix for inline use
-                        : options.ErrorType;
+                    var uploadErrorType = options.SkipTypes
+                        ? (options.ErrorType.EndsWith(" | undefined") ? options.ErrorType[..^12] : options.ErrorType)
+                        : options.ErrorTypeName;
                     if (includeStatusCode)
                     {
                         if (!options.SkipTypes)

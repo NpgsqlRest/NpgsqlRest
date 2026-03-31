@@ -86,6 +86,9 @@ export async function tsclientTestGreetWithTitle(
         private const string ExpectedStatus = """
 const baseUrl = "";
 
+type ApiError = {status: number; title: string; detail?: string | null};
+type ApiResult<T> = {status: number, response: T, error: ApiError | undefined};
+
 interface ITsclientTestGreetWithTitleStatusRequest {
     name: string | null;
     title?: string | null;
@@ -104,13 +107,13 @@ interface ITsclientTestGreetWithTitleStatusRequest {
 * tsclient_status_code=true';
 * 
 * @param request - Object containing request parameters.
-* @returns {status: number, response: string, error: {status: number; title: string; detail?: string | null} | undefined}
+* @returns {ApiResult<string>}
 * 
 * @see FUNCTION tsclient_test.greet_with_title_status
 */
 export async function tsclientTestGreetWithTitleStatus(
     request: ITsclientTestGreetWithTitleStatusRequest
-) : Promise<{status: number, response: string, error: {status: number; title: string; detail?: string | null} | undefined}> {
+) : Promise<ApiResult<string>> {
     const response = await fetch(baseUrl + "/api/tsclient-test/greet-with-title-status", {
         method: "POST",
         body: JSON.stringify(request)
@@ -118,7 +121,7 @@ export async function tsclientTestGreetWithTitleStatus(
     return {
         status: response.status,
         response: response.ok ? await response.text() : undefined!,
-        error: !response.ok && response.headers.get("content-length") !== "0" ? await response.json() as {status: number; title: string; detail?: string | null} : undefined
+        error: !response.ok && response.headers.get("content-length") !== "0" ? await response.json() as ApiError : undefined
     };
 }
 

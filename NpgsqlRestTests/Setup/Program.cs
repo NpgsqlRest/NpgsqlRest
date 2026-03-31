@@ -29,6 +29,11 @@ public class Program
     public static string TsClientOutputPath { get; } = Path.Combine(Path.GetTempPath(), "NpgsqlRestTests", "TsClient");
 
     /// <summary>
+    /// Output path for TsClient generated JavaScript files with SkipTypes=true (used by tests)
+    /// </summary>
+    public static string TsClientJsOutputPath { get; } = Path.Combine(Path.GetTempPath(), "NpgsqlRestTests", "TsClientJs");
+
+    /// <summary>
     /// Output path for HttpFiles generated files (used by tests)
     /// </summary>
     public static string HttpFilesOutputPath { get; } = Path.Combine(Path.GetTempPath(), "NpgsqlRestTests", "HttpFiles");
@@ -204,6 +209,20 @@ public class Program
                     // Only process tsclient_test schema to avoid issues with custom sources that have null definitions
                     SkipSchemas = ["public", "custom_param_schema", "my_schema", "custom_table_param_schema", ""],
                     IncludeStatusCode = false
+                }),
+                // TsClient configuration for SkipTypes testing - generates pure JavaScript
+                new TsClient(new TsClientOptions
+                {
+                    FilePath = Path.Combine(TsClientJsOutputPath, "{0}.js"),
+                    FileOverwrite = true,
+                    BySchema = true,
+                    IncludeHost = false,
+                    CreateSeparateTypeFile = false,
+                    CommentHeader = CommentHeader.Simple,
+                    HeaderLines = [],
+                    SkipSchemas = ["public", "custom_param_schema", "my_schema", "custom_table_param_schema", ""],
+                    IncludeStatusCode = false,
+                    SkipTypes = true
                 }),
                 // HttpFiles configuration for testing path parameters
                 new HttpFile(new HttpFileOptions

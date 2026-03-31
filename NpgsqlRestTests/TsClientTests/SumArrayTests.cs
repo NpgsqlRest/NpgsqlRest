@@ -84,6 +84,9 @@ export async function tsclientTestSumArray(
         private const string ExpectedStatus = """
 const baseUrl = "";
 
+type ApiError = {status: number; title: string; detail?: string | null};
+type ApiResult<T> = {status: number, response: T, error: ApiError | undefined};
+
 interface ITsclientTestSumArrayStatusRequest {
     numbers: number[] | null;
 }
@@ -100,13 +103,13 @@ interface ITsclientTestSumArrayStatusRequest {
 * tsclient_status_code=true';
 * 
 * @param request - Object containing request parameters.
-* @returns {status: number, response: number, error: {status: number; title: string; detail?: string | null} | undefined}
+* @returns {ApiResult<number>}
 * 
 * @see FUNCTION tsclient_test.sum_array_status
 */
 export async function tsclientTestSumArrayStatus(
     request: ITsclientTestSumArrayStatusRequest
-) : Promise<{status: number, response: number, error: {status: number; title: string; detail?: string | null} | undefined}> {
+) : Promise<ApiResult<number>> {
     const response = await fetch(baseUrl + "/api/tsclient-test/sum-array-status", {
         method: "POST",
         body: JSON.stringify(request)
@@ -114,7 +117,7 @@ export async function tsclientTestSumArrayStatus(
     return {
         status: response.status,
         response: response.ok ? Number(await response.text()) : undefined!,
-        error: !response.ok && response.headers.get("content-length") !== "0" ? await response.json() as {status: number; title: string; detail?: string | null} : undefined
+        error: !response.ok && response.headers.get("content-length") !== "0" ? await response.json() as ApiError : undefined
     };
 }
 
