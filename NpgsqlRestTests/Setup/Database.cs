@@ -7,7 +7,12 @@ namespace NpgsqlRestTests;
 public static partial class Database
 {
     private const string Dbname = "npgsql_rest_test";
-    private const string InitialConnectionString = "Host=localhost;Port=5432;Database=postgres;Username=postgres;Password=postgres";
+    // Change these when testing against a different PostgreSQL instance
+    private const string Host = "localhost";
+    private const string Port = "5432";
+    private const string Username = "postgres";
+    private const string Password = "postgres";
+    private const string InitialConnectionString = $"Host={Host};Port={Port};Database=postgres;Username={Username};Password={Password}";
     private static readonly StringBuilder script = new();
     private static readonly object _createLock = new();
     private static volatile bool _created = false;

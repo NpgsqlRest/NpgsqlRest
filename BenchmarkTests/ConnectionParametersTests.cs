@@ -5,10 +5,11 @@ namespace BenchmarkTests;
 
 public class ConnectionParametersTests
 {
-    private string _connectionStr = "Host=127.0.0.1;Port=5437;Database=perftests;Username=postgres;Password=postgres;Pooling=true";
-    private string _connectionPoolingDisabled = "Host=127.0.0.1;Port=5437;Database=perftests;Username=postgres;Password=postgres;Pooling=false";
-    private string _connectionFullPreparePoolingEnabled = "Host=127.0.0.1;Port=5437;Database=perftests;Username=postgres;Password=postgres;Pooling=true;Max Auto Prepare=5000;Auto Prepare Min Usages=1";
-    private string _connectionFullPreparePoolingEnabledNoReset = "Host=127.0.0.1;Port=5437;Database=perftests;Username=postgres;Password=postgres;Pooling=true;Max Auto Prepare=5000;Auto Prepare Min Usages=1;No Reset On Close=true";
+    private const string _baseConnection = "Host=127.0.0.1;Port=5437;Database=perftests;Username=postgres;Password=postgres";
+    private string _connectionStr = $"{_baseConnection};Pooling=true";
+    private string _connectionPoolingDisabled = $"{_baseConnection};Pooling=false";
+    private string _connectionFullPreparePoolingEnabled = $"{_baseConnection};Pooling=true;Max Auto Prepare=5000;Auto Prepare Min Usages=1";
+    private string _connectionFullPreparePoolingEnabledNoReset = $"{_baseConnection};Pooling=true;Max Auto Prepare=5000;Auto Prepare Min Usages=1;No Reset On Close=true";
 
     private string _query = """
     with regional_stats as (

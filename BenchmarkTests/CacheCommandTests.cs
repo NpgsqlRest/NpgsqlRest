@@ -45,7 +45,7 @@ public class NpgsqlCachedParameter : NpgsqlParameter
 [MemoryDiagnoser]
 public class CacheCommandTests
 {
-    private readonly string _connectionStr = "Host=127.0.0.1;Port=5432;Database=postgres;Username=postgres;Password=postgres";
+    private const string _connectionStr = "Host=127.0.0.1;Port=5432;Database=postgres;Username=postgres;Password=postgres";
     
 
     [Benchmark(Baseline = true)]
