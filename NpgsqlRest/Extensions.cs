@@ -11,7 +11,8 @@ public static class Ext
     public static void CreateAndOpenSourceConnection(this NpgsqlRestOptions options,
         IServiceProvider? serviceProvider,
         ref NpgsqlConnection? connection,
-        ref bool shouldDispose)
+        ref bool shouldDispose,
+        string? sourceName = null)
     {
         // Try named connection first (check DataSources for multi-host, then ConnectionStrings)
         if (options.MetadataQueryConnectionName is not null)
@@ -25,13 +26,15 @@ public static class Ext
                 if (options.MetadataQuerySchema is not null && HasSearchPathInConnectionString(connection.ConnectionString, options.MetadataQuerySchema) is false)
                 {
                     SetSearchPath(connection, options.MetadataQuerySchema);
-                    Logger?.LogDebug("Using named data source '{name}' with schema '{schema}' for metadata queries.",
+                    Logger?.LogTrace("{source}: Using named data source '{name}' with schema '{schema}' for metadata queries.",
+                        sourceName ?? "Unknown",
                         options.MetadataQueryConnectionName,
                         options.MetadataQuerySchema);
                 }
                 else
                 {
-                    Logger?.LogDebug("Using named data source '{name}' for metadata queries.",
+                    Logger?.LogTrace("{source}: Using named data source '{name}' for metadata queries.",
+                        sourceName ?? "Unknown",
                         options.MetadataQueryConnectionName);
                 }
                 return;
@@ -62,7 +65,8 @@ public static class Ext
                     connection = new NpgsqlConnection(connectionString);
                 }
                 shouldDispose = true;
-                Logger?.LogDebug("Using named connection string '{name}' with schema '{schema}' for metadata queries.",
+                Logger?.LogTrace("{source}: Using named connection string '{name}' with schema '{schema}' for metadata queries.",
+                    sourceName ?? "Unknown",
                     options.MetadataQueryConnectionName,
                     options.MetadataQuerySchema);
             }
@@ -70,7 +74,8 @@ public static class Ext
             {
                 connection = new NpgsqlConnection(connectionString);
                 shouldDispose = true;
-                Logger?.LogDebug("Using named connection string '{name}' for metadata queries.",
+                Logger?.LogTrace("{source}: Using named connection string '{name}' for metadata queries.",
+                    sourceName ?? "Unknown",
                     options.MetadataQueryConnectionName);
             }
 
@@ -95,12 +100,14 @@ public static class Ext
                 if (options.MetadataQuerySchema is not null && HasSearchPathInConnectionString(connection.ConnectionString, options.MetadataQuerySchema) is false)
                 {
                     SetSearchPath(connection, options.MetadataQuerySchema);
-                    Logger?.LogDebug("Using NpgsqlDataSource from service provider with schema '{schema}' for metadata queries.",
+                    Logger?.LogTrace("{source}: Using NpgsqlDataSource from service provider with schema '{schema}' for metadata queries.",
+                        sourceName ?? "Unknown",
                         options.MetadataQuerySchema);
                 }
                 else
                 {
-                    Logger?.LogDebug("Using NpgsqlDataSource from service provider for metadata queries.");
+                    Logger?.LogTrace("{source}: Using NpgsqlDataSource from service provider for metadata queries.",
+                    sourceName ?? "Unknown");
                 }
             }
             else if (options.ServiceProviderMode == ServiceProviderObject.NpgsqlConnection)
@@ -116,12 +123,14 @@ public static class Ext
                 if (options.MetadataQuerySchema is not null && HasSearchPathInConnectionString(connection.ConnectionString, options.MetadataQuerySchema) is false)
                 {
                     SetSearchPath(connection, options.MetadataQuerySchema);
-                    Logger?.LogDebug("Using NpgsqlConnection from service provider with schema '{schema}' for metadata queries.",
+                    Logger?.LogTrace("{source}: Using NpgsqlConnection from service provider with schema '{schema}' for metadata queries.",
+                        sourceName ?? "Unknown",
                         options.MetadataQuerySchema);
                 }
                 else
                 {
-                    Logger?.LogDebug("Using NpgsqlConnection from service provider for metadata queries.");
+                    Logger?.LogTrace("{source}: Using NpgsqlConnection from service provider for metadata queries.",
+                    sourceName ?? "Unknown");
                 }
             }
             return;
@@ -137,12 +146,14 @@ public static class Ext
             if (options.MetadataQuerySchema is not null && HasSearchPathInConnectionString(connection.ConnectionString, options.MetadataQuerySchema) is false)
             {
                 SetSearchPath(connection, options.MetadataQuerySchema);
-                Logger?.LogDebug("Using DataSource with schema '{schema}' for metadata queries.",
+                Logger?.LogTrace("{source}: Using DataSource with schema '{schema}' for metadata queries.",
+                    sourceName ?? "Unknown",
                     options.MetadataQuerySchema);
             }
             else
             {
-                Logger?.LogDebug("Using DataSource for metadata queries.");
+                Logger?.LogTrace("{source}: Using DataSource for metadata queries.",
+                    sourceName ?? "Unknown");
             }
             return;
         }
@@ -169,7 +180,8 @@ public static class Ext
             }
             shouldDispose = true;
             connection.OpenRetry(Options.ConnectionRetryOptions);
-            Logger?.LogDebug("Using default connection string with schema '{schema}' for metadata queries.",
+            Logger?.LogTrace("{source}: Using default connection string with schema '{schema}' for metadata queries.",
+                sourceName ?? "Unknown",
                 options.MetadataQuerySchema);
         }
         else
@@ -177,7 +189,8 @@ public static class Ext
             connection = new NpgsqlConnection(options.ConnectionString);
             shouldDispose = true;
             connection.OpenRetry(Options.ConnectionRetryOptions);
-            Logger?.LogDebug("Using default connection string for metadata queries.");
+            Logger?.LogTrace("{source}: Using default connection string for metadata queries.",
+                    sourceName ?? "Unknown");
         }
     }
 

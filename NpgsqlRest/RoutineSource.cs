@@ -51,7 +51,7 @@ public class RoutineSource(
         NpgsqlConnection? connection = null;
         try
         {
-            Options.CreateAndOpenSourceConnection(serviceProvider, ref connection, ref shouldDispose);
+            Options.CreateAndOpenSourceConnection(serviceProvider, ref connection, ref shouldDispose, nameof(RoutineSource));
 
             if (connection is null)
             {

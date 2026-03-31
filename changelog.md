@@ -836,6 +836,16 @@ Fixed two bugs when `SkipTypes` is enabled (pure JavaScript output):
 
 ---
 
+### Improved Log Level Classification
+
+Moved verbose per-item logging from `Debug` to `Trace` level to reduce noise at the default `Debug` level:
+
+- **Connection source logs**: Per-source "Using DataSource..." messages now include the source name (e.g., `RoutineSource`, `SqlFileSource`) and are logged at `Trace` instead of `Debug`.
+- **TsClient/HttpFiles file generation**: Individual "Created file" messages moved to `Trace`. A single `Debug` summary reports the total count (e.g., `TsClient: Created 15 TypeScript file(s)`).
+- **Upload handler config details**: Detailed parameter dumps for each handler type (mime patterns, buffer sizes, etc.) moved to `Trace`.
+
+---
+
 ## Version [3.11.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.11.1) (2026-03-13)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.11.0...3.11.1)

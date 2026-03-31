@@ -39,7 +39,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
         bool shouldDispose = true;
         try
         {
-            NpgsqlRestOptions.Options.CreateAndOpenSourceConnection(serviceProvider, ref connection, ref shouldDispose);
+            NpgsqlRestOptions.Options.CreateAndOpenSourceConnection(serviceProvider, ref connection, ref shouldDispose, nameof(SqlFileSource));
 
             if (connection is null)
             {

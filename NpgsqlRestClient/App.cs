@@ -710,7 +710,7 @@ public class App
             _builder.ClientLogger?.LogDebug("Using {Keys} upload handlers where {DefaultUploadHandler} is default.", result.UploadHandlers.Keys, result.DefaultUploadHandler);
             foreach (var uploadHandler in result.UploadHandlers)
             {
-                _builder.ClientLogger?.LogDebug("Upload handler {Key} has following parameters: {Parameters}", 
+                _builder.ClientLogger?.LogTrace("Upload handler {Key} has following parameters: {Parameters}", 
                     uploadHandler.Key, uploadHandler.Value(null!).SetType(uploadHandler.Key).Parameters);
             }
         }

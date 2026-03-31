@@ -31,7 +31,7 @@ group by n.nspname, t.typname, des.description";
         NpgsqlConnection? connection = null;
         try
         {
-            Options.CreateAndOpenSourceConnection(builder?.ApplicationServices, ref connection, ref shouldDispose);
+            Options.CreateAndOpenSourceConnection(builder?.ApplicationServices, ref connection, ref shouldDispose, "HttpClientTypes");
 
             if (connection is null)
             {

@@ -204,7 +204,7 @@ public class CrudSource(
         bool shouldDispose = true;
         try
         {
-            Options.CreateAndOpenSourceConnection(serviceProvider, ref connection, ref shouldDispose);
+            Options.CreateAndOpenSourceConnection(serviceProvider, ref connection, ref shouldDispose, nameof(CrudSource));
             
             if (connection is null)
             {

@@ -25,13 +25,16 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
         _npgsqlRestoptions = npgsqlRestoptions;
     }
 
+    private int _filesCreated;
+
     public void Cleanup(RoutineEndpoint[] endpoints)
     {
         if (options.FilePath is null)
         {
             return;
         }
-        
+        _filesCreated = 0;
+
         var containsModuleParam = endpoints.Any(e => e.CustomParameters?.ContainsKey(Module) is true);
         if (!options.BySchema && containsModuleParam)
         {
@@ -85,6 +88,11 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 }
                 Run([.. groupArray], filename);
             }
+        }
+
+        if (_filesCreated > 0)
+        {
+            Logger?.LogDebug("TsClient: Created {count} {type} file(s)", _filesCreated, options.SkipTypes ? "JavaScript" : "TypeScript");
         }
     }
 
@@ -221,7 +229,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                     try
                     {
                         File.Delete(fileName);
-                        Logger?.LogDebug("Deleted file: {fileName}", fileName);
+                        Logger?.LogTrace("Deleted file: {fileName}", fileName);
                     }
                     catch (Exception ex)
                     {
@@ -269,7 +277,8 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 }
                 AddHeader(interfaces);
                 File.WriteAllText(fileName, interfaces.ToString());
-                Logger?.LogDebug("Created Typescript file: {fileName}", fileName);
+                _filesCreated++;
+                Logger?.LogTrace("Created Typescript file: {fileName}", fileName);
             }
             else
             {
@@ -279,7 +288,8 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 }
                 AddHeader(content);
                 File.WriteAllText(fileName, content.ToString());
-                Logger?.LogDebug("Created Javascript file: {fileName}", fileName);
+                _filesCreated++;
+                Logger?.LogTrace("Created Javascript file: {fileName}", fileName);
             }
         }
         else
@@ -289,7 +299,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 var typeFile = fileName.Replace(".ts", "Types.d.ts");
                 AddHeader(interfaces);
                 File.WriteAllText(typeFile, interfaces.ToString());
-                Logger?.LogDebug("Created Typescript type file: {typeFile}", typeFile);
+                Logger?.LogTrace("Created Typescript type file: {typeFile}", typeFile);
             }
 
             if (contentHeader.Length > 0)
@@ -300,11 +310,13 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             File.WriteAllText(fileName, content.ToString());
             if (!options.SkipTypes)
             {
-                Logger?.LogDebug("Created Typescript file: {fileName}", fileName);
+                _filesCreated++;
+                Logger?.LogTrace("Created Typescript file: {fileName}", fileName);
             }
             else
             {
-                Logger?.LogDebug("Created Javascript file: {fileName}", fileName);
+                _filesCreated++;
+                Logger?.LogTrace("Created Javascript file: {fileName}", fileName);
             }
         }
         return;

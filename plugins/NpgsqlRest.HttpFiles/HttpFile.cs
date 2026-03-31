@@ -223,12 +223,13 @@ public class HttpFile(HttpFileOptions httpFileOptions) : IEndpointCreateHandler
                     await context.Response.WriteAsync(content.ToString());
                 });
                 var host = GetHost();
-                Logger?.LogDebug("Exposed HTTP file content on URL: {host}{path}", host, path);
+                Logger?.LogTrace("Exposed HTTP file content on URL: {host}{path}", host, path);
             }
         }
 
         if (_file)
         {
+            int filesCreated = 0;
             foreach(var (fileName, content) in _fileContent)
             {
                 var fullFileName = Path.Combine(Environment.CurrentDirectory, fileName);
@@ -242,7 +243,12 @@ public class HttpFile(HttpFileOptions httpFileOptions) : IEndpointCreateHandler
                     Directory.CreateDirectory(dir);
                 }
                 File.WriteAllText(fullFileName, content.ToString());
-                Logger?.LogDebug("Created HTTP file: {fileName}", fileName);
+                filesCreated++;
+                Logger?.LogTrace("Created HTTP file: {fileName}", fileName);
+            }
+            if (filesCreated > 0)
+            {
+                Logger?.LogDebug("HttpFiles: Created {count} HTTP file(s)", filesCreated);
             }
         }
     }
