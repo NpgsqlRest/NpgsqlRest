@@ -253,7 +253,7 @@ internal static partial class DefaultCommentParser
 
                 // separator [ value ]
                 // raw_separator [ value ]
-                else if (haveTag is true && line.StartsWith(string.Concat(SeparatorKey[0], " ")))
+                else if (haveTag is true && StrEqualsToArray(wordsLower[0], SeparatorKey))
                 {
                     HandleSeparator(routineEndpoint, line, wordsLower, description);
                     TrackAnnotation(line);
@@ -261,7 +261,7 @@ internal static partial class DefaultCommentParser
 
                 // new_line [ value ]
                 // raw_new_line [ value ]
-                else if (haveTag is true && len >= 2 && line.StartsWith(string.Concat(NewLineKey[0], " ")))
+                else if (haveTag is true && StrEqualsToArray(wordsLower[0], NewLineKey))
                 {
                     HandleNewLine(routineEndpoint, line, wordsLower, description);
                     TrackAnnotation(line);

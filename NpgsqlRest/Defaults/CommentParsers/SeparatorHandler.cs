@@ -21,7 +21,14 @@ internal static partial class DefaultCommentParser
         string[] wordsLower,
         string description)
     {
-        var sep = line[(wordsLower[0].Length + 1)..];
+        // wordsLower[0] may include @ prefix (e.g., "@separator"), and line may also have @ prefix.
+        // Find the first space after the keyword to extract the value portion.
+        var keyEnd = line.IndexOf(' ');
+        if (keyEnd < 0 || keyEnd + 1 >= line.Length)
+        {
+            return;
+        }
+        var sep = line[(keyEnd + 1)..];
         CommentLogger?.CommentSetRawValueSeparator(description, sep);
         endpoint.RawValueSeparator = Regex.Unescape(sep);
     }

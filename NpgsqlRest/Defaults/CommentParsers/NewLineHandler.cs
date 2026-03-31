@@ -21,7 +21,14 @@ internal static partial class DefaultCommentParser
         string[] wordsLower,
         string description)
     {
-        var nl = line[(wordsLower[0].Length + 1)..];
+        // wordsLower[0] may include @ prefix (e.g., "@new_line"), and line may also have @ prefix.
+        // Find the first space after the keyword to extract the value portion.
+        var keyEnd = line.IndexOf(' ');
+        if (keyEnd < 0 || keyEnd + 1 >= line.Length)
+        {
+            return;
+        }
+        var nl = line[(keyEnd + 1)..];
         CommentLogger?.CommentSetRawNewLineSeparator(description, nl);
         endpoint.RawNewLineSeparator = Regex.Unescape(nl);
     }

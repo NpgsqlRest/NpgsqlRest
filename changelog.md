@@ -846,6 +846,14 @@ Moved verbose per-item logging from `Debug` to `Trace` level to reduce noise at 
 
 ---
 
+### Fix `@separator` and `@new_line` Annotations Not Working with `@` Prefix
+
+The `@separator` and `@new_line` comment annotations were silently ignored when using the `@` prefix syntax (e.g., `@separator ,` in `/* */` block comments). This affected SQL file endpoints using block comment annotations. Line comment annotations without `@` prefix (e.g., `-- separator ,`) were not affected.
+
+The root cause: the annotation matching used `line.StartsWith("separator ")` which failed when the line started with `@separator`. All other annotation handlers used `StrEqualsToArray()` which correctly strips the `@` prefix.
+
+---
+
 ## Version [3.11.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.11.1) (2026-03-13)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.11.0...3.11.1)

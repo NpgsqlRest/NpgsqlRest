@@ -223,6 +223,30 @@ public class SqlFileAdvancedFixture : IDisposable
             select 123 as n, true as b, 'hello' as t;
             """);
 
+        // 13. Raw CSV using @ prefix annotations in block comments
+        File.WriteAllText(Path.Combine(dir, "sf_raw_csv_at_prefix.sql"), """
+            /*
+            HTTP GET
+            @raw
+            @separator ,
+            @new_line \n
+            @columns
+            Content-Type: text/csv
+            */
+            select 123 as n, true as b, 'hello' as t;
+            """);
+
+        // 14. Raw with @ prefix separator using tab character
+        File.WriteAllText(Path.Combine(dir, "sf_raw_tab_at_prefix.sql"), """
+            /*
+            HTTP GET
+            @raw
+            @separator \t
+            @new_line \n
+            */
+            select 123 as n, true as b, 'hello' as t;
+            """);
+
     }
 
 #pragma warning disable CA1816
