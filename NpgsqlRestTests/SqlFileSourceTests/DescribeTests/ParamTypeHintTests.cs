@@ -131,4 +131,18 @@ public class ParamTypeHintTests
         hints.Should().NotBeNull();
         hints![0].Should().Be("text");
     }
+
+    [Fact]
+    public void TypeDescriptor_Jsonb_IsJson()
+    {
+        var td = new NpgsqlRest.TypeDescriptor("jsonb");
+        td.IsJson.Should().BeTrue();
+    }
+
+    [Fact]
+    public void TypeDescriptor_Json_IsJson()
+    {
+        var td = new NpgsqlRest.TypeDescriptor("json");
+        td.IsJson.Should().BeTrue();
+    }
 }

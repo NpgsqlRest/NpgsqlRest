@@ -140,10 +140,39 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
         var commandDescribes = new List<DescribeResult>();
         var paramTypeHints = SqlFileParser.ExtractParamTypeHints(parseResult.Comment);
 
-        foreach (var stmt in parseResult.Statements)
+        for (int stmtIndex = 0; stmtIndex < parseResult.Statements.Count; stmtIndex++)
         {
+            var stmt = parseResult.Statements[stmtIndex];
             int stmtParamCount = SqlFileDescriber.FindMaxParamIndex(stmt);
             if (stmtParamCount > mergedMaxParam) mergedMaxParam = stmtParamCount;
+
+            // @returns type_name — skip Describe, resolve columns from composite type
+            if (parseResult.ReturnsTypeOverrides.TryGetValue(stmtIndex, out var returnsTypeName))
+            {
+                var compositeType = CompositeTypeCache.GetType(returnsTypeName);
+                if (compositeType is null)
+                {
+                    var error = $"@returns type '{returnsTypeName}' not found in composite type cache. Ensure the type exists in the database.";
+                    NpgsqlRestOptions.Logger?.LogError("SqlFileSource: {FilePath}: {Error}", filePath, error);
+                    if (options.ErrorMode == ParseErrorMode.Exit)
+                    {
+                        NpgsqlRestOptions.Logger?.LogCritical("SqlFileSource: Exiting due to SQL file error. Set ErrorMode to Skip to continue past errors.");
+                        Environment.Exit(1);
+                    }
+                    return null;
+                }
+                var returnsCols = new ColumnInfo[compositeType.FieldNames.Length];
+                for (int fi = 0; fi < compositeType.FieldNames.Length; fi++)
+                {
+                    returnsCols[fi] = new ColumnInfo
+                    {
+                        Name = compositeType.FieldNames[fi],
+                        DataTypeName = compositeType.FieldTypeNames[fi],
+                    };
+                }
+                commandDescribes.Add(new DescribeResult { Columns = returnsCols });
+                continue;
+            }
 
             var describeResult = SqlFileDescriber.Describe(connection, stmt, stmtParamCount, paramTypeHints);
             if (describeResult.HasError)

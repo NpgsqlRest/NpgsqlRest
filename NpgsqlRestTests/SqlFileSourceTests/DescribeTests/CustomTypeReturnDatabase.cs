@@ -6,6 +6,7 @@ public static partial class Database
     {
         script.Append(@"
         create type sql_file_custom_type as (val1 text, val2 int, val3 boolean);
+        create type sql_file_json_type as (data jsonb, name text);
 
         create table sql_file_custom_table (
             id int primary key,

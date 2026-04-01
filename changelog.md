@@ -805,6 +805,35 @@ On `ApplicationStopping`, all broadcaster channels are now completed, causing SS
 
 ---
 
+### New Positional Annotation: `@returns` — Composite Type Override for Describe
+
+New positional annotation `@returns <type_name>` that skips the PostgreSQL Describe step for a statement and resolves columns from the specified composite type instead. This enables SQL file endpoints that use temp tables created at runtime (e.g., inside DO blocks):
+
+```sql
+-- HTTP GET
+-- @param $1 val1 text
+-- @param $2 val2 integer
+begin;
+select set_config('app.val1', $1, true); -- @skip
+select set_config('app.val2', $2::text, true); -- @skip
+do $$ begin
+    create temp table _result on commit drop as
+    select current_setting('app.val1') as val1,
+           current_setting('app.val2')::int as val2;
+end; $$;
+-- @returns my_result_type
+-- @result data
+-- @single
+select * from _result;
+end;
+```
+
+Without `@returns`, the `select * from _result` statement fails during startup Describe because the temp table doesn't exist yet. With `@returns my_result_type`, the columns are resolved from the composite type definition in `pg_catalog` instead.
+
+The composite type must exist in the database at startup. If the type is not found, an error is logged and the file is skipped or the process exits (depending on `ErrorMode`).
+
+---
+
 ### `SqlFileSource:LogCommandText` Setting
 
 New setting `LogCommandText` in the `SqlFileSource` configuration (default `false`) controls whether multi-command SQL file endpoints include the full SQL text in debug command logs. When false, only the file path and statement count are logged:

@@ -469,8 +469,14 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 StringBuilder req = new();
                 requestName = $"I{pascal}Request";
                 requestDesc = string.Concat(requestDesc, "{");
+                var seenParamNames = new HashSet<string>(StringComparer.Ordinal);
                 for (var i = 0; i < paramCount; i++)
                 {
+                    // Skip duplicate parameter names (e.g., when multiple HTTP custom types share field names)
+                    if (!seenParamNames.Add(paramNames[i]))
+                    {
+                        continue;
+                    }
                     var descriptor = routine.Parameters[i].TypeDescriptor;
                     var type = GetTsType(descriptor, false);
                     req.AppendLine($"    {paramNames[i]}: {type} | null;");

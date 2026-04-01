@@ -53,6 +53,14 @@ public class SqlFileParseResult
     public HashSet<int> SkipCommands { get; } = [];
 
     /// <summary>
+    /// Per-command @returns annotations (positional).
+    /// Key is 0-based statement index, value is the composite type name.
+    /// When present, the Describe step is skipped for that statement and
+    /// columns are resolved from the composite type metadata instead.
+    /// </summary>
+    public Dictionary<int, string> ReturnsTypeOverrides { get; } = [];
+
+    /// <summary>
     /// Errors encountered during parsing.
     /// </summary>
     public List<string> Errors { get; } = [];
@@ -470,6 +478,17 @@ public static class SqlFileParser
                 s.Equals("no_result", StringComparison.OrdinalIgnoreCase))
             {
                 result.SkipCommands.Add(statementIndex);
+                continue;
+            }
+
+            // @returns type_name (positional — skip Describe, use composite type columns)
+            if (s.StartsWith("returns", StringComparison.OrdinalIgnoreCase) && s.Length > 7)
+            {
+                var typeName = s[7..].TrimStart();
+                if (typeName.Length > 0)
+                {
+                    result.ReturnsTypeOverrides[statementIndex] = typeName;
+                }
                 continue;
             }
 
