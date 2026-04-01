@@ -310,7 +310,7 @@ public class HttpClientTypeHandler(HttpTypeDefinition definition, Dictionary<str
             // Single composite parameter (SQL files): build composite text value
             if (parameter.TypeDescriptor.CustomTypeName is null)
             {
-                parameter.Value = BuildCompositeTextValue(handler, parameter.TypeDescriptor.CustomType);
+                parameter.Value = BuildCompositeTextValue(handler, parameter.CompositeFieldNames);
                 continue;
             }
 
@@ -349,23 +349,23 @@ public class HttpClientTypeHandler(HttpTypeDefinition definition, Dictionary<str
     /// Format: (field1_value,field2_value,...) where values are double-quoted and internal quotes escaped.
     /// Field order comes from the composite type definition in pg_catalog.
     /// </summary>
-    private static object BuildCompositeTextValue(HttpClientTypeHandler handler, string typeName)
+    private static object BuildCompositeTextValue(HttpClientTypeHandler handler, string[]? fieldNames)
     {
-        var compositeType = CompositeTypeCache.GetType(typeName);
-        if (compositeType is null)
+        if (fieldNames is null || fieldNames.Length == 0)
         {
             return DBNull.Value;
         }
 
         var httpOptions = Options.HttpClientOptions;
+
         var sb = new System.Text.StringBuilder();
         sb.Append('(');
 
-        for (int i = 0; i < compositeType.FieldNames.Length; i++)
+        for (int i = 0; i < fieldNames.Length; i++)
         {
             if (i > 0) sb.Append(',');
 
-            var fieldName = compositeType.FieldNames[i];
+            var fieldName = fieldNames[i];
             string? value = null;
 
             if (string.Equals(fieldName, httpOptions.ResponseBodyField, StringComparison.InvariantCulture))

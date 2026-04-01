@@ -266,9 +266,10 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
 
             // HTTP type params need a default value so they're added to command.Parameters
             // (otherwise HasDefault=true + no DefaultValue causes the parameter to be skipped)
-            if (customType is not null)
+            if (httpTypeParams is not null && httpTypeParams.TryGetValue(i, out var httpParamForFields))
             {
                 param.DefaultValue = DBNull.Value;
+                param.CompositeFieldNames = httpParamForFields.FieldNames;
             }
 
             parameters[i] = param;

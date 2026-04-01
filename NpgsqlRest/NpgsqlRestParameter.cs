@@ -22,6 +22,12 @@ public class NpgsqlRestParameter : NpgsqlParameter
     public bool IsVirtual { get; init; }
     public TypeDescriptor TypeDescriptor { get; set; }
 
+    /// <summary>
+    /// For HTTP custom type composite parameters, the field names in order.
+    /// Used to build the composite text value without depending on CompositeTypeCache.
+    /// </summary>
+    public string[]? CompositeFieldNames { get; set; }
+
     public ParamType ParamType { get; set; } = default!;
     public StringValues? QueryStringValues { get; set; } = null;
     public JsonNode? JsonBodyNode { get; set; } = null;

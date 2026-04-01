@@ -2353,7 +2353,7 @@ public static partial class ConfigSchemaGenerator
           //
           // Default TypeScript type for JSON types
           //
-          "DefaultJsonType": "string",
+          "DefaultJsonType": "any",
           //
           // Use routine name instead of endpoint name when generating function names.
           //

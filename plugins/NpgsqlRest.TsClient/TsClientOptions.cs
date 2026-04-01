@@ -98,7 +98,7 @@ public class TsClientOptions
     /// <summary>
     /// Default TypeScript type for JSON types.
     /// </summary>
-    public string DefaultJsonType { get; set; } = "string";
+    public string DefaultJsonType { get; set; } = "any";
 
     /// <summary>
     /// Use routine name instead of endpoint name when generating a function name.

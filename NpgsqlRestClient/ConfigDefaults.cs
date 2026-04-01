@@ -863,7 +863,7 @@ public static class ConfigDefaults
             ["SkipFunctionNames"] = new JsonArray(),
             ["SkipPaths"] = new JsonArray(),
             ["SkipSchemas"] = new JsonArray(),
-            ["DefaultJsonType"] = "string",
+            ["DefaultJsonType"] = "any",
             ["UseRoutineNameInsteadOfEndpoint"] = false,
             ["ExportUrls"] = false,
             ["SkipTypes"] = false,
