@@ -16,24 +16,25 @@ HTTP GET
 param $1 good_name
 ';
 
--- Rename to reserved keyword 'default' — should be rejected, param stays as $1
-create function case_param_reserved_default(int)
+-- 'default' at position 2 is interpreted as 'set default value' (not rename)
+-- So 'param $1 default' sets default null on $1, the param stays as $1
+create function case_param_default_keyword(int)
 returns int
 language sql
 as 'select $1';
 
-comment on function case_param_reserved_default(int) is '
+comment on function case_param_default_keyword(int) is '
 HTTP GET
 param $1 default
 ';
 
--- Rename to reserved keyword 'is' — should be rejected
-create function case_param_reserved_is(int)
+-- 'is' at exactly 3 tokens: 'param $1 is' — renames $1 to literal 'is'
+create function case_param_is_keyword(int)
 returns int
 language sql
 as 'select $1';
 
-comment on function case_param_reserved_is(int) is '
+comment on function case_param_is_keyword(int) is '
 HTTP GET
 param $1 is
 ';
@@ -71,15 +72,59 @@ HTTP GET
 param $1 _val$1
 ';
 
--- Rename to reserved keyword 'type' — should be rejected
-create function case_param_reserved_type(int)
+-- Rename to 'type' — should work (not reserved)
+create function case_param_type_keyword(int)
 returns int
 language sql
 as 'select $1';
 
-comment on function case_param_reserved_type(int) is '
+comment on function case_param_type_keyword(int) is '
 HTTP GET
 param $1 type
+';
+
+-- Rename to 'upload' — should work (not reserved, only matters in 'is upload metadata' pattern)
+create function case_param_upload_keyword(int)
+returns int
+language sql
+as 'select $1';
+
+comment on function case_param_upload_keyword(int) is '
+HTTP GET
+param $1 upload
+';
+
+-- Rename to 'metadata' — should work (not reserved)
+create function case_param_metadata_keyword(int)
+returns int
+language sql
+as 'select $1';
+
+comment on function case_param_metadata_keyword(int) is '
+HTTP GET
+param $1 metadata
+';
+
+-- Rename to 'hash' — should work (only matters in 'is hash of' pattern)
+create function case_param_hash_keyword(int)
+returns int
+language sql
+as 'select $1';
+
+comment on function case_param_hash_keyword(int) is '
+HTTP GET
+param $1 hash
+';
+
+-- Rename to 'of' — should work (not reserved)
+create function case_param_of_keyword(int)
+returns int
+language sql
+as 'select $1';
+
+comment on function case_param_of_keyword(int) is '
+HTTP GET
+param $1 of
 ';
 ");
     }
@@ -99,22 +144,23 @@ public class ParamNameValidationTests(TestFixture test)
     }
 
     [Fact]
-    public async Task ReservedKeyword_Default_RenameRejected()
+    public async Task DefaultKeyword_InterpretedAsSetDefault_NotRename()
     {
-        // 'default' is reserved — rename should be rejected, original $1 param name doesn't work via query string
-        // The endpoint should exist but the param rename failed, so it expects positional param
-        using var result = await test.Client.GetAsync("/api/case-param-reserved-default/?default=7");
-        // The param name 'default' was rejected, so 'default' query param won't bind
-        result.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // 'param $1 default' sets default null on $1. The param name stays as $1.
+        // Without providing $1, the default (null) is used, so the endpoint returns null.
+        using var result = await test.Client.GetAsync("/api/case-param-default-keyword/");
+        result.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [Fact]
-    public async Task ReservedKeyword_Is_RenameRejected()
+    public async Task IsKeyword_RenameToLiteralIs_Works()
     {
-        // len == 3 with wordsLower[2] == "is" goes to rename-to-literal-"is" path
-        // But validation rejects it
-        using var result = await test.Client.GetAsync("/api/case-param-reserved-is/?is=7");
-        result.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // 'param $1 is' with exactly 3 tokens renames $1 to "is"
+        using var result = await test.Client.GetAsync("/api/case-param-is-keyword/?is=7");
+        var response = await result.Content.ReadAsStringAsync();
+
+        result.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Should().Be("7");
     }
 
     [Fact]
@@ -145,9 +191,52 @@ public class ParamNameValidationTests(TestFixture test)
     }
 
     [Fact]
-    public async Task ReservedKeyword_Type_RenameRejected()
+    public async Task TypeKeyword_RenameWorks()
     {
-        using var result = await test.Client.GetAsync("/api/case-param-reserved-type/?type=7");
-        result.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        using var result = await test.Client.GetAsync("/api/case-param-type-keyword/?type=7");
+        var response = await result.Content.ReadAsStringAsync();
+
+        result.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Should().Be("7");
+    }
+
+    [Fact]
+    public async Task UploadKeyword_RenameWorks()
+    {
+        using var result = await test.Client.GetAsync("/api/case-param-upload-keyword/?upload=7");
+        var response = await result.Content.ReadAsStringAsync();
+
+        result.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Should().Be("7");
+    }
+
+    [Fact]
+    public async Task MetadataKeyword_RenameWorks()
+    {
+        using var result = await test.Client.GetAsync("/api/case-param-metadata-keyword/?metadata=7");
+        var response = await result.Content.ReadAsStringAsync();
+
+        result.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Should().Be("7");
+    }
+
+    [Fact]
+    public async Task HashKeyword_RenameWorks()
+    {
+        using var result = await test.Client.GetAsync("/api/case-param-hash-keyword/?hash=7");
+        var response = await result.Content.ReadAsStringAsync();
+
+        result.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Should().Be("7");
+    }
+
+    [Fact]
+    public async Task OfKeyword_RenameWorks()
+    {
+        using var result = await test.Client.GetAsync("/api/case-param-of-keyword/?of=7");
+        var response = await result.Content.ReadAsStringAsync();
+
+        result.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Should().Be("7");
     }
 }

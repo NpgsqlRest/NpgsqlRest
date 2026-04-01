@@ -22,12 +22,11 @@ internal static partial class DefaultCommentParser
 
     /// <summary>
     /// Reserved keywords that cannot be used as parameter names in rename annotations.
-    /// These are keywords used within @param annotation parsing that would cause ambiguity.
+    /// No reserved keyword blocklist needed — the parser's check order and token positions
+    /// handle all disambiguation. For example, "default" at position 2 is always interpreted
+    /// as "set default value" (not rename), which is the correct behavior since "default" is
+    /// a SQL reserved word and wouldn't be a realistic parameter name.
     /// </summary>
-    private static readonly HashSet<string> ReservedParamKeywords = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "default", "is", "hash", "of", "upload", "metadata", "type",
-    };
 
     private static void HandleParameter(
         Routine routine,
@@ -414,12 +413,6 @@ internal static partial class DefaultCommentParser
                 }
             }
             return name.Length > 1 ? null : "positional parameter '$' has no number";
-        }
-
-        // Check reserved keywords
-        if (ReservedParamKeywords.Contains(name))
-        {
-            return $"'{name}' is a reserved annotation keyword";
         }
 
         // First character: letter or underscore

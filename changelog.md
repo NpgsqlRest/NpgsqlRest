@@ -192,20 +192,7 @@ At startup, each statement is analyzed via PostgreSQL's Parse → Describe → S
 
 #### Custom / Composite Type Support
 
-| Pattern | Result |
-|---|---|
-| `SELECT (data).val1, (data).val2 FROM table` | Proper JSON with scalar columns |
-| `SELECT items FROM table` (where `items` is `my_type[]`) | JSON array of objects: `[{"val1": "a", "val2": 1}]` |
-| `SELECT data FROM table` (where `data` is `my_type`) | **Flat fields** (default): `{"val1": "a", "val2": 1}` — same as routines |
-| `SELECT data FROM table` with `@nested` annotation | **Nested object**: `{"data": {"val1": "a", "val2": 1}}` |
-
-Composite type columns are automatically expanded to match routine endpoint behavior:
-
-- **Default (flat):** Composite fields are spliced inline into the JSON row. `SELECT id, data FROM table` where `data` is `my_type(val1 text, val2 int)` produces `{"id": 1, "val1": "a", "val2": 42}` — identical to how `RETURNS TABLE(id int, data my_type)` works for functions.
-- **Nested (`@nested` annotation or `NestedJsonForCompositeTypes: true`):** Composite wrapped under column name: `{"id": 1, "data": {"val1": "a", "val2": 42}}`.
-- **NULL composites:** Flat → all fields emitted as `null`. Nested → `"data": null`.
-
-Composite type resolution uses `CompositeTypeCache` which loads all composite types from `pg_catalog` at startup. Schema-qualified type names from `GetDataTypeName` (e.g., `public.my_type`) are matched against cache keys via fallback lookup.
+Composite type columns in SQL file endpoints behave the same way as routine endpoints (functions and procedures) — flat by default, nested with the `@nested` annotation or `NestedJsonForCompositeTypes` setting. Arrays of composite types are also supported.
 
 #### Unnamed and Duplicate Columns
 
@@ -396,7 +383,6 @@ Parameter names are now validated when renaming via `@param`. Invalid renames ar
 **Rules:**
 - Must be a valid PostgreSQL identifier: starts with letter or `_`, followed by letters, digits, `_`, or `$`
 - Positional parameters (`$1`, `$2`) are allowed
-- Reserved annotation keywords cannot be used as parameter names: `default`, `is`, `hash`, `of`, `upload`, `metadata`, `type`
 
 ```sql
 -- Valid:
@@ -404,8 +390,6 @@ Parameter names are now validated when renaming via `@param`. Invalid renames ar
 -- @param $1 _val$1         ✓
 
 -- Rejected (with warning log):
--- @param $1 default        ✗ reserved keyword
--- @param $1 is             ✗ reserved keyword
 -- @param $1 1bad           ✗ starts with digit
 -- @param $1 my-param       ✗ invalid character (hyphen)
 ```
@@ -444,30 +428,7 @@ This enhancement benefits all existing `IsPatternMatch` consumers (`StaticFiles.
 
 #### TsClient: Composite Type Support for SQL Files
 
-The TypeScript client generator now correctly generates interfaces matching the actual JSON response for SQL file endpoints with composite type columns:
-
-- **Flat mode (default):** Composite fields are inlined as individual interface properties, matching the flat JSON response. `SELECT id, data FROM table` (where `data` is `my_type(val1 text, val2 int)`) generates:
-  ```typescript
-  interface IMyQueryResponse {
-      id: number | null;
-      val1: string | null;
-      val2: number | null;
-  }
-  ```
-
-- **Nested mode (`@nested`):** Composite column generates a nested interface:
-  ```typescript
-  interface IData {
-      val1: string | null;
-      val2: number | null;
-  }
-  interface IMyQueryResponse {
-      id: number | null;
-      data: IData | null;
-  }
-  ```
-
-Nested composites and arrays of composites within composite fields are handled recursively.
+The TypeScript client generator now correctly handles composite type columns in SQL file endpoints, generating interfaces that match the actual JSON response — same behavior as routine endpoints, including flat/nested modes and recursive composites.
 
 #### Fix: `OnlyWithHttpTag` Mode Skips Files Before Describe
 
