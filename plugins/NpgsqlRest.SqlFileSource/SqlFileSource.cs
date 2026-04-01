@@ -217,7 +217,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
         }
 
         // Build mapping of expanded param index → (httpTypeName, fieldName) for HTTP type fields
-        Dictionary<int, (string HttpTypeName, string FieldName, short Position)>? expandedHttpFields = null;
+        Dictionary<int, (string HttpTypeName, string FieldName, short Position, string FieldType)>? expandedHttpFields = null;
         if (httpTypeExpansions is not null)
         {
             expandedHttpFields = BuildExpandedFieldMap(httpTypeExpansions);
@@ -244,6 +244,8 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
                 customTypePosition = httpField.Position;
                 originalParameterName = $"${i + 1}";
                 convertedName = httpField.FieldName;
+                // Use the composite field type instead of relying on Describe inference
+                typeName = httpField.FieldType;
             }
             else
             {
@@ -626,10 +628,10 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
     /// <summary>
     /// Build a mapping from expanded parameter index to (httpTypeName, fieldName, position).
     /// </summary>
-    private static Dictionary<int, (string HttpTypeName, string FieldName, short Position)> BuildExpandedFieldMap(
+    private static Dictionary<int, (string HttpTypeName, string FieldName, short Position, string FieldType)> BuildExpandedFieldMap(
         Dictionary<int, (string TypeName, string ParamName, string[] FieldNames, string[] FieldTypes)> expansions)
     {
-        var map = new Dictionary<int, (string, string, short)>();
+        var map = new Dictionary<int, (string, string, short, string)>();
 
         // Calculate cumulative shifts
         var sortedExpansions = expansions.OrderBy(e => e.Key).ToList();
@@ -640,7 +642,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
             int expandedStartIndex = origIndex + cumulativeShift;
             for (int f = 0; f < expansion.FieldNames.Length; f++)
             {
-                map[expandedStartIndex + f] = (expansion.TypeName, expansion.FieldNames[f], (short)(f + 1));
+                map[expandedStartIndex + f] = (expansion.TypeName, expansion.FieldNames[f], (short)(f + 1), expansion.FieldTypes[f]);
             }
             cumulativeShift += expansion.FieldNames.Length - 1;
         }

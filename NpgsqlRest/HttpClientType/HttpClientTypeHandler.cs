@@ -17,6 +17,7 @@ public class HttpClientTypeHandler(HttpTypeDefinition definition, Dictionary<str
     /// HttpClient for self-referencing calls (relative paths). Uses SelfBaseUrl or a custom handler.
     /// </summary>
     private static HttpClient? _selfClient;
+    private string? _resolvedUrl;
 
     /// <summary>
     /// Base URL for resolving relative paths (e.g., "/api/test" → "http://localhost:5000/api/test").
@@ -47,14 +48,16 @@ public class HttpClientTypeHandler(HttpTypeDefinition definition, Dictionary<str
         for (int attempt = 0; attempt <= maxRetries; attempt++)
         {
             var startTimestamp = Stopwatch.GetTimestamp();
+            _resolvedUrl = ResolveValue(definition.Url);
+            var resolvedUrl = _resolvedUrl;
             if (attempt == 0)
             {
-                Logger?.LogDebug("HTTP client starting {Method} request to '{Url}'", definition.Method, definition.Url);
+                Logger?.LogDebug("HTTP client starting {Method} request to '{Url}'", definition.Method, resolvedUrl);
             }
             else
             {
                 Logger?.LogDebug("HTTP client retrying {Method} request to '{Url}' (attempt {Attempt}/{MaxRetries})",
-                    definition.Method, definition.Url, attempt + 1, maxRetries + 1);
+                    definition.Method, resolvedUrl, attempt + 1, maxRetries + 1);
             }
 
             try
@@ -87,12 +90,12 @@ public class HttpClientTypeHandler(HttpTypeDefinition definition, Dictionary<str
 
                     var elapsed = Stopwatch.GetElapsedTime(startTimestamp);
                     Logger?.LogDebug("Internal request to '{Url}' completed with status {StatusCode} in {Elapsed}ms",
-                        definition.Url, StatusCode, elapsed.TotalMilliseconds.ToString("F1"));
+                        resolvedUrl, StatusCode, elapsed.TotalMilliseconds.ToString("F1"));
 
                     if (!IsSuccess && attempt < maxRetries && ShouldRetry(StatusCode))
                     {
                         Logger?.LogWarning("Internal request to '{Url}' returned {StatusCode}, retrying after {Delay}ms",
-                            definition.Url, StatusCode, definition.RetryDelays![attempt].TotalMilliseconds);
+                            resolvedUrl, StatusCode, definition.RetryDelays![attempt].TotalMilliseconds);
                         await Task.Delay(definition.RetryDelays![attempt], cancellationToken);
                         continue;
                     }
@@ -110,7 +113,7 @@ public class HttpClientTypeHandler(HttpTypeDefinition definition, Dictionary<str
                 if (!IsSuccess && attempt < maxRetries && ShouldRetry(StatusCode))
                 {
                     Logger?.LogWarning("HTTP client request to '{Url}' returned {StatusCode}, retrying after {Delay}ms",
-                        definition.Url, StatusCode, definition.RetryDelays![attempt].TotalMilliseconds);
+                        resolvedUrl, StatusCode, definition.RetryDelays![attempt].TotalMilliseconds);
                     await Task.Delay(definition.RetryDelays![attempt], cancellationToken);
                     continue;
                 }
@@ -124,12 +127,12 @@ public class HttpClientTypeHandler(HttpTypeDefinition definition, Dictionary<str
                 if (attempt < maxRetries)
                 {
                     Logger?.LogWarning("HTTP client request to '{Url}' timed out, retrying after {Delay}ms",
-                        definition.Url, definition.RetryDelays![attempt].TotalMilliseconds);
+                        resolvedUrl, definition.RetryDelays![attempt].TotalMilliseconds);
                     await Task.Delay(definition.RetryDelays![attempt], cancellationToken);
                     continue;
                 }
                 Logger?.LogWarning("HTTP client request to '{Url}' timed out after {Timeout}s",
-                    definition.Url, definition.Timeout?.TotalSeconds ?? 30);
+                    resolvedUrl, definition.Timeout?.TotalSeconds ?? 30);
             }
             catch (HttpRequestException ex)
             {
@@ -139,19 +142,19 @@ public class HttpClientTypeHandler(HttpTypeDefinition definition, Dictionary<str
                 if (attempt < maxRetries)
                 {
                     Logger?.LogWarning("HTTP client request to '{Url}' failed ({Message}), retrying after {Delay}ms",
-                        definition.Url, ex.Message, definition.RetryDelays![attempt].TotalMilliseconds);
+                        resolvedUrl, ex.Message, definition.RetryDelays![attempt].TotalMilliseconds);
                     await Task.Delay(definition.RetryDelays![attempt], cancellationToken);
                     continue;
                 }
                 Logger?.LogError(ex, "HTTP client request to '{Url}' failed with status {StatusCode}",
-                    definition.Url, StatusCode);
+                    resolvedUrl, StatusCode);
             }
             catch (Exception ex)
             {
                 StatusCode = 0;
                 IsSuccess = false;
                 ErrorMessage = ex.Message;
-                Logger?.LogError(ex, "HTTP client request to '{Url}' failed with unexpected error", definition.Url);
+                Logger?.LogError(ex, "HTTP client request to '{Url}' failed with unexpected error", resolvedUrl);
                 return; // Unexpected errors are not retryable
             }
         }
@@ -229,7 +232,7 @@ public class HttpClientTypeHandler(HttpTypeDefinition definition, Dictionary<str
 
         var duration = Stopwatch.GetElapsedTime(startTimestamp);
         Logger?.LogDebug("HTTP client request to '{Url}' completed with status {StatusCode}, content-type: {ContentType}, body length: {BodyLength}, duration: {Duration}ms",
-            definition.Url, StatusCode, ContentType, Body?.Length ?? 0, duration.TotalMilliseconds);
+            _resolvedUrl ?? definition.Url, StatusCode, ContentType, Body?.Length ?? 0, duration.TotalMilliseconds);
     }
 
     private static string BuildHeadersJson(HttpResponseMessage response)
