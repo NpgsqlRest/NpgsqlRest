@@ -86,6 +86,17 @@ public class ReturnsAnnotationTests(SqlFileSourceTestFixture test)
     }
 
     [Fact]
+    public void TsClient_ReturnsJsonb_GeneratesAnyType()
+    {
+        // Find the generated TsClient file
+        var tsFiles = Directory.GetFiles(test.TsClientDir, "*.ts");
+        tsFiles.Should().NotBeEmpty("TsClient should generate at least one .ts file");
+        var content = string.Join("\n", tsFiles.Select(File.ReadAllText));
+        // The @returns sql_file_json_type has jsonb field — TsClient should generate "any" not "string"
+        content.Should().Contain("data: any");
+    }
+
+    [Fact]
     public async Task ReturnJsonb_TypePreserved()
     {
         using var response = await test.Client.GetAsync("/api/sf-returns-jsonb");
