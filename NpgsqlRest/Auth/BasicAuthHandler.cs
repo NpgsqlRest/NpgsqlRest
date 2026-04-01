@@ -39,7 +39,7 @@ public static class BasicAuthHandler
         
         if (context.Request.Headers.TryGetValue("Authorization", out var authHeader) is false)
         {
-            Logger?.LogWarning("No Authorization header found in request with Basic Authentication Realm {realm}. Request: {Path}",
+            Logger?.LogDebug("No Authorization header found in request with Basic Authentication Realm {realm}. Request: {Path}",
                 realm,
                 string.Concat(endpoint.Method.ToString(), endpoint.Path));
             await Challenge(context, realm);

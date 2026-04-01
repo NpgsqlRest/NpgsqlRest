@@ -836,6 +836,12 @@ Fixed two bugs when `SkipTypes` is enabled (pure JavaScript output):
 
 ---
 
+### Downgrade Basic Auth Missing Header Log to Debug
+
+The "No Authorization header found" log message during Basic Authentication was downgraded from `Warning` to `Debug`. This message fires on every initial browser request before credentials are sent, which is normal behavior in the HTTP Basic Auth challenge-response flow — not a warning condition.
+
+---
+
 ### Improved Log Level Classification
 
 Moved verbose per-item logging from `Debug` to `Trace` level to reduce noise at the default `Debug` level:
