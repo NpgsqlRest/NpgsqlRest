@@ -2,7 +2,7 @@
 
 [![Build, Test, Publish and Release](https://github.com/NpgsqlRest/NpgsqlRest/actions/workflows/build-test-publish.yml/badge.svg)](https://github.com/NpgsqlRest/NpgsqlRest/actions/workflows/build-test-publish.yml)
 [![Tests](https://github.com/NpgsqlRest/NpgsqlRest/actions/workflows/test.yml/badge.svg)](https://github.com/NpgsqlRest/NpgsqlRest/actions/workflows/test.yml)
-![1700+ integration tests](https://img.shields.io/badge/integration%20tests-1700%2B-brightgreen)
+![1700+ integration tests](https://img.shields.io/badge/integration%20tests-1800%2B-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![GitHub Stars](https://img.shields.io/github/stars/NpgsqlRest/NpgsqlRest?style=social)
 ![GitHub Forks](https://img.shields.io/github/forks/NpgsqlRest/NpgsqlRest?style=social)
