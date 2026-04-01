@@ -1658,9 +1658,12 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 sb.AppendLine(string.Concat("* @returns {", resultType, "}"));
             }
         }
-        sb.AppendLine("* ");
-        sb.Append(string.Format("* @see {0} {1}.{2}", routine.Type.ToString().ToUpperInvariant(), routine.Schema, routine.Name));
-        return sb.ToString();
+        if (routine.Type != RoutineType.SqlFile)
+        {
+            sb.AppendLine("* ");
+            sb.Append(string.Format("* @see {0} {1}.{2}", routine.Type.ToString().ToUpperInvariant(), routine.Schema, routine.Name));
+        }
+        return sb.ToString().TrimEnd('\n', '\r');
     }
 
     private string GetTsType(TypeDescriptor descriptor, bool useDateType)
