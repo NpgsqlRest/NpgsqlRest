@@ -57,7 +57,7 @@ public class App
             return;
         }
 
-        app.Use(async (context, next) =>
+        app.Use(async (HttpContext context, RequestDelegate next) =>
         {
             var headers = context.Response.Headers;
 
@@ -95,7 +95,7 @@ public class App
                 headers["Cross-Origin-Resource-Policy"] = config.CrossOriginResourcePolicy;
             }
 
-            await next();
+            await next(context);
         });
     }
 
