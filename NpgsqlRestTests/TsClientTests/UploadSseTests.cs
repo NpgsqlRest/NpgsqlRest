@@ -45,7 +45,7 @@ const parseQuery = (query: Record<any, any>) => "?" + Object.keys(query ? query 
 export const createTsclientTestUploadWithSseEventSource = (id: string = "") => new EventSource(baseUrl + "/api/tsclient-test/upload-with-sse/events?" + id);
 
 interface ITsclientTestUploadWithSseRequest {
-    meta?: string | null;
+    meta?: any | null;
 }
 
 interface ITsclientTestUploadWithSseResponse {

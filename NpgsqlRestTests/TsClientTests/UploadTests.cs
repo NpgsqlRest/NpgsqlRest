@@ -42,7 +42,7 @@ const parseQuery = (query: Record<any, any>) => "?" + Object.keys(query ? query 
     .join("&");
 
 interface ITsclientTestUploadFileRequest {
-    meta?: string | null;
+    meta?: any | null;
 }
 
 interface ITsclientTestUploadFileResponse {
