@@ -948,7 +948,8 @@ public static class ConfigDefaults
             ["ResultPrefix"] = "result",
             ["UnnamedSingleColumnSet"] = true,
             ["NestedJsonForCompositeTypes"] = false,
-            ["SkipNonQueryCommands"] = true
+            ["SkipNonQueryCommands"] = true,
+            ["LogCommandText"] = false
         };
     }
 

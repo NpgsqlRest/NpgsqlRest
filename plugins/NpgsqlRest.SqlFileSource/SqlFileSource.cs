@@ -258,11 +258,20 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
                 customTypeName: customTypeName);
             var positionalName = $"${i + 1}";
 
-            parameters[i] = new NpgsqlRestParameter(
+            var param = new NpgsqlRestParameter(
                 ordinal: i,
                 convertedName: convertedName,
                 actualName: positionalName,
                 typeDescriptor: typeDescriptor);
+
+            // HTTP type params need a default value so they're added to command.Parameters
+            // (otherwise HasDefault=true + no DefaultValue causes the parameter to be skipped)
+            if (customType is not null)
+            {
+                param.DefaultValue = DBNull.Value;
+            }
+
+            parameters[i] = param;
         }
         // Add virtual parameters — exist for HTTP matching and claim mapping, not bound to PostgreSQL
         for (int i = 0; i < virtualParams.Count; i++)
