@@ -24,7 +24,7 @@ public class Broadcaster<T>
     {
         if (_channels.TryRemove(subscriberId, out var existingChannel))
         {
-            existingChannel.Writer.Complete();
+            existingChannel.Writer.TryComplete();
         }
         var channel = Channel.CreateUnbounded<T>();
         _channels[subscriberId] = channel;
@@ -35,7 +35,16 @@ public class Broadcaster<T>
     {
         if (_channels.TryRemove(subscriberId, out var channel))
         {
-            channel.Writer.Complete();
+            channel.Writer.TryComplete();
         }
+    }
+
+    public void CompleteAll()
+    {
+        foreach (var kvp in _channels)
+        {
+            kvp.Value.Writer.TryComplete();
+        }
+        _channels.Clear();
     }
 }

@@ -77,6 +77,11 @@ public static class NpgsqlRestBuilder
         if (hasStreamingEvents is true)
         {
             builder.UseMiddleware<NpgsqlRestSseEventSource>();
+            var lifetime = ((IApplicationBuilder)builder).ApplicationServices.GetService<IHostApplicationLifetime>();
+            lifetime?.ApplicationStopping.Register(() =>
+            {
+                NpgsqlRestSseEventSource.Broadcaster.CompleteAll();
+            });
         }
 
         var internalHandlers = new Dictionary<string, Func<HttpContext, Task>>(entries.Count, StringComparer.OrdinalIgnoreCase);

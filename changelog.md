@@ -797,6 +797,14 @@ Fixed two bugs when `SkipTypes` is enabled (pure JavaScript output):
 
 ---
 
+### Graceful Shutdown with Active SSE Connections
+
+The application now shuts down cleanly when SSE (Server-Sent Events) connections are active. Previously, pressing Ctrl+C while clients were connected to SSE endpoints would hang because the broadcaster channels were never completed, leaving `ReadAllAsync` loops blocked indefinitely.
+
+On `ApplicationStopping`, all broadcaster channels are now completed, causing SSE middleware to exit gracefully and allowing the app to terminate.
+
+---
+
 ### New Annotation: `@void` — Force Void Response
 
 New comment annotation `void` (alias: `void_result`) that forces an endpoint to return 204 No Content instead of a JSON response. All statements are executed for side effects only.
