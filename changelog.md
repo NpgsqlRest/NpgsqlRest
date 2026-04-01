@@ -805,6 +805,20 @@ On `ApplicationStopping`, all broadcaster channels are now completed, causing SS
 
 ---
 
+### `SqlFileSource:LogCommandText` Setting
+
+New setting `LogCommandText` in the `SqlFileSource` configuration (default `false`) controls whether multi-command SQL file endpoints include the full SQL text in debug command logs. When false, only the file path and statement count are logged:
+
+```
+[DBG] -- POST http://127.0.0.1:8080/api/send-message
+-- $1 text = 'hello'
+SQL file: sql/send-message.sql (5 statements)
+```
+
+When true, the full SQL body is logged (previous behavior). Single-command SQL file endpoints always log the SQL text regardless of this setting. This only applies when `LogCommands` is true.
+
+---
+
 ### New Annotation: `@void` — Force Void Response
 
 New comment annotation `void` (alias: `void_result`) that forces an endpoint to return 204 No Content instead of a JSON response. All statements are executed for side effects only.

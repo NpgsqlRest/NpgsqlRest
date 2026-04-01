@@ -2630,7 +2630,14 @@ public static partial class ConfigSchemaGenerator
           // are still executed but excluded from the JSON response result keys.
           // Default is true.
           //
-          "SkipNonQueryCommands": true
+          "SkipNonQueryCommands": true,
+          //
+          // When true, multi-command SQL file endpoints include the full SQL text in command logs.
+          // When false (default), only the file path and statement count are logged.
+          // Single-command SQL files always log the SQL text regardless of this setting.
+          // This only applies when LogCommands is true.
+          //
+          "LogCommandText": false
         }
       }
     }

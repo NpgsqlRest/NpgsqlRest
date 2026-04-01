@@ -460,6 +460,7 @@ public static partial class ConfigSchemaGenerator
         ["NpgsqlRest:SqlFileSource:UnnamedSingleColumnSet"] = "When true, queries returning a single column produce a flat JSON array of values (e.g., [\"a\", \"b\", \"c\"]) instead of an array of objects (e.g., [{\"col\": \"a\"}, {\"col\": \"b\"}]). This matches the behavior of PostgreSQL functions returning setof single values. Default is true.",
         ["NpgsqlRest:SqlFileSource:NestedJsonForCompositeTypes"] = "When true, composite type columns in return results are serialized as nested JSON objects.\nFor example, a column \"data\" of type \"my_type(id int, name text)\" becomes {\"data\": {\"id\": 1, \"name\": \"test\"}}\ninstead of the default flat structure {\"id\": 1, \"name\": \"test\"}.\nDefault is false for backward compatibility. Can also be enabled per-endpoint with the 'nested' annotation.",
         ["NpgsqlRest:SqlFileSource:SkipNonQueryCommands"] = "When true, non-query commands (BEGIN, COMMIT, SET, DO blocks, etc.) in multi-command SQL files are still executed but excluded from the JSON response result keys.\nDefault is true.",
+        ["NpgsqlRest:SqlFileSource:LogCommandText"] = "When true, multi-command SQL file endpoints include the full SQL text in command logs.\nWhen false (default), only the file path and statement count are logged.\nSingle-command SQL files always log the SQL text regardless of this setting.\nThis only applies when LogCommands is true.",
     };
 
     /// <summary>

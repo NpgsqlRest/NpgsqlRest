@@ -1915,8 +1915,16 @@ public partial class NpgsqlRestEndpoint(
 
                 if (shouldLog)
                 {
-                    var allSql = string.Join(";\n", routine.MultiCommandInfo.Select(c => c.Statement));
-                    NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", allSql);
+                    if (routine.LogCommandText)
+                    {
+                        var allSql = string.Join(";\n", routine.MultiCommandInfo.Select(c => c.Statement));
+                        NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", allSql);
+                    }
+                    else
+                    {
+                        NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "",
+                            string.Concat(routine.SimpleDefinition, " (", routine.MultiCommandInfo.Length.ToString(), " statements)"));
+                    }
                 }
 
                 // Void multi-command: execute all statements, return 204

@@ -166,6 +166,11 @@ public class Routine
     /// True if this routine uses multi-command rendering (JSON object with named result sets).
     /// </summary>
     public bool IsMultiCommand => MultiCommandInfo is not null;
+
+    /// <summary>
+    /// When true, multi-command log includes full SQL text. When false, only file path and statement count.
+    /// </summary>
+    public bool LogCommandText { get; set; }
 }
 
 /// <summary>

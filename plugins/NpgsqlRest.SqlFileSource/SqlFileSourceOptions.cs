@@ -75,4 +75,12 @@ public class SqlFileSourceOptions
     /// Default is true.
     /// </summary>
     public bool SkipNonQueryCommands { get; set; } = true;
+
+    /// <summary>
+    /// When true, multi-command SQL file endpoints include the full SQL text in command logs.
+    /// When false (default), only the file path and statement count are logged.
+    /// Single-command SQL files always log the SQL text regardless of this setting.
+    /// This only applies when LogCommands is true.
+    /// </summary>
+    public bool LogCommandText { get; set; }
 }

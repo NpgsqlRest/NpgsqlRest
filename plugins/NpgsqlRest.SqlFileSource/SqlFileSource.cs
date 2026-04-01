@@ -408,6 +408,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
         if (multiCommandInfo is not null)
         {
             routine.MultiCommandInfo = multiCommandInfo;
+            routine.LogCommandText = options.LogCommandText;
         }
 
         return (routine, SqlFileParameterFormatter.Instance);
