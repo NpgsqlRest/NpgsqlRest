@@ -54,8 +54,8 @@ public static class NpgsqlRetryExtensions
         }
     }
 
-    public static async Task ExecuteNonQueryWithRetryAsync(
-        this NpgsqlCommand command, 
+    public static async Task<int> ExecuteNonQueryWithRetryAsync(
+        this NpgsqlCommand command,
         RetryStrategy? strategy,
         CancellationToken cancellationToken = default,
         ILogger? logger = null,
@@ -63,18 +63,16 @@ public static class NpgsqlRetryExtensions
     {
         if (strategy == null || strategy.RetrySequenceSeconds.Length == 0)
         {
-            await command.ExecuteNonQueryAsync(cancellationToken);
-            return;
+            return await command.ExecuteNonQueryAsync(cancellationToken);
         }
         var maxRetries = strategy.RetrySequenceSeconds.Length;
         var exceptionsEncountered = new List<Exception>(maxRetries);
-        
+
         for (var attempt = 0; attempt <= maxRetries; attempt++)
         {
             try
             {
-                await command.ExecuteNonQueryAsync(cancellationToken);
-                return;
+                return await command.ExecuteNonQueryAsync(cancellationToken);
             }
             catch (PostgresException ex) when (errorCodePolicy is not null && errorCodePolicy.TryGetErrorCodeMapping(ex.SqlState, out var statusCodeMapping))
             {
@@ -115,8 +113,9 @@ public static class NpgsqlRetryExtensions
                 throw;
             }
         }
+        return 0; // unreachable — loop always returns or throws
     }
-    
+
     public static NpgsqlDataReader ExecuteReaderWithRetry(
         this NpgsqlCommand command, 
         RetryStrategy? strategy,

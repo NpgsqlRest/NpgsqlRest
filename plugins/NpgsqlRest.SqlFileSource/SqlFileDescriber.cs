@@ -47,18 +47,27 @@ public static partial class SqlFileDescriber
         return max;
     }
     
-    public static DescribeResult Describe(NpgsqlConnection connection, string sql, int paramCount)
+    public static DescribeResult Describe(NpgsqlConnection connection, string sql, int paramCount, Dictionary<int, string>? paramTypeHints = null)
     {
         var result = new DescribeResult();
 
         using var cmd = new NpgsqlCommand(sql, connection);
 
-        // Add placeholder parameters for each $N
+        // Add placeholder parameters for each $N, using type hints from @param annotations when available
         for (int i = 0; i < paramCount; i++)
         {
+            var dbType = NpgsqlDbType.Unknown;
+            if (paramTypeHints is not null && paramTypeHints.TryGetValue(i, out var typeName))
+            {
+                var descriptor = new NpgsqlRest.TypeDescriptor(typeName);
+                if (descriptor.DbType != NpgsqlDbType.Unknown)
+                {
+                    dbType = descriptor.ActualDbType;
+                }
+            }
             cmd.Parameters.Add(new NpgsqlParameter
             {
-                NpgsqlDbType = NpgsqlDbType.Unknown
+                NpgsqlDbType = dbType
             });
         }
 

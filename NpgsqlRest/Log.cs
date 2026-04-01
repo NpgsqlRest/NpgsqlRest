@@ -107,6 +107,9 @@ public static partial class Log
     [LoggerMessage(Level = LogLevel.Trace, Message = "{description} has set SINGLE RECORD by the comment annotation.")]
     public static partial void CommentSetSingleRecord(this ILogger logger, string description);
 
+    [LoggerMessage(Level = LogLevel.Trace, Message = "{description} has set VOID by the comment annotation.")]
+    public static partial void CommentSetVoid(this ILogger logger, string description);
+
     [LoggerMessage(Level = LogLevel.Trace, Message = "{description} has set SEPARATOR by the comment annotation to {value}.")]
     public static partial void CommentSetRawValueSeparator(this ILogger logger, string description, string value);
 

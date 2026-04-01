@@ -533,6 +533,79 @@ public static class SqlFileParser
         }
     }
 
+    /// <summary>
+    /// Extract parameter type hints from @param annotations.
+    /// Looks for patterns like: @param $1 name type, @param $1 is name type
+    /// Only extracts when a positional $N and an explicit type are present.
+    /// Returns null if no type hints found.
+    /// </summary>
+    public static Dictionary<int, string>? ExtractParamTypeHints(string? comment)
+    {
+        if (string.IsNullOrEmpty(comment)) return null;
+
+        Dictionary<int, string>? hints = null;
+        var lines = comment.Split(['\n', '\r'], StringSplitOptions.RemoveEmptyEntries);
+
+        foreach (var line in lines)
+        {
+            var trimmed = line.Trim();
+            var s = trimmed.StartsWith('@') ? trimmed[1..] : trimmed;
+
+            if (!s.StartsWith("param ", StringComparison.OrdinalIgnoreCase) &&
+                !s.StartsWith("parameter ", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var parts = s.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+
+            if (parts.Length < 2 || parts[1][0] != '$')
+            {
+                continue;
+            }
+
+            if (!int.TryParse(parts[1].AsSpan(1), out int paramIndex) || paramIndex < 1)
+            {
+                continue;
+            }
+
+            // @param $1 name type ... → parts[3] is type candidate
+            // @param $1 is name type ... → parts[4] is type candidate
+            string? typeName = null;
+            if (parts.Length >= 4 && parts[2].Equals("is", StringComparison.OrdinalIgnoreCase))
+            {
+                if (parts.Length >= 5)
+                {
+                    var candidate = parts[4].ToLowerInvariant();
+                    if (candidate != "default" && candidate != "=")
+                    {
+                        typeName = candidate;
+                    }
+                }
+            }
+            else if (parts.Length >= 4)
+            {
+                var candidate = parts[3].ToLowerInvariant();
+                if (candidate != "default" && candidate != "=")
+                {
+                    typeName = candidate;
+                }
+            }
+
+            if (typeName is not null)
+            {
+                var descriptor = new NpgsqlRest.TypeDescriptor(typeName);
+                if (descriptor.DbType != NpgsqlTypes.NpgsqlDbType.Unknown)
+                {
+                    hints ??= [];
+                    hints[paramIndex - 1] = typeName;
+                }
+            }
+        }
+
+        return hints;
+    }
+
     private static void DetectMutation(ReadOnlySpan<char> word, SqlFileParseResult result)
     {
         if (word.Length == 6 &&

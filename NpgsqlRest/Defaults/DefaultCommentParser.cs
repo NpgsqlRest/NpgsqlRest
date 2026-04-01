@@ -251,6 +251,14 @@ internal static partial class DefaultCommentParser
                     TrackAnnotation(line);
                 }
 
+                // void
+                // void_result
+                else if (haveTag is true && StrEqualsToArray(wordsLower[0], VoidKey))
+                {
+                    HandleVoid(routineEndpoint, description);
+                    TrackAnnotation(line);
+                }
+
                 // separator [ value ]
                 // raw_separator [ value ]
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], SeparatorKey))
@@ -534,6 +542,13 @@ internal static partial class DefaultCommentParser
             if (bool.TryParse(value, out var parsedSingle))
             {
                 endpoint.ReturnSingleRecord = parsedSingle;
+            }
+        }
+        else if (StrEqualsToArray(name, VoidKey))
+        {
+            if (bool.TryParse(value, out var parsedVoid))
+            {
+                endpoint.Void = parsedVoid;
             }
         }
         else if (StrEqualsToArray(name, SeparatorKey))

@@ -797,6 +797,39 @@ Fixed two bugs when `SkipTypes` is enabled (pure JavaScript output):
 
 ---
 
+### New Annotation: `@void` — Force Void Response
+
+New comment annotation `void` (alias: `void_result`) that forces an endpoint to return 204 No Content instead of a JSON response. All statements are executed for side effects only.
+
+This is particularly useful for multi-command SQL files where all statements are side-effect-only (e.g., `set_config` calls followed by a `DO` block):
+
+```sql
+/* HTTP POST
+@void
+@param $1 message_text text
+@param $2 _user_id text = null
+*/
+select set_config('app.message', $1, true);
+select set_config('app.user_id', $2, true);
+do $$ begin
+    -- use current_setting() to read params inside DO block
+    insert into messages (user_id, text)
+    values (current_setting('app.user_id')::int, current_setting('app.message'));
+end; $$;
+```
+
+Without `@void`, this multi-command endpoint would return `{"result1":"...","result2":"...","result3":-1}`. With `@void`, it returns 204 — no JSON, no need to add `@skip` to every statement.
+
+Works on all endpoint types: functions, procedures, CRUD, and SQL file endpoints.
+
+---
+
+### `@param` Type Hints for SQL File Describe
+
+When a SQL file parameter has an explicit type in the `@param` annotation (e.g., `@param $1 name text`), that type is now used during the PostgreSQL Describe step instead of `Unknown`. This fixes startup errors like `42P18: could not determine data type of parameter $1` that occurred when PostgreSQL's parser couldn't infer the parameter type from context alone — for example, in `select set_config('key', $1, true)`.
+
+---
+
 ### `@param` Default Value: `=` Alias for `default`
 
 The `@param` annotation now accepts `=` as a shorthand for `default` when setting default values:

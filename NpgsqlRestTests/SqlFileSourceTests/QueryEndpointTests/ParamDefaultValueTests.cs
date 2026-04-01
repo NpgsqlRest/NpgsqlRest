@@ -107,6 +107,13 @@ public static partial class SqlFiles
             -- @param val =
             select coalesce($1, 'was_null') as result;
             """);
+
+        // @param type hint enables Describe for set_config (PostgreSQL can't infer $1 type without hint)
+        File.WriteAllText(Path.Combine(Dir, "param_type_hint_set_config.sql"), """
+            -- @param $1 my_key text
+            -- @param $2 my_value text
+            select set_config($1, $2, true) as result;
+            """);
     }
 }
 
@@ -419,5 +426,17 @@ public class ParamDefaultValueTests(SqlFileSourceTestFixture test)
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("was_null");
+    }
+
+    // --- @param type hint for set_config ---
+
+    [Fact]
+    public async Task ParamTypeHint_SetConfig_EndpointExists()
+    {
+        using var response = await test.Client.GetAsync("/api/param-type-hint-set-config?my_key=test.key&my_value=hello");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Be("""["hello"]""");
     }
 }

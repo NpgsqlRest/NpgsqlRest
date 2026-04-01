@@ -138,13 +138,14 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
         int mergedMaxParam = 0;
         var paramTypesByIndex = new Dictionary<int, string>(); // $N index → type name
         var commandDescribes = new List<DescribeResult>();
+        var paramTypeHints = SqlFileParser.ExtractParamTypeHints(parseResult.Comment);
 
         foreach (var stmt in parseResult.Statements)
         {
             int stmtParamCount = SqlFileDescriber.FindMaxParamIndex(stmt);
             if (stmtParamCount > mergedMaxParam) mergedMaxParam = stmtParamCount;
 
-            var describeResult = SqlFileDescriber.Describe(connection, stmt, stmtParamCount);
+            var describeResult = SqlFileDescriber.Describe(connection, stmt, stmtParamCount, paramTypeHints);
             if (describeResult.HasError)
             {
                 NpgsqlRestOptions.Logger?.LogError("SqlFileSource: {FilePath}:\n{Error}", filePath, describeResult.Error);

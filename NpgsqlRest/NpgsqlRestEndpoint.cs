@@ -1919,6 +1919,35 @@ public partial class NpgsqlRestEndpoint(
                     NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", allSql);
                 }
 
+                // Void multi-command: execute all statements, return 204
+                if (endpoint.Void)
+                {
+                    for (int cmdIndex = 0; cmdIndex < routine.MultiCommandInfo.Length; cmdIndex++)
+                    {
+                        var currentCmd = routine.MultiCommandInfo[cmdIndex];
+                        await using var mcCmd = new NpgsqlCommand(currentCmd.Statement, connection);
+                        if (endpoint.CommandTimeout.HasValue)
+                        {
+                            mcCmd.CommandTimeout = endpoint.CommandTimeout.Value.Seconds;
+                        }
+                        for (int pi = 0; pi < Math.Min(currentCmd.ParamCount, command.Parameters.Count); pi++)
+                        {
+                            var srcParam = command.Parameters[pi];
+                            mcCmd.Parameters.Add(new NpgsqlParameter
+                            {
+                                NpgsqlDbType = srcParam.NpgsqlDbType,
+                                Value = srcParam.Value ?? DBNull.Value
+                            });
+                        }
+                        await mcCmd.ExecuteNonQueryWithRetryAsync(
+                            endpoint.RetryStrategy,
+                            cancellationToken,
+                            errorCodePolicy: endpoint.ErrorCodePolicy ?? Options.ErrorHandlingOptions.DefaultErrorCodePolicy);
+                    }
+                    context.Response.StatusCode = (int)HttpStatusCode.NoContent;
+                    return;
+                }
+
                 context.Response.ContentType = Application.Json;
 
                 // Write opening {
@@ -1949,7 +1978,10 @@ public partial class NpgsqlRestEndpoint(
                     // Skipped commands: execute for side effects, no result key
                     if (currentCmd.IsSkipped)
                     {
-                        await mcCmd.ExecuteNonQueryAsync(cancellationToken);
+                        await mcCmd.ExecuteNonQueryWithRetryAsync(
+                            endpoint.RetryStrategy,
+                            cancellationToken,
+                            errorCodePolicy: endpoint.ErrorCodePolicy ?? Options.ErrorHandlingOptions.DefaultErrorCodePolicy);
                         continue;
                     }
 
@@ -1967,7 +1999,10 @@ public partial class NpgsqlRestEndpoint(
                     if (currentCmd.ColumnCount == 0)
                     {
                         // Void command — execute and write rows affected count
-                        var rowsAffected = await mcCmd.ExecuteNonQueryAsync(cancellationToken);
+                        var rowsAffected = await mcCmd.ExecuteNonQueryWithRetryAsync(
+                            endpoint.RetryStrategy,
+                            cancellationToken,
+                            errorCodePolicy: endpoint.ErrorCodePolicy ?? Options.ErrorHandlingOptions.DefaultErrorCodePolicy);
                         var rowsStr = rowsAffected.ToString();
                         writer.Advance(Encoding.UTF8.GetBytes(rowsStr.AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(rowsStr.Length))));
                     }
@@ -1976,7 +2011,10 @@ public partial class NpgsqlRestEndpoint(
                         // Query command — read result set as JSON array (or object if @single)
                         // AllResultTypesAreUnknown forces all values to string — same as single-command path
                         mcCmd.AllResultTypesAreUnknown = true;
-                        await using var mcReader = await mcCmd.ExecuteReaderAsync(CommandBehavior.SequentialAccess, cancellationToken);
+                        await using var mcReader = await mcCmd.ExecuteReaderWithRetryAsync(
+                            endpoint.RetryStrategy,
+                            cancellationToken,
+                            errorCodePolicy: endpoint.ErrorCodePolicy ?? Options.ErrorHandlingOptions.DefaultErrorCodePolicy);
 
                         if (!currentCmd.IsSingle)
                         {
@@ -2229,7 +2267,7 @@ public partial class NpgsqlRestEndpoint(
                 return;
             }
 
-            if (routine.IsVoid)
+            if (routine.IsVoid || endpoint.Void)
             {
                 if (await PrepareCommand(connection, command, commandText, context, endpoint, true, cancellationToken) is false)
                 {

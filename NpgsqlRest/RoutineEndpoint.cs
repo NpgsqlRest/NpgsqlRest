@@ -265,4 +265,11 @@ public class RoutineEndpoint(
     /// instead of the default flat structure {"id": 1, "name": "test"}.
     /// </summary>
     public bool? NestedJsonForCompositeTypes { get; set; } = null;
+
+    /// <summary>
+    /// When true, the endpoint is forced to behave as void — all statements are executed
+    /// but no result is returned. Returns 204 No Content.
+    /// Configured via the "void" comment annotation.
+    /// </summary>
+    public bool Void { get; set; } = false;
 }

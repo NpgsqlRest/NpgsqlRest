@@ -11,14 +11,20 @@ public static class LogoutHandler
 
         if (endpoint.Routine.IsVoid)
         {
-            await command.ExecuteNonQueryAsync(cancellationToken);
+            await command.ExecuteNonQueryWithRetryAsync(
+                endpoint.RetryStrategy,
+                cancellationToken,
+                errorCodePolicy: endpoint.ErrorCodePolicy ?? NpgsqlRestOptions.Options.ErrorHandlingOptions.DefaultErrorCodePolicy);
             await Results.SignOut().ExecuteAsync(context);
             await context.Response.CompleteAsync();
             return;
         }
 
         List<string> schemes = new(5);
-        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        await using NpgsqlDataReader reader = await command.ExecuteReaderWithRetryAsync(
+            endpoint.RetryStrategy,
+            cancellationToken,
+            errorCodePolicy: endpoint.ErrorCodePolicy ?? NpgsqlRestOptions.Options.ErrorHandlingOptions.DefaultErrorCodePolicy);
 
         while (await reader!.ReadAsync(cancellationToken))
         {
