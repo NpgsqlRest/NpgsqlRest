@@ -118,7 +118,7 @@ SELECT id, status FROM orders WHERE id = $1;
 - Commands returning rows → JSON array of row objects
 - Void commands (INSERT/UPDATE/DELETE without RETURNING) → rows-affected count as integer
 - Default keys: `result1`, `result2`, `result3`, ... (prefix configurable via `ResultPrefix`)
-- Override per-result with `@resultN name` or `@resultN is name` annotations
+- Override per-result with the positional `@result name` or `@result is name` annotations
 - All statements share the same parameters — user sends each parameter once
 - Uses `NpgsqlBatch` — single database round-trip
 
@@ -180,8 +180,8 @@ All existing NpgsqlRest annotations work: `@authorize`, `@allow_anonymous`, `@ta
 | `@param $N name` | Rename positional parameter | `-- @param $1 user_id` |
 | `@param $N name type` | Rename + retype parameter | `-- @param $1 user_id integer` |
 | `@param $N is name` | Rename ("is" style) | `-- @param $1 is user_id` |
-| `@resultN name` | Rename multi-command result key | `-- @result1 validate` |
-| `@resultN is name` | Rename result key ("is" style) | `-- @result1 is validate` |
+| `@result name` | Rename multi-command result key (positional) | `-- @result validate` |
+| `@result is name` | Rename result key ("is" style, positional) | `-- @result is validate` |
 | `@define_param name [type]` | Define virtual parameter (not bound to SQL) | `-- @define_param _user_id` |
 
 **`CommentScope` setting** controls which comments are parsed:

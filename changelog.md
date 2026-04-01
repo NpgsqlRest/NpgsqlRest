@@ -62,11 +62,11 @@ A file with multiple statements (separated by `;`) returns a JSON object. Each k
 ```sql
 -- sql/process_order.sql
 -- HTTP POST
--- @result1 validate
--- @result3 confirm
 -- @param $1 order_id
+-- @result validate
 SELECT count(*) FROM orders WHERE id = $1;
 UPDATE orders SET status = 'processing' WHERE id = $1;
+-- @result confirm
 SELECT id, status FROM orders WHERE id = $1;
 ```
 
@@ -89,10 +89,10 @@ SELECT id, status FROM orders WHERE id = $1;
 **Result naming:**
 
 - Default keys: `result1`, `result2`, `result3`, ... (prefix configurable via `ResultPrefix` setting)
-- Override per-result with `@resultN` annotation in the file comments:
-  - `@result1 validate` — renames `result1` to `validate`
-  - `@result1 is validate` — same ("is" style)
-  - Unmatched results keep their default name
+- Override with the positional `@result` annotation placed before the statement it applies to, or inline after the semicolon:
+  - `@result validate` — renames the next result to `validate`
+  - `@result is validate` — same ("is" style)
+  - Commands without `@result` keep their default name
 
 **Execution:**
 
@@ -172,8 +172,8 @@ All existing NpgsqlRest annotations work: `@authorize`, `@allow_anonymous`, `@ta
 | `@param $N name` | Rename positional parameter | `-- @param $1 user_id` |
 | `@param $N name type` | Rename + retype parameter | `-- @param $1 user_id integer` |
 | `@param $N is name` | Rename ("is" style) | `-- @param $1 is user_id` |
-| `@resultN name` | Rename multi-command result key | `-- @result1 validate` |
-| `@resultN is name` | Rename result key ("is" style) | `-- @result1 is validate` |
+| `@result name` | Rename multi-command result key (positional) | `-- @result validate` |
+| `@result is name` | Rename result key ("is" style, positional) | `-- @result is validate` |
 | `@define_param name [type]` | Define virtual parameter (not bound to SQL) | `-- @define_param _user_id` |
 
 **`CommentScope` setting** controls which comments are parsed:
@@ -833,6 +833,28 @@ Fixed two bugs when `SkipTypes` is enabled (pure JavaScript output):
 1. **Invalid `as` cast in error handling**: The error expression was always generated with a TypeScript `as` type cast (e.g., `await response.json() as {status: number; ...}`), which is invalid JavaScript syntax. The `as` cast is now omitted when `SkipTypes` is true.
 
 2. **No file output with `CreateSeparateTypeFile = false`**: When both `SkipTypes` and `CreateSeparateTypeFile = false` were set, no file was written at all. The code-only content is now written correctly.
+
+---
+
+### `@param` Default Value: `=` Alias for `default`
+
+The `@param` annotation now accepts `=` as a shorthand for `default` when setting default values:
+
+```sql
+-- These are equivalent:
+-- @param $1 _user_id text default null
+-- @param $1 _user_id text = null
+
+-- Works with any value type:
+-- @param $1 user_id integer default 42
+-- @param $1 user_id integer = 42
+
+-- Also works with standalone default:
+-- @param my_name = 'hello'
+
+-- And "is" style:
+-- @param $1 is greeting = 'hey'
+```
 
 ---
 

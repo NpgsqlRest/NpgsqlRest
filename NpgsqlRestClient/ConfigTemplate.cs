@@ -2609,7 +2609,7 @@ public static partial class ConfigSchemaGenerator
           //
           // Prefix for result keys in multi-command JSON responses.
           // Default keys are "result1", "result2", etc.
-          // Override per-result with @resultN annotation in the SQL file.
+          // Override per-result with the positional @result annotation in the SQL file.
           //
           "ResultPrefix": "result",
           //

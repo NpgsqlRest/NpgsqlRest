@@ -6,7 +6,7 @@ internal static partial class DefaultCommentParser
     /// Annotation: parameter | param
     /// Syntax: param [param_name1] is hash of [param_name2]
     ///         param [param_name] is upload metadata
-    ///         param [param_name] default [value]        — set default value
+    ///         param [param_name] default [value]        — set default value (alias: =)
     ///         param [original] [new_name]              — rename only (simplest form)
     ///         param [original] [new_name] [type]        — rename + retype (simplest form)
     ///         param [original] is [new_name]            — rename only ("is" style)
@@ -123,7 +123,7 @@ internal static partial class DefaultCommentParser
 
         // param [param_name] default [value]
         // Default value: null → DBNull, 'text' → string, number → string, true/false → string
-        if (len >= 3 && StrEquals(wordsLower[2], "default"))
+        if (len >= 3 && IsDefault(wordsLower[2]))
         {
             HandleParameterDefault(routine, wordsLower, words, len, description);
             return;
@@ -159,7 +159,7 @@ internal static partial class DefaultCommentParser
             // "is" style: param [original] is [new_name] [type | default ...]
             newName = words[3]; // preserve original case for the new name
 
-            if (len >= 5 && StrEquals(wordsLower[4], "default"))
+            if (len >= 5 && IsDefault(wordsLower[4]))
             {
                 // "param $1 is _name default [value]" — rename + default
                 defaultStartIndex = 5;
@@ -168,7 +168,7 @@ internal static partial class DefaultCommentParser
             {
                 newType = wordsLower[4];
                 // Check for "default" after type: "param $1 is _name integer default [value]"
-                if (len >= 6 && StrEquals(wordsLower[5], "default"))
+                if (len >= 6 && IsDefault(wordsLower[5]))
                 {
                     defaultStartIndex = 6;
                 }
@@ -184,7 +184,7 @@ internal static partial class DefaultCommentParser
             // Simplest form: param [original] [new_name] [type | default ...]
             newName = words[2]; // preserve original case
 
-            if (len >= 4 && StrEquals(wordsLower[3], "default"))
+            if (len >= 4 && IsDefault(wordsLower[3]))
             {
                 // "param $1 _name default [value]" — rename + default
                 defaultStartIndex = 4;
@@ -193,7 +193,7 @@ internal static partial class DefaultCommentParser
             {
                 newType = wordsLower[3];
                 // Check for "default" after type: "param $1 _name integer default [value]"
-                if (len >= 5 && StrEquals(wordsLower[4], "default"))
+                if (len >= 5 && IsDefault(wordsLower[4]))
                 {
                     defaultStartIndex = 5;
                 }
@@ -441,4 +441,6 @@ internal static partial class DefaultCommentParser
 
         return null;
     }
+
+    private static bool IsDefault(string word) => StrEquals(word, "default") || word == "=";
 }

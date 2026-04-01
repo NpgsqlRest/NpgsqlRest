@@ -174,7 +174,7 @@ public class Routine
 public class MultiCommandInfo
 {
     /// <summary>
-    /// Result key name in the JSON response. From @resultN annotation or default pattern.
+    /// Result key name in the JSON response. From positional @result annotation or default pattern.
     /// </summary>
     public required string Name { get; init; }
 

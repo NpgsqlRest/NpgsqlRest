@@ -73,6 +73,40 @@ public static partial class SqlFiles
             -- @param $1 default 'fallback'
             select $1 as result;
             """);
+
+        // = alias for default — null
+        File.WriteAllText(Path.Combine(Dir, "equals_null_param.sql"), """
+            -- @param $1 my_val
+            -- @param my_val = null
+            select coalesce($1, 'was_null') as result;
+            """);
+
+        // = alias for default — text value
+        File.WriteAllText(Path.Combine(Dir, "equals_text_param.sql"), """
+            -- @param $1 greeting
+            -- @param greeting = 'hello world'
+            select $1 as result;
+            """);
+
+        // = alias for default — combined rename + type + default on single line
+        File.WriteAllText(Path.Combine(Dir, "equals_combined_param.sql"), """
+            -- @param $1 _user_id text = null
+            -- @param $2 _username text = 'anonymous'
+            select coalesce($1, 'no_id') as user_id, $2 as username;
+            """);
+
+        // = alias for default — "is" style rename + default
+        File.WriteAllText(Path.Combine(Dir, "equals_is_style.sql"), """
+            -- @param $1 is greeting = 'hey'
+            select $1 as result;
+            """);
+
+        // = alias for default — bare (no value = null)
+        File.WriteAllText(Path.Combine(Dir, "equals_bare_param.sql"), """
+            -- @param $1 val
+            -- @param val =
+            select coalesce($1, 'was_null') as result;
+            """);
     }
 }
 
@@ -281,5 +315,109 @@ public class ParamDefaultValueTests(SqlFileSourceTestFixture test)
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("fallback");
+    }
+
+    // --- = alias for default null ---
+
+    [Fact]
+    public async Task EqualsNull_NotProvided_ReturnsCoalescedValue()
+    {
+        using var response = await test.Client.GetAsync("/api/equals-null-param");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("was_null");
+    }
+
+    [Fact]
+    public async Task EqualsNull_Provided_ReturnsProvidedValue()
+    {
+        using var response = await test.Client.GetAsync("/api/equals-null-param?my_val=alice");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("alice");
+    }
+
+    // --- = alias for default text ---
+
+    [Fact]
+    public async Task EqualsText_NotProvided_ReturnsDefaultText()
+    {
+        using var response = await test.Client.GetAsync("/api/equals-text-param");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("hello world");
+    }
+
+    [Fact]
+    public async Task EqualsText_Provided_ReturnsProvidedValue()
+    {
+        using var response = await test.Client.GetAsync("/api/equals-text-param?greeting=goodbye");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("goodbye");
+    }
+
+    // --- = alias combined rename + type + default ---
+
+    [Fact]
+    public async Task EqualsCombined_NoneProvided_AllUseDefaults()
+    {
+        using var response = await test.Client.GetAsync("/api/equals-combined-param");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(content);
+        doc.RootElement[0].GetProperty("userId").GetString().Should().Be("no_id");
+        doc.RootElement[0].GetProperty("username").GetString().Should().Be("anonymous");
+    }
+
+    [Fact]
+    public async Task EqualsCombined_SomeProvided_MixesProvidedAndDefaults()
+    {
+        using var response = await test.Client.GetAsync("/api/equals-combined-param?_username=bob");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(content);
+        doc.RootElement[0].GetProperty("userId").GetString().Should().Be("no_id");
+        doc.RootElement[0].GetProperty("username").GetString().Should().Be("bob");
+    }
+
+    // --- = alias "is" style ---
+
+    [Fact]
+    public async Task EqualsIsStyle_NotProvided_ReturnsDefault()
+    {
+        using var response = await test.Client.GetAsync("/api/equals-is-style");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("hey");
+    }
+
+    [Fact]
+    public async Task EqualsIsStyle_Provided_ReturnsProvided()
+    {
+        using var response = await test.Client.GetAsync("/api/equals-is-style?greeting=yo");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("yo");
+    }
+
+    // --- = alias bare (no value = null) ---
+
+    [Fact]
+    public async Task EqualsBare_NotProvided_ReturnsCoalescedNull()
+    {
+        using var response = await test.Client.GetAsync("/api/equals-bare-param");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("was_null");
     }
 }
