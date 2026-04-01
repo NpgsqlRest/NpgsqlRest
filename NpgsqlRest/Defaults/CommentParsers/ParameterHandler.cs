@@ -275,6 +275,11 @@ internal static partial class DefaultCommentParser
             if (typeDescriptor.DbType != NpgsqlTypes.NpgsqlDbType.Unknown)
             {
                 param.NpgsqlDbType = typeDescriptor.ActualDbType;
+                if (param.TypeDescriptor.HasDefault)
+                {
+                    typeDescriptor.SetHasDefault();
+                }
+                param.TypeDescriptor = typeDescriptor;
                 CommentLogger?.CommentParamRetyped(description, newName, newType);
             }
             else

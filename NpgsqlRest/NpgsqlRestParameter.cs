@@ -20,7 +20,7 @@ public class NpgsqlRestParameter : NpgsqlParameter
     /// to the PostgreSQL command. Created by @define_param annotation on SQL file endpoints.
     /// </summary>
     public bool IsVirtual { get; init; }
-    public TypeDescriptor TypeDescriptor { get; init; }
+    public TypeDescriptor TypeDescriptor { get; set; }
 
     public ParamType ParamType { get; set; } = default!;
     public StringValues? QueryStringValues { get; set; } = null;
