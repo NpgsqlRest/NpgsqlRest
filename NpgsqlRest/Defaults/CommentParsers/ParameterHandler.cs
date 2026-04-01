@@ -281,9 +281,14 @@ internal static partial class DefaultCommentParser
                 param.TypeDescriptor = typeDescriptor;
                 CommentLogger?.CommentParamRetyped(description, newName, newType);
             }
+            else if (CompositeTypeCache.GetType(newType) is not null)
+            {
+                // Known composite type — valid, used for HTTP custom types or client-sent composites
+                CommentLogger?.CommentParamRetyped(description, newName, newType);
+            }
             else
             {
-                Logger?.CommentParamNotExistsCantRename(description, $"unknown type '{newType}' for parameter {originalName}");
+                Logger?.CommentParamUnknownType(description, newType, originalName);
             }
         }
 

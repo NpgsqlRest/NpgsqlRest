@@ -805,6 +805,28 @@ On `ApplicationStopping`, all broadcaster channels are now completed, causing SS
 
 ---
 
+### Composite Type Parameters in SQL Files — No SQL Rewriting
+
+Composite type parameters in SQL files are now passed as single text values instead of being expanded into multiple parameters with ROW() SQL rewriting. The SQL stays exactly as the user wrote it.
+
+**HTTP custom type parameters** (auto-filled from HTTP calls):
+```sql
+-- @param $1 _response example_9.exchange_rate_api
+select ($1::example_9.exchange_rate_api).body;
+```
+The framework makes the HTTP call and passes the result as a single composite text value. No SQL rewriting.
+
+**Client-sent composite type parameters:**
+```sql
+-- @param $1 data my_composite_type
+select ($1::my_composite_type).field1, ($1::my_composite_type).field2;
+```
+The client sends the composite value as PostgreSQL composite text format: `?data=("val1","val2")`. The SQL casts it with `$1::my_composite_type`.
+
+Unknown types in `@param` annotations now produce a warning log instead of silently falling back to `unknown`.
+
+---
+
 ### New Positional Annotation: `@returns` — Composite Type Override for Describe
 
 New positional annotation `@returns <type_name>` that skips the PostgreSQL Describe step for a statement and resolves columns from the specified composite type instead. This enables SQL file endpoints that use temp tables created at runtime (e.g., inside DO blocks):

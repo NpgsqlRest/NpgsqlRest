@@ -306,8 +306,15 @@ public class HttpClientTypeHandler(HttpTypeDefinition definition, Dictionary<str
             {
                 continue;
             }
-            
-            // For parameters with NpgsqlDbType.Unknown (e.g., SQL file source), all values must be strings
+
+            // Single composite parameter (SQL files): build composite text value
+            if (parameter.TypeDescriptor.CustomTypeName is null)
+            {
+                parameter.Value = BuildCompositeTextValue(handler, parameter.TypeDescriptor.CustomType);
+                continue;
+            }
+
+            // Expanded field parameter (functions): fill individual field
             bool asText = parameter.NpgsqlDbType == NpgsqlDbType.Unknown || parameter.TypeDescriptor.IsText;
 
             if (string.Equals(parameter.TypeDescriptor.CustomTypeName, Options.HttpClientOptions.ResponseStatusCodeField, StringComparison.InvariantCulture))
@@ -333,7 +340,72 @@ public class HttpClientTypeHandler(HttpTypeDefinition definition, Dictionary<str
             else if (string.Equals(parameter.TypeDescriptor.CustomTypeName, Options.HttpClientOptions.ResponseErrorMessageField, StringComparison.InvariantCulture))
             {
                 parameter.Value = (object?)handler.ErrorMessage ?? DBNull.Value;
-            } 
+            }
         }
+    }
+
+    /// <summary>
+    /// Build a PostgreSQL composite type text representation from HTTP response values.
+    /// Format: (field1_value,field2_value,...) where values are double-quoted and internal quotes escaped.
+    /// Field order comes from the composite type definition in pg_catalog.
+    /// </summary>
+    private static object BuildCompositeTextValue(HttpClientTypeHandler handler, string typeName)
+    {
+        var compositeType = CompositeTypeCache.GetType(typeName);
+        if (compositeType is null)
+        {
+            return DBNull.Value;
+        }
+
+        var httpOptions = Options.HttpClientOptions;
+        var sb = new System.Text.StringBuilder();
+        sb.Append('(');
+
+        for (int i = 0; i < compositeType.FieldNames.Length; i++)
+        {
+            if (i > 0) sb.Append(',');
+
+            var fieldName = compositeType.FieldNames[i];
+            string? value = null;
+
+            if (string.Equals(fieldName, httpOptions.ResponseBodyField, StringComparison.InvariantCulture))
+            {
+                value = handler.Body;
+            }
+            else if (string.Equals(fieldName, httpOptions.ResponseStatusCodeField, StringComparison.InvariantCulture))
+            {
+                value = handler.StatusCode.ToString();
+            }
+            else if (string.Equals(fieldName, httpOptions.ResponseHeadersField, StringComparison.InvariantCulture))
+            {
+                value = handler.ResponseHeaders;
+            }
+            else if (string.Equals(fieldName, httpOptions.ResponseContentTypeField, StringComparison.InvariantCulture))
+            {
+                value = handler.ContentType;
+            }
+            else if (string.Equals(fieldName, httpOptions.ResponseSuccessField, StringComparison.InvariantCulture))
+            {
+                value = handler.IsSuccess ? "t" : "f";
+            }
+            else if (string.Equals(fieldName, httpOptions.ResponseErrorMessageField, StringComparison.InvariantCulture))
+            {
+                value = handler.ErrorMessage;
+            }
+
+            if (value is null)
+            {
+                // NULL: empty between commas
+                continue;
+            }
+
+            // Double-quote the value, escaping internal double-quotes
+            sb.Append('"');
+            sb.Append(value.Replace("\"", "\"\""));
+            sb.Append('"');
+        }
+
+        sb.Append(')');
+        return sb.ToString();
     }
 }

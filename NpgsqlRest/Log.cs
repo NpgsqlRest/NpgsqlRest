@@ -299,6 +299,9 @@ public static partial class Log
     [LoggerMessage(Level = LogLevel.Trace, Message = "{description} has RETYPED parameter {paramName} to {newType} by the comment annotation.")]
     public static partial void CommentParamRetyped(this ILogger logger, string description, string paramName, string newType);
 
+    [LoggerMessage(Level = LogLevel.Warning, Message = "{description} unknown type '{typeName}' for parameter {paramName}. Type is not a recognized PostgreSQL type or composite type. Parameter will use the original type from Describe.")]
+    public static partial void CommentParamUnknownType(this ILogger logger, string description, string typeName, string paramName);
+
     [LoggerMessage(Level = LogLevel.Trace, Message = "{description} has set DEFAULT VALUE for parameter {paramName} to {defaultValue} by the comment annotation.")]
     public static partial void CommentParamDefault(this ILogger logger, string description, string paramName, string defaultValue);
 
