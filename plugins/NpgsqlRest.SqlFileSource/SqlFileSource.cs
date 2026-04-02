@@ -304,7 +304,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
                 ordinal: mergedMaxParam + i,
                 convertedName: vp.Name,
                 actualName: vp.Name,
-                typeDescriptor: new TypeDescriptor(vpType))
+                typeDescriptor: new TypeDescriptor(vpType, hasDefault: true))
             {
                 IsVirtual = true
             };
