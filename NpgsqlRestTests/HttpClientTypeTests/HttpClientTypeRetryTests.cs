@@ -15,7 +15,7 @@ public static partial class Database
             status_code int,
             error_message text
         );
-        comment on type http_api_retry_basic is '@retry_delay 100ms, 100ms, 100ms
+        comment on type http_api_retry_basic is '@retry_delay 500ms, 500ms, 500ms
 GET http://localhost:{WireMockFixture.Port}/api/retry-basic';
 
         create function get_http_retry_basic(

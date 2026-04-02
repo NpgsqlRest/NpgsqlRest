@@ -13,7 +13,7 @@
 
 *"Simplicity is the ultimate sophistication."* — Leonardo da Vinci
 
-Most backend code shouldn't exist. If your API layer is just shuffling data between PostgreSQL and HTTP, why write it by hand? Write SQL, annotate it with a comment, and let the server figure out the rest. No controllers, no models, no mapping layers. The less code you maintain, the fewer bugs you ship.
+SQL is declarative — your API should be too. With NpgsqlRest, you write SQL and annotate it with comments to declare what you want from your endpoint: caching, timeouts, retries, authorization, rate limiting, and everything in between. No controllers, no models, no mapping layers. Backend features become simple declarations on your SQL objects, putting PostgreSQL at the dead center of your architecture — the opposite of Clean Architecture, which treats the database as a detail. Here, PostgreSQL *is* the architecture.
 
 <p align="center">
   <img src="clean.png?v=2" alt="NpgsqlRest Architecture" width="340">
