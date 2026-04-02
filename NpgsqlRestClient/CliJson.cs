@@ -38,6 +38,7 @@ public static class CliJson
                 ["NpgsqlRest.HttpFiles"] = GetVersion<HttpFileOptions>(),
                 ["NpgsqlRest.TsClient"] = GetVersion<TsClientOptions>(),
                 ["NpgsqlRest.CrudSource"] = GetVersion<CrudSource>(),
+                ["NpgsqlRest.SqlFileSource"] = GetVersion<NpgsqlRest.SqlFileSource.SqlFileSource>(),
                 ["NpgsqlRest.OpenApi"] = GetVersion<NpgsqlRest.OpenAPI.OpenApiOptions>(),
                 ["Npgsql"] = GetVersion<NpgsqlConnection>(),
                 ["ExcelDataReader"] = GetVersion<ExcelDataReader.IExcelDataReader>(),
