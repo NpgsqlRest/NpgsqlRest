@@ -192,7 +192,6 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
                     Environment.Exit(1);
                 }
                 return null;
-                continue;
             }
 
             var describeResult = SqlFileDescriber.Describe(connection, stmt, stmtParamCount, paramTypeHints);

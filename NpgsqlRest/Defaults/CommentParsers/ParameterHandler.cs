@@ -359,39 +359,43 @@ internal static partial class DefaultCommentParser
     /// </summary>
     private static object ParseDefaultValue(string[] words, string[] wordsLower, int startIndex, int len)
     {
-        // Single token
-        if (len == startIndex + 1)
+        if (startIndex >= len)
         {
-            var token = words[startIndex];
-            var tokenLower = wordsLower[startIndex];
+            return DBNull.Value;
+        }
 
-            if (tokenLower == "null")
+        var first = words[startIndex];
+        var firstLower = wordsLower[startIndex];
+
+        // Unquoted single-word value — everything after is ignored (comments, etc.)
+        if (first.Length == 0 || first[0] != '\'')
+        {
+            if (firstLower == "null")
             {
                 return DBNull.Value;
             }
-
-            // Strip surrounding single quotes from a single-word quoted value: 'value'
-            if (token.Length >= 2 && token[0] == '\'' && token[^1] == '\'')
-            {
-                return token[1..^1];
-            }
-
-            return token;
+            return first;
         }
 
-        // Multiple tokens — check for single-quoted multi-word string: 'hello world'
-        var first = words[startIndex];
-        var last = words[len - 1];
-
-        if (first.Length >= 1 && first[0] == '\'' && last.Length >= 1 && last[^1] == '\'')
+        // Single-quoted value — find the closing quote
+        // Single token: 'value'
+        if (first.Length >= 2 && first[^1] == '\'')
         {
-            // Join all tokens, strip the surrounding quotes
-            var joined = string.Join(" ", words[startIndex..len]);
-            return joined[1..^1];
+            return first[1..^1];
         }
 
-        // Not quoted — join as-is (unusual but handle gracefully)
-        return string.Join(" ", words[startIndex..len]);
+        // Multi-word quoted string: 'hello world' — scan until closing quote
+        for (int i = startIndex + 1; i < len; i++)
+        {
+            if (words[i].Length >= 1 && words[i][^1] == '\'')
+            {
+                var joined = string.Join(" ", words[startIndex..(i + 1)]);
+                return joined[1..^1];
+            }
+        }
+
+        // No closing quote found — return as-is without the opening quote
+        return first.Length > 1 ? first[1..] : first;
     }
 
     /// <summary>

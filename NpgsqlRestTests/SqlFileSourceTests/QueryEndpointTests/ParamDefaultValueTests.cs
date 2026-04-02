@@ -108,6 +108,37 @@ public static partial class SqlFiles
             select coalesce($1, 'was_null') as result;
             """);
 
+        // Default values with inline comments after — comments should be ignored
+        File.WriteAllText(Path.Combine(Dir, "default_with_comment_text.sql"), """
+            -- @param $1 status default 'active'     -- text (single-quoted)
+            select $1 as result;
+            """);
+
+        File.WriteAllText(Path.Combine(Dir, "default_with_comment_number.sql"), """
+            -- @param $1 amount default 42           -- number
+            select $1::integer as result;
+            """);
+
+        File.WriteAllText(Path.Combine(Dir, "default_with_comment_bool.sql"), """
+            -- @param $1 enabled default true        -- boolean
+            select $1::boolean as result;
+            """);
+
+        File.WriteAllText(Path.Combine(Dir, "default_with_comment_null.sql"), """
+            -- @param $1 filter default null         -- SQL NULL (unquoted)
+            select coalesce($1, 'was_null') as result;
+            """);
+
+        File.WriteAllText(Path.Combine(Dir, "default_with_comment_quoted_null.sql"), """
+            -- @param $1 tag default 'null'          -- literal text "null" (quoted)
+            select $1 as result;
+            """);
+
+        File.WriteAllText(Path.Combine(Dir, "default_with_comment_multi_word.sql"), """
+            -- @param $1 greeting default 'hello world'  -- multi word string
+            select $1 as result;
+            """);
+
         // @param type hint enables Describe for set_config (PostgreSQL can't infer $1 type without hint)
         File.WriteAllText(Path.Combine(Dir, "param_type_hint_set_config.sql"), """
             -- @param $1 my_key text
@@ -426,6 +457,62 @@ public class ParamDefaultValueTests(SqlFileSourceTestFixture test)
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("was_null");
+    }
+
+    // --- Default values with inline comments ---
+
+    [Fact]
+    public async Task DefaultWithComment_Text_IgnoresComment()
+    {
+        using var response = await test.Client.GetAsync("/api/default-with-comment-text");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Be("""["active"]""");
+    }
+
+    [Fact]
+    public async Task DefaultWithComment_Number_IgnoresComment()
+    {
+        using var response = await test.Client.GetAsync("/api/default-with-comment-number");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Be("[42]");
+    }
+
+    [Fact]
+    public async Task DefaultWithComment_Bool_IgnoresComment()
+    {
+        using var response = await test.Client.GetAsync("/api/default-with-comment-bool");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Be("[true]");
+    }
+
+    [Fact]
+    public async Task DefaultWithComment_Null_IgnoresComment()
+    {
+        using var response = await test.Client.GetAsync("/api/default-with-comment-null");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("was_null");
+    }
+
+    [Fact]
+    public async Task DefaultWithComment_QuotedNull_IgnoresComment()
+    {
+        using var response = await test.Client.GetAsync("/api/default-with-comment-quoted-null");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Be("""["null"]""");
+    }
+
+    [Fact]
+    public async Task DefaultWithComment_MultiWord_IgnoresComment()
+    {
+        using var response = await test.Client.GetAsync("/api/default-with-comment-multi-word");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Be("""["hello world"]""");
     }
 
     // --- @param type hint for set_config ---
