@@ -531,9 +531,10 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 return string.Concat("return ", responseExp, ";");
             }
 
-            // proxy / proxy_out: the actual response comes from the upstream service, not from the function's return type.
-            // Return the raw Response object so the caller can handle .json(), .blob(), .text() etc.
-            if ((endpoint.IsProxyOut || endpoint.IsProxy) && !urlOnly)
+            // proxy_out: always returns raw upstream response (function runs first, then proxies to upstream).
+            // proxy pass-through: when the routine is void, returns raw upstream response.
+            // Transform proxies (non-void @proxy routines) return processed data — fall through to normal handling.
+            if ((endpoint.IsProxyOut || (endpoint.IsProxy && routine.IsVoid)) && !urlOnly)
             {
                 responseName = "Response";
                 returnExp = "return response;";
@@ -1572,14 +1573,22 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
 
                 if (routine.Type == RoutineType.SqlFile)
                 {
-                    // SQL files: output comment lines directly (they're from the file itself)
+                    // SQL files: output comment lines, stripping leading @ to avoid
+                    // conflicting with JSDoc tags (@param, @returns, etc.)
                     foreach (var line in lines)
                     {
                         if (line == "\r")
                         {
                             continue;
                         }
-                        sb.AppendLine(string.Concat("* ", line.TrimEnd('\r')));
+                        var trimmed = line.TrimEnd('\r');
+                        var content = trimmed.TrimStart();
+                        if (content.StartsWith('@'))
+                        {
+                            // Strip the @ prefix — annotation names work without it
+                            trimmed = string.Concat(trimmed.AsSpan(0, trimmed.Length - content.Length), content.AsSpan(1));
+                        }
+                        sb.AppendLine(string.Concat("* ", trimmed));
                     }
                 }
                 else
@@ -1592,6 +1601,12 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                             continue;
                         }
                         var commentLine = line.Replace("'", "''").TrimEnd('\r');
+                        // Strip leading @ to avoid conflicting with JSDoc tags
+                        var content = commentLine.TrimStart();
+                        if (content.StartsWith('@'))
+                        {
+                            commentLine = string.Concat(commentLine.AsSpan(0, commentLine.Length - content.Length), content.AsSpan(1));
+                        }
                         if (index == 0)
                         {
                             commentLine = string.Concat($"comment on {routine.Type.ToString().ToLowerInvariant()} {routine.Schema}.{routine.Name} is '", commentLine);

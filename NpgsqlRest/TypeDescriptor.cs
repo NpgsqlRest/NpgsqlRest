@@ -129,12 +129,14 @@ public class TypeDescriptor
         var result = normalizedType switch
         {
             "smallint" => NpgsqlDbType.Smallint,
+            "int" => NpgsqlDbType.Integer,
             "integer" => NpgsqlDbType.Integer,
             "bigint" => NpgsqlDbType.Bigint,
             "decimal" => NpgsqlDbType.Numeric,
             "numeric" => NpgsqlDbType.Numeric,
             "real" => NpgsqlDbType.Real,
             "double precision" => NpgsqlDbType.Double,
+            "float" => NpgsqlDbType.Double,
             "int2" => NpgsqlDbType.Smallint,
             "int4" => NpgsqlDbType.Integer,
             "int8" => NpgsqlDbType.Bigint,
@@ -143,7 +145,10 @@ public class TypeDescriptor
             "money" => NpgsqlDbType.Money,
             "smallserial" => NpgsqlDbType.Smallint,
             "serial" => NpgsqlDbType.Integer,
+            "serial2" => NpgsqlDbType.Smallint,
+            "serial4" => NpgsqlDbType.Integer,
             "bigserial" => NpgsqlDbType.Bigint,
+            "serial8" => NpgsqlDbType.Bigint,
 
             "text" => NpgsqlDbType.Text,
             "xml" => NpgsqlDbType.Xml,

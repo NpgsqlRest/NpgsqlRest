@@ -5,7 +5,6 @@ public static partial class Database
     public static void ParamRenameEdgeCaseIsNameTests()
     {
         // Edge case: rename $1 to the literal name "is"
-        // "param $1 is" with exactly 3 tokens renames to literal "is"
         script.Append(@"
 create function case_param_rename_to_is(int)
 returns int
@@ -26,9 +25,9 @@ public class ParamRenameEdgeCaseIsNameTests(TestFixture test)
     [Fact]
     public async Task Test_Param_Renamed_To_Literal_Is_Works()
     {
-        // "is" is now a valid parameter name (no reserved keyword blocklist)
+        // "is" is no longer reserved — renaming to "is" works
         using var result = await test.Client.GetAsync("/api/case-param-rename-to-is/?is=99");
-        var response = await result.Content.ReadAsStringAsync();
+        var response = await result!.Content.ReadAsStringAsync();
 
         result.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Should().Be("99");

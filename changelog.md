@@ -1,6 +1,6 @@
 # Changelog
 
-Note: The changelog for the older version can be found here: [Changelog Archive](https://github.com/NpgsqlRest/NpgsqlRest/blob/master/changelog-old.md)
+Note: The changelog for older versions (3.11.1 and earlier) can be found here: [Changelog Archive](https://github.com/NpgsqlRest/NpgsqlRest/blob/master/changelog-old.md)
 
 ---
 
@@ -289,7 +289,9 @@ SQL file endpoints support all features available to function/procedure endpoint
 
 ---
 
-### Other Changes
+### New Annotations
+
+---
 
 #### New Core Annotation: `@param` / `@parameter` — Rename and Retype Parameters
 
@@ -316,6 +318,8 @@ Positional parameters (`$1`, `$2`) already work as HTTP parameter names (`?$1=va
 ```
 
 All forms coexist with existing `@param X is hash of Y` and `@param X is upload metadata` handlers without ambiguity. Both `@param` and `@parameter` (long form) are supported.
+
+---
 
 #### `@param` Default Values for SQL File Parameters
 
@@ -376,6 +380,8 @@ When authenticated, claims fill the parameters automatically. The defaults ensur
 - **TsClient**: Parameters with defaults get `?` suffix in TypeScript interfaces (optional)
 - **OpenAPI**: Parameters with defaults are marked `required: false`
 
+---
+
 #### `@param` Rename Validation
 
 Parameter names are now validated when renaming via `@param`. Invalid renames are rejected with a warning log instead of silently creating broken endpoints.
@@ -394,220 +400,118 @@ Parameter names are now validated when renaming via `@param`. Invalid renames ar
 -- @param $1 my-param       ✗ invalid character (hyphen)
 ```
 
-#### Glob Pattern Enhancement: `**` Recursive Matching
-
-`Parser.IsPatternMatch` now supports `**` for recursive directory matching:
-
-- `*` — matches any characters (backward-compatible: matches `/` when no `**` in pattern)
-- `**` — matches any characters including `/` (crosses directory boundaries)
-- When `**` is present in the pattern, `*` stops matching `/` (standard glob semantics)
-
-Examples:
-- `sql/**/*.sql` matches `sql/file.sql`, `sql/dir/file.sql`, `sql/a/b/c/file.sql`
-- `**/*.sql` matches any `.sql` file at any depth
-- `dir/**/file.sql` matches `dir/file.sql` and `dir/a/b/file.sql`
-
-This enhancement benefits all existing `IsPatternMatch` consumers (`StaticFiles.AuthorizePaths`, `StaticFiles.ParseContentOptions.ParsePatterns`, upload MIME types) and enables the SQL file source's recursive file scanning.
-
-#### Interface Refactoring: `IEndpointSource` / `IRoutineSource`
-
-`IRoutineSource` split into two interfaces:
-
-- **`IEndpointSource`** — base interface with `CommentsMode`, `NestedJsonForCompositeTypes`, and `Read()`. Used by lightweight sources like `SqlFileSource`.
-- **`IRoutineSource : IEndpointSource`** — extended interface adding `Query`, schema/name filtering. Used by `RoutineSource` and `CrudSource`.
-
-`NestedJsonForCompositeTypes` moved from `IRoutineSource` to `IEndpointSource` so that all endpoint sources (including `SqlFileSource`) support composite type nesting configuration.
-
-**Breaking:** `NpgsqlRestOptions.RoutineSources` renamed to `EndpointSources`. `SourcesCreated` callback renamed to `EndpointSourcesCreated`. Custom `IEndpointSource` implementations must now implement `NestedJsonForCompositeTypes`.
-
-#### Composite Type Cache: Public API
-
-- `CompositeTypeCache.ResolveTypeDescriptor(TypeDescriptor)` — new public method for plugins to resolve composite/array-of-composite type metadata
-- `Routine.CompositeColumnInfo` and `Routine.ArrayCompositeColumnInfo` — changed from `internal` to `public` for plugin access
-- Schema-prefix fallback: `public.my_type` now matches cache key `my_type` (handles `GetDataTypeName` vs `regtype::text` format mismatch)
-
-#### TsClient: Composite Type Support for SQL Files
-
-The TypeScript client generator now correctly handles composite type columns in SQL file endpoints, generating interfaces that match the actual JSON response — same behavior as routine endpoints, including flat/nested modes and recursive composites.
-
-#### Fix: `OnlyWithHttpTag` Mode Skips Files Before Describe
-
-When `CommentsMode` is `OnlyWithHttpTag` (the default), SQL files without an HTTP tag are now skipped **before** the PostgreSQL describe step. Previously, files without an HTTP tag were still described against the database, causing errors on invalid SQL files (e.g., migration scripts, utility files) instead of being silently skipped. With `ErrorMode.Exit`, this would crash the process.
-
-#### TsClient: Multi-Command SQL File Support
-
-The TypeScript client generator now handles multi-command SQL file endpoints. For multi-command endpoints, TsClient generates a typed response interface with one property per result:
-
-```typescript
-interface IProcessOrderResponse {
-    validate: number[];  // single-column → flat array (UnnamedSingleColumnSet)
-    result2: number;  // void command → rows affected
-    confirm: { id: number, status: string }[];
-}
-
-export async function processOrder(
-    request: IProcessOrderRequest
-) : Promise<IProcessOrderResponse> { ... }
-```
-
-- Void commands are typed as `number` (rows affected count)
-- Data-returning commands are typed as arrays of inline object types
-- Single-column commands with `UnnamedSingleColumnSet` enabled generate flat array types (e.g., `string[]`) instead of object arrays
-- Single-command SQL file endpoints generate standard typed functions (no change)
-
-#### TsClient: SQL File Comment Headers
-
-The TypeScript client generator now produces correct JSDoc comment headers for SQL file endpoints:
-
-- Header line shows the full file path (e.g., `SQL file: /path/to/get-posts.sql`) instead of just the filename
-- The `@remarks` section outputs SQL file comments directly instead of incorrectly wrapping them in `comment on function ...` syntax
-
 ---
 
-### RoutineSource: `Enabled` Configuration Option
+#### `@param` Default Value: `=` Alias for `default`
 
-The `RoutineOptions` section now supports an `Enabled` setting (default `true`). Set to `false` to disable automatic endpoint creation from PostgreSQL functions and procedures:
-
-```json
-"RoutineOptions": {
-  "Enabled": false
-}
-```
-
-This is useful for SQL-files-only deployments where the overhead of querying the PostgreSQL catalog for routines is unnecessary.
-
----
-
-### CrudSource Disabled by Default
-
-The `CrudSource:Enabled` setting now defaults to `false` (was `true`).
-
-CrudSource auto-generates CRUD endpoints for all PostgreSQL tables and views, which is rarely desired in production without explicit configuration. Users who need CRUD endpoints should explicitly set `"CrudSource": { "Enabled": true }`.
-
----
-
-### CrudSource No Longer Blocks SqlFileSource
-
-Previously, when `CrudSource` was disabled (or its config section was missing), `CreateEndpointSources()` returned early, preventing `SqlFileSource` from being registered. All three endpoint sources (RoutineSource, CrudSource, SqlFileSource) are now independently enabled/disabled.
-
----
-
-### Self-Referencing Calls: Relative Path Support for Proxy and HTTP Client Types
-
-Both `proxy` annotations and HTTP client type definitions now support **relative paths** that call back to the same server instance:
+The `@param` annotation now accepts `=` as a shorthand for `default` when setting default values:
 
 ```sql
--- Proxy to another endpoint on the same server
-comment on function my_aggregator() is 'HTTP GET
-proxy POST /api/data-source';
+-- These are equivalent:
+-- @param $1 _user_id text default null
+-- @param $1 _user_id text = null
 
--- HTTP client type calling a local endpoint
-comment on type local_api as 'POST /api/process';
+-- Works with any value type:
+-- @param $1 user_id integer default 42
+-- @param $1 user_id integer = 42
+
+-- Also works with standalone default:
+-- @param my_name = 'hello'
+
+-- And "is" style:
+-- @param $1 is greeting = 'hey'
 ```
 
-**Parallel query composition:** Combined with HTTP client types that execute all requests in parallel (`Task.WhenAll`), this enables a single endpoint to fan out to multiple internal endpoints simultaneously — effectively running parallel queries without client-side orchestration:
+---
+
+#### `@param` Type Hints for SQL File Describe
+
+When a SQL file parameter has an explicit type in the `@param` annotation (e.g., `@param $1 name text`), that type is now used during the PostgreSQL Describe step instead of `Unknown`. This fixes startup errors like `42P18: could not determine data type of parameter $1` that occurred when PostgreSQL's parser couldn't infer the parameter type from context alone — for example, in `select set_config('key', $1, true)`.
+
+---
+
+#### New Positional Annotation: `@returns` — Skip Describe and Declare Return Type
+
+New positional annotation `@returns` that skips the PostgreSQL Describe step entirely for a statement. The SQL is never sent to PostgreSQL during startup. Supports three forms:
+
+- `@returns <composite_type>` — resolve columns from the composite type definition
+- `@returns <scalar_type>` — declare a single typed column (e.g., `integer`, `text`, `boolean`). Only the first column is used at runtime.
+- `@returns void` — no columns, void result
+
+**Composite type example** (temp tables created at runtime):
 
 ```sql
--- Two HTTP types calling different internal endpoints
-create type api_users as (body text);
-comment on type api_users is 'GET /api/users';
-
-create type api_orders as (body text);
-comment on type api_orders is 'GET /api/orders';
-
--- Function that composes both in parallel
-create function get_dashboard(
-    _users api_users,
-    _orders api_orders
-) returns json language plpgsql as $$
-begin
-    return json_build_object('users', (_users).body::json, 'orders', (_orders).body::json);
+-- HTTP GET
+-- @param $1 val1 text
+-- @param $2 val2 integer
+begin;
+select set_config('app.val1', $1, true); -- @skip
+select set_config('app.val2', $2::text, true); -- @skip
+do $$ begin
+    create temp table _result on commit drop as
+    select current_setting('app.val1') as val1,
+           current_setting('app.val2')::int as val2;
+end; $$;
+-- @returns my_result_type
+-- @result data
+-- @single
+select * from _result;
 end;
-$$;
--- One request → two parallel internal calls → combined response
 ```
 
-Configuration:
-- `HttpClientOptions.SelfBaseUrl` / `ProxyOptions.SelfBaseUrl` — explicit base URL for relative path resolution (auto-detected from server addresses when not set)
-- In production, relative paths resolve via loopback HTTP to the server's own address
-- In test environments, `SetSelfClient()` injects an in-memory handler that bypasses the network entirely
+Without `@returns`, the `select * from _result` statement fails during startup Describe because the temp table doesn't exist yet. With `@returns my_result_type`, the columns are resolved from the composite type definition in `pg_catalog` instead.
 
----
-
-### DataProtection Disabled by Default
-
-The `DataProtection:Enabled` setting now defaults to `false` (was `true`).
-
-DataProtection is only needed when using Cookie Authentication, Antiforgery tokens, or `@encrypt`/`@decrypt` annotations — all of which are themselves disabled by default. Enabling it unconditionally added unnecessary key management overhead and, on Linux/Docker with `Storage: "Default"`, caused silent key loss on restart (invalidating auth cookies without warning).
-
-Users who enable Auth, Antiforgery, or encrypt/decrypt annotations should explicitly set `"DataProtection": { "Enabled": true }` and choose an appropriate storage mode.
-
----
-
-### Internal Self-Call Optimization: Zero HTTP Overhead
-
-Self-referencing endpoints (HTTP client types and proxy definitions with relative paths like `/api/endpoint`) now bypass the HTTP stack entirely. Instead of making a loopback HTTP call through TCP, the endpoint handler is invoked directly in-process via `InternalRequestHandler`.
-
-This enables efficient parallel query composition: a single endpoint can fan out to multiple internal endpoints in parallel (via `Task.WhenAll`), collect the results, and combine them — all without network overhead. Use cases include:
-- Parallel data aggregation across multiple queries
-- Orchestrating multiple mutations in a single request
-- Composing responses from several independent data sources
-
-**Performance:** Microseconds instead of milliseconds per internal call. No TCP connection, no HTTP parsing, no serialization/deserialization at the transport layer.
-
-**Internal handler routing** now matches by HTTP method + path (e.g., `GET /api/data`) instead of path alone. Two endpoints with the same path but different methods (GET vs POST) are correctly distinguished for internal calls.
-
----
-
-### New Core Annotation: `@internal` / `@internal_only`
-
-Mark an endpoint as **internal-only** — accessible via self-referencing calls (proxy, HTTP client types) but NOT exposed as a public HTTP route:
+**Scalar type example** — declare a single typed column, extra columns ignored:
 
 ```sql
--- Helper endpoint: returns data but is not callable from outside
-create function get_cached_rates()
-returns json language sql as $$
-    select rates from exchange_rates order by fetched_at desc limit 1
-$$;
-comment on function get_cached_rates() is 'HTTP GET
-internal';
-
--- Public endpoint that composes the internal one
-create function convert_currency(_amount numeric, _from text, _to text)
-returns json language plpgsql as $$
-...
-$$;
-comment on function convert_currency(numeric, text, text) is 'HTTP GET
-proxy GET /api/get-cached-rates';
+-- @returns integer
+-- @single
+select count(*) from users;
 ```
 
-Direct HTTP call to `/api/get-cached-rates` returns 404. But `proxy GET /api/get-cached-rates` and HTTP client types with relative paths can still invoke it internally.
+Returns bare `42` instead of `[{"count": 42}]`.
 
-Works on all endpoint sources: functions, procedures, tables/views (CRUD), and SQL files.
+**Void example** — no results, skipping Describe entirely:
 
----
+```sql
+-- @returns void
+select set_config('key', $1, false);
+```
 
-### Internal Changes
+In multi-command files, void statements produce a rows-affected count. For single-command files, it makes the entire endpoint void (204 No Content).
 
-- `RoutineType.SqlFile` — new enum value for SQL file endpoints (was `Other`), shown in log messages
-- `NpgsqlRestParameter.ConvertedName` / `ActualName` — `internal set` (was `private set`) for `@param` rename support
-- `ParameterHandler.HandleParameterRename` — new method handling all rename/retype annotation forms
-- `SqlFileParameterFormatter` — static singleton, `IsFormattable = false`, zero per-endpoint allocation
-- `Routine.MultiCommandInfo` — per-command metadata array (statement SQL, column info, result names)
-- `NpgsqlRetryExtensions.ExecuteBatchReaderWithRetryAsync` — new retry extension for `NpgsqlBatch` readers
-- Multi-command rendering in `NpgsqlRestEndpoint.cs` — `NpgsqlBatch` execution, `do/while NextResultAsync()` loop, JSON object wrapper with `multiCmdWriteWrapper` flag (skipped in raw/binary mode), table format handler called per result set
-- `JsonValueFormatter.FormatValue` — shared value type dispatch for both single and multi-command rendering paths
-- Three new log messages: `CommentParamNotExistsCantRename`, `CommentParamRenamed`, `CommentParamRetyped`
-- `NpgsqlRestEndpoint` split into partial class files: `NpgsqlRestEndpoint.cs` (request handling + rendering, ~2866 lines) and `NpgsqlRestEndpoint.Helpers.cs` (helper methods, ~352 lines) for easier maintenance
-- JSON key escaping: column names, composite field names, and multi-command result keys are now properly escaped with `PgConverters.SerializeString`. Pre-escaped values stored in `Routine.JsonColumnNames`, `MultiCommandInfo.JsonName`/`JsonColumnNames` at startup to avoid per-row escaping overhead during request execution
-- `HttpClientOptions.SelfBaseUrl` — configurable base URL for relative-path HTTP client type definitions. Auto-detected from server addresses at runtime when not configured
-- `HttpClientTypeHandler.SetSelfClient` — allows injecting a custom `HttpClient` for self-referencing calls (used by `WebApplicationFactory` in tests)
-- `HttpClientTypes` initialization moved before `Build()` in `NpgsqlRestBuilder` so definitions are available when endpoint sources process files
-- `InternalRequestHandler` — direct in-process endpoint invocation for self-referencing calls. Endpoint handlers stored in `FrozenDictionary` keyed by path. Uses `NonClosingMemoryStream` to prevent `PipeWriter.Complete` from closing the response stream. Supports path parameter matching via segment-by-segment template comparison with route value extraction
+The Describe step is completely skipped for annotated statements — the SQL is never sent to PostgreSQL during startup. The composite type must exist in the database at startup. If the type is not found, an error is logged and the file is skipped or the process exits (depending on `ErrorMode`).
 
 ---
 
-### New Comment Annotation: `@single`
+#### New Annotation: `@void` — Force Void Response
+
+New comment annotation `void` (alias: `void_result`) that forces an endpoint to return 204 No Content instead of a JSON response. All statements are executed for side effects only.
+
+This is particularly useful for multi-command SQL files where all statements are side-effect-only (e.g., `set_config` calls followed by a `DO` block):
+
+```sql
+/* HTTP POST
+@void
+@param $1 message_text text
+@param $2 _user_id text = null
+*/
+select set_config('app.message', $1, true);
+select set_config('app.user_id', $2, true);
+do $$ begin
+    -- use current_setting() to read params inside DO block
+    insert into messages (user_id, text)
+    values (current_setting('app.user_id')::int, current_setting('app.message'));
+end; $$;
+```
+
+Without `@void`, this multi-command endpoint would return `{"result1":"...","result2":"...","result3":-1}`. With `@void`, it returns 204 — no JSON, no need to add `@skip` to every statement.
+
+Works on all endpoint types: functions, procedures, CRUD, and SQL file endpoints.
+
+---
+
+#### New Comment Annotation: `@single`
 
 New comment annotation `single` (aliases: `single_record`, `single_result`) that returns a single record as a JSON object instead of a JSON array.
 
@@ -661,7 +565,7 @@ Result: `{"result1": {"id": 1, "name": "alice"}, "result2": 1, "result3": {"id":
 
 ---
 
-### Positional `@result` Annotation for Multi-Command Files
+#### Positional `@result` Annotation for Multi-Command Files
 
 Result keys in multi-command SQL files are named positionally. Annotations can be placed in two ways:
 
@@ -691,9 +595,9 @@ This same placement rule applies to all positional annotations: `@result`, `@sin
 
 ---
 
-### `SkipNonQueryCommands` Setting and `@skip` Annotation
+#### `SkipNonQueryCommands` Setting and `@skip` Annotation
 
-#### `SkipNonQueryCommands` (default: `true`)
+##### `SkipNonQueryCommands` (default: `true`)
 
 Non-query commands in multi-command SQL files are now automatically excluded from the JSON response while still being executed. This eliminates noise like `"result1": -1` from transaction control and session statements.
 
@@ -725,7 +629,7 @@ DML commands (`INSERT`, `UPDATE`, `DELETE`) are NOT skipped — their rows-affec
 
 Set `"SkipNonQueryCommands": false` in `SqlFileSource` configuration to disable.
 
-#### `@skip` Annotation (aliases: `@skip_result`, `@no_result`)
+##### `@skip` Annotation (aliases: `@skip_result`, `@no_result`)
 
 For cases not covered by `SkipNonQueryCommands`, use the `@skip` positional annotation to explicitly exclude any statement from the response:
 
@@ -740,27 +644,216 @@ Result: `{"data": [...]}`
 
 ---
 
-### Aggregated Comment Annotation Logging
+#### New Core Annotation: `@internal` / `@internal_only`
 
-Comment annotation debug logs are now aggregated into a single line per endpoint instead of one line per annotation. This significantly reduces log noise during development.
+Mark an endpoint as **internal-only** — accessible via self-referencing calls (proxy, HTTP client types) but NOT exposed as a public HTTP route:
 
-**Before (multiple Debug lines per endpoint):**
-```
-[DBG] SQL file: who-am-i.sql mapped to GET /api/who-am-i has set HTTP by the comment annotation to GET /api/who-am-i
-[DBG] SQL file: who-am-i.sql mapped to GET /api/who-am-i has set REQUIRED AUTHORIZATION by the comment annotation.
-[DBG] SQL file: who-am-i.sql mapped to GET /api/who-am-i has set SINGLE RECORD by the comment annotation.
+```sql
+-- Helper endpoint: returns data but is not callable from outside
+create function get_cached_rates()
+returns json language sql as $$
+    select rates from exchange_rates order by fetched_at desc limit 1
+$$;
+comment on function get_cached_rates() is 'HTTP GET
+internal';
+
+-- Public endpoint that composes the internal one
+create function convert_currency(_amount numeric, _from text, _to text)
+returns json language plpgsql as $$
+...
+$$;
+comment on function convert_currency(numeric, text, text) is 'HTTP GET
+proxy GET /api/get-cached-rates';
 ```
 
-**After (one Debug line per endpoint):**
-```
-[DBG] SQL file: who-am-i.sql mapped to GET /api/who-am-i annotations: [HTTP GET, authorize, single]
-```
+Direct HTTP call to `/api/get-cached-rates` returns 404. But `proxy GET /api/get-cached-rates` and HTTP client types with relative paths can still invoke it internally.
 
-The individual per-annotation log messages are still available at **Trace** level for detailed debugging.
+Works on all endpoint sources: functions, procedures, tables/views (CRUD), and SQL files.
 
 ---
 
-### TsClient: Type Alias Extraction for Error and Result Types
+### HTTP Custom Types & Self-Referencing Calls
+
+---
+
+#### Self-Referencing Calls: Relative Path Support for Proxy and HTTP Client Types
+
+Both `proxy` annotations and HTTP client type definitions now support **relative paths** that call back to the same server instance:
+
+```sql
+-- Proxy to another endpoint on the same server
+comment on function my_aggregator() is 'HTTP GET
+proxy POST /api/data-source';
+
+-- HTTP client type calling a local endpoint
+comment on type local_api as 'POST /api/process';
+```
+
+**Parallel query composition:** Combined with HTTP client types that execute all requests in parallel (`Task.WhenAll`), this enables a single endpoint to fan out to multiple internal endpoints simultaneously — effectively running parallel queries without client-side orchestration:
+
+```sql
+-- Two HTTP types calling different internal endpoints
+create type api_users as (body text);
+comment on type api_users is 'GET /api/users';
+
+create type api_orders as (body text);
+comment on type api_orders is 'GET /api/orders';
+
+-- Function that composes both in parallel
+create function get_dashboard(
+    _users api_users,
+    _orders api_orders
+) returns json language plpgsql as $$
+begin
+    return json_build_object('users', (_users).body::json, 'orders', (_orders).body::json);
+end;
+$$;
+-- One request → two parallel internal calls → combined response
+```
+
+Configuration:
+- `HttpClientOptions.SelfBaseUrl` / `ProxyOptions.SelfBaseUrl` — explicit base URL for relative path resolution (auto-detected from server addresses when not set)
+- In production, relative paths resolve via loopback HTTP to the server's own address
+- In test environments, `SetSelfClient()` injects an in-memory handler that bypasses the network entirely
+
+---
+
+#### Internal Self-Call Optimization: Zero HTTP Overhead
+
+Self-referencing endpoints (HTTP client types and proxy definitions with relative paths like `/api/endpoint`) now bypass the HTTP stack entirely. Instead of making a loopback HTTP call through TCP, the endpoint handler is invoked directly in-process via `InternalRequestHandler`.
+
+This enables efficient parallel query composition: a single endpoint can fan out to multiple internal endpoints in parallel (via `Task.WhenAll`), collect the results, and combine them — all without network overhead. Use cases include:
+- Parallel data aggregation across multiple queries
+- Orchestrating multiple mutations in a single request
+- Composing responses from several independent data sources
+
+**Performance:** Microseconds instead of milliseconds per internal call. No TCP connection, no HTTP parsing, no serialization/deserialization at the transport layer.
+
+**Internal handler routing** now matches by HTTP method + path (e.g., `GET /api/data`) instead of path alone. Two endpoints with the same path but different methods (GET vs POST) are correctly distinguished for internal calls.
+
+---
+
+#### Composite Type Parameters in SQL Files — No SQL Rewriting
+
+Composite type parameters in SQL files are now passed as single text values instead of being expanded into multiple parameters with ROW() SQL rewriting. The SQL stays exactly as the user wrote it.
+
+**HTTP custom type parameters** (auto-filled from HTTP calls):
+```sql
+-- @param $1 _response example_9.exchange_rate_api
+select ($1::example_9.exchange_rate_api).body;
+```
+The framework makes the HTTP call and passes the result as a single composite text value. No SQL rewriting.
+
+**Client-sent composite type parameters:**
+```sql
+-- @param $1 data my_composite_type
+select ($1::my_composite_type).field1, ($1::my_composite_type).field2;
+```
+The client sends the composite value as PostgreSQL composite text format: `?data=("val1","val2")`. The SQL casts it with `$1::my_composite_type`.
+
+Unknown types in `@param` annotations now produce a warning log instead of silently falling back to `unknown`.
+
+---
+
+### Configuration Changes
+
+---
+
+#### RoutineSource: `Enabled` Configuration Option
+
+The `RoutineOptions` section now supports an `Enabled` setting (default `true`). Set to `false` to disable automatic endpoint creation from PostgreSQL functions and procedures:
+
+```json
+"RoutineOptions": {
+  "Enabled": false
+}
+```
+
+This is useful for SQL-files-only deployments where the overhead of querying the PostgreSQL catalog for routines is unnecessary.
+
+---
+
+#### CrudSource Disabled by Default
+
+The `CrudSource:Enabled` setting now defaults to `false` (was `true`).
+
+CrudSource auto-generates CRUD endpoints for all PostgreSQL tables and views, which is rarely desired in production without explicit configuration. Users who need CRUD endpoints should explicitly set `"CrudSource": { "Enabled": true }`.
+
+---
+
+#### CrudSource No Longer Blocks SqlFileSource
+
+Previously, when `CrudSource` was disabled (or its config section was missing), `CreateEndpointSources()` returned early, preventing `SqlFileSource` from being registered. All three endpoint sources (RoutineSource, CrudSource, SqlFileSource) are now independently enabled/disabled.
+
+---
+
+#### DataProtection Disabled by Default
+
+The `DataProtection:Enabled` setting now defaults to `false` (was `true`).
+
+DataProtection is only needed when using Cookie Authentication, Antiforgery tokens, or `@encrypt`/`@decrypt` annotations — all of which are themselves disabled by default. Enabling it unconditionally added unnecessary key management overhead and, on Linux/Docker with `Storage: "Default"`, caused silent key loss on restart (invalidating auth cookies without warning).
+
+Users who enable Auth, Antiforgery, or encrypt/decrypt annotations should explicitly set `"DataProtection": { "Enabled": true }` and choose an appropriate storage mode.
+
+---
+
+#### `SqlFileSource:LogCommandText` Setting
+
+New setting `LogCommandText` in the `SqlFileSource` configuration (default `false`) controls whether multi-command SQL file endpoints include the full SQL text in debug command logs. When false, only the file path and statement count are logged:
+
+```
+[DBG] -- POST http://127.0.0.1:8080/api/send-message
+-- $1 text = 'hello'
+SQL file: sql/send-message.sql (5 statements)
+```
+
+When true, the full SQL body is logged (previous behavior). Single-command SQL file endpoints always log the SQL text regardless of this setting. This only applies when `LogCommands` is true.
+
+---
+
+### TsClient Improvements
+
+---
+
+#### TsClient: Composite Type Support for SQL Files
+
+The TypeScript client generator now correctly handles composite type columns in SQL file endpoints, generating interfaces that match the actual JSON response — same behavior as routine endpoints, including flat/nested modes and recursive composites.
+
+---
+
+#### TsClient: Multi-Command SQL File Support
+
+The TypeScript client generator now handles multi-command SQL file endpoints. For multi-command endpoints, TsClient generates a typed response interface with one property per result:
+
+```typescript
+interface IProcessOrderResponse {
+    validate: number[];  // single-column → flat array (UnnamedSingleColumnSet)
+    result2: number;  // void command → rows affected
+    confirm: { id: number, status: string }[];
+}
+
+export async function processOrder(
+    request: IProcessOrderRequest
+) : Promise<IProcessOrderResponse> { ... }
+```
+
+- Void commands are typed as `number` (rows affected count)
+- Data-returning commands are typed as arrays of inline object types
+- Single-column commands with `UnnamedSingleColumnSet` enabled generate flat array types (e.g., `string[]`) instead of object arrays
+- Single-command SQL file endpoints generate standard typed functions (no change)
+
+---
+
+#### TsClient: SQL File Comment Headers
+
+The TypeScript client generator now produces correct JSDoc comment headers for SQL file endpoints:
+
+- Header line shows the full file path (e.g., `SQL file: /path/to/get-posts.sql`) instead of just the filename
+- The `@remarks` section outputs SQL file comments directly instead of incorrectly wrapping them in `comment on function ...` syntax
+
+---
+
+#### TsClient: Type Alias Extraction for Error and Result Types
 
 When `IncludeStatusCode` is enabled, the TypeScript client generator now emits reusable type aliases at the top of each generated file instead of repeating the full inline types everywhere:
 
@@ -787,7 +880,7 @@ Two new options control the alias names:
 
 ---
 
-### TsClient: Fix `SkipTypes` Generating Invalid JavaScript
+#### TsClient: Fix `SkipTypes` Generating Invalid JavaScript
 
 Fixed two bugs when `SkipTypes` is enabled (pure JavaScript output):
 
@@ -797,7 +890,11 @@ Fixed two bugs when `SkipTypes` is enabled (pure JavaScript output):
 
 ---
 
-### Graceful Shutdown with Active SSE Connections
+### Bug Fixes & Log Improvements
+
+---
+
+#### Graceful Shutdown with Active SSE Connections
 
 The application now shuts down cleanly when SSE (Server-Sent Events) connections are active. Previously, pressing Ctrl+C while clients were connected to SSE endpoints would hang because the broadcaster channels were never completed, leaving `ReadAllAsync` loops blocked indefinitely.
 
@@ -805,133 +902,13 @@ On `ApplicationStopping`, all broadcaster channels are now completed, causing SS
 
 ---
 
-### Composite Type Parameters in SQL Files — No SQL Rewriting
-
-Composite type parameters in SQL files are now passed as single text values instead of being expanded into multiple parameters with ROW() SQL rewriting. The SQL stays exactly as the user wrote it.
-
-**HTTP custom type parameters** (auto-filled from HTTP calls):
-```sql
--- @param $1 _response example_9.exchange_rate_api
-select ($1::example_9.exchange_rate_api).body;
-```
-The framework makes the HTTP call and passes the result as a single composite text value. No SQL rewriting.
-
-**Client-sent composite type parameters:**
-```sql
--- @param $1 data my_composite_type
-select ($1::my_composite_type).field1, ($1::my_composite_type).field2;
-```
-The client sends the composite value as PostgreSQL composite text format: `?data=("val1","val2")`. The SQL casts it with `$1::my_composite_type`.
-
-Unknown types in `@param` annotations now produce a warning log instead of silently falling back to `unknown`.
-
----
-
-### New Positional Annotation: `@returns` — Composite Type Override for Describe
-
-New positional annotation `@returns <type_name>` that skips the PostgreSQL Describe step for a statement and resolves columns from the specified composite type instead. This enables SQL file endpoints that use temp tables created at runtime (e.g., inside DO blocks):
-
-```sql
--- HTTP GET
--- @param $1 val1 text
--- @param $2 val2 integer
-begin;
-select set_config('app.val1', $1, true); -- @skip
-select set_config('app.val2', $2::text, true); -- @skip
-do $$ begin
-    create temp table _result on commit drop as
-    select current_setting('app.val1') as val1,
-           current_setting('app.val2')::int as val2;
-end; $$;
--- @returns my_result_type
--- @result data
--- @single
-select * from _result;
-end;
-```
-
-Without `@returns`, the `select * from _result` statement fails during startup Describe because the temp table doesn't exist yet. With `@returns my_result_type`, the columns are resolved from the composite type definition in `pg_catalog` instead.
-
-The composite type must exist in the database at startup. If the type is not found, an error is logged and the file is skipped or the process exits (depending on `ErrorMode`).
-
----
-
-### `SqlFileSource:LogCommandText` Setting
-
-New setting `LogCommandText` in the `SqlFileSource` configuration (default `false`) controls whether multi-command SQL file endpoints include the full SQL text in debug command logs. When false, only the file path and statement count are logged:
-
-```
-[DBG] -- POST http://127.0.0.1:8080/api/send-message
--- $1 text = 'hello'
-SQL file: sql/send-message.sql (5 statements)
-```
-
-When true, the full SQL body is logged (previous behavior). Single-command SQL file endpoints always log the SQL text regardless of this setting. This only applies when `LogCommands` is true.
-
----
-
-### New Annotation: `@void` — Force Void Response
-
-New comment annotation `void` (alias: `void_result`) that forces an endpoint to return 204 No Content instead of a JSON response. All statements are executed for side effects only.
-
-This is particularly useful for multi-command SQL files where all statements are side-effect-only (e.g., `set_config` calls followed by a `DO` block):
-
-```sql
-/* HTTP POST
-@void
-@param $1 message_text text
-@param $2 _user_id text = null
-*/
-select set_config('app.message', $1, true);
-select set_config('app.user_id', $2, true);
-do $$ begin
-    -- use current_setting() to read params inside DO block
-    insert into messages (user_id, text)
-    values (current_setting('app.user_id')::int, current_setting('app.message'));
-end; $$;
-```
-
-Without `@void`, this multi-command endpoint would return `{"result1":"...","result2":"...","result3":-1}`. With `@void`, it returns 204 — no JSON, no need to add `@skip` to every statement.
-
-Works on all endpoint types: functions, procedures, CRUD, and SQL file endpoints.
-
----
-
-### `@param` Type Hints for SQL File Describe
-
-When a SQL file parameter has an explicit type in the `@param` annotation (e.g., `@param $1 name text`), that type is now used during the PostgreSQL Describe step instead of `Unknown`. This fixes startup errors like `42P18: could not determine data type of parameter $1` that occurred when PostgreSQL's parser couldn't infer the parameter type from context alone — for example, in `select set_config('key', $1, true)`.
-
----
-
-### `@param` Default Value: `=` Alias for `default`
-
-The `@param` annotation now accepts `=` as a shorthand for `default` when setting default values:
-
-```sql
--- These are equivalent:
--- @param $1 _user_id text default null
--- @param $1 _user_id text = null
-
--- Works with any value type:
--- @param $1 user_id integer default 42
--- @param $1 user_id integer = 42
-
--- Also works with standalone default:
--- @param my_name = 'hello'
-
--- And "is" style:
--- @param $1 is greeting = 'hey'
-```
-
----
-
-### Downgrade Basic Auth Missing Header Log to Debug
+#### Downgrade Basic Auth Missing Header Log to Debug
 
 The "No Authorization header found" log message during Basic Authentication was downgraded from `Warning` to `Debug`. This message fires on every initial browser request before credentials are sent, which is normal behavior in the HTTP Basic Auth challenge-response flow — not a warning condition.
 
 ---
 
-### Improved Log Level Classification
+#### Improved Log Level Classification
 
 Moved verbose per-item logging from `Debug` to `Trace` level to reduce noise at the default `Debug` level:
 
@@ -941,7 +918,7 @@ Moved verbose per-item logging from `Debug` to `Trace` level to reduce noise at 
 
 ---
 
-### Fix `@separator` and `@new_line` Annotations Not Working with `@` Prefix
+#### Fix `@separator` and `@new_line` Annotations Not Working with `@` Prefix
 
 The `@separator` and `@new_line` comment annotations were silently ignored when using the `@` prefix syntax (e.g., `@separator ,` in `/* */` block comments). This affected SQL file endpoints using block comment annotations. Line comment annotations without `@` prefix (e.g., `-- separator ,`) were not affected.
 
@@ -949,3696 +926,91 @@ The root cause: the annotation matching used `line.StartsWith("separator ")` whi
 
 ---
 
-## Version [3.11.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.11.1) (2026-03-13)
+#### Aggregated Comment Annotation Logging
 
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.11.0...3.11.1)
+Comment annotation debug logs are now aggregated into a single line per endpoint instead of one line per annotation. This significantly reduces log noise during development.
 
-### TsClient: `proxy` Passthrough Endpoint Support
-
-The TypeScript client generator (`NpgsqlRest.TsClient`) now recognizes `proxy` passthrough endpoints and generates functions that return the raw `Response` object, matching the existing `proxy_out` behavior. Previously, passthrough proxy endpoints (which typically use `returns void`) would generate `Promise<void>`, which was incorrect since the actual response comes from the upstream service.
-
-Now, both `proxy` and `proxy_out` endpoints generate `Promise<Response>`:
-
-```typescript
-// Generated for a proxy passthrough endpoint
-export async function tsclientTestProxyPassthrough() : Promise<Response> {
-    const response = await fetch(baseUrl + "/api/tsclient-test/proxy-passthrough", {
-        method: "GET",
-    });
-    return response;
-}
+**Before (multiple Debug lines per endpoint):**
+```
+[DBG] SQL file: who-am-i.sql mapped to GET /api/who-am-i has set HTTP by the comment annotation to GET /api/who-am-i
+[DBG] SQL file: who-am-i.sql mapped to GET /api/who-am-i has set REQUIRED AUTHORIZATION by the comment annotation.
+[DBG] SQL file: who-am-i.sql mapped to GET /api/who-am-i has set SINGLE RECORD by the comment annotation.
 ```
 
-This allows callers to handle the upstream response appropriately (`.json()`, `.blob()`, `.text()`, etc.), just like `proxy_out` endpoints.
-
-### `authorize` Annotation Now Matches User ID and User Name Claims
-
-The `authorize` comment annotation previously only matched against role claims (`DefaultRoleClaimType`). It now also matches against user ID (`DefaultUserIdClaimType`) and user name (`DefaultNameClaimType`) claims, aligning with the behavior that `sse_scope authorize` already had.
-
-This means you can now restrict endpoint access to specific users, not just roles:
-
-```sql
--- Authorize by role (existing behavior)
-comment on function get_reports() is 'authorize admin';
-
--- Authorize by user name (new)
-comment on function get_my_profile() is 'authorize john';
-
--- Authorize by user ID (new)
-comment on function get_account() is 'authorize user123';
-
--- Mix of roles and user identifiers (new)
-comment on function get_data() is 'authorize admin, user123, jane';
+**After (one Debug line per endpoint):**
+```
+[DBG] SQL file: who-am-i.sql mapped to GET /api/who-am-i annotations: [HTTP GET, authorize, single]
 ```
 
-The SSE `matching` scope was also aligned to check all three claim types, making authorization behavior consistent across all features.
+The individual per-annotation log messages are still available at **Trace** level for detailed debugging.
 
 ---
 
-## Version [3.11.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.11.0) (2026-03-10)
+#### Fix: `OnlyWithHttpTag` Mode Skips Files Before Describe
 
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.10.0...3.11.0)
-
-### New Feature: `proxy_out` Annotation (Post-Execution Proxy)
-
-A new proxy mode that reverses the existing proxy flow: **execute the PostgreSQL function first**, then forward the function's result body to an upstream service. The upstream response is returned to the client.
-
-This enables a common pattern where business logic in PostgreSQL prepares a payload, and an external service performs processing that PostgreSQL cannot do — PDF rendering, image processing, ML inference, email sending, etc.
-
-#### Syntax
-
-```
-@proxy_out [ METHOD ] [ host_url ]
-```
-
-Also aliased as `forward_proxy` (with or without `@` prefix).
-
-#### How It Works
-
-```
-Client Request → NpgsqlRest
-  → Execute PostgreSQL function
-  → Forward function result as request body to upstream service
-  → Forward original query string to upstream URL
-  → Return upstream response to client
-```
-
-Unlike the existing `proxy` annotation (which forwards the *incoming* request to upstream), `proxy_out` forwards the *outgoing* function result. The original request query string is forwarded to the upstream URL as-is. The client-facing HTTP method and the upstream HTTP method are independent — the client can send a GET while the upstream receives a POST.
-
-#### Basic Usage
-
-```sql
-create function generate_report(report_id int)
-returns json
-language plpgsql as $$
-begin
-    return json_build_object(
-        'title', 'Monthly Report',
-        'data', (select json_agg(row_to_json(t)) from sales t where month = report_id)
-    );
-end;
-$$;
-
-comment on function generate_report(int) is 'HTTP GET
-@proxy_out POST https://render-service.internal/render';
-```
-
-The client calls `GET /api/generate-report/?reportId=3`. The server:
-
-1. Executes `generate_report(3)` in PostgreSQL.
-2. Takes the returned JSON and POSTs it to `https://render-service.internal/render/api/generate-report/?reportId=3` (original query string forwarded).
-3. Returns the upstream response (e.g., a rendered PDF) directly to the client with the upstream's content-type and status code.
-
-#### Query String Forwarding
-
-The original client query string is forwarded to the upstream service as-is. This allows the upstream to receive the same parameters that were used to invoke the function:
-
-```sql
-create function generate_report(p_format text, p_id int)
-returns json
-language plpgsql as $$
-begin
-    return json_build_object('id', p_id, 'data', 'report');
-end;
-$$;
-
-comment on function generate_report(text, int) is 'HTTP GET
-@proxy_out POST';
-```
-
-Calling `GET /api/generate-report/?pFormat=pdf&pId=123` executes the function, then POSTs the result to the upstream with `?pFormat=pdf&pId=123` appended to the URL.
-
-#### HTTP Method Override
-
-Specify which HTTP method to use for the upstream request:
-
-```sql
-comment on function my_func() is 'HTTP GET
-@proxy_out PUT';
-```
-
-The client sends GET, but the upstream receives PUT with the function's result as the body.
-
-#### Custom Host
-
-Override the default `ProxyOptions.Host` per-endpoint:
-
-```sql
-comment on function my_func() is 'HTTP GET
-@proxy_out POST https://my-other-service.internal';
-```
-
-#### Error Handling
-
-- If the **function fails** (database error, exception), the error is returned directly to the client — the proxy call is never made.
-- If the **upstream fails** (5xx, timeout, connection error), the upstream's error status and body are forwarded to the client (502 for connection errors, 504 for timeouts).
-
-#### Configuration
-
-Uses the same `ProxyOptions` configuration as the existing `proxy` annotation. `ProxyOptions.Enabled` must be `true`:
-
-```json
-{
-  "NpgsqlRest": {
-    "ProxyOptions": {
-      "Enabled": true,
-      "Host": "https://api.example.com",
-      "DefaultTimeout": "30 seconds"
-    }
-  }
-}
-```
-
-#### Performance
-
-- **Zero overhead for non-proxy_out endpoints.** The implementation adds only branch-not-taken boolean/null checks on the normal execution path (~4 nanoseconds).
-- **Efficient byte forwarding.** Function output is captured as raw bytes and forwarded directly via `ByteArrayContent` — no intermediate string allocation or double UTF-8 encoding.
-
-### TsClient: `proxy_out` Endpoint Support
-
-The TypeScript client generator (`NpgsqlRest.TsClient`) now recognizes `proxy_out` endpoints and generates functions that return the raw `Response` object instead of a typed return value. Since the actual response comes from the upstream proxy service (not from the PostgreSQL function's return type), the generated function returns `Promise<Response>`, allowing the caller to handle the response appropriately (`.json()`, `.blob()`, `.text()`, etc.):
-
-```typescript
-// Generated for a proxy_out endpoint
-export async function generateReport() : Promise<Response> {
-    const response = await fetch(baseUrl + "/api/generate-report", {
-        method: "GET",
-    });
-    return response;
-}
-```
+When `CommentsMode` is `OnlyWithHttpTag` (the default), SQL files without an HTTP tag are now skipped **before** the PostgreSQL describe step. Previously, files without an HTTP tag were still described against the database, causing errors on invalid SQL files (e.g., migration scripts, utility files) instead of being silently skipped. With `ErrorMode.Exit`, this would crash the process.
 
 ---
 
-## Version [3.10.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.10.0) (2026-02-25)
-
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.9.0...3.10.0)
-
-### New Feature: Resolved Parameter Expressions
-
-When using [HTTP Client Types](https://vb-consulting.github.io/npgsqlrest/http-client-types/), sensitive values like API tokens or secrets are often needed in outgoing HTTP requests (e.g., in an `Authorization` header). Previously, these values had to be supplied as regular HTTP parameters — exposing them to the client and requiring an insecure round-trip: database → client → server → external API.
-
-**Resolved parameter expressions** solve this by allowing function parameters to be resolved server-side via SQL expressions defined in comment annotations. The resolved values are used in HTTP Client Type placeholder substitution (headers, URL, body) and are also passed to the PostgreSQL function — but they never appear in or originate from the client HTTP request.
-
-#### How It Works
-
-If a comment annotation uses the existing `key = value` syntax and the key matches an actual function parameter name, the value is treated as a SQL expression to execute at runtime:
-
-```sql
-create type my_api_response as (body json, status_code int);
-comment on type my_api_response is 'GET https://api.example.com/data
-Authorization: Bearer {_token}';
-
-create function get_secure_data(
-    _user_id int,
-    _req my_api_response,
-    _token text default null
-)
-returns table (body json, status_code int)
-language plpgsql as $$
-begin
-    return query select (_req).body, (_req).status_code;
-end;
-$$;
-comment on function get_secure_data(int, my_api_response, text) is '
-_token = select api_token from user_tokens where user_id = {_user_id}
-';
-```
-
-The client calls `GET /api/get-secure-data/?user_id=42`. The server:
-
-1. Fills `_user_id` from the query string (value `42`).
-2. Executes the resolved expression: `select api_token from user_tokens where user_id = $1` (parameterized, with `$1 = 42`).
-3. Sets `_token` to the result (e.g., `"secret-abc"`).
-4. Substitutes `{_token}` in the outgoing HTTP request header: `Authorization: Bearer secret-abc`.
-5. Makes the HTTP call and returns the response.
-
-The token never leaves the server. The client never sees it.
-
-#### Behavior
-
-- **Server-side only**: Resolved parameters cannot be overridden by client input. Even if the client sends `&token=hacked`, the DB-resolved value is used.
-- **NULL handling**: If the SQL expression returns no rows or NULL, the parameter is set to `DBNull.Value` (empty string in placeholder substitution).
-- **Name-based placeholders, parameterized execution**: Placeholders like `{_user_id}` reference other function parameters by name — the value is always looked up by name, regardless of position. Internally, placeholders are converted to positional `$N` parameters for safe execution (preventing SQL injection).
-- **Sequential execution**: When multiple parameters are resolved, expressions execute one-by-one on the same connection, in annotation order.
-- **Works with user_params**: Resolved expressions can reference parameters auto-filled from JWT claims via `user_params`, enabling fully zero-parameter authenticated calls.
-
-#### Multiple Resolved Parameters
-
-Multiple parameters can each have their own resolved expression:
-
-```sql
-comment on function my_func(text, my_type, text, text) is '
-_token = select api_token from tokens where user_name = {_name}
-_api_key = select ''static-key-'' || api_token from tokens where user_name = {_name}
-';
-```
-
-#### Resolved Parameters in URL, Headers, and Body
-
-Resolved values participate in all HTTP Client Type placeholder locations — URL path segments, headers, and request body templates:
-
-```sql
--- URL: GET https://api.example.com/resource/{_secret_path}
--- Header: Authorization: Bearer {_token}
--- Body: {"token": "{_token}", "data": "{_payload}"}
-```
-
-### New Feature: HTTP Client Type Retry Logic
-
-When using [HTTP Client Types](https://vb-consulting.github.io/npgsqlrest/http-client-types/), outgoing HTTP requests to external APIs can fail transiently — rate limiting (429), temporary server errors (503), network timeouts. Previously, a single failure was passed directly to the PostgreSQL function with no opportunity to retry.
-
-The new `@retry_delay` directive adds configurable automatic retries with delays, defined in the HTTP type comment alongside existing directives like `timeout`.
-
-#### Syntax
-
-```sql
--- Retry on any failure (non-2xx status, timeout, or network error):
-comment on type my_api_type is '@retry_delay 1s, 2s, 5s
-GET https://api.example.com/data';
-
--- Retry only on specific HTTP status codes:
-comment on type my_api_type is '@retry_delay 1s, 2s, 5s on 429, 503
-GET https://api.example.com/data';
-
--- Combined with timeout:
-comment on type my_api_type is 'timeout 10s
-@retry_delay 1s, 2s, 5s on 429, 503
-GET https://api.example.com/data';
-```
-
-The delay list defines both the **number of retries** and the **delay before each retry**. `1s, 2s, 5s` means 3 retries with 1-second, 2-second, and 5-second delays respectively. Delay values use the same format as `timeout` — `100ms`, `1s`, `5m`, `30`, `00:00:01`, etc.
-
-#### Behavior
-
-- **Without `on` filter**: Retries on any non-success HTTP response, timeout, or network error.
-- **With `on` filter**: Retries only when the HTTP response status code matches one of the listed codes (e.g., `429, 503`). Timeouts and network errors always trigger retry regardless of the filter, since they have no status code.
-- **Retry exhaustion**: If all retries fail, the last error (status code, error message) is passed to the PostgreSQL function — the same as if retries were not configured.
-- **Unexpected exceptions**: Non-HTTP errors (e.g., invalid URL) are never retried.
-- **Parallel execution**: Each HTTP type in a function retries independently within its own parallel task. No changes to the parallel execution model.
-- **No external dependencies**: Built-in retry loop, no Polly or other libraries required. Matches the existing PostgreSQL command retry pattern.
-
-#### Example
-
-```sql
-create type rate_limited_api as (body json, status_code int, error_message text);
-comment on type rate_limited_api is '@retry_delay 1s, 2s, 5s on 429, 503
-GET https://api.example.com/data
-Authorization: Bearer {_token}';
-
-create function get_rate_limited_data(
-    _token text,
-    _req rate_limited_api
-)
-returns table (body json, status_code int, error_message text)
-language plpgsql as $$
-begin
-    return query select (_req).body, (_req).status_code, (_req).error_message;
-end;
-$$;
-```
-
-If the external API returns 429 (rate limited), the request is automatically retried after 1s, then 2s, then 5s. If it returns 400 (bad request), no retry occurs and the error is returned immediately.
-
-### New Feature: Data Protection Encrypt/Decrypt Annotations
-
-Two new comment annotations — `encrypt` and `decrypt` — enable transparent application-level column encryption using ASP.NET [Data Protection](https://learn.microsoft.com/en-us/aspnet/core/security/data-protection/introduction). Parameter values are encrypted before being sent to PostgreSQL, and result column values are decrypted before being returned to the API client. The database stores ciphertext; the API consumer sees plaintext. No `pgcrypto` or client-side encryption required.
-
-This is useful for storing PII (SSN, medical records, credit card numbers) or other sensitive data that must be encrypted at rest but is only ever looked up by an unencrypted key (e.g., `user_id`, `patient_id`).
-
-> **Prerequisite**: The `DataProtection` section must be enabled in `appsettings.json` (`"DataProtection": { "Enabled": true }`). The `DefaultDataProtector` is automatically created from Data Protection configuration and passed to the NpgsqlRest authentication options.
-
-#### Encrypt Parameters
-
-Mark specific parameters to encrypt before they are sent to PostgreSQL:
-
-```sql
-create function store_patient_ssn(_patient_id int, _ssn text)
-returns void
-language plpgsql as $$
-begin
-    insert into patients (id, ssn) values (_patient_id, _ssn)
-    on conflict (id) do update set ssn = excluded.ssn;
-end;
-$$;
-comment on function store_patient_ssn(int, text) is '
-HTTP POST
-encrypt _ssn
-';
-```
-
-The client calls `POST /api/store-patient-ssn/` with `{"patientId": 1, "ssn": "123-45-6789"}`. The server encrypts `_ssn` using Data Protection before executing the SQL — the database stores ciphertext like `CfDJ8N...`, never the plaintext SSN.
-
-Use `encrypt` without arguments to encrypt **all** text parameters:
-
-```sql
-comment on function store_all_secrets(text, text) is '
-HTTP POST
-encrypt
-';
-```
-
-#### Decrypt Result Columns
-
-Mark specific result columns to decrypt before returning to the client:
-
-```sql
-create function get_patient(_patient_id int)
-returns table(id int, ssn text, name text)
-language plpgsql as $$
-begin
-    return query select p.id, p.ssn, p.name from patients p where p.id = _patient_id;
-end;
-$$;
-comment on function get_patient(int) is '
-decrypt ssn
-';
-```
-
-The client calls `GET /api/get-patient/?patientId=1`. The `ssn` column is decrypted from ciphertext back to `"123-45-6789"` before being included in the JSON response. The `id` and `name` columns are returned as-is.
-
-Use `decrypt` without arguments to decrypt **all** result columns:
-
-```sql
-comment on function get_all_secrets(text) is '
-decrypt
-';
-```
-
-Decrypt also works on scalar (single-value) return types:
-
-```sql
-create function get_secret(_id int) returns text ...
-comment on function get_secret(int) is 'decrypt';
-```
-
-#### Full Roundtrip Example
-
-```sql
--- Store with encryption
-create function store_secret(_key text, _value text) returns void ...
-comment on function store_secret(text, text) is '
-HTTP POST
-encrypt _value
-';
-
--- Retrieve with decryption
-create function get_secret(_key text) returns table(key text, value text) ...
-comment on function get_secret(text) is '
-decrypt value
-';
-```
-
-```
-POST /api/store-secret/  {"key": "api-key", "value": "sk-abc123"}
-GET  /api/get-secret/?key=api-key  →  {"key": "api-key", "value": "sk-abc123"}
-```
-
-The value is stored encrypted in PostgreSQL and decrypted transparently on read.
-
-#### Annotation Aliases
-
-| Annotation | Aliases |
-|---|---|
-| `encrypt` | `encrypted`, `protect`, `protected` |
-| `decrypt` | `decrypted`, `unprotect`, `unprotected` |
-
-#### Behavior Notes
-
-- **NULL values**: NULL parameters are not encrypted (passed as `DBNull`). NULL columns are not decrypted (returned as JSON `null`).
-- **Non-text types**: Only `string` parameter values are encrypted. Integer, boolean, and other types are unaffected even when `encrypt` is used without arguments.
-- **Decryption failures**: If a column value cannot be decrypted (e.g., it was not encrypted, or keys were rotated/lost), the raw value is returned as-is — no error is thrown.
-- **Key rotation**: ASP.NET Data Protection maintains a key ring. Old keys still decrypt old ciphertext. Keys rotate based on `DefaultKeyLifetimeDays` (default: 90 days). Persistent key storage (`FileSystem` or `Database`) is strongly recommended.
-- **Encrypted columns are opaque to PostgreSQL**: The database cannot filter, join, sort, or index on encrypted values. Use encryption only for columns that are written and read back, never queried by content.
-
-#### Key Management
-
-Encrypt/decrypt relies on the existing `DataProtection` configuration in `appsettings.json`. The encryption keys must be persisted — if keys are lost, encrypted data is **permanently unrecoverable**.
-
-**Key storage options** (`DataProtection:Storage`):
-
-| Storage | Description | Recommendation |
-|---|---|---|
-| `"Default"` | OS default location. On Linux, keys are in-memory only and lost on restart. | Windows only |
-| `"FileSystem"` | Keys persisted to a directory (`FileSystemPath`). In Docker, use a volume mount. | Good for single-instance |
-| `"Database"` | Keys stored in PostgreSQL via `GetAllElementsCommand` / `StoreElementCommand`. | Best for multi-instance |
-
-**Key rotation** (`DataProtection:DefaultKeyLifetimeDays`, default: `90`):
-
-Data Protection automatically rotates keys. New `Protect()` calls use the newest key. Old keys remain in the key ring and can still `Unprotect()` previously encrypted data. This means values encrypted months ago continue to decrypt correctly — the key ring grows over time, it doesn't replace old keys.
-
-**Key encryption at rest** (`DataProtection:KeyEncryption`):
-
-The keys themselves can be encrypted at rest using `"Certificate"` (X.509 `.pfx` file) or `"Dpapi"` (Windows only). Default is `"None"`.
-
-**Application name isolation** (`DataProtection:CustomApplicationName`):
-
-The application name acts as an encryption isolation boundary. Different application names produce incompatible ciphertext — they cannot decrypt each other's data. When set to `null` (default), the current `ApplicationName` is used.
-
-Example minimal configuration for production use:
-
-```json
-{
-  "DataProtection": {
-    "Enabled": true,
-    "Storage": "FileSystem",
-    "FileSystemPath": "/var/lib/npgsqlrest/data-protection-keys",
-    "DefaultKeyLifetimeDays": 90
-  }
-}
-```
-
-Or using database storage:
-
-```json
-{
-  "DataProtection": {
-    "Enabled": true,
-    "Storage": "Database",
-    "GetAllElementsCommand": "select get_data_protection_keys()",
-    "StoreElementCommand": "call store_data_protection_keys($1,$2)"
-  }
-}
-```
+### Internal & Breaking Changes
 
 ---
 
-## Version [3.9.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.9.0) (2026-02-23)
+#### Interface Refactoring: `IEndpointSource` / `IRoutineSource`
 
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.8.0...3.9.0)
+`IRoutineSource` split into two interfaces:
 
-### Commented Configuration Output (`--config`)
+- **`IEndpointSource`** — base interface with `CommentsMode`, `NestedJsonForCompositeTypes`, and `Read()`. Used by lightweight sources like `SqlFileSource`.
+- **`IRoutineSource : IEndpointSource`** — extended interface adding `Query`, schema/name filtering. Used by `RoutineSource` and `CrudSource`.
 
-The `--config` output now includes inline JSONC comments with descriptions for every setting, matching the `appsettings.json` file exactly. This makes it easy to understand what each setting does without consulting the documentation. The default configuration file can be constructed with:
+`NestedJsonForCompositeTypes` moved from `IRoutineSource` to `IEndpointSource` so that all endpoint sources (including `SqlFileSource`) support composite type nesting configuration.
 
-```
-npgsqlrest --config > appsettings.json
-```
-
-### Configuration Search and Filter (`--config [filter]`)
-
-Added an optional filter argument to `--config` that searches keys, comments, and values (case-insensitive) and returns only matching settings as valid JSONC:
-
-```
-npgsqlrest --config cors
-npgsqlrest --config=timeout
-npgsqlrest --config minworker
-```
-
-Output preserves the full section hierarchy so it can be copy-pasted directly into `appsettings.json`. When a key inside a section matches, the parent section wrapper is included. When a section name or its comment matches, the entire section is shown. Matched terms are highlighted with inverted colors in the terminal; piped output is plain text.
-
-### CLI Improvements
-
-- **Case-insensitive config overrides**: Command-line config overrides like `--Applicationname=test` now correctly update the existing `ApplicationName` key instead of creating a duplicate entry with different casing.
-- **Config validation on `--config`**: The `--config` command now validates configuration keys before dumping. Unknown keys (e.g., `--xxx=test`) produce an error on stderr and exit with code 1.
-- **Redirected output fix**: Formatted CLI output (`--help`, `--version`) no longer crashes when stdout is redirected (e.g., piped or captured by a parent process).
-- **CLI test suite**: Added process-based tests for all CLI commands (`--help`, `--version`, `--hash`, `--basic_auth`, `--config-schema`, `--annotations`, `--config`, `--config [filter]`, invalid args).
+**Breaking:** `NpgsqlRestOptions.RoutineSources` renamed to `EndpointSources`. `SourcesCreated` callback renamed to `EndpointSourcesCreated`. Custom `IEndpointSource` implementations must now implement `NestedJsonForCompositeTypes`.
 
 ---
 
-## Version [3.8.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.8.0) (2025-02-11)
+#### Composite Type Cache: Public API
 
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.7.0...3.8.0)
-
-### New Feature: Configuration Key Validation
-
-Added startup validation that checks all configuration keys in `appsettings.json` against the known defaults schema. This catches typos and unknown keys that would otherwise be silently ignored (e.g., `LogCommand` instead of `LogCommands`).
-
-Controlled by the new `Config:ValidateConfigKeys` setting with three modes:
-
-- `"Warning"` (default) — logs warnings for unknown keys, startup continues.
-- `"Error"` — logs errors for unknown keys and exits the application.
-- `"Ignore"` — no validation.
-
-```json
-"Config": {
-  "ValidateConfigKeys": "Warning"
-}
-```
-
-Example output:
-
-```
-[12:34:56 WRN] Unknown configuration key: NpgsqlRest:KebabCaselUrls
-```
-
-### Removed
-
-- Removed the `Config:ExposeAsEndpoint` option. Use the `--config` CLI switch to inspect configuration instead.
-
-### Kestrel Configuration Validation
-
-Configuration key validation also covers the `Kestrel` section, checking against the known Kestrel schema including `Limits`, `Http2`, `Http3`, and top-level flags like `DisableStringReuse` and `AllowSynchronousIO`. User-defined endpoint and certificate names under `Endpoints` and `Certificates` remain open-ended and won't trigger warnings.
-
-### Syntax Highlighted `--config` Output
-
-The `--config` CLI switch now outputs JSON with syntax highlighting (keys, strings, numbers/booleans, and structural characters in distinct colors). When output is redirected to a file, plain JSON is emitted without color codes. The `--config` switch can now appear anywhere in the argument list and be combined with config files and `--key=value` overrides.
-
-### Improved CLI Error Handling
-
-Unknown command-line parameters now display a clear error message with a `--help` hint instead of an unhandled exception stack trace.
-
-### Universal `fallback_handler` for All Upload Handlers
-
-The `fallback_handler` parameter, previously Excel-only, is now available on all upload handlers via `BaseUploadHandler`. When a handler's format validation fails and a `fallback_handler` is configured, processing is automatically delegated to the named fallback handler.
-
-This enables scenarios like: CSV format check fails on a binary file → fall back to `large_object` or `file_system` to save the raw file for analysis.
-
-```sql
-comment on function my_csv_upload(json) is '
-@upload for csv
-@check_format = true
-@fallback_handler = large_object
-@row_command = select process_row($1,$2)
-';
-```
-
-### Optional Path Parameters
-
-Path parameters now support the ASP.NET Core optional parameter syntax `{param?}`. When a path parameter is marked as optional and the corresponding PostgreSQL function parameter has a default value, omitting the URL segment will use the PostgreSQL default:
-
-```sql
-create function get_item(p_id int default 42) returns text ...
-comment on function get_item(int) is '
-HTTP GET /items/{p_id?}
-';
-```
-
-- `GET /items/5` → uses the provided value `5`
-- `GET /items/` → uses the PostgreSQL default `42`
-
-This also works with `query_string_null_handling null_literal` to pass NULL via the literal string `"null"` in the path for any parameter type:
-
-```sql
-create function get_item(p_id int default null) returns text ...
-comment on function get_item(int) is '
-HTTP GET /items/{p_id}
-query_string_null_handling null_literal
-';
-```
-
-- `GET /items/null` → passes SQL NULL to the function
-
-### Fixes
-
-- Fixed query string overload resolution not accounting for path parameters. GET endpoints with path parameters and overloaded functions (same name, different signatures) would resolve to the wrong function. The body JSON overload resolution already handled this correctly.
-- Added missing `QueryStringNullHandling` and `TextResponseNullHandling` entries to `ConfigDefaults`, which caused them to be absent from `--config` output.
-- Added missing `Pattern`, `MinLength`, and `MaxLength` properties to default validation rule schemas in `ConfigDefaults`.
-
-### Machine-Readable CLI Commands for Tool Integration
-
-Added new CLI commands designed for programmatic consumption by tools like pgdev. All JSON-outputting commands use syntax highlighting when run in a terminal and emit plain JSON when piped or redirected.
-
-#### `--version --json`
-
-Outputs version information as structured JSON including all assembly versions, runtime, platform RID, and directories:
-
-```
-npgsqlrest --version --json
-```
-
-#### `--validate [--json]`
-
-Pre-flight check that validates configuration keys against known defaults and tests the database connection, then exits with code 0 (success) or 1 (failure):
-
-```
-npgsqlrest --validate
-npgsqlrest --validate --json
-```
-
-#### `--config-schema`
-
-Outputs a [JSON Schema (draft-07)](https://json-schema.org) describing the full `appsettings.json` configuration structure — types, defaults, and enum constraints. Can be used for IDE autocomplete via the `$schema` property or as the foundation for config editing UIs:
-
-```
-npgsqlrest --config-schema
-```
-
-#### `--annotations`
-
-Outputs all 44 supported SQL comment annotations as a JSON array with name, aliases, syntax, and description for each:
-
-```
-npgsqlrest --annotations
-```
-
-#### `--endpoints`
-
-Connects to the database, discovers all generated REST endpoints, outputs full metadata (method, path, routine info, parameters, return columns, authorization, custom parameters), then exits. Logging is suppressed to keep output clean:
-
-```
-npgsqlrest --endpoints
-```
-
-#### `--config` (updated)
-
-The `--config --json` flag has been removed. The `--config` command now always uses automatic detection: syntax highlighted in terminal, plain JSON when output is piped or redirected.
-
-### Stats Endpoints: `format` Query String Override
-
-Stats endpoints now accept an optional `format` query string parameter that overrides the configured `Stats:OutputFormat` setting per-request. Valid values are `html` and `json`.
-
-```
-GET /api/stats/routines?format=json
-GET /api/stats/tables?format=html
-```
+- `CompositeTypeCache.ResolveTypeDescriptor(TypeDescriptor)` — new public method for plugins to resolve composite/array-of-composite type metadata
+- `Routine.CompositeColumnInfo` and `Routine.ArrayCompositeColumnInfo` — changed from `internal` to `public` for plugin access
+- Schema-prefix fallback: `public.my_type` now matches cache key `my_type` (handles `GetDataTypeName` vs `regtype::text` format mismatch)
 
 ---
 
-## Version [3.7.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.7.0) (2025-02-07)
+#### Glob Pattern Enhancement: `**` Recursive Matching
 
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.6.3...3.7.0)
+`Parser.IsPatternMatch` now supports `**` for recursive directory matching:
 
-### Fixes
+- `*` — matches any characters (backward-compatible: matches `/` when no `**` in pattern)
+- `**` — matches any characters including `/` (crosses directory boundaries)
+- When `**` is present in the pattern, `*` stops matching `/` (standard glob semantics)
 
-- Fixed comma separator bug in Excel Upload Handler error response when processing multiple files. The `fileId` counter was not incremented on error, causing malformed JSON output when an invalid file was followed by additional files.
+Examples:
+- `sql/**/*.sql` matches `sql/file.sql`, `sql/dir/file.sql`, `sql/a/b/c/file.sql`
+- `**/*.sql` matches any `.sql` file at any depth
+- `dir/**/file.sql` matches `dir/file.sql` and `dir/a/b/file.sql`
 
-- Fixed `CustomHost` configuration in `ClientCodeGen` not accepting an empty string value. Setting `"CustomHost": ""` was treated the same as `null` (triggering host auto-detection) because `GetConfigStr` uses `string.IsNullOrEmpty`. Now an explicit empty string correctly produces `const baseUrl = "";` in generated TypeScript, which is useful for relative URL paths.
-
-### New Features
-
-- Added `fallback_handler` parameter to the Excel Upload Handler. When set (e.g., `fallback_handler = csv`), if ExcelDataReader fails to parse an uploaded file (invalid Excel format), the handler automatically delegates processing to the named fallback handler. This allows a single upload endpoint to accept both Excel and CSV files transparently:
-
-```sql
-comment on function my_upload(json) is '
-@upload for excel
-@fallback_handler = csv
-@row_command = select process_row($1,$2)
-';
-```
-
-### New Feature: Pluggable Table Format Renderers
-
-Added a pluggable table format rendering system that allows PostgreSQL function results to be rendered as HTML tables or Excel spreadsheet downloads instead of JSON, controlled by the `@table_format` annotation.
-
-#### HTML Table Format
-
-Renders results as a styled HTML table suitable for browser viewing and copy-paste into Excel:
-
-```sql
-comment on function get_report() is '
-HTTP GET
-@table_format = html
-';
-```
-
-Configuration options in `TableFormatOptions`: `HtmlEnabled`, `HtmlKey`, `HtmlHeader`, `HtmlFooter`.
-
-#### Excel Table Format
-
-Renders results as an `.xlsx` Excel spreadsheet download using the SpreadCheetah library (streaming, AOT-compatible):
-
-```sql
-comment on function get_report() is '
-HTTP GET
-@table_format = excel
-';
-```
-
-Configuration options in `TableFormatOptions`: `ExcelEnabled`, `ExcelKey`, `ExcelSheetName`, `ExcelDateTimeFormat`, `ExcelNumericFormat`.
-
-- `ExcelDateTimeFormat` — Excel Format Code for DateTime cells (default: `yyyy-MM-dd HH:mm:ss`). Examples: `yyyy-mm-dd`, `dd/mm/yyyy hh:mm`.
-- `ExcelNumericFormat` — Excel Format Code for numeric cells (default: General). Examples: `#,##0.00`, `0.00`.
-
-#### Per-Endpoint Custom Parameters
-
-The download filename and worksheet name can be overridden per-endpoint via custom parameter annotations:
-
-```sql
-comment on function get_report() is '
-HTTP GET
-@table_format = excel
-@excel_file_name = monthly_report.xlsx
-@excel_sheet = Report Data
-';
-```
-
-These also support dynamic placeholders resolved from function parameters:
-
-```sql
-comment on function get_report(_format text, _file_name text, _sheet_name text) is '
-HTTP GET
-@table_format = {_format}
-@excel_file_name = {_file_name}
-@excel_sheet = {_sheet_name}
-';
-```
-
-### TsClient: Per-Endpoint URL Export Control
-
-Added two new custom parameter annotations to control TypeScript client code generation per-endpoint:
-
-#### `tsclient_export_url`
-
-Overrides the global `ExportUrls` configuration setting for a specific endpoint:
-
-```sql
-comment on function login(_username text, _password text) is '
-HTTP POST
-@login
-@tsclient_export_url = true
-';
-```
-
-When enabled, the generated TypeScript exports a URL constant for that endpoint:
-
-```typescript
-export const loginUrl = () => baseUrl + "/api/login";
-```
-
-#### `tsclient_url_only`
-
-When set, only the URL constant is exported — the fetch function and response type interface are skipped entirely. Implies `tsclient_export_url = true`:
-
-```sql
-comment on function get_data(_format text) is '
-HTTP GET
-@table_format = {_format}
-@tsclient_url_only = true
-';
-```
-
-This generates only the URL constant and request interface, which is useful for endpoints consumed via browser navigation (e.g., table format downloads) rather than fetch calls.
+This enhancement benefits all existing `IsPatternMatch` consumers (`StaticFiles.AuthorizePaths`, `StaticFiles.ParseContentOptions.ParsePatterns`, upload MIME types) and enables the SQL file source's recursive file scanning.
 
 ---
 
-## Version [3.6.3](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.6.3) (2025-02-03)
+#### Internal Changes
 
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.6.2...3.6.3)
-
-### Fixes
-
-- Fixed `ParseEnvironmentVariables` feature not working for Kestrel configuration values. Previously, environment variable placeholders (e.g., `{MY_HOST}`) in Kestrel settings like Endpoints URLs, Certificate paths/passwords, and Limits were not being replaced because Kestrel uses ASP.NET Core's direct binding which bypassed the custom placeholder processing. Now all Kestrel configuration values properly support environment variable replacement when `ParseEnvironmentVariables` is enabled.
-
----
-
-## Version [3.6.2](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.6.2) (2025-02-02)
-
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.6.1...3.6.2)
-
-### Fixes
-
-- Fixed `NestedJsonForCompositeTypes` option from `RoutineOptions` not being applied to endpoints. Previously, only the `nested` comment annotation could enable nested JSON serialization for composite types. Now the global configuration option is properly applied as the default for all endpoints.
-
-- Fixed TypeScript client (`NpgsqlRest.TsClient`) generating incorrect types for composite columns when `NestedJsonForCompositeTypes` is `false` (the default). The client now correctly generates flat field types matching the actual JSON response structure, instead of always generating nested interfaces.
-
-### Breaking Changes
-
-- Added `NestedJsonForCompositeTypes` property to `IRoutineSource` interface. Custom implementations of `IRoutineSource` will need to add this property.
+- `RoutineType.SqlFile` — new enum value for SQL file endpoints (was `Other`), shown in log messages
+- `NpgsqlRestParameter.ConvertedName` / `ActualName` — `internal set` (was `private set`) for `@param` rename support
+- `ParameterHandler.HandleParameterRename` — new method handling all rename/retype annotation forms
+- `SqlFileParameterFormatter` — static singleton, `IsFormattable = false`, zero per-endpoint allocation
+- `Routine.MultiCommandInfo` — per-command metadata array (statement SQL, column info, result names)
+- `NpgsqlRetryExtensions.ExecuteBatchReaderWithRetryAsync` — new retry extension for `NpgsqlBatch` readers
+- Multi-command rendering in `NpgsqlRestEndpoint.cs` — `NpgsqlBatch` execution, `do/while NextResultAsync()` loop, JSON object wrapper with `multiCmdWriteWrapper` flag (skipped in raw/binary mode), table format handler called per result set
+- `JsonValueFormatter.FormatValue` — shared value type dispatch for both single and multi-command rendering paths
+- Three new log messages: `CommentParamNotExistsCantRename`, `CommentParamRenamed`, `CommentParamRetyped`
+- `NpgsqlRestEndpoint` split into partial class files: `NpgsqlRestEndpoint.cs` (request handling + rendering, ~2866 lines) and `NpgsqlRestEndpoint.Helpers.cs` (helper methods, ~352 lines) for easier maintenance
+- JSON key escaping: column names, composite field names, and multi-command result keys are now properly escaped with `PgConverters.SerializeString`. Pre-escaped values stored in `Routine.JsonColumnNames`, `MultiCommandInfo.JsonName`/`JsonColumnNames` at startup to avoid per-row escaping overhead during request execution
+- `HttpClientOptions.SelfBaseUrl` — configurable base URL for relative-path HTTP client type definitions. Auto-detected from server addresses at runtime when not configured
+- `HttpClientTypeHandler.SetSelfClient` — allows injecting a custom `HttpClient` for self-referencing calls (used by `WebApplicationFactory` in tests)
+- `HttpClientTypes` initialization moved before `Build()` in `NpgsqlRestBuilder` so definitions are available when endpoint sources process files
+- `InternalRequestHandler` — direct in-process endpoint invocation for self-referencing calls. Endpoint handlers stored in `FrozenDictionary` keyed by path. Uses `NonClosingMemoryStream` to prevent `PipeWriter.Complete` from closing the response stream. Supports path parameter matching via segment-by-segment template comparison with route value extraction
 
 ---
 
-## Version [3.6.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.6.1) (2025-02-02)
-
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.6.0...3.6.1)
-
-### Fixes
-
-- Fixed `RequireAuthorization` on Stats and Health endpoints to use manual authorization check consistent with NpgsqlRest endpoints.
-- Fixed `ActivityQuery` in Stats endpoints.
-- Fixed `OutputFormat` default value in Stats endpoints.
-
----
-
-## Version [3.6.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.6.0) (2025-02-01)
-
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.5.0...3.6.0)
-
-### New Feature: Security Headers Middleware
-
-Added configurable security headers middleware to protect against common web vulnerabilities. The middleware adds HTTP security headers to all responses:
-
-- **X-Content-Type-Options** - Prevents MIME-sniffing attacks (default: `nosniff`)
-- **X-Frame-Options** - Prevents clickjacking attacks (default: `DENY`, skipped if Antiforgery is enabled)
-- **Referrer-Policy** - Controls referrer information (default: `strict-origin-when-cross-origin`)
-- **Content-Security-Policy** - Defines approved content sources (configurable)
-- **Permissions-Policy** - Controls browser feature access (configurable)
-- **Cross-Origin-Opener-Policy** - Controls document sharing with popups
-- **Cross-Origin-Embedder-Policy** - Controls cross-origin resource loading
-- **Cross-Origin-Resource-Policy** - Controls resource sharing cross-origin
-
-Configuration:
-```jsonc
-//
-// Security Headers: Adds HTTP security headers to all responses to protect against common web vulnerabilities.
-// These headers instruct browsers how to handle your content securely.
-// Note: X-Frame-Options is automatically handled by the Antiforgery middleware when enabled (see Antiforgery.SuppressXFrameOptionsHeader).
-// Reference: https://owasp.org/www-project-secure-headers/
-//
-"SecurityHeaders": {
-  //
-  // Enable security headers middleware. When enabled, configured headers are added to all HTTP responses.
-  //
-  "Enabled": false,
-  //
-  // X-Content-Type-Options: Prevents browsers from MIME-sniffing a response away from the declared content-type.
-  // Recommended value: "nosniff"
-  // Set to null to not include this header.
-  //
-  "XContentTypeOptions": "nosniff",
-  //
-  // X-Frame-Options: Controls whether the browser should allow the page to be rendered in a <frame>, <iframe>, <embed> or <object>.
-  // Values: "DENY" (never allow), "SAMEORIGIN" (allow from same origin only)
-  // Note: This header is SKIPPED if Antiforgery is enabled (Antiforgery already sets X-Frame-Options: SAMEORIGIN by default).
-  // Set to null to not include this header.
-  //
-  "XFrameOptions": "DENY",
-  //
-  // Referrer-Policy: Controls how much referrer information should be included with requests.
-  // Values: "no-referrer", "no-referrer-when-downgrade", "origin", "origin-when-cross-origin",
-  //         "same-origin", "strict-origin", "strict-origin-when-cross-origin", "unsafe-url"
-  // Recommended: "strict-origin-when-cross-origin" (send origin for cross-origin requests, full URL for same-origin)
-  // Set to null to not include this header.
-  //
-  "ReferrerPolicy": "strict-origin-when-cross-origin",
-  //
-  // Content-Security-Policy: Defines approved sources of content that the browser may load.
-  // Helps prevent XSS, clickjacking, and other code injection attacks.
-  // Example: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
-  // Reference: https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP
-  // Set to null to not include this header (recommended to configure based on your application needs).
-  //
-  "ContentSecurityPolicy": null,
-  //
-  // Permissions-Policy: Controls which browser features and APIs can be used.
-  // Example: "geolocation=(), microphone=(), camera=()" disables these features entirely.
-  // Example: "geolocation=(self), microphone=()" allows geolocation only from same origin.
-  // Reference: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Permissions-Policy
-  // Set to null to not include this header.
-  //
-  "PermissionsPolicy": null,
-  //
-  // Cross-Origin-Opener-Policy: Controls how your document is shared with cross-origin popups.
-  // Values: "unsafe-none", "same-origin-allow-popups", "same-origin"
-  // Set to null to not include this header.
-  //
-  "CrossOriginOpenerPolicy": null,
-  //
-  // Cross-Origin-Embedder-Policy: Prevents a document from loading cross-origin resources that don't explicitly grant permission.
-  // Values: "unsafe-none", "require-corp", "credentialless"
-  // Required for SharedArrayBuffer and high-resolution timers (along with COOP: same-origin).
-  // Set to null to not include this header.
-  //
-  "CrossOriginEmbedderPolicy": null,
-  //
-  // Cross-Origin-Resource-Policy: Indicates how the resource should be shared cross-origin.
-  // Values: "same-site", "same-origin", "cross-origin"
-  // Set to null to not include this header.
-  //
-  "CrossOriginResourcePolicy": null
-}
-```
-
-### New Feature: Forwarded Headers Middleware
-
-Added support for processing proxy headers when running behind a reverse proxy (nginx, Apache, Azure App Service, AWS ALB, Cloudflare, etc.). This is critical for getting the correct client IP address and protocol.
-
-- **X-Forwarded-For** - Gets real client IP instead of proxy IP
-- **X-Forwarded-Proto** - Gets original protocol (http/https)
-- **X-Forwarded-Host** - Gets original host header
-
-Configuration:
-```jsonc
-//
-// Forwarded Headers: Enables the application to read proxy headers (X-Forwarded-For, X-Forwarded-Proto, X-Forwarded-Host).
-// CRITICAL: Required when running behind a reverse proxy (nginx, Apache, Azure App Service, AWS ALB, Cloudflare, etc.)
-// Without this, the application sees the proxy's IP instead of the client's real IP, and HTTP instead of HTTPS.
-// Security Warning: Only enable if you're behind a trusted proxy. Malicious clients can spoof these headers.
-// Reference: https://learn.microsoft.com/en-us/aspnet/core/host-and-deploy/proxy-load-balancer
-//
-"ForwardedHeaders": {
-  //
-  // Enable forwarded headers middleware. Must be placed FIRST in the middleware pipeline.
-  //
-  "Enabled": false,
-  //
-  // Limits the number of proxy entries that will be processed from X-Forwarded-For.
-  // Default is 1 (trust only the immediate proxy). Increase if you have multiple proxies in a chain.
-  // Set to null to process all entries (not recommended for security).
-  //
-  "ForwardLimit": 1,
-  //
-  // List of IP addresses of known proxies to accept forwarded headers from.
-  // Example: ["10.0.0.1", "192.168.1.1"]
-  // If empty and KnownNetworks is also empty, forwarded headers are accepted from any source (less secure).
-  //
-  "KnownProxies": [],
-  //
-  // List of CIDR network ranges of known proxies.
-  // Example: ["10.0.0.0/8", "192.168.0.0/16", "172.16.0.0/12"] for private networks
-  // Useful when proxy IPs are dynamically assigned within a known range.
-  //
-  "KnownNetworks": [],
-  //
-  // List of allowed values for the X-Forwarded-Host header.
-  // Example: ["example.com", "www.example.com"]
-  // If empty, any host is allowed (less secure). Helps prevent host header injection attacks.
-  //
-  "AllowedHosts": []
-}
-```
-
-### New Feature: Health Check Endpoints
-
-Added health check endpoints for container orchestration (Kubernetes, Docker Swarm) and monitoring systems:
-
-- **/health** - Overall health status (combines all checks)
-- **/health/ready** - Readiness probe with optional PostgreSQL connectivity check
-- **/health/live** - Liveness probe (always returns healthy if app is running)
-
-Configuration:
-```jsonc
-//
-// Health Checks: Provides endpoints for monitoring application health, used by container orchestrators (Kubernetes, Docker Swarm),
-// load balancers, and monitoring systems to determine if the application is running correctly.
-// Three types of checks are supported:
-//   - /health: Overall health status (combines all checks)
-//   - /health/ready: Readiness probe - is the app ready to accept traffic? (includes database connectivity)
-//   - /health/live: Liveness probe - is the app process running? (always returns healthy if app responds)
-// Reference: https://learn.microsoft.com/en-us/aspnet/core/host-and-deploy/health-checks
-//
-"HealthChecks": {
-  //
-  // Enable health check endpoints.
-  //
-  "Enabled": false,
-  //
-  // Cache health check responses server-side in memory for the specified duration.
-  // Cached responses are served without re-executing the endpoint. 
-  // Value is in PostgreSQL interval format (e.g., '5 seconds', '1 minute', '30s', '1min').
-  // Set to null to disable caching. Query strings are ignored to prevent cache-busting.
-  //
-  "CacheDuration": "5 seconds",
-  //
-  // Path for the main health check endpoint that reports overall status.
-  // Returns "Healthy", "Degraded", or "Unhealthy" with HTTP 200 (healthy/degraded) or 503 (unhealthy).
-  //
-  "Path": "/health",
-  //
-  // Path for the readiness probe endpoint.
-  // Kubernetes uses this to know when a pod is ready to receive traffic.
-  // Includes database connectivity check when IncludeDatabaseCheck is true.
-  // Returns 503 Service Unavailable if database is unreachable.
-  //
-  "ReadyPath": "/health/ready",
-  //
-  // Path for the liveness probe endpoint.
-  // Kubernetes uses this to know when to restart a pod.
-  // Always returns Healthy (200) if the application process is responding.
-  // Does NOT check database - a slow database shouldn't trigger a container restart.
-  //
-  "LivePath": "/health/live",
-  //
-  // Include PostgreSQL database connectivity in health checks.
-  // When true, the readiness probe will fail if the database is unreachable.
-  //
-  "IncludeDatabaseCheck": true,
-  //
-  // Name for the database health check (appears in detailed health reports).
-  //
-  "DatabaseCheckName": "postgresql",
-  //
-  // Require authentication for health check endpoints.
-  // When true, all health endpoints require a valid authenticated user.
-  // Security Consideration: Health endpoints can reveal information about your infrastructure
-  // (database connectivity, service status). Enable this if your health endpoints are publicly accessible.
-  // Note: Kubernetes/Docker health probes may need to authenticate if this is enabled.
-  //
-  "RequireAuthorization": false,
-  //
-  // Apply a rate limiter policy to health check endpoints.
-  // Specify the name of a policy defined in RateLimiterOptions.Policies.
-  // Security Consideration: Prevents denial-of-service attacks targeting health endpoints.
-  // Set to null to disable rate limiting on health endpoints.
-  // Example: "fixed" or "bucket" (must match a policy name from RateLimiterOptions).
-  //
-  "RateLimiterPolicy": null
-}
-```
-
-Added new dependency: `AspNetCore.HealthChecks.NpgSql` for PostgreSQL health checks.
-
-### New Feature: PostgreSQL Statistics Endpoints
-
-Added HTTP endpoints for monitoring PostgreSQL database statistics, useful for debugging, performance analysis, and operational monitoring:
-
-- **/stats/routines** - Function/procedure performance statistics from `pg_stat_user_functions` (call counts, execution times)
-- **/stats/tables** - Table statistics from `pg_stat_user_tables` (tuple counts, sizes, scan counts, vacuum info)
-- **/stats/indexes** - Index statistics from `pg_stat_user_indexes` (scan counts, definitions)
-- **/stats/activity** - Current database activity from `pg_stat_activity` (active sessions, queries, wait events)
-
-Output formats:
-- **HTML** (default) - HTML table with Excel-compatible formatting for direct browser copy-paste
-- **JSON** - JSON array with camelCase property names
-
-Configuration:
-```jsonc
-//
-// PostgreSQL Statistics Endpoints
-// Exposes PostgreSQL statistics through HTTP endpoints for monitoring and debugging.
-// Provides access to pg_stat_user_functions, pg_stat_user_tables, pg_stat_user_indexes, and pg_stat_activity.
-//
-"Stats": {
-  //
-  // Enable PostgreSQL statistics endpoints.
-  //
-  "Enabled": false,
-  //
-  // Cache stats responses server-side in memory for the specified duration.
-  // Cached responses are served without re-executing the endpoint.
-  // Value is in PostgreSQL interval format (e.g., '5 seconds', '1 minute', '30s', '1min').
-  // Set to null to disable caching. Query strings are ignored to prevent cache-busting.
-  //
-  "CacheDuration": "5 seconds",
-  //
-  // Apply a rate limiter policy to stats endpoints.
-  // Specify the name of a policy defined in RateLimiterOptions.Policies.
-  // Set to null to disable rate limiting on stats endpoints.
-  //
-  "RateLimiterPolicy": null,
-  //
-  // Use a specific named connection for stats queries.
-  // When null, uses the default connection string.
-  // Useful when you want to query stats from a different database or use read-only credentials.
-  //
-  "ConnectionName": null,
-  //
-  // Require authentication for stats endpoints.
-  // Security Consideration: Stats endpoints can reveal sensitive information about your database
-  // (table sizes, query patterns, active sessions). Enable this for production environments.
-  //
-  "RequireAuthorization": false,
-  //
-  // Restrict access to specific roles.
-  // When null or empty, any authenticated user can access (if RequireAuthorization is true).
-  // Example: ["admin", "dba"] - only users with admin or dba role can access.
-  //
-  "AuthorizedRoles": [],
-  //
-  // Output format for stats endpoints: "json" or "html".
-  // - json: JSON array
-  // - html: HTML table, Excel-compatible for direct browser copy-paste (default)
-  //
-  "OutputFormat": "html",
-  //
-  // Filter schemas using PostgreSQL SIMILAR TO pattern.
-  // When null, all schemas are included.
-  // Example: "public|myapp%" - includes 'public' and schemas starting with 'myapp'.
-  //
-  "SchemaSimilarTo": null,
-  //
-  // Path for routine (function/procedure) performance statistics.
-  // Returns data from pg_stat_user_functions including call counts and execution times.
-  // Note: Requires track_functions = 'pl' or 'all' in postgresql.conf.
-  // Enable with: alter system set track_functions = 'all'; select pg_reload_conf();
-  // Or set track_functions = 'all' directly in postgresql.conf and restart/reload.
-  //
-  "RoutinesStatsPath": "/stats/routines",
-  //
-  // Path for table statistics.
-  // Returns data from pg_stat_user_tables including tuple counts, sizes, scan counts, and vacuum info.
-  //
-  "TablesStatsPath": "/stats/tables",
-  //
-  // Path for index statistics.
-  // Returns data from pg_stat_user_indexes including scan counts and index definitions.
-  //
-  "IndexesStatsPath": "/stats/indexes",
-  //
-  // Path for current database activity.
-  // Returns data from pg_stat_activity showing active sessions, queries, and wait events.
-  // Security Consideration: Shows currently running queries which may contain sensitive data.
-  //
-  "ActivityPath": "/stats/activity"
-}
-```
-
----
-
-## Version [3.5.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.5.0) (2025-01-28)
-
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.4.8...3.5.0)
-
-### New Feature: PasskeyAuth (WebAuthn/FIDO2)
-
-Added WebAuthn/FIDO2 Passkey Authentication support, enabling phishing-resistant, passwordless authentication using device-native biometrics or PINs. This feature allows users to authenticate using passkeys stored on their devices without requiring any external authentication libraries.
-
-- [Technical Blog Post with Implementation Details](https://npgsqlrest.github.io/blog/passkey-sql-auth.html)
-- [Example on GitHub](https://github.com/npgsqlrest/npgsqlrest-docs/tree/main/examples/13_passkey)
-
-### Bugfix: Response Compression for Static Files
-
-Fixed an issue where `ResponseCompression` middleware was not compressing static files served by `AppStaticFileMiddleware`. The middleware was setting `Content-Length` header before writing the response body, which prevented the compression middleware from compressing the response. Also added `text/javascript` to the default list of compressible MIME types.
-
-### Added Client Integration Tests
-
-Added automated integration tests for NpgsqlRestClient configuration features to catch configuration bugs in the CI/CD pipeline:
-
-- **ResponseCompression Tests** - Verify compression works correctly for static files and API responses
-- **CORS Tests** - Verify CORS headers, preflight requests, and origin validation
-- **StaticFiles Tests** - Verify content parsing, claims replacement, and file serving
-
-### Separate Core and Client Logging
-
-Added ability to configure separate log levels for the core NpgsqlRest library and the NpgsqlRestClient application. This allows fine-grained control over logging verbosity:
-
-```json
-"MinimalLevels": {
-  "NpgsqlRest": "Information",
-  "NpgsqlRestClient": "Debug",
-  "System": "Warning",
-  "Microsoft": "Warning"
-}
-```
-
-- `NpgsqlRest` - Controls log level for the core library (endpoint creation, SQL execution, etc.)
-- `NpgsqlRestClient` - Controls log level for the client application (configuration, authentication setup, passkeys, etc.)
-
-### Debug Log Filtering Options
-
-Added two new boolean options to control debug-level logging verbosity:
-
-- `DebugLogEndpointCreateEvents` (default: `true`) - When `false`, suppresses "Created endpoint" debug logs
-- `DebugLogCommentAnnotationEvents` (default: `true`) - When `false`, suppresses comment annotation parsing debug logs
-
-These options allow users to reduce log noise while keeping the log level at Debug for other important information.
-
----
-
-## Version [3.4.8](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.4.8) (2025-01-26)
-
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.4.7...3.4.8)
-
-### Fix: Single-Field Composite Type Returns
-
-Fixed functions returning single-field composite types returning `{"status":"(t)"}` instead of `{"status":true}`.
-
-
----
-
-## Version [3.4.7](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.4.7) (2025-01-21)
-
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.4.6...3.4.7)
-
-### Type Category Lookup Optimization
-
-Introduced `TypeCategory` flags enum and pre-computed lookup table for O(1) type dispatch, replacing sequential if-chain conditionals in hot paths.
-
-**New Files:**
-- `TypeCategory.cs` - Flags enum (`Numeric`, `Boolean`, `Json`, `Text`, `DateTime`, `Date`, `NeedsEscape`, `CastToText`, `Binary`, `Time`) and `TypeCategoryLookup` static class with 128-element array for instant type classification
-- `ParameterParsers.cs` - Delegate array for O(1) parameter parser lookup by `NpgsqlDbType`
-
-**Changes:**
-- `TypeDescriptor` now has a `Category` property computed once at construction via lookup table
-- Boolean properties (`IsNumeric`, `IsJson`, `IsText`, etc.) are now computed from `Category` using bitwise operations
-- `NpgsqlRestEndpoint.cs` and `PgConverters.cs` use bitwise category checks for type dispatch
-
-**Benchmark Results:**
-
-| Operation | Before | After | Improvement |
-|-----------|--------|-------|-------------|
-| Type category lookup (18 types) | 22.6 ns | 6.6 ns | **70% faster** |
-| TypeDescriptor construction | 232.8 ns | 164.2 ns | **29% faster** |
-| Parser delegate lookup | 7.6 ns | 5.9 ns | **23% faster** |
-| Combined type check (bitwise vs properties) | 7.97 ns | 4.94 ns | **38% faster** |
-| Serialization type check (1000 rows) | 5,572 ns | 4,060 ns | **27% faster** |
-
-**Note:** While micro-benchmarks show significant improvements, real-world endpoint throughput gains are modest (1-5%) since type dispatch is a small fraction of total request time compared to database I/O and serialization.
-
-### Additional Allocation Optimizations
-
-**Parameter Logging String Allocations**
-
-Replaced `string.Concat()` with `paramIndex.ToString()` in 8 logging paths with direct `StringBuilder.Append(int)` calls, eliminating intermediate string allocations for each logged parameter.
-
-Before:
-```csharp
-cmdLog!.AppendLine(string.Concat("-- $", paramIndex.ToString(), " ", ...));
-```
-
-After:
-```csharp
-cmdLog!.Append("-- $").Append(paramIndex).Append(' ').Append(...).AppendLine(p);
-```
-
-**Cache Key String Reuse**
-
-Cache key string (`cacheKeys.ToString()`) was being called 3-6 times per cached request. Now computed once and reused:
-
-```csharp
-string? cacheKeyString = cacheKeys?.ToString();
-// Reused in all cache Get/AddOrUpdate calls
-```
-
-**Impact:** Eliminates 8+ string allocations per parameter-heavy request (logging) and 2-5 allocations per cached request (cache keys).
-
----
-
-## Version [3.4.6](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.4.6) (2025-01-21)
-
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.4.5...3.4.6)
-
-### Endpoint Execution Performance Optimizations
-
-Reduced memory allocations and CPU overhead in the hot path of endpoint execution through several optimizations:
-
-**StringBuilder Pooling**
-
-Added a thread-safe `StringBuilderPool` to reuse `StringBuilder` instances across requests instead of allocating new ones:
-
-- `cmdLog` - command logging
-- `cacheKeys` - cache key building
-- `rowBuilder` - response row building
-- `compositeFieldBuffer` - nested JSON composite handling
-- `commandTextBuilder` - SQL command text building
-
-The pool maintains up to 64 instances with lock-free rent/return operations.
-
-**Avoid Query String Dictionary Allocation**
-
-Changed from `context.Request.Query.ToDictionary()` to using `IQueryCollection` directly, eliminating a dictionary allocation on every request. The `IQueryCollection` interface already provides `TryGetValue()`, `Count`, and `ContainsKey()` methods.
-
-**StringBuilder for Command Text Building**
-
-Replaced ~18 `string.Concat(commandText, ...)` calls with `StringBuilder.Append()` operations, reducing intermediate string allocations when building SQL commands for non-formattable routines.
-
-**HashSet for Path Parameter Lookup**
-
-Added `FindMatchingPathParameter()` method with lazy-initialized `HashSet<string>` for O(1) case-insensitive lookups instead of O(n) array iteration when matching path parameters.
-
----
-
-### Comprehensive CancellationToken Propagation
-
-Improved cancellation token propagation throughout the entire request pipeline. The `CancellationToken` parameter is now properly passed to all async operations, enabling proper request cancellation and resource cleanup when clients disconnect or requests are aborted.
-
-**Changes:**
-
-- **NpgsqlRestEndpoint**: Fixed missing cancellation token propagation to `ReadToEndAsync`, `ReadAsync`, `WriteAsync`, `FlushAsync`, `BeginTransactionAsync`, `CommitAsync`, and helper methods (`PrepareCommand`, `OpenConnectionAsync`, `ValidateParametersAsync`, `ReturnErrorAsync`).
-
-- **Auth Handlers**: Added `CancellationToken` parameter to `BasicAuthHandler.HandleAsync`, `LoginHandler.HandleAsync`, and `LogoutHandler.HandleAsync`. All database operations and response writes now respect cancellation.
-
-- **Upload Handlers**: Updated `IUploadHandler.UploadAsync` interface and all implementations (`DefaultUploadHandler`, `FileSystemUploadHandler`, `LargeObjectUploadHandler`, `CsvUploadHandler`, `ExcelUploadHandler`) to accept and propagate cancellation tokens to file I/O and database operations.
-
-- **Proxy Handler**: Added `CancellationToken` parameter to `ProxyRequestHandler.WriteResponseAsync` for cancellable response body writes.
-
-**Benefits:**
-
-- Immediate cleanup when HTTP clients disconnect mid-request
-- Proper cancellation of long-running database queries
-- Reduced resource consumption from abandoned requests
-- Better handling of upload/download operations that can be cancelled
-- **Prevents request storms**: When users repeatedly refresh the browser during slow endpoint execution, each refresh creates a new request while the previous one continues running. Without proper cancellation token propagation, these abandoned requests continue executing database queries, potentially choking the database. With this fix, abandoned requests are properly cancelled, freeing up database connections immediately.
-
----
-
-## Version [3.4.5](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.4.5) (2025-01-19)
-
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.4.4...3.4.5)
-
-### NpgsqlRest.TsClient: Deep Nested Composite Type Support
-
-Fixed the TypeScript client generator (`NpgsqlRest.TsClient`) to properly handle deeply nested composite types when `NestedJsonForCompositeTypes` is enabled.
-
-**Before (incorrect):**
-```typescript
-interface IBooks {
-    bookId: number | null;
-    title: string | null;
-    reviews: string[] | null;  // Wrong: should be IReviews[]
-}
-```
-
-**After (correct):**
-```typescript
-interface IReviews {
-    reviewId: number | null;
-    bookId: number | null;
-    reviewerName: string | null;
-    rating: number | null;
-    reviewText: string | null;
-}
-
-interface IBooks {
-    bookId: number | null;
-    title: string | null;
-    reviews: IReviews[] | null;  // Correct: properly typed array
-}
-```
-
-**Supported scenarios:**
-
-- **Arrays of composites containing arrays**: `books[]` where each book has `reviews[]`
-- **Deep nesting (4+ levels)**: `level4 → level3 → level2 → level1`
-- **Mixed nesting**: Composite containing nested composite that contains array of composites
-
-The fix recursively processes `TypeDescriptor.CompositeFieldNames`, `TypeDescriptor.CompositeFieldDescriptors`, `TypeDescriptor.ArrayCompositeFieldNames`, and `TypeDescriptor.ArrayCompositeFieldDescriptors` to generate proper TypeScript interfaces for all nested types.
-
-**Note:** This only applies when `NestedJsonForCompositeTypes` is enabled (via `nested` annotation or global config). When disabled, arrays of composite types correctly remain as `string[]` to match the PostgreSQL tuple string format returned by the API.
-
----
-
-## Version [3.4.4](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.4.4) (2025-01-17)
-
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.4.3...3.4.4)
-
-### Deep Nested Composite Type Resolution (ResolveNestedCompositeTypes)
-
-By default, NpgsqlRest resolves nested composite types to any depth. When a composite type contains another composite type (or an array of composites), the inner composites are serialized as proper JSON objects/arrays instead of PostgreSQL tuple strings.
-
-**Example:**
-
-```sql
-create type inner_type as (id int, name text);
-create type outer_type as (label text, inner_val inner_type);
-create type with_array as (group_name text, members inner_type[]);
-
-create function get_nested_data()
-returns table(data outer_type, items with_array)
-language sql as $$
-select
-    row('outer', row(1, 'inner')::inner_type)::outer_type,
-    row('group1', array[row(1,'a')::inner_type, row(2,'b')::inner_type])::with_array;
-$$;
-```
-
-**Output:**
-```json
-[{
-  "data": {"label":"outer","innerVal":{"id":1,"name":"inner"}},
-  "items": {"groupName":"group1","members":[{"id":1,"name":"a"},{"id":2,"name":"b"}]}
-}]
-```
-
-**Configuration:**
-
-```json
-{
-  "NpgsqlRest": {
-    "RoutineOptions": {
-      "ResolveNestedCompositeTypes": true
-    }
-  }
-}
-```
-
-**Default:** `true` - nested composites are fully resolved.
-
-**How it works:**
-
-At application startup, when `ResolveNestedCompositeTypes` is enabled:
-
-1. **Type Cache Initialization**: Queries `pg_catalog` to build a cache of all composite types in the database, including their field names, field types, and nested relationships.
-
-2. **Metadata Enrichment**: For each routine that returns composite types, the field descriptors are enriched with nested type information from the cache.
-
-3. **Runtime Serialization**: During request processing, the serializer checks each field's metadata. If the field is marked as a composite type (or array of composites), it recursively parses the PostgreSQL tuple string and outputs a proper JSON object/array.
-
-**When to disable (`ResolveNestedCompositeTypes: false`):**
-
-| Scenario | Reason |
-|----------|--------|
-| **Large schemas with thousands of composite types** | Reduces startup time by skipping the type cache initialization query |
-| **No nested composites in your schema** | If your composites don't contain other composites, the cache provides no benefit |
-| **Memory-constrained environments** | The type cache consumes memory proportional to the number of composite types |
-| **Backward compatibility** | If you depend on the old tuple string format `"(1,x)"` in your client code |
-
-**Performance considerations:**
-
-- **Startup cost**: One additional query to `pg_catalog` at startup to build the type cache
-- **Memory**: Cache size is proportional to: (number of composite types) × (average fields per type)
-- **Runtime**: Negligible - just a dictionary lookup per composite field
-
-**PostgreSQL version compatibility:**
-
-Tested and works on PostgreSQL 13 through 17. The feature uses standard `pg_catalog` views that are stable across PostgreSQL versions.
-
-**Edge cases handled:**
-
-- Empty arrays of composites → `[]`
-- NULL composite elements in arrays → `[{"id":1},null,{"id":2}]`
-- Composites with all NULL fields → `{"id":null,"name":null}`
-- Empty string vs NULL distinction → `""` vs `null`
-- Unicode characters (emoji, Chinese, Arabic) → preserved correctly
-- Deeply nested structures (4+ levels) → fully resolved
-- Self-referencing types → cycle detection prevents infinite loops
-
-### Bug Fixes
-
-- Fixed "permission denied for schema" error in the metadata query when a database user with limited privileges runs the routine discovery. The error occurred when a user with only `USAGE` permission on specific schemas tried to discover routines, but the database contained other schemas with composite types that the user couldn't access. The `::regtype` cast in the metadata query would fail when attempting to resolve type names from unauthorized schemas. Added `has_schema_privilege` checks to filter out:
-  - Array element types from schemas the user cannot access
-  - Schemas the user cannot access from the schema aggregation
-  - Routines that return types from schemas the user cannot access
-
----
-
-## Version [3.4.3](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.4.3) (2025-01-16)
-
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.4.2...3.4.3)
-
-### Bug Fixes
-
-- Fixed double-escaping bug in PostgreSQL tuple string serialization. When composite types contain arrays of other composites (e.g., nested composite types with array fields), the JSON output now correctly escapes quotes instead of double-escaping them (`\"` instead of `\\\"`). This fix ensures that decoded tuple strings contain proper PostgreSQL tuple format with doubled quotes (`""`) for literal quote characters, rather than backslash-escaped quotes.
-
-### Performance Improvements
-
-- Optimized `PgCompositeArrayToJsonArray` to use stack allocation (`stackalloc`) for small inputs (≤512 chars) and `ArrayPool<char>` for larger inputs, eliminating per-element `StringBuilder` allocations and reducing GC pressure.
-
----
-
-## Version [3.4.2](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.4.2) (2025-01-15)
-
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.4.1...3.4.2)
-
-### Bug Fixes
-
-- Fixed AOT compatibility issue with JSON deserialization. When running with Native AOT or with reflection-based serialization disabled, parsing composite type metadata for nested array columns would fail with `InvalidOperationException: Reflection-based serialization has been disabled`. Added `string[][]` to the source-generated `NpgsqlRestSerializerContext` to support AOT compilation.
-
----
-
-## Version [3.4.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.4.1) (2025-01-15)
-
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.4.0...3.4.1)
-
-### Configuration Options for Null Handling
-
-Added global configuration options for `QueryStringNullHandling` and `TextResponseNullHandling` in `appsettings.json`.
-
-#### QueryStringNullHandling
-
-Sets the default behavior for handling NULL values in query string parameters:
-
-- `Ignore` (default): No special handling - empty strings stay as empty strings, "null" literal stays as "null" string.
-- `EmptyString`: Empty query string values are interpreted as NULL values.
-- `NullLiteral`: Literal string "null" (case insensitive) is interpreted as NULL value.
-
-```json
-{
-  "NpgsqlRest": {
-    "QueryStringNullHandling": "EmptyString"
-  }
-}
-```
-
-#### TextResponseNullHandling
-
-Sets the default behavior for plain text responses when the execution returns NULL from the database:
-
-- `EmptyString` (default): Returns an empty string response with status code 200 OK.
-- `NullLiteral`: Returns a string literal "NULL" with status code 200 OK.
-- `NoContent`: Returns status code 204 NO CONTENT.
-
-```json
-{
-  "NpgsqlRest": {
-    "TextResponseNullHandling": "NoContent"
-  }
-}
-```
-
-Both options can also be overridden per-endpoint using comment annotations:
-
-```sql
-comment on function my_func(text) is '
-query_string_null_handling empty_string
-text_response_null_handling no_content
-';
-```
-
-### Bug Fixes
-
-- Fixed logging condition in `QueryStringNullHandlingHandler` that was incorrectly checking `TextResponseNullHandling` instead of `QueryStringNullHandling` when determining whether to log annotation changes.
-- Fixed overloaded function resolution not updating the SQL command text. When multiple PostgreSQL functions with the same name but different parameter types (e.g., one with `int` and one with a custom composite type) were mapped to the same endpoint, selecting an overload based on parameter count would use the wrong SQL expression, causing syntax errors.
-- Fixed error logging to include command parameters. When command execution failed, the error log now includes the request URL and parameter values (when `LogCommands` and `LogCommandParameters` are enabled) for easier debugging.
-
----
-
-## Version [3.4.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.4.0) (2025-01-16)
-
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.3.1...3.4.0)
-
-### Composite Type Support
-
-Added automatic JSON serialization support for PostgreSQL composite types in two scenarios:
-
-#### 1. Arrays of Composite Types
-
-When a function returns a column that is an array of a composite type (or table type), the array elements are now automatically serialized as JSON arrays of objects instead of PostgreSQL's text representation.
-
-**Example:**
-
-```sql
-create type book_item as (
-    book_id int,
-    title text,
-    author_id int
-);
-
-create function get_authors_with_books()
-returns table(
-    author_id int,
-    author_name text,
-    books book_item[]
-)
-language sql as $$
-select * from (values
-    (1, 'George Orwell', array[
-        row(1, '1984', 1)::book_item,
-        row(2, 'Animal Farm', 1)::book_item
-    ])
-) as t(author_id, author_name, books);
-$$;
-```
-
-**Previous behavior:**
-```json
-[{"authorId":1,"authorName":"George Orwell","books":["(1,1984,1)","(2,Animal Farm,1)"]}]
-```
-
-**New behavior:**
-```json
-[{"authorId":1,"authorName":"George Orwell","books":[{"bookId":1,"title":"1984","authorId":1},{"bookId":2,"title":"Animal Farm","authorId":1}]}]
-```
-
-This feature is automatic and requires no annotations. It works with:
-- Custom composite types (`create type`)
-- Table types (arrays of table row types)
-- Composite types containing NULL values
-- Empty arrays and NULL arrays
-- Multiple array columns in the same result set
-- Primitive arrays inside composite types (e.g., `int[]` field) - properly serialized as JSON arrays
-
-**Limitations (with `ResolveNestedCompositeTypes: false`):**
-
-When `ResolveNestedCompositeTypes` is disabled, the array composite serialization works for **one level only**. Nested structures have the following behavior:
-
-| Scenario | Output |
-|----------|--------|
-| **Nested composite** (composite inside composite) | Inner composite serialized as PostgreSQL tuple string: `"(1,x)"` instead of `{"id":1,"name":"x"}` |
-| **Array of composites inside composite** | Array of tuple strings: `["(1,a)","(2,b)"]` instead of `[{"id":1,"name":"a"},...]` |
-
-**Note:** These limitations do not apply when `ResolveNestedCompositeTypes: true` (the default). See the `ResolveNestedCompositeTypes` documentation in version 3.4.4 for full nested composite support.
-
-For complex nested structures with the option disabled, use PostgreSQL's `json_build_object`/`json_agg` functions to construct the JSON directly in your query.
-
-#### 2. Nested JSON for Composite Type Columns (Opt-in)
-
-When a function returns a composite type column, by default the composite type fields are expanded into separate columns (existing behavior preserved for backward compatibility).
-
-To serialize composite type columns as nested JSON objects, you can either:
-
-1. **Enable globally** via configuration option `NestedJsonForCompositeTypes` (default is `false`):
-
-```json
-{
-  "NpgsqlRest": {
-      "RoutineOptions": {
-        "NestedJsonForCompositeTypes": true
-    }
-  }
-}
-```
-
-2. **Enable per-endpoint** via comment annotation (`nested`, `nested_json`, or `nested_composite`):
-
-```sql
-comment on function get_user_with_address() is 'nested';
--- or: 'nested_json'
--- or: 'nested_composite'
-```
-
-**Example:**
-
-```sql
-create type address_type as (
-    street text,
-    city text,
-    zip_code text
-);
-
-create function get_user_with_address()
-returns table(
-    user_id int,
-    user_name text,
-    address address_type
-)
-language sql as $$
-select 1, 'Alice', row('123 Main St', 'New York', '10001')::address_type;
-$$;
-
-comment on function get_user_with_address() is 'nested';
-```
-
-**Default behavior (expanded columns):**
-```json
-[{"userId":1,"userName":"Alice","street":"123 Main St","city":"New York","zipCode":"10001"}]
-```
-
-**With `nested` annotation or `NestedJsonForCompositeTypes: true`:**
-```json
-[{"userId":1,"userName":"Alice","address":{"street":"123 Main St","city":"New York","zipCode":"10001"}}]
-```
-
-### Multidimensional Array Support
-
-Added proper JSON serialization for multidimensional PostgreSQL arrays. Previously, multidimensional arrays were serialized incorrectly, producing invalid JSON. Now they are properly converted to nested JSON arrays.
-
-**Example:**
-
-```sql
-create function get_2d_int_array()
-returns table(
-    matrix int[][]
-)
-language sql as $$
-select array[[1,2,3],[4,5,6]];
-$$;
-```
-
-**Previous behavior (invalid JSON):**
-```
-[{"matrix":[{1,2,3,{4,5,6]}]
-```
-
-**New behavior:**
-```json
-[{"matrix":[[1,2,3],[4,5,6]]}]
-```
-
-This feature is automatic and requires no configuration. It works with:
-- 2D arrays: `{{1,2},{3,4}}` → `[[1,2],[3,4]]`
-- 3D arrays: `{{{1,2},{3,4}},{{5,6},{7,8}}}` → `[[[1,2],[3,4]],[[5,6],[7,8]]]`
-- Higher dimensional arrays
-- All primitive types (int, text, boolean, numeric, etc.)
-- NULL values within multidimensional arrays
-
-**Limitation:** Multidimensional arrays of composite types are serialized as nested arrays of PostgreSQL tuple strings, not as fully expanded JSON objects. For example, a 2D array of composites `{{"(1,a)","(2,b)"},{"(3,c)","(4,d)"}}` becomes `[["(1,a)","(2,b)"],["(3,c)","(4,d)"]]`. The data is preserved but not fully parsed. For complex nested structures, consider using PostgreSQL's `json_build_object`/`json_agg` functions instead.
-
-### JSON Escaping Fix for Arrays and Tuple Strings
-
-Fixed JSON escaping issues that could produce invalid JSON output when PostgreSQL arrays or composite types contain special characters. The fix ensures all special characters are properly escaped:
-
-**Characters now properly escaped:**
-- Quotes (`"`) - escaped as `\"`
-- Backslashes (`\`) - escaped as `\\`
-- Newlines - escaped as `\n`
-- Tabs - escaped as `\t`
-- Carriage returns - escaped as `\r`
-- Combined special characters in the same string
-
-**Example:**
-
-```sql
-create function get_text_array()
-returns text[]
-language sql as $$
-select array['hello "world"', 'path\to\file', E'line1\nline2'];
-$$;
-```
-
-**Previous behavior (could produce invalid JSON):**
-```json
-["hello \"world\"", "path\to\file", "line1
-line2"]
-```
-
-**New behavior (valid JSON):**
-```json
-["hello \"world\"","path\\to\\file","line1\nline2"]
-```
-
-This fix applies to:
-- Simple text arrays with special characters
-- Multidimensional arrays (2D, 3D, etc.)
-- Nested composite types serialized as tuple strings
-- Arrays of composite types with special characters in field values
-- Unicode characters and emoji (preserved correctly)
-- Empty strings and whitespace-only strings
-- JSON-like string content (properly escaped, not parsed)
-
-### TsClient Plugin: Composite Type Interface Generation
-
-The TsClient plugin now generates proper TypeScript interfaces for composite types:
-
-**Generated TypeScript:**
-
-```typescript
-interface IBooks {
-    bookId: number | null;
-    title: string | null;
-    authorId: number | null;
-}
-
-interface IAddress {
-    street: string | null;
-    city: string | null;
-    zipCode: string | null;
-}
-
-interface IGetAuthorsWithBooksResponse {
-    authorId: number | null;
-    authorName: string | null;
-    books: IBooks[] | null;  // Array of composite type
-}
-
-interface IGetUserWithAddressResponse {
-    userId: number | null;
-    userName: string | null;
-    address: IAddress | null;  // Nested composite type
-}
-```
-
-**Features:**
-- Separate interfaces generated for each unique composite type structure
-- Array composite columns typed as `InterfaceName[]`
-- Nested composite columns typed as `InterfaceName`
-- Interfaces are deduplicated when the same composite structure appears in multiple functions
-
-**TsClient Limitation - Multidimensional Arrays:**
-
-PostgreSQL normalizes multidimensional array types (`int[][]`, `int[][][]`) to single-dimensional (`integer[]`) in all catalog views. This is a PostgreSQL limitation—there is no way to retrieve the original array dimensionality from metadata.
-
-**Consequence:** Multidimensional arrays are typed as single-dimensional in TypeScript:
-- `int[][]` → `number[]` (instead of `number[][]`)
-- `int[][][]` → `number[]` (instead of `number[][][]`)
-
-The runtime JSON is always correct (e.g., `[[1,2],[3,4]]`), but the TypeScript type won't match. For strict TypeScript projects, manually cast the response type when using multidimensional arrays.
-
-### Optional `@` Prefix Extended to Annotation Parameters
-
-The optional `@` prefix for comment annotations (introduced in 3.3.1) now also works with annotation parameters using the `key = value` syntax.
-
-**Both syntaxes are now equivalent:**
-
-```sql
--- Without @ prefix
-comment on function my_func() is '
-HTTP GET
-raw = true
-timeout = 30s
-my_custom_param = custom_value
-';
-
--- With @ prefix
-comment on function my_func() is '
-HTTP GET
-@raw = true
-@timeout = 30s
-@my_custom_param = custom_value
-';
-```
-
-This applies to all annotation parameters including `raw`, `timeout`, `buffer`, `connection`, `user_context`, `user_parameters`, SSE settings, basic auth settings, and custom parameters.
-
-Custom parameters with `@` prefix are stored without the prefix (e.g., `@my_param = value` is stored as `my_param`).
-
----
-
-## Version [3.3.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.3.1) (2025-01-14)
-
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.3.0...3.3.1)
-
-### Proxy Response Caching
-
-Added support for caching responses from passthrough proxy endpoints. Previously, caching only worked with endpoints that executed database functions. Now, proxy endpoints that forward requests to upstream services can also leverage the caching system.
-
-**Usage:**
-
-```sql
-create function get_external_data()
-returns void
-language plpgsql as $$ begin null; end; $$;
-
-comment on function get_external_data() is '
-HTTP GET
-proxy
-cached
-cache_expires_in 5 minutes
-';
-```
-
-**Features:**
-- Cache lookup happens before proxy request is sent
-- On cache hit, response is returned immediately without calling upstream service
-- Cached proxy responses preserve: status code, body, content type, and headers
-- Supports cache key parameters for parameter-based caching
-- Supports cache expiration with `cache_expires_in` annotation
-
-**Example with cache key:**
-
-```sql
-create function get_user_profile(_user_id text)
-returns void
-language plpgsql as $$ begin null; end; $$;
-
-comment on function get_user_profile(text) is '
-HTTP GET
-proxy https://api.example.com/users
-cached _user_id
-cache_expires_in 1 hour
-';
-```
-
-This is useful for:
-- Reducing load on upstream services
-- Improving response times for frequently accessed data
-- Rate limiting protection for external API calls
-
----
-
-### Optional `@` Prefix for Comment Annotations
-
-Added support for optional `@` prefix on all NpgsqlRest-specific comment annotations. This provides better visual distinction and consistency with `.http` file conventions.
-
-Both syntaxes are equivalent and can be mixed freely:
-
-```sql
--- Without @ prefix (existing syntax - still works)
-comment on function my_func() is '
-HTTP GET
-authorize
-cached
-raw
-';
-
--- With @ prefix (new syntax)
-comment on function my_func() is '
-HTTP GET
-@authorize
-@cached
-@raw
-';
-
--- Mixed (both work together)
-comment on function my_func() is '
-HTTP GET
-@authorize
-cached
-@timeout 30s
-';
-```
-
-**Notes:**
-- The `@` prefix is optional - existing code without `@` continues to work unchanged
-- HTTP RFC standard annotations (headers with `Name: value` syntax) do not use the `@` prefix
-- This applies to all NpgsqlRest-specific annotations: `authorize`, `cached`, `raw`, `disabled`, `login`, `logout`, `proxy`, `upload`, `validate`, etc.
-
----
-
-### Added a logo on client app commands
-
-## Version [3.3.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.3.0) (2025-01-08)
-
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.2.7...3.3.0)
-
-### Parameter Validation
-
-New feature for validating endpoint parameters before database execution. Validation is performed immediately after parameters are parsed, before any database connection is opened, authorization checks, or proxy handling.
-
-**Comment Annotation Syntax:**
-
-```sql
-comment on function my_function(text) is '
-HTTP POST
-validate _param_name using rule_name
-validate _param_name using rule1, rule2, rule3
-';
-```
-
-- Parameter names can use either original PostgreSQL names (`_email`) or converted names (`email`)
-- Multiple rules can be specified as comma-separated values or on separate lines
-- Rules are evaluated in order; validation stops on first failure
-
-**Built-in Validation Types:**
-
-| Type | Description |
-|------|-------------|
-| `NotNull` | Parameter value cannot be null (DBNull.Value) |
-| `NotEmpty` | Parameter value cannot be an empty string (null values pass) |
-| `Required` | Combines NotNull and NotEmpty - value cannot be null or empty |
-| `Regex` | Parameter value must match the specified regular expression pattern |
-| `MinLength` | Parameter value must have at least N characters |
-| `MaxLength` | Parameter value must have at most N characters |
-
-**Default Rules:**
-
-Four validation rules are available by default: `not_null`, `not_empty`, `required`, and `email`.
-
-**Configuration (NpgsqlRestClient):**
-
-```json
-{
-  "ValidationOptions": {
-    "Enabled": true,
-    "Rules": {
-      "not_null": {
-        "Type": "NotNull",
-        "Message": "Parameter '{0}' cannot be null",
-        "StatusCode": 400
-      },
-      "not_empty": {
-        "Type": "NotEmpty",
-        "Message": "Parameter '{0}' cannot be empty",
-        "StatusCode": 400
-      },
-      "required": {
-        "Type": "Required",
-        "Message": "Parameter '{0}' is required",
-        "StatusCode": 400
-      },
-      "email": {
-        "Type": "Regex",
-        "Pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
-        "Message": "Parameter '{0}' must be a valid email address",
-        "StatusCode": 400
-      }
-    }
-  }
-}
-```
-
-**Rule Properties:**
-
-| Property | Required | Description |
-|----------|----------|-------------|
-| `Type` | Yes | Validation type: `NotNull`, `NotEmpty`, `Required`, `Regex`, `MinLength`, `MaxLength` |
-| `Pattern` | For Regex | Regular expression pattern |
-| `MinLength` | For MinLength | Minimum character length |
-| `MaxLength` | For MaxLength | Maximum character length |
-| `Message` | No | Error message with placeholders: `{0}`=original name, `{1}`=converted name, `{2}`=rule name. Default: `"Validation failed for parameter '{0}'"` |
-| `StatusCode` | No | HTTP status code on failure. Default: `400` |
-
-**Programmatic Configuration:**
-
-```csharp
-var options = new NpgsqlRestOptions
-{
-    ValidationOptions = new ValidationOptions
-    {
-        Rules = new Dictionary<string, ValidationRule>
-        {
-            ["required"] = new ValidationRule
-            {
-                Type = ValidationType.Required,
-                Message = "Parameter '{0}' is required",
-                StatusCode = 400
-            },
-            ["phone"] = new ValidationRule
-            {
-                Type = ValidationType.Regex,
-                Pattern = @"^\+?[1-9]\d{1,14}$",
-                Message = "Parameter '{0}' must be a valid phone number"
-            }
-        }
-    }
-};
-```
-
-**Example Usage:**
-
-```sql
-create function register_user(_email text, _password text, _name text)
-returns json
-language plpgsql
-as $$
-begin
-    -- validation already passed, safe to use parameters
-    insert into users (email, password_hash, name)
-    values (_email, crypt(_password, gen_salt('bf')), _name);
-    return json_build_object('success', true);
-end;
-$$;
-
-comment on function register_user(text, text, text) is '
-HTTP POST
-validate _email using required, email
-validate _password using required
-validate _name using not_empty
-';
-```
-
-### Linux ARM64 Build and Docker Image
-
-Added Linux ARM64 native build and Docker image support:
-
-**New Release Assets:**
-- `npgsqlrest-linux-arm64` - Native ARM64 executable for Linux ARM systems (Raspberry Pi, AWS Graviton, Apple Silicon Linux VMs, etc.)
-
-**New Docker Image Tags:**
-- `vbilopav/npgsqlrest:3.3.0-arm` - ARM64 Docker image
-- `vbilopav/npgsqlrest:latest-arm` - Latest ARM64 Docker image
-
-The ARM64 build is compiled natively on GitHub's ARM64 runners for optimal performance on ARM-based systems.
-
-**Docker Build Improvements:**
-
-Refactored Docker build pipeline to use GitHub Actions artifacts instead of downloading binaries from release URLs. This eliminates potential race conditions with release asset propagation and removes hardcoded version numbers from Dockerfiles.
-
-### Config Command Shows Default Values
-
-The `--config` command now displays the complete configuration including all default values, not just explicitly set values.
-
-**Before:** Only showed values explicitly set in configuration files, leaving users to guess what defaults the application would use.
-
-**After:** Shows the full merged configuration with all defaults visible, making it useful for:
-- Understanding what values the application will use at runtime
-- Creating a starting point configuration file
-- Debugging configuration issues
-- Self-documenting reference of all available options
-
-## Version [3.2.7](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.2.7) (2025-01-05)
-
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.2.6...3.2.7)
-
-Note: NpgsqlRest core library version jumped from 3.2.2 to 3.2.7 to align with the client application version.
-
-### Upload Handlers: User Context and Claims Support
-
-Fixed issue where `user_context` and `user_params` were not properly available for CSV/Excel upload endpoints:
-
-- **`user_context`**: `SET LOCAL` session variables (e.g., `request.user_id`) are now set before upload, making them accessible in `row_command` via `current_setting()`.
-- **`user_params`**: Claim values are now correctly bound to upload function parameters (e.g., `_user_id`, `_user_name`).
-
-**New Feature:** Added `RowCommandUserClaimsKey` option to include authenticated user claims in the row metadata JSON parameter (`$4`) passed to `row_command`.
-
-**Configuration:**
-
-```json
-{
-  "UploadHandlers": {
-    "RowCommandUserClaimsKey": "claims"
-  }
-}
-```
-
-- Set to a key name (default: `"claims"`) to include claims in metadata JSON
-- Set to `null` or empty string to disable
-
-**SQL Usage:**
-
-```sql
--- Access claims from metadata JSON in row_command
-create function process_row(
-  _index int, 
-  _row text[], 
-  _prev int, 
-  _meta json
-  )
-returns int 
-as $$
-begin
-    insert into my_table (user_id, data)
-    values (
-        (_meta->'claims'->>'name_identifier')::int,
-        _row[1]
-    );
-    return _index;
-end;
-$$ language plpgsql;
-```
-
-## Version [3.2.6](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.2.6) (2025-01-04)
-
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.2.5...3.2.6)
-
-- Fixed issue for Upload endpoint code generation in TsClient.
-- Skipped version 3.2.5 because of a packaging issue.
-
-## Version [3.2.4](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.2.4) (2025-01-03)
-
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.2.3...3.2.4)
-
-### DataProtection Key Encryption Options
-
-Added support for encrypting data protection keys at rest using X.509 certificates or Windows DPAPI.
-
-**New Configuration Options:**
-
-```json
-{
-  "DataProtection": {
-    "KeyEncryption": "None",
-    "CertificatePath": null,
-    "CertificatePassword": null,
-    "DpapiLocalMachine": false
-  }
-}
-```
-
-**Options:**
-
-| Option | Description |
-|--------|-------------|
-| `KeyEncryption` | Encryption method: `"None"` (default), `"Certificate"`, or `"Dpapi"` (Windows only) |
-| `CertificatePath` | Path to X.509 certificate file (.pfx) when using Certificate encryption |
-| `CertificatePassword` | Password for the certificate file (can be null for passwordless certificates) |
-| `DpapiLocalMachine` | When using DPAPI, set to `true` to protect keys to the local machine instead of current user |
-
-**Example with Certificate:**
-
-```json
-{
-  "DataProtection": {
-    "Enabled": true,
-    "Storage": "Database",
-    "KeyEncryption": "Certificate",
-    "CertificatePath": "/path/to/cert.pfx",
-    "CertificatePassword": "${CERT_PASSWORD}"
-  }
-}
-```
-
-**Example with DPAPI (Windows only):**
-
-```json
-{
-  "DataProtection": {
-    "Enabled": true,
-    "Storage": "FileSystem",
-    "FileSystemPath": "./keys",
-    "KeyEncryption": "Dpapi",
-    "DpapiLocalMachine": true
-  }
-}
-```
-
-### TsClient Plugin
-
-- Fixed error parsing in generated TypeScript/JavaScript code to skip `response.json()` when the response has no body (e.g., 404 responses). The generated code now checks `response.headers.get("content-length") !== "0"` before attempting to parse the error response.
-
-### NpgsqlRestClient
-
-- Added `Microsoft.Extensions.Caching.StackExchangeRedis` and `Microsoft.AspNetCore.Authentication.JwtBearer` packages to the version display output (`--version` / `-v`).
-
-## Version [3.2.3](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.2.3) (2025-12-30)
-
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.2.2...3.2.3)
-
-### TsClient Plugin
-
-- Changed generated TypeScript/JavaScript response checks from `response.status === 200` to `response.ok` and `response.status !== 200` to `!response.ok` for more idiomatic fetch API usage.
-
-## Version [3.2.2](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.2.2) (2025-12-24)
-
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.2.1...3.2.2)
-
-### Bug Fixes
-
-- Fixed sensitive data exposure in command logs for auth endpoints. When `ObfuscateAuthParameterLogValues` is enabled (default), query string parameters are now stripped from the logged URL to prevent credentials from appearing in logs.
-- Fixed `traceId` being included in ProblemDetails error responses when `ErrorHandlingOptions` config section is missing. Now correctly removes `traceId` by default to match the behavior when the config section exists.
-- Fixed SSL config key mismatch: renamed `HttpsRedirection` to `UseHttpsRedirection` for consistency with `UseHsts`.
-- Fixed missing `TokensPerPeriod` property in TokenBucket rate limiter configuration.
-- Fixed `MetadataQuerySchema` comment to accurately describe behavior (when null, no search path is set).
-
-### Performance Improvements
-
-- Replaced `Task` with `ValueTask` for frequently-called private async methods to reduce heap allocations in hot paths:
-  - `PrepareCommand` - called before every query execution
-  - `OpenConnectionAsync` - often completes synchronously when connection is already open
-  - `ReturnErrorAsync` - error handling path
-  - `Challenge` (BasicAuthHandler) - authentication challenge response
-
-## Version [3.2.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.2.1) (2025-12-23)
-
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.2.0...3.2.1)
-
-### JWT (JSON Web Token) Authentication Support
-
-Added standard JWT Bearer authentication as a third authentication scheme alongside Cookie and Microsoft Bearer Token authentication. All three schemes can be used together.
-
-**Configuration:**
-
-```json
-{
-  "Auth": {
-    "JwtAuth": true,
-    "JwtSecret": "your-secret-key-at-least-32-characters-long",
-    "JwtIssuer": "your-app",
-    "JwtAudience": "your-api",
-    "JwtExpireMinutes": 60,
-    "JwtRefreshExpireDays": 7,
-    "JwtValidateIssuer": true,
-    "JwtValidateAudience": true,
-    "JwtValidateLifetime": true,
-    "JwtValidateIssuerSigningKey": true,
-    "JwtClockSkew": "5 minutes",
-    "JwtRefreshPath": "/api/jwt/refresh"
-  }
-}
-```
-
-**Login Response:**
-
-When JWT authentication is enabled and a login endpoint returns successfully, the response includes:
-
-```json
-{
-  "accessToken": "eyJhbG...",
-  "refreshToken": "eyJhbG...",
-  "tokenType": "Bearer",
-  "expiresIn": 3600,
-  "refreshExpiresIn": 604800
-}
-```
-
-**Token Refresh:**
-
-POST to the configured refresh path (default: `/api/jwt/refresh`) with:
-
-```json
-{ "refreshToken": "eyJhbG..." }
-```
-
-Returns a new access token and refresh token pair.
-
-**Key Differences from Microsoft Bearer Token:**
-
-| Feature | Microsoft Bearer Token | JWT |
-|---------|----------------------|-----|
-| Token Format | Proprietary, encrypted | Industry-standard (RFC 7519) |
-| Interoperability | ASP.NET Core only | Any system supporting JWT |
-| Token Inspection | Opaque | Can be decoded at jwt.io |
-| Use Case | Single ASP.NET app | Cross-service, microservices |
-
-**New Configuration Options:**
-
-- `JwtAuth` - Enable JWT authentication (default: false)
-- `JwtAuthScheme` - Custom scheme name (default: "Bearer")
-- `JwtSecret` - Signing key (minimum 32 characters for HS256)
-- `JwtIssuer` - Token issuer claim
-- `JwtAudience` - Token audience claim
-- `JwtExpireMinutes` - Access token expiration (default: 60)
-- `JwtRefreshExpireDays` - Refresh token expiration (default: 7)
-- `JwtValidateIssuer` - Validate issuer claim (default: false)
-- `JwtValidateAudience` - Validate audience claim (default: false)
-- `JwtValidateLifetime` - Validate token expiration (default: true)
-- `JwtValidateIssuerSigningKey` - Validate signing key (default: true)
-- `JwtClockSkew` - Clock tolerance for expiration (default: 5 minutes)
-- `JwtRefreshPath` - Refresh endpoint path (default: "/api/jwt/refresh")
-
-**Custom Login Handler:**
-
-Added `CustomLoginHandler` callback to `NpgsqlRestAuthenticationOptions` allowing custom token generation during login. This enables JWT tokens to be generated and returned instead of using the default SignIn behavior.
-
-### Path Parameters Support for HttpFiles and OpenApi Plugins
-
-Added path parameters support to the HttpFiles and OpenApi plugins, matching the functionality added to the core library and TsClient in version 3.1.3.
-
-**HttpFiles Plugin:**
-
-Path parameters are now properly handled in generated HTTP files:
-- Path parameters are excluded from query strings (they're already in the URL path)
-- Path parameters are excluded from JSON request bodies
-
-Before (broken):
-```http
-GET {{host}}/api/products/{p_id}?pId=1
-```
-
-After (fixed):
-```http
-GET {{host}}/api/products/{p_id}
-```
-
-**OpenApi Plugin:**
-
-Path parameters are now properly documented in the OpenAPI specification:
-- Path parameters are added with `"in": "path"` and `"required": true`
-- Path parameters are excluded from query parameters
-- Path parameters are excluded from request body schemas
-
-Example generated OpenAPI for `/api/products/{p_id}`:
-```json
-{
-  "parameters": [
-    {
-      "name": "pId",
-      "in": "path",
-      "required": true,
-      "schema": { "type": "integer", "format": "int32" }
-    }
-  ]
-}
-```
-
----
-
-## Version [3.2.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.2.0) (2025-12-22)
-
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.1.3...3.2.0)
-
-### Reverse Proxy Feature
-
-Added reverse proxy support for NpgsqlRest endpoints. When an endpoint is marked as a proxy, incoming HTTP requests are forwarded to an upstream service, and the response can either be returned directly to the client (passthrough mode) or processed by the PostgreSQL function (transform mode).
-
-**Basic Usage:**
-
-```sql
--- Passthrough mode: forward request, return upstream response directly
-create function get_external_data()
-returns void
-language sql as 'select';
-comment on function get_external_data() is 'HTTP GET
-proxy';
-
--- Transform mode: forward request, process response in PostgreSQL
-create function get_and_transform(
-    _proxy_status_code int default null,
-    _proxy_body text default null,
-    _proxy_headers json default null,
-    _proxy_content_type text default null,
-    _proxy_success boolean default null,
-    _proxy_error_message text default null
-)
-returns json
-language plpgsql as $$
-begin
-    if not _proxy_success then
-        return json_build_object('error', _proxy_error_message);
-    end if;
-    return json_build_object(
-        'status', _proxy_status_code,
-        'data', _proxy_body::json
-    );
-end;
-$$;
-comment on function get_and_transform(int, text, json, text, boolean, text) is 'HTTP GET
-proxy';
-```
-
-**Proxy Annotations:**
-
-```sql
--- Basic proxy with default host from configuration
-comment on function my_func() is 'proxy';
-
--- Proxy with custom host
-comment on function my_func() is 'proxy https://api.example.com';
-comment on function my_func() is 'proxy_host https://api.example.com';
-
--- Proxy with custom HTTP method
-comment on function my_func() is 'proxy POST';
-comment on function my_func() is 'proxy_method POST';
-
--- Combined host and method
-comment on function my_func() is 'proxy https://api.example.com POST';
-```
-
-**Response Parameters:**
-
-When the PostgreSQL function has parameters matching these names, the proxy response data is passed to the function:
-
-| Parameter Name | Type | Description |
-|----------------|------|-------------|
-| `_proxy_status_code` | `int` | HTTP status code from upstream (e.g., 200, 404) |
-| `_proxy_body` | `text` | Response body content |
-| `_proxy_headers` | `json` | Response headers as JSON object |
-| `_proxy_content_type` | `text` | Content-Type header value |
-| `_proxy_success` | `boolean` | True for 2xx status codes |
-| `_proxy_error_message` | `text` | Error message if request failed |
-
-**User Claims and Context Forwarding:**
-
-When `user_params` is enabled, user claim values are forwarded to the upstream proxy as query string parameters:
-
-```sql
-create function proxy_with_claims(
-    _user_id text default null,        -- Forwarded as ?userId=...
-    _user_name text default null,      -- Forwarded as ?userName=...
-    _ip_address text default null,     -- Forwarded as ?ipAddress=...
-    _user_claims json default null,    -- Forwarded as ?userClaims=...
-    _proxy_status_code int default null,
-    _proxy_body text default null
-)
-returns json language plpgsql as $$
-begin
-    return json_build_object('user', _user_id, 'data', _proxy_body);
-end;
-$$;
-comment on function proxy_with_claims(text, text, text, json, int, text) is 'HTTP GET
-authorize
-user_params
-proxy';
-```
-
-When `user_context` is enabled, user context values are forwarded as HTTP headers to the upstream proxy:
-
-```sql
-create function proxy_with_context(
-    _proxy_status_code int default null,
-    _proxy_body text default null
-)
-returns json language plpgsql as $$
-begin
-    return json_build_object('status', _proxy_status_code);
-end;
-$$;
-comment on function proxy_with_context(int, text) is 'HTTP GET
-authorize
-user_context
-proxy';
--- Headers forwarded: request.user_id, request.user_name, request.user_roles (configurable via ContextKeyClaimsMapping)
-```
-
-**Upload Forwarding:**
-
-For upload endpoints with proxy, you can configure whether to process uploads locally or forward raw multipart data:
-
-```json
-{
-  "NpgsqlRest": {
-    "ProxyOptions": {
-      "ForwardUploadContent": false
-    }
-  }
-}
-```
-
-- `ForwardUploadContent: false` (default): Uploads are processed locally; proxy receives parsed data
-- `ForwardUploadContent: true`: Raw multipart/form-data is streamed directly to upstream (memory-efficient)
-
-**Configuration:**
-
-```json
-{
-  "NpgsqlRest": {
-    "ProxyOptions": {
-      "Enabled": false,
-      "Host": null,
-      "DefaultTimeout": "30 seconds",
-      "ForwardHeaders": true,
-      "ExcludeHeaders": ["Host", "Content-Length", "Transfer-Encoding"],
-      "ForwardResponseHeaders": true,
-      "ExcludeResponseHeaders": ["Transfer-Encoding", "Content-Length"],
-      "ResponseStatusCodeParameter": "_proxy_status_code",
-      "ResponseBodyParameter": "_proxy_body",
-      "ResponseHeadersParameter": "_proxy_headers",
-      "ResponseContentTypeParameter": "_proxy_content_type",
-      "ResponseSuccessParameter": "_proxy_success",
-      "ResponseErrorMessageParameter": "_proxy_error_message",
-      "ForwardUploadContent": false
-    }
-  }
-}
-```
-
-**Key Features:**
-
-- **Passthrough mode**: No database connection opened when function has no proxy response parameters
-- **Transform mode**: Process upstream response in PostgreSQL before returning to client
-- **User claims forwarding**: Authenticated user claims passed as query parameters to upstream
-- **User context headers**: User context values passed as HTTP headers to upstream
-- **Streaming uploads**: Memory-efficient streaming for large file uploads when `ForwardUploadContent` is enabled
-- **Timeout handling**: Configurable per-request timeout with proper 504 Gateway Timeout responses
-- **Header forwarding**: Configurable request/response header forwarding with exclusion lists
-
-### Docker Image with Bun Runtime
-
-Added new Docker image variant with pre-installed [Bun](https://bun.sh/) runtime: `vbilopav/npgsqlrest:latest-bun`
-
-This image includes the Bun JavaScript runtime alongside NpgsqlRest, enabling proxy endpoints to execute Bun scripts within the same container. Useful for scenarios where you need lightweight proxy handlers without external service calls.
-
-**Available tags:**
-- `vbilopav/npgsqlrest:3.2.1-bun` - specific version with Bun
-- `vbilopav/npgsqlrest:latest-bun` - latest version with Bun
-
-### Configuration Default Fixes
-
-Fixed multiple configuration default mismatches where code fallback values did not match the defaults defined in `appsettings.json`. When configuration keys were not present, the application would use incorrect fallback values instead of the documented defaults.
-
-**Fixed defaults:**
-
-| Section | Key | Was | Now |
-|---------|-----|-----|-----|
-| `DataProtection` | `GetAllElementsCommand` | `"select data from get_all_data_protection_elements()"` | `"select get_data_protection_keys()"` |
-| `DataProtection` | `StoreElementCommand` | `"call store_data_protection_element($1,$2)"` | `"call store_data_protection_keys($1,$2)"` |
-| `Cors` | `AllowedOrigins` | `["*"]` | `[]` |
-| `CommandRetryOptions` | `Enabled` | `false` | `true` |
-| `RateLimiterOptions.Concurrency` | `PermitLimit` | `100` | `10` |
-| `Auth.BasicAuth` | `UseDefaultPasswordHasher` | `false` | `true` |
-| `NpgsqlRest.HttpFileOptions` | `NamePattern` | `"{0}{1}"` | `"{0}_{1}"` |
-| `NpgsqlRest.OpenApiOptions` | `FileOverwrite` | `false` | `true` |
-| `NpgsqlRest.CrudSource` | `Enabled` | `false` | `true` |
-| `StaticFiles.ParseContentOptions` | `Headers` | `null` | `["Cache-Control: no-store, no-cache, must-revalidate", "Pragma: no-cache", "Expires: 0"]` |
-| `NpgsqlRest` | `RequestHeadersMode` | `Ignore` | `Parameter` |
-| `RateLimiterOptions.TokenBucket` | `ReplenishmentPeriodSeconds` (log) | `1` | `10` |
-| `RateLimiterOptions.Concurrency` | `QueueLimit` | `10` | `5` |
-| `RateLimiterOptions` | `Message` (field name) | `"Message"` | `"StatusMessage"` |
-| `CacheOptions` | `UseRedisBackend` (field name) | `"UseRedisBackend"` | `"HybridCacheUseRedisBackend"` |
-
-**Note:** If you were relying on the previous (incorrect) fallback behavior, you may need to explicitly set these values in your configuration.
-
----
-
-## Version [3.1.3](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.1.3) (2025-12-21)
-
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.1.2...3.1.3)
-
-### Path Parameters Support
-
-Added support for RESTful path parameters using the `{param}` syntax in URL paths. This allows defining routes like `/products/{id}` where parameter values are extracted directly from the URL path instead of query strings or request body.
-
-**Usage:**
-
-```sql
--- Single path parameter
-create function get_product(p_id int) returns text language sql as 'select ...';
-comment on function get_product(int) is '
-HTTP GET /products/{p_id}
-';
--- Call: GET /products/123 → p_id = 123
-
--- Multiple path parameters
-create function get_review(p_id int, review_id int) returns text language sql as 'select ...';
-comment on function get_review(int, int) is '
-HTTP GET /products/{p_id}/reviews/{review_id}
-';
--- Call: GET /products/5/reviews/10 → p_id = 5, review_id = 10
-
--- Path parameters with query string parameters
-create function get_product_details(p_id int, include_reviews boolean default false) returns text language sql as 'select ...';
-comment on function get_product_details(int, boolean) is '
-HTTP GET /products/{p_id}/details
-';
--- Call: GET /products/42/details?includeReviews=true → p_id = 42, include_reviews = true
-
--- Path parameters with JSON body (POST/PUT)
-create function update_product(p_id int, new_name text) returns text language sql as 'select ...';
-comment on function update_product(int, text) is '
-HTTP POST /products/{p_id}
-';
--- Call: POST /products/7 with body {"newName": "New Name"} → p_id = 7, new_name = "New Name"
-```
-
-**Key features:**
-
-- Path parameter names in `{param}` can use either the PostgreSQL name (`{p_id}`) or the converted camelCase name (`{pId}`), matching is case-insensitive
-- Works with all HTTP methods (GET, POST, PUT, DELETE)
-- Can be combined with query string parameters (GET/DELETE) or JSON body parameters (POST/PUT)
-- Supports all parameter types (int, text, uuid, bigint, etc.)
-- TsClient generates template literal URLs: `` `${baseUrl}/products/${request.pId}` ``
-- New `ParamType.PathParam` enum value for identifying path-sourced parameters
-- Zero performance impact on endpoints without path parameters
-
-### TsClient Improvements
-
-- Fixed `parseQuery` helper being unnecessarily included in generated TypeScript files when all function parameters are path parameters (no query string parameters remain).
-- Added comprehensive test coverage for TsClient TypeScript generation including tests for: path parameters, status code responses, `tsclient_parse_url`, `tsclient_parse_request`, file upload endpoints, SSE endpoints, and combined upload+SSE endpoints.
-
-### HybridCache Configuration Keys Renamed
-
-HybridCache-specific configuration keys in the `CacheOptions` section have been renamed to include the `HybridCache` prefix for better clarity and consistency:
-
-| Old Key | New Key |
-|---------|---------|
-| `UseRedisBackend` | `HybridCacheUseRedisBackend` |
-| `MaximumKeyLength` | `HybridCacheMaximumKeyLength` |
-| `MaximumPayloadBytes` | `HybridCacheMaximumPayloadBytes` |
-| `DefaultExpiration` | `HybridCacheDefaultExpiration` |
-| `LocalCacheExpiration` | `HybridCacheLocalCacheExpiration` |
-
-**Migration:** Update your `appsettings.json` to use the new key names:
-
-```json
-{
-  "CacheOptions": {
-    "Type": "Hybrid",
-    "HybridCacheUseRedisBackend": false,
-    "HybridCacheMaximumKeyLength": 1024,
-    "HybridCacheMaximumPayloadBytes": 1048576,
-    "HybridCacheDefaultExpiration": "5 minutes",
-    "HybridCacheLocalCacheExpiration": "1 minute"
-  }
-}
-```
-
----
-
-## Version [3.1.2](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.1.2) (2025-12-20)
-
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.1.1...3.1.2)
-
-### Performance: SIMD-Accelerated String Processing
-
-Added SIMD (Single Instruction, Multiple Data) optimizations using `SearchValues<char>` for faster string processing operations. These optimizations leverage hardware vector instructions (AVX2/SSE on x64, AdvSimd on ARM) to process multiple characters simultaneously.
-
-**Optimized operations:**
-
-- **PostgreSQL array to JSON conversion** (`PgArrayToJsonArray`): Faster parsing of array delimiters and escape sequences.
-- **Composite type/tuple to JSON conversion** (`PgUnknownToJsonArray`): Accelerated tuple field parsing.
-- **String quoting and escaping** (`QuoteText`): Vectorized quote detection with fast-path for strings without quotes.
-- **Template string formatting** (`FormatString`): SIMD-accelerated brace detection for URL and response templates.
-- **Pattern matching** (`IsPatternMatch`): Fast-path for patterns without wildcards and early-exit for non-matching prefixes.
-
-**Where you'll see improvements:**
-
-- APIs returning large PostgreSQL arrays (100+ elements): ~30-50% faster serialization
-- Bulk CSV uploads with many rows: Faster delimiter detection
-- Endpoints with complex URL templates: Reduced template processing overhead
-- High-throughput scenarios: Lower CPU usage per request
-
-These optimizations are automatic and require no configuration changes. Performance gains scale with input size - small inputs see modest improvements (~10-20%), while large arrays and bulk operations benefit significantly (~40-60%).
-
-### Consistent JSON Error Responses
-
-All error responses (401 Unauthorized, 403 Forbidden, 404 Not Found, 500 Internal Server Error) now consistently return a JSON body using the RFC 7807 Problem Details format:
-
-```json
-{
-  "type": null,
-  "title": "Unauthorized",
-  "status": 401,
-  "detail": null
-}
-```
-
-Previously, some error responses (particularly authorization failures) returned empty bodies or plain text. Now all endpoints return a consistent, parseable JSON error format regardless of the error type.
-
-### EnvFile Configuration Option
-
-Added new `EnvFile` option to the `Config` section for loading environment variables from a `.env` file:
-
-```json
-{
-  "Config": {
-    "AddEnvironmentVariables": false,
-    "ParseEnvironmentVariables": true,
-    "EnvFile": ".env"
-  }
-}
-```
-
-When `AddEnvironmentVariables` or `ParseEnvironmentVariables` is `true` and the `EnvFile` path is set, the application will load environment variables from the specified file. The file format supports:
-
-- `KEY=VALUE` pairs (one per line)
-- Comments (lines starting with `#`)
-- Quoted values (both single and double quotes)
-
-Example `.env` file:
-
-```
-PGHOST=localhost
-PGPORT=5432
-PGDATABASE=example_db
-PGUSER=postgres
-PGPASSWORD=postgres
-```
-
-The variables are loaded into the environment and made available for configuration parsing with the `{ENV_VAR_NAME}` syntax.
-
-### TsClient: Configurable Error Expression and Type
-
-Added two new options to the TypeScript client code generator (`TsClient`) for customizing error handling in generated code:
-
-- **`ErrorExpression`** (default: `"await response.json()"`): The expression used to parse error responses. Allows customization for different error parsing strategies.
-- **`ErrorType`** (default: `"{status: number; title: string; detail?: string | null} | undefined"`): The TypeScript type annotation for error responses.
-
-These options are only used when `IncludeStatusCode` is `true`. Configuration example:
-
-```json
-{
-  "ClientCodeGen": {
-    "IncludeStatusCode": true,
-    "ErrorExpression": "await response.json()",
-    "ErrorType": "{status: number; title: string; detail?: string | null} | undefined"
-  }
-}
-```
-
-Void functions and procedures now also return the error object when `IncludeStatusCode` is `true`.
-
-### HybridCache Support
-
-Added **HybridCache** as a third caching option alongside Memory and Redis. HybridCache uses Microsoft's `Microsoft.Extensions.Caching.Hybrid` library to provide:
-
-- **Stampede protection**: Prevents multiple concurrent requests from hitting the database when cache expires
-- **Optional Redis L2 backend**: Can use Redis as a distributed secondary cache for sharing across instances
-- **In-memory L1 cache**: Fast local cache for frequently accessed data
-
-Configuration in `appsettings.json`:
-
-```json
-{
-  "CacheOptions": {
-    "Enabled": true,
-    "Type": "Hybrid",
-    "UseRedisBackend": false,
-    "RedisConfiguration": "localhost:6379,abortConnect=false",
-    "MaximumKeyLength": 1024,
-    "MaximumPayloadBytes": 1048576,
-    "DefaultExpiration": "5 minutes",
-    "LocalCacheExpiration": "1 minute"
-  }
-}
-```
-
-**Cache types:**
-- `Memory`: In-process memory cache (fastest, single instance only)
-- `Redis`: Distributed Redis cache (slower, shared across instances)
-- `Hybrid`: HybridCache with stampede protection, optionally backed by Redis
-
-When `UseRedisBackend` is `false` (default), HybridCache works as an in-memory cache with stampede protection. When `true`, it uses Redis as the L2 distributed cache for sharing across multiple application instances.
-
-Fixed `IncludeSchemaInNames` option to work correctly when `UseRoutineNameInsteadOfEndpoint` is `false` (the default).
-
-## Version [3.1.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.1.1) (2025-12-15)
-
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.1.0...3.1.1)
-
-- Fixed schema usage for types not in defaults schemas. Narrow types selection for schemas with allowed usage.
-- Improved logging of parameter values in debug mode. Using PostgreSQL literal format for better readability.
-- Added version info log on startup.
-- Added executable location to version info output (`--version`).
-
-## Version [3.1.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.1.0) (2025-12-13)
-
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.0.1...3.1.0)
-
-### Http Types
-
-New feature that enables PostgreSQL functions to make HTTP requests to external APIs by using specially annotated composite types. When a function parameter uses a composite type with an HTTP definition comment, NpgsqlRest automatically invokes the HTTP request and populates the type fields with the response data before executing the function.
-
-**Creating an HTTP Type:**
-
-```sql
--- Create a composite type with response fields
-create type weather_api as (
-    body text,
-    status_code int,
-    headers json,
-    content_type text,
-    success boolean,
-    error_message text
-);
-
--- Add HTTP definition as a comment (RFC 7230 format)
-comment on type weather_api is 'GET https://api.weather.com/v1/current?city={_city}
-Authorization: Bearer {_api_key}
-timeout 30s';
-```
-
-**Using the HTTP Type in a function:**
-
-```sql
-create function get_weather(
-  _city text,
-  _api_key text,
-  _req weather_api
-)
-returns json
-language plpgsql
-as $$
-begin
-    if (_req).success then
-        return (_req).body::json;
-    else
-        return json_build_object('error', (_req).error_message);
-    end if;
-end;
-$$;
-```
-
-**HTTP Definition Format:**
-
-The comment on the composite type follows a simplified HTTP message format similar to `.http` files:
-
-```
-METHOD URL [HTTP/version]
-Header-Name: Header-Value
-...
-
-[request body]
-```
-
-Supported HTTP methods: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`
-
-**Timeout Directives:**
-
-Timeout can be specified before the request line using various formats:
-
-```
-timeout 30
-timeout 30s
-timeout 00:00:30
-@timeout 2 minutes
-```
-
-**Response Fields:**
-
-The composite type fields are automatically populated based on their names (configurable via `HttpClientOptions`):
-
-| Field Name      | Type            | Description                       |
-|-----------------|-----------------|-----------------------------------|
-| `body`          | `text`          | Response body content             |
-| `status_code`   | `int` or `text` | HTTP status code (e.g., 200, 404) |
-| `headers`       | `json`          | Response headers as JSON object   |
-| `content_type`  | `text`          | Content-Type header value         |
-| `success`       | `boolean`       | True for 2xx status codes         |
-| `error_message` | `text`          | Error message if request failed   |
-
-**Placeholder Substitution:**
-
-URLs, headers, and request body in the type comment can contain placeholders in the format `{parameter_name}`. These placeholders are automatically replaced with the values of other function parameters that share the same name.
-
-In the example above, the function `get_weather` has parameters `_city` and `_api_key`. The HTTP type comment contains placeholders `{_city}` and `{_api_key}` which are substituted with the actual parameter values when the HTTP request is made:
-
-```sql
--- Type comment with placeholders
-comment on type weather_api is 'GET https://api.weather.com/v1/current?city={_city}
-Authorization: Bearer {_api_key}
-timeout 30s';
-
--- Function with matching parameter names
-create function get_weather(
-  _city text,        -- Value substitutes {_city} placeholder
-  _api_key text,     -- Value substitutes {_api_key} placeholder
-  _req weather_api   -- HTTP type parameter (receives response)
-)
-...
-```
-
-When calling `GET /api/get-weather?_city=London&_api_key=secret123`, NpgsqlRest will:
-1. Substitute `{_city}` with `London` and `{_api_key}` with `secret123`
-2. Make the HTTP request to `https://api.weather.com/v1/current?city=London` with header `Authorization: Bearer secret123`
-3. Populate the `_req` parameter fields with the response data
-4. Execute the PostgreSQL function
-
-**Configuration Options:**
-
-Enable HTTP Types in `NpgsqlRestOptions.HttpClientOptions` options or in client configuration:
-
-```json
-{
-  "NpgsqlRest": {
-    //
-    // HTTP client functionality for annotated composite types.
-    // Allows PostgreSQL functions to make HTTP requests by using specially annotated types as parameters.
-    //
-    "HttpClientOptions": {
-      //
-      // Enable HTTP client functionality for annotated types.
-      //
-      "Enabled": false,
-      //
-      // Default name for the response status code field within annotated types.
-      //
-      "ResponseStatusCodeField": "status_code",
-      //
-      // Default name for the response body field within annotated types.
-      //
-      "ResponseBodyField": "body",
-      //
-      // Default name for the response headers field within annotated types.
-      //
-      "ResponseHeadersField": "headers",
-      //
-      // Default name for the response content type field within annotated types.
-      //
-      "ResponseContentTypeField": "content_type",
-      //
-      // Default name for the response success field within annotated types.
-      //
-      "ResponseSuccessField": "success",
-      //
-      // Default name for the response error message field within annotated types.
-      //
-      "ResponseErrorMessageField": "error_message"
-    }
-  }
-}
-```
-
-### Routine Caching Improvements
-
-Major improvements to the routine caching system for reliability, correctness, and expanded functionality:
-
-**Cache Key Generation Fixes:**
-
-- Fixed potential hash collisions by switching from integer hash codes to string-based cache keys.
-- Added separator character (`\x1F`) between parameter values to prevent cache key collisions when parameter values concatenate to the same string (e.g., `"ab" + "c"` vs `"a" + "bc"` now produce different cache keys).
-- Added distinct null marker (`\x00NULL\x00`) to differentiate between null values and empty strings in cache keys.
-- Fixed array parameter serialization to properly include all array elements in the cache key with separators.
-
-**Extended Caching Support for Records and Sets:**
-
-Caching now works for set-returning functions and record types, not just single scalar values. When a cached function returns multiple rows, the entire result set is cached and returned on subsequent calls.
-
-**New Configuration Option:**
-
-Added `MaxCacheableRows` option to `CacheOptions` to limit memory usage when caching large result sets:
-
-```csharp
-public class CacheOptions
-{
-    /// <summary>
-    /// Maximum number of rows that can be cached for set-returning functions.
-    /// If a result set exceeds this limit, it will not be cached (but will still be returned).
-    /// Set to 0 to disable caching for sets entirely. Set to null for unlimited (use with caution).
-    /// Default is 1000 rows.
-    /// </summary>
-    public int? MaxCacheableRows { get; set; } = 1000;
-}
-```
-
-Configuration in `appsettings.json`:
-
-```json
-{
-  "NpgsqlRest": {
-    "CacheOptions": {
-      "MaxCacheableRows": 1000
-    }
-  }
-}
-```
-
-**Cache Key Hashing for Long Keys:**
-
-Added optional SHA256 hashing for long cache keys to improve performance, especially with Redis cache. When enabled, cache keys exceeding a configurable threshold are automatically hashed to a fixed 64-character string, reducing:
-
-- Memory usage for storing long cache keys
-- Network transfer overhead with Redis
-- Redis server memory consumption
-
-New configuration options in `CacheOptions`:
-
-```csharp
-public class CacheOptions
-{
-    /// <summary>
-    /// When true, cache keys longer than HashKeyThreshold characters are hashed to a fixed-length SHA256 string.
-    /// This reduces memory usage for long cache keys and improves Redis performance with large keys.
-    /// Default is false (cache keys are stored as-is).
-    /// </summary>
-    public bool UseHashedCacheKeys { get; set; } = false;
-
-    /// <summary>
-    /// Cache keys longer than this threshold (in characters) will be hashed when UseHashedCacheKeys is true.
-    /// Keys shorter than this threshold are stored as-is for better debuggability.
-    /// Default is 256 characters.
-    /// </summary>
-    public int HashKeyThreshold { get; set; } = 256;
-}
-```
-
-Configuration in `appsettings.json`:
-
-```json
-{
-  "CacheOptions": {
-    "UseHashedCacheKeys": true,
-    "HashKeyThreshold": 256
-  }
-}
-```
-
-This is particularly recommended when:
-- Using Redis cache with routines that have many or large parameters
-- Caching routines with long SQL expressions
-- High cache hit rates where memory efficiency matters
-
-**Cache Invalidation Endpoints:**
-
-Added support for programmatic cache invalidation via auto-generated invalidation endpoints. When `InvalidateCacheSuffix` is configured, NpgsqlRest automatically creates an invalidation endpoint for each cached endpoint.
-
-For example, if you have a cached endpoint `/api/get-user/` and set `InvalidateCacheSuffix` to `"invalidate"`, NpgsqlRest will create `/api/get-user/invalidate` endpoint automatically.
-
-Calling the invalidation endpoint with the same parameters as the cached endpoint removes the corresponding cache entry:
-
-```
-GET /api/get-user/?id=123           -> Returns cached user data
-GET /api/get-user/invalidate?id=123 -> Removes cache entry, returns {"invalidated":true}
-GET /api/get-user/?id=123           -> Fresh data (cache was cleared)
-```
-
-**Key Features:**
-- Same authentication and authorization as the original endpoint
-- Same parameter handling - no need to know the internal cache key format
-- Works correctly with hashed cache keys
-- Returns `{"invalidated":true}` if cache entry was removed, `{"invalidated":false}` if not found
-
-Configuration in `CacheOptions`:
-
-```csharp
-public class CacheOptions
-{
-    /// <summary>
-    /// When set, creates an additional invalidation endpoint for each cached endpoint.
-    /// The invalidation endpoint has the same path with this suffix appended.
-    /// Default is null (no invalidation endpoints created).
-    /// </summary>
-    public string? InvalidateCacheSuffix { get; set; } = null;
-}
-```
-
-Configuration in `appsettings.json`:
-
-```json
-{
-  "CacheOptions": {
-    "InvalidateCacheSuffix": "invalidate"
-  }
-}
-```
-
-### Multi-Host Connection Support
-
-Added support for PostgreSQL multi-host connections with failover and load balancing capabilities using Npgsql's `NpgsqlMultiHostDataSource`.
-
-**Features:**
-
-- Automatic detection of multi-host connection strings (connection strings with comma-separated hosts like `Host=server1,server2`)
-- Configurable target session attributes per connection: `Any`, `Primary`, `Standby`, `PreferPrimary`, `PreferStandby`, `ReadWrite`, `ReadOnly`
-- Seamless integration with existing named connections - multi-host data sources take priority over connection strings
-
-**Configuration:**
-
-```json
-{
-  "ConnectionSettings": {
-    "MultiHostConnectionTargets": {
-      // Default target for all multi-host connections
-      "Default": "Any",
-      // Per-connection overrides
-      "ByConnectionName": {
-        "readonly": "Standby",
-        "primary": "Primary"
-      }
-    }
-  }
-}
-```
-
-**Example Multi-Host Connection String:**
-
-```json
-{
-  "ConnectionStrings": {
-    "default": "Host=primary.db.com,replica1.db.com,replica2.db.com;Database=mydb;Username=app;Password=secret"
-  }
-}
-```
-
-**Target Session Attributes:**
-
-| Value | Description |
-|-------|-------------|
-| `Any` | Any successful connection is acceptable (default) |
-| `Primary` | Server must not be in hot standby mode |
-| `Standby` | Server must be in hot standby mode |
-| `PreferPrimary` | Try primary first, fall back to any |
-| `PreferStandby` | Try standby first, fall back to any |
-| `ReadWrite` | Session must accept read-write transactions |
-| `ReadOnly` | Session must not accept read-write transactions |
-
-See [Npgsql Failover and Load Balancing](https://www.npgsql.org/doc/failover-and-load-balancing.html) for more details.
-
-**New Options Property:**
-
-Added `DataSources` property to `NpgsqlRestOptions` for storing multi-host data sources:
-
-```csharp
-/// <summary>
-/// Dictionary of data sources by connection name. This is used for multi-host connection support.
-/// When a connection name is specified in a routine endpoint, the middleware will first check
-/// this dictionary for a data source. If not found, it falls back to the ConnectionStrings dictionary.
-/// </summary>
-public IDictionary<string, NpgsqlDataSource>? DataSources { get; set; }
-```
-
-### Other Changes and Fixes
-
-- Fixed default value on `ErrorHandlingOptions.RemoveTraceId` configuration setting. Default is true as it should be.
-- Fixed PostgreSQL parameter and result type mapping when default search path is not public.
-- Fixed type on TypeScript client generation when returing error. Errors now return JSON object instead of string.
-- Removed `options.md`, `annotations.md`, `client.md` and `login-endpoints.md` documentation files because dedicated website is now live: https://npgsqlrest.github.io/
-- Added missing `CsvUploadKey` with value `"csv"` in `NpgsqlRest.UploadOptions.UploadHandlers` configuration.
-- Moved authorization check after parameter parsing. This allows for endpoint to return proper 404 response codes when parameter is missing, instead of 400 when authorization fails.
-- When using custom types in PostgreSQL function parameters (composite types, enums, etc), and those parameters are not supplied in the request, they will now default to NULL always. Previous behavior was 404 Not Found when parameter was missing.
-- Fixed debug logging in ErrorHandlingOptions builder.
-- Fixed default mapping in ErrorHandlingOptions builder.
-- Added guard clause that returns error if serviceProvider is null when ServiceProviderMode is set
-- Removed 5 duplicate HttpClientOptions.Enabled blocks (kept 1)
-- Replaced un-awaited transaction?.RollbackAsync() with proper shouldCommit = false and uploadHandler?.OnError() for consistency with other error paths
-
-## Version [3.0.1](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.0.1) (2025-11-28)
-
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.0.0...3.0.1)
-
-- Fix: fix missing stack trace in AOT builds when exceptions are thrown.
-- Fix: Fix failing Docker JIT image build.
-- Change: removed error mapping for PostgreSQL error code 42883 (undefined_function) from HTTP 404 Not Found. Map it to default HTTP 500 Internal Server Error instead. This was confusing.
-
-## Version [3.0.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.0.0) (2025-11-27)
-
-[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/2.36.1...3.0.0)
-
-### Docker JIT Version
-
-- New Docker image with .NET 10 JIT runtime: `npgsqlrest/npgsqlrest:3.0.0-jit`
-- This image uses the standard .NET 10 runtime with JIT compilation instead of AOT compilation.
-- Suitable for development and scenarios where AOT compilation is not required.
-- JIT version can be faster to execute but slower startup time and larger image size compared to AOT version.
-
-Image Size Comparison (approximate):
-
-| Version | Size        |
-|---------|-------------|
-| AOT     | ~80-100 MB  |
-| JIT     | ~200-250 MB |
-
-### .NET 10 Target Framework 
-
-- Upgraded target framework to .NET 10.
-- Faster and more memory efficient.
-
-### TsClient (Code Generation) Improvements
-
-1) When return value is JSON or JSONB, generated TypeScript type is `any` instead of `string`.
-2) New parameter annotation `tsclient_module`. Sets different module name for the generated TypeScript client file. For example: `tsclient_module = test` will create `test.ts` or `test.js` and add every and group endpoint to that module instead of the default.
-3) Fixed and improved generated JSDoc comments for better IntelliSense support in IDEs. JavaScript JSDoc invlude proper types and TypeScript JSDoc will not include types to avoid duplication. All parameters comment now include description.
-4) SSE generated parameters signature changed.
-
-Fetch for SSE enabled endpoint now looks like this:
-
-```typescript
-/**
- * function test_sse()
- * returns table(
- *     id integer
- * )
- *
- * @remarks
- * comment on function test_sse is 'HTTP GET
- * authorize
- * upload for file_system
- * sse
- * tsclient_module = test';
- *
- * @param onMessage - Optional callback function to handle incoming SSE messages.
- * @param id - Optional execution ID for SSE connection. When supplied, only EventSource object with this ID in query string will will receive events.
- * @param closeAfterMs - Time in milliseconds to wait before closing the EventSource connection. Used only when onMessage callback is provided.
- * @param awaitConnectionMs - Time in milliseconds to wait after opening the EventSource connection before sending the request. Used only when onMessage callback is provided.
- * @returns {status: number, response: ITestSseResponse[]}
- *
- * @see FUNCTION test_sse
- */
-export async function testSse(
-    onMessage?: (message: string) => void,
-    id: string | undefined = undefined,
-    closeAfterMs = 1000,
-    awaitConnectionMs: number | undefined = 0
-) : Promise<{status: number, response: ITestSseResponse[]}> {
-    const executionId = id ? id : window.crypto.randomUUID();
-    let eventSource: EventSource;
-    if (onMessage) {
-        eventSource = createTestSseEventSource(executionId);
-        eventSource.onmessage = (event: MessageEvent) => {
-            onMessage(event.data);
-        };
-        if (awaitConnectionMs !== undefined) {
-            await new Promise(resolve => setTimeout(resolve, awaitConnectionMs));
-        }
-    }
-    try {
-        const response = await fetch(baseUrl + "/api/test-sse", {
-            method: "GET",
-            headers: {
-                "Content-Type": "application/json",
-                "X-test-ID": executionId
-            },
-        });
-        return {
-            status: response.status,
-            response: response.status == 200 ? await response.json() as ITestSseResponse[] : await response.text() as any
-        };
-    }
-    finally {
-        if (onMessage) {
-            setTimeout(() => eventSource.close(), closeAfterMs);
-        }
-    }
-}
-```
-
-### Info Events Streaming Changes (Server-Sent Events)
-
-#### Name refactor: changed all "Info Events" related names to "SSE" to better reflect their purpose.
-
-- Rename configuration key from `CustomServerSentEventsResponseHeaders` to `ServerSentEventsResponseHeaders`.
-- Option from `CustomServerSentEventsResponseHeaders` to `SseResponseHeaders`.
-- Comment annotations:
-  - from `info_path`, `info_events_path`, `info_streaming_path` to `sse`, `sse_path`, `sse_events_path`
-  - from `info_scope`, `info_events_scope`, `info_streaming_scope` to `sse_scope`, `sse_events_scope`
-
-#### Removed Self scope level
-
-- Removed `self` scope level for SSE events. Only `matching`, `authorize`, and `all` levels are supported now.
-- Event will always be skipped if executing id is supplied in request header and in event source query parameter, and they don't match.
-
-#### New Feature: Support for custom notice level
-
-- New option and configuration:
-    - configuration: `DefaultServerSentEventsEventNoticeLevel`
-    - option: `public PostgresNoticeLevels DefaultSseEventNoticeLevel { get; set; } = PostgresNoticeLevels.INFO;`
-
-Set the default notice level for SSE events when not specified in comment annotation. When SSE path is set, generate SSE events for PostgreSQL notice messages with this level or higher.
-
-#### Other Comment Annotations Changes
-
-- Setting SSE path (and optionally notice level) via comment annotations:
-
-```
-sse [ path ] [ on info | notice | warning ] 
-sse_path [ path ] [ on info | notice | warning ]
-sse_events_path [ path ] [ on info | notice | warning ]
-```
-
-Without argument, just `sse` or `sse_path` or `sse_events_path`, will set the path to default, which depends on default level (`info` for INFO level, `notice` for NOTICE level, etc).
-
-Single argument is treated as path.
-
-If path is followed by `on info` or `on notice` or `on warning`, it will set the notice level accordingly.
-
-Note: you can also set sse path using parameter annotations syntax (`key = value`), for example `sse = /my_sse_path` or `sse_path = /my_sse_path`.
-
-- New comment annotations to set custom SSE event notice level per endpoint:
-
-```
-sse_level [ info | notice | warning ]
-sse_events_level [ info | notice | warning ]
-```
-
-Note: you can also set sse level using parameter annotations syntax (`key = value`), for example `sse_level = info`, etc.
-
-- Scope annotations changed name to match new SSE naming:
-
-```
-sse_scope [ [ matching | authorize | all ] | [ authorize [ role_or_user1, role_or_user1, role_or_user1 [, ...] ] ] ] 
-sse_events_scope [ [ matching | authorize | all ] | [ authorize [ role_or_user1, role_or_user1, role_or_user1 [, ...] ] ] ] 
-```
-
-### Timeout Handling
-
-- Timeouts are not retried automatically by NpgsqlRest anymore. 
-- Timeout error policy can be set in `ErrorHandlingOptions` section of client configuration.
-- Default mapping for timeout errors: `"TimeoutErrorMapping": {"StatusCode": 504, "Title": "Command execution timed out", "Details": null, "Type": null}`
-- Configuration option `CommandTimeout` is using PostgreSQL interval format (for example: '30 seconds' or '30s', '1 minute' or '1min', etc.) instead of integer seconds.
-- Comment annotation is also now using PostgreSQL interval format (for example: '30 seconds' or '30s', '1 minute' or '1min', etc.) instead of integer seconds.
-- Option `CommandTimeout` is now TimeSpan? instead of int.
-
-### OpenAPI 3.0 Support
-
-Added OpenAPI 3.0 support with the new `NpgsqlRest.OpenApi` plugin (available as a separate NuGet package as library plugin).
-
-Also, added new client configuration section `OpenApiOptions` to configure OpenAPI generation and serving. 
-
-New configuration:
-
-```json
-{
-  "NpgsqlRest": {
-    //
-    // Enable or disable the generation of OpenAPI files for NpgsqlRest endpoints.
-    //
-    "OpenApiOptions": {
-      "Enabled": false,
-      //
-      // File name for the generated OpenAPI file. Set to null to skip the file generation.
-      //
-      "FileName": "npgsqlrest_openapi.json",
-      //
-      // URL path for the OpenAPI endpoint. Set to null to skip the endpoint generation.
-      //
-      "UrlPath": "/openapi.json",
-      //
-      // Set to true to overwrite existing files.
-      //
-      "FileOverwrite": true,
-      //
-      // The title of the OpenAPI document. This appears in the "info" section of the OpenAPI specification.
-      // If not set, the database name from the ConnectionString will be used.
-      //
-      "DocumentTitle": null,
-      //
-      // The version of the OpenAPI document. This appears in the "info" section of the OpenAPI specification.
-      // When null, default is "1.0.0".
-      //
-      "DocumentVersion": "1.0.0",
-      //
-      // Optional description of the API. This appears in the "info" section of the OpenAPI specification.
-      //
-      "DocumentDescription": null,
-      //
-      // Include current server information in the "servers" section of the OpenAPI document.
-      //
-      "AddCurrentServer": true,
-      //
-      // Additional server entries to add to the "servers" section of the OpenAPI document.
-      // Each server entry must have "Url" property and optional "Description" property.
-      //
-      "Servers": [/*{"Url": "https://api.example.com", "Description": "Production server"}*/],
-      //
-      // Security schemes to include in the OpenAPI document.
-      // If not specified, a default Bearer authentication scheme will be added for endpoints requiring authorization.
-      // Supported types: "Http" (for Bearer/Basic auth) and "ApiKey" (for Cookie/Header/Query auth).
-      // Examples:
-      // - Bearer token: {"Name": "bearerAuth", "Type": "Http", "Scheme": "Bearer", "BearerFormat": "JWT"}
-      // - Cookie auth: {"Name": "cookieAuth", "Type": "ApiKey", "In": ".AspNetCore.Cookies", "ApiKeyLocation": "Cookie"}
-      // - Basic auth: {"Name": "basicAuth", "Type": "Http", "Scheme": "Basic"}
-      //
-      "SecuritySchemes": [
-        /*{
-          "Name": "bearerAuth",
-          "Type": "Http",
-          "Scheme": "Bearer",
-          "BearerFormat": "JWT",
-          "Description": "JWT Bearer token authentication"
-        },
-        {
-          "Name": "cookieAuth",
-          "Type": "ApiKey",
-          "In": ".AspNetCore.Cookies",
-          "ApiKeyLocation": "Cookie",
-          "Description": "Cookie-based authentication"
-        }*/
-      ]
-    }
-  }
-}
-```
-
-### Error Handling Improvements
-
-Added comprehensive error handling improvements with standardized error responses using Problem Details (RFC 7807) format.
-
-```json
-{
-  "title": "Error message or custom title",
-  "status": 400,
-  "detail": "P0001"
-}
-```
-
-Old error handling options have been removed in favor of a more flexible and extensible error code policy system.
-
-- Removed obsolete configuration options from client configuration:
-
-```json
-{
-  "NpgsqlRest": {
-    //
-    // Set to true to return message from NpgsqlException on response body. Default is true.
-    //
-    "ReturnNpgsqlExceptionMessage": true,
-    //
-    // Map PostgreSql Error Codes (see https://www.postgresql.org/docs/current/errcodes-appendix.html) to HTTP Status Codes. Default is 57014 query_canceled to 205 Reset Content.
-    //
-    "PostgreSqlErrorCodeToHttpStatusCodeMapping": {
-      "57014": 205,
-      "P0001": 400,
-      // PL/pgSQL raise exception
-      "P0004": 400
-      // PL/pgSQL assert failure
-    }
-  }
-}
-```
-
-- Removed options:
-
-```csharp
-    /// <summary>
-    /// Set to true to return message from NpgsqlException on response body. Default is true.
-    /// </summary>
-    public bool ReturnNpgsqlExceptionMessage { get; set; } = true;
-
-    /// <summary>
-    /// Map PostgreSql Error Codes (see https://www.postgresql.org/docs/current/errcodes-appendix.html) to HTTP Status Codes
-    /// Default is 57014 query_canceled to 205 Reset Content.
-    /// </summary>
-    public Dictionary<string, int> PostgreSqlErrorCodeToHttpStatusCodeMapping { get; set; } = new()
-    {
-        { "57014", 205 }, //query_canceled -> 205 Reset Content
-        { "P0001", 400 }, // raise_exception -> 400 Bad Request
-        { "P0004", 400 }, // assert_failure -> 400 Bad Request
-    };
-```
-
-- Added new configuration section in client configuration:
-
-```json
-{
-  "ErrorHandlingOptions": {
-    // Remove Type URL from error responses. Middleware automatically sets a default Type URL based on the HTTP status code that points to the RFC documentation.
-    "RemoveTypeUrl": false,
-    // Remove TraceId field from error responses. Useful in development and debugging scenarios to correlate logs with error responses.
-    "RemoveTraceId": true,
-    //
-    // Default policy name to use from the ErrorCodePolicies section.
-    //
-    "DefaultErrorCodePolicy": "Default",
-    //
-    // Timeout error mapping when command timeout occurs (see NpgsqlRest CommandTimeout setting).
-    //
-    "TimeoutErrorMapping": {"StatusCode": 504, "Title": "Command execution timed out", "Details": null, "Type": null}, // timeout error case -> 504 Gateway Timeout
-    //
-    // Named policies for mapping of PostgreSQL error codes to HTTP Status Codes.
-    //
-    // If routine raises these PostgreSQL error codes, endpoint will return these HTTP Status Codes.
-    // See https://www.postgresql.org/docs/current/errcodes-appendix.html
-    // Exception is timeout, which is not a PostgreSQL error code, but a special case when command timeout occurs.
-    //
-    // - StatusCode: HTTP status code to return.
-    // - Title: Optional title field in response JSON. When null, actual error message is used.
-    // - Details: Optional details field in response JSON. When null, PostgreSQL Error Code is used.
-    // - Type: Optional types field in response JSON. A URI reference [RFC3986] that identifies the problem type. Set to null to use default. Or RemoveTypeUrl to true to disable.
-    //
-    "ErrorCodePolicies": [{
-      "Name": "Default",
-      "ErrorCodes": {
-        "42501": {"StatusCode": 403, "Title": "Insufficient Privilege", "Details": null, "Type": null},   // query_canceled      -> 403 Forbidden
-        "57014": {"StatusCode": 205, "Title": "Cancelled", "Details": null, "Type": null},                // query_canceled      -> 205 Reset Content
-        "P0001": {"StatusCode": 400, "Title": null, "Details": null, "Type": null},                       // raise_exception     -> 400 Bad Request
-        "P0004": {"StatusCode": 400, "Title": null, "Details": null, "Type": null},                       // assert_failure      -> 400 Bad Request
-        "42883": {"StatusCode": 404, "Title": "Not Found", "Details": null, "Type": null},                // undefined_function  -> 404 Not Found
-      }
-    }]
-  }
-}
-```
-
-- Added new options:
-
-```csharp
-    /// <summary>
-    /// Map PostgreSql Error Codes (see https://www.postgresql.org/docs/current/errcodes-appendix.html) to HTTP Status Codes
-    /// </summary>
-    public ErrorHandlingOptions ErrorHandlingOptions { get; set; } = new();
-```
-```csharp
-public class ErrorHandlingOptions
-{
-    public string? DefaultErrorCodePolicy { get; set; } = "Default";
-    
-    public ErrorCodeMappingOptions? TimeoutErrorMapping { get; set; } = new()
-    {
-        StatusCode = 504,
-        Title = "Command execution timed out"
-    };
-
-    public Dictionary<string, Dictionary<string, ErrorCodeMappingOptions>> ErrorCodePolicies { get; set; } = new()
-    {
-        ["Default"] = new()
-        {
-            { "42501", new() { StatusCode = 403, Title = "Insufficient Privilege" } },
-            { "57014", new() { StatusCode = 205, Title = "Cancelled" } },
-            { "P0001", new() { StatusCode = 400 } },
-            { "P0004", new() { StatusCode = 400 } },
-            { "42883", new() { StatusCode = 404, Title = "Not Found" } },
-        }
-    };
-}
-```
-
-- Added new comment annotations to set error code policy per endpoint:
-
-```
-error_code_policy_name [ name ]
-error_code_policy [ name ]
-error_code [ name ]
-```
-
-For example:
-
-```sql
-comment on function my_function(json) is 'error_code_policy custom_policy_name';
--- or
-comment on function my_function(json) is 'error_code_policy_name custom_policy_name';
--- or
-comment on function my_function(json) is 'error_code custom_policy_name';
-```
-
-### Metadata Query Improvements
-
-There two new options for Metadata queries support, that are also available in client configuration:
-
-- `MetadataQueryConnectionName`: Specify a named connection from `ConnectionStrings` dictionary to use for metadata queries. When null, the default connection string or data source is used.
-- `MetadataQuerySchema`: Set the PostgreSQL search path schema for metadata query functions. Useful when using non-superuser connection roles with limited schema access.
-
-Options:
-
-```csharp
-/// <summary>
-/// The connection name in ConnectionStrings dictionary that will be used to execute the metadata query. If this value is null, the default connection string or data source will be used.
-/// </summary>
-public string? MetadataQueryConnectionName { get; set; } = null;
-
-/// <summary>
-/// Set the search path to this schema that contains the metadata query function. Default is `public`.
-/// </summary>
-public string? MetadataQuerySchema { get; set; } = "public";
-```
-
-```json
-{
-  //
-  // Additional connection settings and options.
-  //
-  "ConnectionSettings": {
-    //
-    // other ConnectionSettings settings
-    //
-    
-    //
-    // The connection name in ConnectionStrings configuration that will be used to execute the metadata query. If this value is null, the default connection string will be used.
-    //
-    "MetadataQueryConnectionName": null,
-    //
-    // Set the search path to this schema that contains the metadata query function. Default is `public`. Default is `public`. Set to null to avoid setting metadata query search path.
-    //
-    // This is needed when using non superuser connection roles with limited schema access and mapping the metadata function to a specific schema. 
-    // If the connection string contains the same "Search Path=" it will be skipped.
-    //
-    "MetadataQuerySchema": "public"
-  }
-}
-```
-
-### Rate Limiter
-
-Added comprehensive rate limiting support with integration into ASP.NET Core's built-in rate limiting middleware:
-
-You can: 
-
-- Configure rate limiting policies middleware manually (for library users). 
-- Set rate limiter client configuration policies (for client app users). 
-
-And then:
-
-- Set default rate limiter policy for all generated endpoints.
-- Set specific endpoint rate limiter policy.
-- Use comment annotation to set endpoint rate limiter policy.
-
-Client configuration:
-
-```json
-{
-  //
-  // Rate Limiter settings to limit the number of requests from clients.
-  //
-  "RateLimiterOptions": {
-    "Enabled": false,
-    "StatusCode": 429,
-    "StatusMessage": "Too many requests. Please try again later.",
-    "DefaultPolicy": null,
-    // Policy types: FixedWindow, SlidingWindow, BucketWindow, Concurrency
-    "Policies": [{
-      // see https://learn.microsoft.com/en-us/aspnet/core/performance/rate-limit#fixed
-      "Type": "FixedWindow",
-      "Enabled": false,
-      "Name": "fixed",
-      "PermitLimit": 100,
-      "WindowSeconds": 60,
-      "QueueLimit": 10,
-      "AutoReplenishment": true
-    }, {
-      // see https://learn.microsoft.com/en-us/aspnet/core/performance/rate-limit#sliding-window-limiter
-      "Type": "SlidingWindow",
-      "Enabled": false,
-      "Name": "sliding",
-      "PermitLimit": 100,
-      "WindowSeconds": 60,
-      "SegmentsPerWindow": 6,
-      "QueueLimit": 10,
-      "AutoReplenishment": true
-    }, {
-      // see https://learn.microsoft.com/en-us/aspnet/core/performance/rate-limit#token-bucket-limiter
-      "Type": "TokenBucket",
-      "Enabled": true,
-      "Name": "bucket",
-      "TokenLimit": 100,
-      "ReplenishmentPeriodSeconds": 10,
-      "QueueLimit": 10,
-      "AutoReplenishment": true
-    }, {
-      // see https://learn.microsoft.com/en-us/aspnet/core/performance/rate-limit#concurrency-limiter
-      "Type": "Concurrency",
-      "Enabled": true,
-      "Name": "concurrency",
-      "PermitLimit": 10,
-      "QueueLimit": 5,
-      "OldestFirst": true
-    }]
-  }
-}
-```
-
-- Option to set default policy for all endpoints:
-
-```csharp
-/// <summary>
-/// Default rate limiting policy for all requests. Policy must be configured within application rate limiting options.
-/// This can be overridden by comment annotations in the database or setting policy for specific endpoints.
-/// </summary>
-public string? DefaultRateLimitingPolicy { get; set; } = null;
-```
-
-- Endpoint property:
-
-```csharp
-public string? RateLimiterPolicy { get; set; } = null;
-```
-
-- Comment annotations:
-
-```
-rate_limiter_policy_name [ name ]
-rate_limiter_policy [ name ]
-rate_limiter [ name ]
-```
-
-### Other Changes and Fixes
-
-- Major refactoring: generated endpoints moved from custom middleware to minimal APIs. This allows better integration with ASP.NET Core ecosystem (rate limiter, request timeout, etc).
-- Breaking change caused by the above: API invocation to existing paths with wrong HTTP method will return 405 Method Not Allowed instead of 404 Not Found.
-- More testing (concurrency).
-- Fix: fixed excessive logging when retrying failed commands.
-- Fix: missing command logging on void routines.
-- Refactoring: static Options instead of passing Options parameter around.
-- Refactoring: static Logger instead of passing Logger parameter around.
-- NpgsqlRest core project library has set InternalsVisibleTo to NpgsqlRestTests for testability for tests using Options or Logger. 
-- Refactoring: moved some files around to better structure the project.
-- Removed unnecessary type casting when routine source returns set with embedded composite type.
-- Fix: fixed incorrect handling of types with modifier (e.g. varchar(100), numeric(10,2), etc). This causes type with modifiers to be serialized as incorrect type.
-- Fix: fixed incorrect parameter logging when parameters were added from user claims as string array (roles, permissions, etc).
-- Fix: user claims mapping to parameters or context will now by default be NULL when claim is null or empty string. Previous behavior was to map empty string as empty string.
-- Remove two logging options: `LogEndpointCreatedInfo` and `LogAnnotationSetInfo`. By default, all command parameters and values are logged at Debug level.
-- Refactor comment annotation paring for better maintainability.
-- .NET10 Upgrade.
-
-#### Login Endpoint Changes
-
-- Changed option `NpgsqlRestAuthenticationOptions.MessageColumnName` to `NpgsqlRestAuthenticationOptions.BodyColumnName` (and corresponding client configuration option) to better reflect its purpose.
-- Default value of `NpgsqlRestAuthenticationOptions.BodyColumnName` is now `body` instead of `message`.
-- Added new option `NpgsqlRestAuthenticationOptions.ResponseTypeColumnName` (and corresponding client configuration option) to specify the response type column name for login endpoint. Default is `application/json`.

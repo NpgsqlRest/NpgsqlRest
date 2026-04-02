@@ -424,7 +424,7 @@ public static class SqlFileParser
             result.Comment = commentBuilder.ToString();
 
             // Extract positional per-command annotations from header comments for the first command
-            if (result.Statements.Count > 1 && headerCommentLength > 0)
+            if (headerCommentLength > 0)
             {
                 ExtractPerCommandAnnotations(result.Comment[..headerCommentLength], 0, result);
             }
@@ -484,7 +484,7 @@ public static class SqlFileParser
             // @returns type_name (positional — skip Describe, use composite type columns)
             if (s.StartsWith("returns", StringComparison.OrdinalIgnoreCase) && s.Length > 7)
             {
-                var typeName = s[7..].TrimStart();
+                var typeName = s[7..].TrimStart().TrimEnd(';');
                 if (typeName.Length > 0)
                 {
                     result.ReturnsTypeOverrides[statementIndex] = typeName;
@@ -595,7 +595,7 @@ public static class SqlFileParser
             {
                 if (parts.Length >= 5)
                 {
-                    var candidate = parts[4].ToLowerInvariant();
+                    var candidate = parts[4].TrimEnd(';').ToLowerInvariant();
                     if (candidate != "default" && candidate != "=")
                     {
                         typeName = candidate;
@@ -604,7 +604,7 @@ public static class SqlFileParser
             }
             else if (parts.Length >= 4)
             {
-                var candidate = parts[3].ToLowerInvariant();
+                var candidate = parts[3].TrimEnd(';').ToLowerInvariant();
                 if (candidate != "default" && candidate != "=")
                 {
                     typeName = candidate;

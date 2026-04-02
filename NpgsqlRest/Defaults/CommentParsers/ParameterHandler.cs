@@ -165,7 +165,7 @@ internal static partial class DefaultCommentParser
             }
             else if (len >= 5)
             {
-                newType = wordsLower[4];
+                newType = wordsLower[4].TrimEnd(';');
                 // Check for "default" after type: "param $1 is _name integer default [value]"
                 if (len >= 6 && IsDefault(wordsLower[5]))
                 {
@@ -190,7 +190,7 @@ internal static partial class DefaultCommentParser
             }
             else if (len >= 4)
             {
-                newType = wordsLower[3];
+                newType = wordsLower[3].TrimEnd(';');
                 // Check for "default" after type: "param $1 _name integer default [value]"
                 if (len >= 5 && IsDefault(wordsLower[4]))
                 {

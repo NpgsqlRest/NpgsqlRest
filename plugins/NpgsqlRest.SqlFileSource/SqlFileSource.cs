@@ -145,31 +145,53 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
             int stmtParamCount = SqlFileDescriber.FindMaxParamIndex(stmt);
             if (stmtParamCount > mergedMaxParam) mergedMaxParam = stmtParamCount;
 
-            // @returns type_name — skip Describe, resolve columns from composite type
+            // @returns type_name | void — skip Describe entirely
             if (parseResult.ReturnsTypeOverrides.TryGetValue(stmtIndex, out var returnsTypeName))
             {
+                // @returns void — skip Describe, no columns (void command)
+                if (string.Equals(returnsTypeName, "void", StringComparison.OrdinalIgnoreCase))
+                {
+                    commandDescribes.Add(new DescribeResult { Columns = [] });
+                    continue;
+                }
+
+                // Check if it's a known scalar type
+                var scalarDescriptor = new TypeDescriptor(returnsTypeName);
+                if (scalarDescriptor.DbType != NpgsqlTypes.NpgsqlDbType.Unknown)
+                {
+                    // @returns scalar_type — single column with the given type
+                    commandDescribes.Add(new DescribeResult
+                    {
+                        Columns = [new ColumnInfo { Name = returnsTypeName, DataTypeName = returnsTypeName }]
+                    });
+                    continue;
+                }
+
+                // Check if it's a known composite type
                 var compositeType = CompositeTypeCache.GetType(returnsTypeName);
-                if (compositeType is null)
+                if (compositeType is not null)
                 {
-                    var error = $"@returns type '{returnsTypeName}' not found in composite type cache. Ensure the type exists in the database.";
-                    NpgsqlRestOptions.Logger?.LogError("SqlFileSource: {FilePath}: {Error}", filePath, error);
-                    if (options.ErrorMode == ParseErrorMode.Exit)
+                    var returnsCols = new ColumnInfo[compositeType.FieldNames.Length];
+                    for (int fi = 0; fi < compositeType.FieldNames.Length; fi++)
                     {
-                        NpgsqlRestOptions.Logger?.LogCritical("SqlFileSource: Exiting due to SQL file error. Set ErrorMode to Skip to continue past errors.");
-                        Environment.Exit(1);
+                        returnsCols[fi] = new ColumnInfo
+                        {
+                            Name = compositeType.FieldNames[fi],
+                            DataTypeName = compositeType.FieldTypeNames[fi],
+                        };
                     }
-                    return null;
+                    commandDescribes.Add(new DescribeResult { Columns = returnsCols });
+                    continue;
                 }
-                var returnsCols = new ColumnInfo[compositeType.FieldNames.Length];
-                for (int fi = 0; fi < compositeType.FieldNames.Length; fi++)
+
+                var error = $"@returns type '{returnsTypeName}' is not a recognized PostgreSQL type or composite type.";
+                NpgsqlRestOptions.Logger?.LogError("SqlFileSource: {FilePath}: {Error}", filePath, error);
+                if (options.ErrorMode == ParseErrorMode.Exit)
                 {
-                    returnsCols[fi] = new ColumnInfo
-                    {
-                        Name = compositeType.FieldNames[fi],
-                        DataTypeName = compositeType.FieldTypeNames[fi],
-                    };
+                    NpgsqlRestOptions.Logger?.LogCritical("SqlFileSource: Exiting due to SQL file error. Set ErrorMode to Skip to continue past errors.");
+                    Environment.Exit(1);
                 }
-                commandDescribes.Add(new DescribeResult { Columns = returnsCols });
+                return null;
                 continue;
             }
 
