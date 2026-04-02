@@ -2,7 +2,7 @@
 
 [![Build, Test, Publish and Release](https://github.com/NpgsqlRest/NpgsqlRest/actions/workflows/build-test-publish.yml/badge.svg)](https://github.com/NpgsqlRest/NpgsqlRest/actions/workflows/build-test-publish.yml)
 [![Tests](https://github.com/NpgsqlRest/NpgsqlRest/actions/workflows/test.yml/badge.svg)](https://github.com/NpgsqlRest/NpgsqlRest/actions/workflows/test.yml)
-![1700+ integration tests](https://img.shields.io/badge/integration%20tests-1800%2B-brightgreen)
+![1800+ integration tests](https://img.shields.io/badge/integration%20tests-1837%2B-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![GitHub Stars](https://img.shields.io/github/stars/NpgsqlRest/NpgsqlRest?style=social)
 ![GitHub Forks](https://img.shields.io/github/forks/NpgsqlRest/NpgsqlRest?style=social)
@@ -38,11 +38,11 @@ Write a SQL file:
 -- sql/process_order.sql
 -- HTTP POST
 -- @authorize admin
--- @result1 validate
--- @result3 confirm
 -- @param $1 order_id
+-- @result validate
 select count(*) as found from orders where id = $1;
 update orders set status = 'processing' where id = $1;
+-- @result confirm
 select id, status from orders where id = $1;
 ```
 
@@ -81,7 +81,7 @@ No framework, no ORM, no boilerplate. Authorization, parameters, type safety —
 
 SQL files are the easiest way to get started — drop a `.sql` file in a folder and you have an endpoint. Functions give you the full power of PL/pgSQL with true end-to-end type checking. Use both together, or whichever fits.
 
-All sources share the same annotation system: `@authorize`, `@param`, `@cached`, `@path`, and 50+ others.
+All sources share the same annotation system: `@authorize`, `@param`, `@returns`, `@void`, `@single`, `@cached`, `@path`, and 50+ others.
 
 ## Features
 
@@ -89,16 +89,18 @@ All sources share the same annotation system: `@authorize`, `@param`, `@cached`,
 - **TypeScript/JS code generation** and `.http` files — types flow from PostgreSQL to your frontend
 - **AOT-compiled native binaries** — zero dependencies, instant startup
 - [**6.1x faster than PostgREST**](https://npgsqlrest.github.io/blog/postgresql-rest-api-benchmark-2026.html) at 100 concurrent users
+- **50+ comment annotations** — `@authorize`, `@param`, `@returns`, `@void`, `@single`, `@result`, `@skip`, `@cached`, `@proxy`, and more
 - **Auth** — cookie auth, Basic auth, JWT claims, role-based access, `@authorize`, `@allow_anonymous`
 - **Column-level encryption**, security-sensitive endpoints, IP address binding
 - **Response caching** with per-endpoint expiration control
 - **Rate limiting** per endpoint
-- **SSE streaming** via `RAISE INFO/NOTICE`
+- **SSE streaming** via `RAISE INFO/NOTICE` with graceful shutdown
 - **File uploads** — large objects, file system, MIME filtering
-- **Reverse proxy** — forward to upstream services
-- **HTTP custom types** — PostgreSQL functions that call external APIs
+- **Reverse proxy** — forward to upstream services, transform proxy responses
+- **HTTP custom types** — PostgreSQL composite types that call external APIs and return structured responses
+- **Composite type support** — nested JSON, arrays of composites, `@returns` to skip Describe
 - **OpenAPI 3.0** spec generation
-- **CSV/Excel** and custom format response handlers
+- **CSV/Excel/HTML** table format response handlers
 
 ### How does it compare?
 
