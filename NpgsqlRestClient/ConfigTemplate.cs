@@ -1751,6 +1751,34 @@ public static partial class ConfigSchemaGenerator
         //
         "RequestHeadersParameterName": "_headers",
         //
+        // When true, EVERY request is wrapped in an explicit BEGIN/COMMIT, and all `set_config` calls switch to the
+        // transaction-local form (`is_local=true`).
+        // Required when using a connection pooler in transaction mode (PgBouncer transaction-pool, AWS RDS Proxy in transaction mode,
+        // Supabase Pooler) — without this, the backend can be reused across unrelated requests, allowing GUC state (and the routine
+        // call itself) to leak or split mid-request. Default false to preserve existing behavior; safe to leave off when using Npgsql's native pool only.
+        //
+        "WrapInTransaction": false,
+        //
+        // SQL commands executed after any context is set but before the main routine call. Run in the same batch as the
+        // context `set_config` calls (no extra round-trip). Each entry can be either:
+        //   - A raw SQL string (always runs, no parameters), or
+        //   - An object with `Enabled`, `Sql`, and optional `Parameters`. Object entries are gated by `Enabled` (default false) —
+        //     set `"Enabled": true` to activate.
+        // Each parameter has a `Source` (Claim, RequestHeader, or IpAddress) and an optional `Name` (claim type or header name;
+        // ignored for IpAddress). Values are bound at request time via parameterized SQL.
+        // Common use case: setting `search_path` from a tenant claim for multi-tenant deployments.
+        // Combine with `WrapInTransaction = true` for transaction-local scoping (required for connection poolers in transaction mode).
+        //
+        "BeforeRoutineCommands": [
+          {
+            "Enabled": false,
+            "Sql": "select set_config('search_path', $1, true)",
+            "Parameters": [
+              { "Source": "Claim", "Name": "tenant_id" }
+            ]
+          }
+        ],
+        //
         // Add the unique NpgsqlRest instance id request header with this name to the response or set to null to ignore.
         //
         "InstanceIdRequestHeaderName": null,

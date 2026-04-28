@@ -253,6 +253,25 @@ public class NpgsqlRestOptions
     public string RequestHeadersParameterName { get; set; } = "headers";
 
     /// <summary>
+    /// When true, **every request** is wrapped in an explicit BEGIN/COMMIT, and all `set_config` calls switch to the
+    /// transaction-local form (`is_local=true`).
+    /// **Required for connection poolers in transaction mode** (PgBouncer transaction-pool, AWS RDS Proxy in transaction
+    /// mode, Supabase Pooler) — without this, the backend can be reused across unrelated requests, allowing GUC state
+    /// (and the routine call itself) to leak or split mid-request. Default is false to preserve existing behavior;
+    /// safe to leave off when using Npgsql's native pool only.
+    /// </summary>
+    public bool WrapInTransaction { get; set; } = false;
+
+    /// <summary>
+    /// SQL commands executed after any context is set but before the main routine call. They run in the same batch as the
+    /// context `set_config` calls, so no extra round-trip. Each command can be either a raw SQL string (no parameters) or
+    /// a `BeforeRoutineCommand` object with positional parameters bound from claims, request headers, or the client IP.
+    /// Common use case: setting `search_path` from a tenant claim for multi-tenant deployments. Combine with
+    /// `WrapInTransaction = true` for transaction-local scoping.
+    /// </summary>
+    public BeforeRoutineCommand[] BeforeRoutineCommands { get; set; } = [];
+
+    /// <summary>
     /// Callback, if defined will be executed after all endpoints are created and receive an array of routine info and endpoint info tuples `(Routine routine, RoutineEndpoint endpoint)`. Used mostly for code generation.
     /// </summary>
     public Action<RoutineEndpoint[]>? EndpointsCreated { get; set; }

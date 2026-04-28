@@ -93,3 +93,23 @@ public enum SseEventsScope
     /// </summary>
     All
 }
+
+/// <summary>
+/// Source of a value bound to a BeforeRoutineCommand parameter at request time.
+/// </summary>
+public enum BeforeRoutineCommandParameterSource
+{
+    /// <summary>
+    /// Value comes from a user claim. Parameter Name is the claim type to look up on HttpContext.User.
+    /// Multi-value claims are joined the same way as ContextKeyClaimsMapping. Missing claims bind to NULL.
+    /// </summary>
+    Claim,
+    /// <summary>
+    /// Value comes from a request header. Parameter Name is the header name. Missing headers bind to NULL.
+    /// </summary>
+    RequestHeader,
+    /// <summary>
+    /// Value is the client IP address (uses the same resolution as IpAddressContextKey). Parameter Name is ignored.
+    /// </summary>
+    IpAddress
+}

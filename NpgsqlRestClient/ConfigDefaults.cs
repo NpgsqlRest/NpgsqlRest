@@ -675,6 +675,21 @@ public static class ConfigDefaults
             ["RequestHeadersMode"] = "Parameter",
             ["RequestHeadersContextKey"] = "request.headers",
             ["RequestHeadersParameterName"] = "_headers",
+            ["WrapInTransaction"] = false,
+            ["BeforeRoutineCommands"] = new JsonArray(
+                new JsonObject
+                {
+                    ["Enabled"] = false,
+                    ["Sql"] = "select set_config('search_path', $1, true)",
+                    ["Parameters"] = new JsonArray(
+                        new JsonObject
+                        {
+                            ["Source"] = "Claim",
+                            ["Name"] = "tenant_id"
+                        }
+                    )
+                }
+            ),
             ["InstanceIdRequestHeaderName"] = null,
             ["CustomRequestHeaders"] = new JsonObject(),
             ["ExecutionIdHeaderName"] = "X-NpgsqlRest-ID",

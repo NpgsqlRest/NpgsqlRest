@@ -29,10 +29,10 @@
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
         <PackageReadmeFile>README.MD</PackageReadmeFile>
         <DocumentationFile>bin\$(Configuration)\$(AssemblyName).xml</DocumentationFile>
-        <Version>3.12.0</Version>
-        <AssemblyVersion>3.12.0</AssemblyVersion>
-        <FileVersion>3.12.0</FileVersion>
-        <PackageVersion>3.12.0</PackageVersion>
+        <Version>3.13.0</Version>
+        <AssemblyVersion>3.13.0</AssemblyVersion>
+        <FileVersion>3.13.0</FileVersion>
+        <PackageVersion>3.13.0</PackageVersion>
         <EnableRequestDelegateGenerator>true</EnableRequestDelegateGenerator>
     </PropertyGroup>
 
@@ -41,7 +41,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.201" PrivateAssets="All" />
+        <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.203" PrivateAssets="All" />
         <PackageReference Include="Npgsql" Version="10.0.2" />
         <PackageReferenceFiles Include="bin\$(Configuration)\$(AssemblyName).xml" />
     </ItemGroup>

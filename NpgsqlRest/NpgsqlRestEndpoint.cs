@@ -1744,16 +1744,16 @@ public partial class NpgsqlRestEndpoint(
                 }
             }
 
-            // Set user context BEFORE upload so that upload row commands can access user claims
-            if (
-                (endpoint.RequestHeadersMode == RequestHeadersMode.Context && headers is not null && Options.RequestHeadersContextKey is not null)
-                ||
-                (endpoint.UserContext is true && Options.AuthenticationOptions.IpAddressContextKey is not null)
-                ||
-                (endpoint.UserContext is true && context.User?.Identity?.IsAuthenticated is true &&
-                    (Options.AuthenticationOptions.ClaimsJsonContextKey is not null || Options.AuthenticationOptions.ContextKeyClaimsMapping.Count > 0)
-                    )
-                )
+            // Set user context BEFORE upload so that upload row commands can access user claims.
+            // Also runs BeforeRoutineCommands and (when WrapInTransaction is true) opens the request transaction here.
+            bool willSetHeadersContext = endpoint.RequestHeadersMode == RequestHeadersMode.Context && headers is not null && Options.RequestHeadersContextKey is not null;
+            bool willSetUserContext = endpoint.UserContext is true && (
+                Options.AuthenticationOptions.IpAddressContextKey is not null
+                || (context.User?.Identity?.IsAuthenticated is true &&
+                    (Options.AuthenticationOptions.ClaimsJsonContextKey is not null || Options.AuthenticationOptions.ContextKeyClaimsMapping.Count > 0))
+            );
+            bool willRunBeforeRoutineCommands = Options.BeforeRoutineCommands.Length > 0;
+            if (willSetHeadersContext || willSetUserContext || willRunBeforeRoutineCommands || Options.WrapInTransaction)
             {
                 if (connection.State != ConnectionState.Open)
                 {
@@ -1763,47 +1763,90 @@ public partial class NpgsqlRestEndpoint(
                     }
                     await connection.OpenRetryAsync(Options.ConnectionRetryOptions, cancellationToken);
                 }
-                await using var batch = NpgsqlRestBatch.Create(connection);
 
-                if (endpoint.RequestHeadersMode == RequestHeadersMode.Context && headers is not null && Options.RequestHeadersContextKey is not null)
+                if (Options.WrapInTransaction && transaction is null)
                 {
-                    var cmd = new NpgsqlBatchCommand(Consts.SetContext);
-                    cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(Options.RequestHeadersContextKey));
-                    cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(headers));
-                    batch.BatchCommands.Add(cmd);
+                    transaction = await connection.BeginTransactionAsync(cancellationToken);
                 }
 
-                if (endpoint.UserContext is true)
-                {
-                    claimsDict ??= context.User.BuildClaimsDictionary(Options.AuthenticationOptions);
+                string setContextSql = transaction is not null ? Consts.SetContextLocal : Consts.SetContext;
 
-                    if (Options.AuthenticationOptions.IpAddressContextKey is not null)
+                if (willSetHeadersContext || willSetUserContext || willRunBeforeRoutineCommands)
+                {
+                    await using var batch = NpgsqlRestBatch.Create(connection);
+
+                    if (willSetHeadersContext)
                     {
-                        var cmd = new NpgsqlBatchCommand(Consts.SetContext);
-                        cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(Options.AuthenticationOptions.IpAddressContextKey));
-                        cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(context.Request.GetClientIpAddressDbParam()));
+                        var cmd = new NpgsqlBatchCommand(setContextSql);
+                        cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(Options.RequestHeadersContextKey));
+                        cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(headers));
                         batch.BatchCommands.Add(cmd);
                     }
-                    if (context.User?.Identity?.IsAuthenticated is true && Options.AuthenticationOptions.ClaimsJsonContextKey is not null)
+
+                    if (endpoint.UserContext is true)
                     {
-                        var cmd = new NpgsqlBatchCommand(Consts.SetContext);
-                        cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(Options.AuthenticationOptions.ClaimsJsonContextKey));
-                        cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(claimsDict?.GetUserClaimsDbParam() ?? DBNull.Value));
-                        batch.BatchCommands.Add(cmd);
-                    }
-                    if (context.User?.Identity?.IsAuthenticated is true)
-                    {
-                        foreach (var mapping in Options.AuthenticationOptions.ContextKeyClaimsMapping)
+                        claimsDict ??= context.User.BuildClaimsDictionary(Options.AuthenticationOptions);
+
+                        if (Options.AuthenticationOptions.IpAddressContextKey is not null)
                         {
-                            var cmd = new NpgsqlBatchCommand(Consts.SetContext);
-                            cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(mapping.Key));
-                            cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(claimsDict!.GetClaimDbContextParam(mapping.Value)));
+                            var cmd = new NpgsqlBatchCommand(setContextSql);
+                            cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(Options.AuthenticationOptions.IpAddressContextKey));
+                            cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(context.Request.GetClientIpAddressDbParam()));
+                            batch.BatchCommands.Add(cmd);
+                        }
+                        if (context.User?.Identity?.IsAuthenticated is true && Options.AuthenticationOptions.ClaimsJsonContextKey is not null)
+                        {
+                            var cmd = new NpgsqlBatchCommand(setContextSql);
+                            cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(Options.AuthenticationOptions.ClaimsJsonContextKey));
+                            cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(claimsDict?.GetUserClaimsDbParam() ?? DBNull.Value));
+                            batch.BatchCommands.Add(cmd);
+                        }
+                        if (context.User?.Identity?.IsAuthenticated is true)
+                        {
+                            foreach (var mapping in Options.AuthenticationOptions.ContextKeyClaimsMapping)
+                            {
+                                var cmd = new NpgsqlBatchCommand(setContextSql);
+                                cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(mapping.Key));
+                                cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(claimsDict!.GetClaimDbContextParam(mapping.Value)));
+                                batch.BatchCommands.Add(cmd);
+                            }
+                        }
+                    }
+
+                    if (willRunBeforeRoutineCommands)
+                    {
+                        foreach (var beforeCmd in Options.BeforeRoutineCommands)
+                        {
+                            var cmd = new NpgsqlBatchCommand(beforeCmd.Sql);
+                            foreach (var p in beforeCmd.Parameters)
+                            {
+                                object value;
+                                switch (p.Source)
+                                {
+                                    case BeforeRoutineCommandParameterSource.Claim:
+                                        claimsDict ??= context.User.BuildClaimsDictionary(Options.AuthenticationOptions);
+                                        value = p.Name is null ? DBNull.Value : claimsDict!.GetClaimDbContextParam(p.Name);
+                                        break;
+                                    case BeforeRoutineCommandParameterSource.RequestHeader:
+                                        value = p.Name is not null && context.Request.Headers.TryGetValue(p.Name, out var headerValue)
+                                            ? (object)headerValue.ToString()
+                                            : DBNull.Value;
+                                        break;
+                                    case BeforeRoutineCommandParameterSource.IpAddress:
+                                        value = context.Request.GetClientIpAddressDbParam();
+                                        break;
+                                    default:
+                                        value = DBNull.Value;
+                                        break;
+                                }
+                                cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(value));
+                            }
                             batch.BatchCommands.Add(cmd);
                         }
                     }
-                }
 
-                await batch.ExecuteBatchWithRetryAsync(endpoint.RetryStrategy, cancellationToken);
+                    await batch.ExecuteBatchWithRetryAsync(endpoint.RetryStrategy, cancellationToken);
+                }
             }
 
             object? uploadMetadata = null;
@@ -1817,7 +1860,7 @@ public partial class NpgsqlRestEndpoint(
                     }
                     await connection.OpenRetryAsync(Options.ConnectionRetryOptions, cancellationToken);
                 }
-                if (uploadHandler.RequiresTransaction is true)
+                if (uploadHandler.RequiresTransaction is true && transaction is null)
                 {
                     transaction = await connection.BeginTransactionAsync(cancellationToken);
                 }
@@ -1845,7 +1888,7 @@ public partial class NpgsqlRestEndpoint(
                     await connection.OpenRetryAsync(Options.ConnectionRetryOptions, cancellationToken);
                 }
                 await using var batch = NpgsqlRestBatch.Create(connection);
-                var cmd = new NpgsqlBatchCommand(Consts.SetContext);
+                var cmd = new NpgsqlBatchCommand(transaction is not null ? Consts.SetContextLocal : Consts.SetContext);
                 cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(Options.UploadOptions.DefaultUploadMetadataContextKey));
                 cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(uploadMetadata));
                 batch.BatchCommands.Add(cmd);
@@ -3088,7 +3131,18 @@ public partial class NpgsqlRestEndpoint(
                 uploadHandler?.OnError(connection, context, exception);
             }
 
-            if (context.Response.StatusCode != 200 && context.Response.StatusCode != 205 && context.Response.StatusCode != 400)
+            if (context.Response.StatusCode == 400)
+            {
+                if (shouldLog && cmdLog is not null)
+                {
+                    Logger?.LogWarning("Client error (400) executing command: {commandText} mapped to endpoint: {Url}: {message}{NewLine}{cmdLog}", commandText, endpoint.Path, exception.Message, Environment.NewLine, cmdLog.ToString());
+                }
+                else
+                {
+                    Logger?.LogWarning("Client error (400) executing command: {commandText} mapped to endpoint: {Url}: {message}", commandText, endpoint.Path, exception.Message);
+                }
+            }
+            else if (context.Response.StatusCode != 200 && context.Response.StatusCode != 205)
             {
                 if (shouldLog && cmdLog is not null)
                 {

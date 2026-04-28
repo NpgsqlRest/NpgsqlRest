@@ -1884,6 +1884,145 @@ public class Builder
 
         return result;
     }
+
+    public BeforeRoutineCommand[] BuildBeforeRoutineCommands()
+    {
+        var section = _config.NpgsqlRestCfg.GetSection("BeforeRoutineCommands");
+        if (section.Exists() is false)
+        {
+            return [];
+        }
+
+        var children = section.GetChildren().ToArray();
+        if (children.Length == 0)
+        {
+            return [];
+        }
+
+        var result = new List<BeforeRoutineCommand>(children.Length);
+        for (var i = 0; i < children.Length; i++)
+        {
+            var child = children[i];
+
+            // Shorthand: array entry is a plain string → raw SQL, no parameters. Always enabled (the user wrote it inline).
+            if (child.Value is not null)
+            {
+                if (string.IsNullOrWhiteSpace(child.Value))
+                {
+                    ClientLogger?.LogWarning(
+                        "NpgsqlRest:BeforeRoutineCommands[{Index}] is an empty string. Skipping. " +
+                        "Provide either a non-empty SQL string or an object with a non-empty 'Sql' property.",
+                        i);
+                    continue;
+                }
+                result.Add(new BeforeRoutineCommand { Sql = child.Value, Parameters = [] });
+                ClientLogger?.LogInformation(
+                    "Added BeforeRoutineCommand[{Index}] (shorthand): {Sql}",
+                    i, child.Value.Trim());
+                continue;
+            }
+
+            // Full form: object with Enabled + Sql + Parameters.
+            // Enabled gates whether the command is registered at runtime. Default false (must explicitly opt in).
+            var enabled = _config.GetConfigBool("Enabled", child, false);
+            if (enabled is false)
+            {
+                ClientLogger?.LogInformation(
+                    "Skipping NpgsqlRest:BeforeRoutineCommands[{Index}]: 'Enabled' is false. " +
+                    "Set \"Enabled\": true to activate this command.",
+                    i);
+                continue;
+            }
+
+            var sql = _config.GetConfigStr("Sql", child);
+            if (string.IsNullOrWhiteSpace(sql))
+            {
+                ClientLogger?.LogWarning(
+                    "NpgsqlRest:BeforeRoutineCommands[{Index}] is enabled but has no 'Sql' property (or it is empty). Skipping. " +
+                    "Provide a non-empty 'Sql' string, e.g. \"select set_config('app.x', $1, true)\".",
+                    i);
+                continue;
+            }
+
+            var paramsSection = child.GetSection("Parameters");
+            var paramsList = new List<BeforeRoutineCommandParameter>();
+            var paramsValid = true;
+            if (paramsSection.Exists())
+            {
+                var paramChildren = paramsSection.GetChildren().ToArray();
+                for (var pi = 0; pi < paramChildren.Length; pi++)
+                {
+                    var paramChild = paramChildren[pi];
+                    var sourceStr = _config.GetConfigStr("Source", paramChild);
+                    if (string.IsNullOrWhiteSpace(sourceStr))
+                    {
+                        ClientLogger?.LogWarning(
+                            "NpgsqlRest:BeforeRoutineCommands[{Index}].Parameters[{ParamIndex}] is missing 'Source'. " +
+                            "Skipping the entire command. " +
+                            "Set Source to one of: Claim, RequestHeader, IpAddress.",
+                            i, pi);
+                        paramsValid = false;
+                        break;
+                    }
+                    if (Enum.TryParse<BeforeRoutineCommandParameterSource>(sourceStr, ignoreCase: true, out var source) is false)
+                    {
+                        ClientLogger?.LogWarning(
+                            "NpgsqlRest:BeforeRoutineCommands[{Index}].Parameters[{ParamIndex}] has invalid Source '{Source}'. " +
+                            "Skipping the entire command. " +
+                            "Valid sources are: Claim, RequestHeader, IpAddress.",
+                            i, pi, sourceStr);
+                        paramsValid = false;
+                        break;
+                    }
+                    var name = _config.GetConfigStr("Name", paramChild);
+                    if (source != BeforeRoutineCommandParameterSource.IpAddress && string.IsNullOrWhiteSpace(name))
+                    {
+                        ClientLogger?.LogWarning(
+                            "NpgsqlRest:BeforeRoutineCommands[{Index}].Parameters[{ParamIndex}] has Source '{Source}' but no 'Name'. " +
+                            "Skipping the entire command. " +
+                            "For Source={Source}, set 'Name' to the {Hint}.",
+                            i, pi, source, source,
+                            source == BeforeRoutineCommandParameterSource.Claim ? "claim type" : "request header name");
+                        paramsValid = false;
+                        break;
+                    }
+                    paramsList.Add(new BeforeRoutineCommandParameter { Source = source, Name = name });
+                }
+            }
+
+            if (paramsValid is false)
+            {
+                continue;
+            }
+
+            result.Add(new BeforeRoutineCommand { Sql = sql!, Parameters = [.. paramsList] });
+            if (paramsList.Count == 0)
+            {
+                ClientLogger?.LogInformation(
+                    "Added BeforeRoutineCommand[{Index}]: {Sql}",
+                    i, sql!.Trim());
+            }
+            else
+            {
+                ClientLogger?.LogInformation(
+                    "Added BeforeRoutineCommand[{Index}]: {Sql} | Parameters: [{Parameters}]",
+                    i,
+                    sql!.Trim(),
+                    string.Join(", ", paramsList.Select(p => p.Source == BeforeRoutineCommandParameterSource.IpAddress
+                        ? "IpAddress"
+                        : $"{p.Source}:{p.Name}")));
+            }
+        }
+
+        if (result.Count > 0)
+        {
+            ClientLogger?.LogInformation(
+                "Total {Count} BeforeRoutineCommand(s) registered. They will run after context is set, before each routine call.",
+                result.Count);
+        }
+
+        return [.. result];
+    }
 }
 
 public class SecurityHeadersConfig

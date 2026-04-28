@@ -4,6 +4,85 @@ Note: The changelog for older versions (3.11.1 and earlier) can be found here: [
 
 ---
 
+## Version [3.13.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.13.0) (2026-04-24)
+
+[Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.12.0...3.13.0)
+
+### New: `WrapInTransaction` Option (Connection Pooler Compatibility)
+
+When set to `true`, **every request** is wrapped in an explicit `BEGIN ... COMMIT`, and all `set_config` calls switch from session-scoped (`is_local=false`) to transaction-local (`is_local=true`).
+
+**This is required for connection poolers in transaction mode** — including PgBouncer transaction-pool, AWS RDS Proxy in transaction mode, and Supabase Pooler. Previously, `set_config(name, value, false)` would set the GUC at the session level on the underlying PostgreSQL backend. With a transaction-mode pooler, the same backend is reused for unrelated client requests, which means session-scoped GUCs from one request could be visible to the next. With `WrapInTransaction = true`, GUCs are scoped to the request transaction and discarded on `COMMIT`.
+
+The default remains `false` to preserve existing behavior; it is safe to leave off when using Npgsql's native pool only (which issues `DISCARD ALL` on connection return).
+
+```jsonc
+{
+  "NpgsqlRest": {
+    "WrapInTransaction": true
+  }
+}
+```
+
+### New: `BeforeRoutineCommands` Option
+
+A new option allowing arbitrary SQL commands to run after any context is set but before the main routine call. They run in the **same batch** as the context `set_config` calls, so there is no extra network round-trip.
+
+Each entry can be either a raw SQL string (no parameters) or an object with `Sql` and `Parameters`. Each parameter has a `Source` (`Claim`, `RequestHeader`, or `IpAddress`) and an optional `Name` (claim type or header name). Parameter values are bound at request time from `HttpContext` — claim and header values are passed as parameterized SQL inputs (no string interpolation, no injection risk).
+
+The most useful pattern is **multi-tenant `search_path` setup** driven by a JWT/cookie claim:
+
+```jsonc
+{
+  "NpgsqlRest": {
+    "WrapInTransaction": true,
+    "BeforeRoutineCommands": [
+      "select set_config('app.request_time', clock_timestamp()::text, true)",
+      {
+        "Sql": "select set_config('search_path', $1, true)",
+        "Parameters": [{ "Source": "Claim", "Name": "tenant_id" }]
+      }
+    ]
+  }
+}
+```
+
+Per-request execution order with this config:
+1. `BEGIN`
+2. Each `BeforeRoutineCommand` is added as a `NpgsqlBatchCommand` (with parameters bound from claims/headers/IP) and dispatched in a single batch.
+3. The main routine call.
+4. `COMMIT`.
+
+Steps 1–3 share a single network round-trip.
+
+### Fix: 400 Bad Request responses are no longer silent in logs
+
+Endpoints that returned **HTTP 400** were not being logged at all, making client-error problems invisible in production. Two independent paths produced silent 400s:
+
+1. **Database exceptions mapped to 400** (`P0001 raise exception`, `P0004 assert_failure`, or any user-configured `ErrorHandlingOptions` mapping to 400). The exception handler in `NpgsqlRestEndpoint` explicitly skipped logging for status `400`.
+2. **Validation rule failures** (`ValidationOptions.Rules` → 400). These were logged at `Debug` level, which is below the default minimum log level (`Information`), so they never appeared in production logs.
+
+**Fix:** 400s are now logged at **`Warning` level** — visible by default but not raised to `Error`, since 400 is a client-side problem rather than a server fault. Genuine server errors (500, etc.) continue to be logged at `Error` with full stack traces.
+
+### Docker Images: Ubuntu 26.04 LTS Base
+
+The native AOT Docker images (`latest`, `latest-arm`, `latest-bun`) now build on Ubuntu 26.04 "Resolute Wolf" LTS, up from Ubuntu 25.04 (a 9-month interim release that is reaching end of support). This extends the security-update window for the published images to the 5-year LTS support period and picks up a newer stack (Linux 7.0 kernel, newer OpenSSL, cgroup v2). No changes are required for consumers of the images — runtime dependencies (`libssl3`, `libgssapi-krb5-2`, `ca-certificates`) resolve under the same package names on 26.04.
+
+### NuGet Package Upgrades
+
+**`NpgsqlRest` (main library):**
+
+- `Microsoft.SourceLink.GitHub` 10.0.201 → 10.0.203 *(build-time only)*
+
+**`NpgsqlRestClient` (client application):**
+
+- `Microsoft.AspNetCore.Authentication.JwtBearer` 10.0.5 → 10.0.7
+- `Microsoft.Extensions.Caching.Hybrid` 10.4.0 → 10.5.0
+- `Microsoft.Extensions.Caching.StackExchangeRedis` 10.0.5 → 10.0.7
+- `StackExchange.Redis` 2.12.8 → 2.12.14
+
+---
+
 ## Version [3.12.0](https://github.com/NpgsqlRest/NpgsqlRest/tree/3.12.0) (2026-03-23)
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.11.1...3.12.0)

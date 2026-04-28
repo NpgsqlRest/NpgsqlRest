@@ -446,6 +446,8 @@ NpgsqlRestOptions options = new()
     RequestHeadersMode = config.GetConfigEnum<RequestHeadersMode?>("RequestHeadersMode", config.NpgsqlRestCfg) ?? RequestHeadersMode.Parameter,
     RequestHeadersContextKey = config.GetConfigStr("RequestHeadersContextKey", config.NpgsqlRestCfg) ?? "request.headers",
     RequestHeadersParameterName = config.GetConfigStr("RequestHeadersParameterName", config.NpgsqlRestCfg) ?? "_headers",
+    WrapInTransaction = config.GetConfigBool("WrapInTransaction", config.NpgsqlRestCfg, false),
+    BeforeRoutineCommands = builder.BuildBeforeRoutineCommands(),
 
     EndpointCreated = appInstance.CreateEndpointCreatedHandler(authCfg),
     ValidateParameters = null,

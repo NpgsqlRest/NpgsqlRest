@@ -33,6 +33,7 @@ public static class Consts
     public const string EmptyArray = "[]";
     public const string EmptyObj = "{}";
     public const string SetContext = "select set_config($1,$2,false)";
+    public const string SetContextLocal = "select set_config($1,$2,true)";
 
     // Pre-computed UTF8 bytes for JSON structure characters used in rendering hot paths.
     // Eliminates per-request Encoding.UTF8.GetBytes() calls for constant values.
