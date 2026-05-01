@@ -266,24 +266,33 @@ public class App
 
     private Func<HttpContext, ClaimsPrincipal, string?, Task<bool>>? CreateJwtLoginHandler()
     {
-        if (_builder.JwtTokenConfig is null)
+        // Two ways for JWT to be configured: the main scheme (Auth:JwtAuth=true) or one+ Jwt-type
+        // entries under Auth:Schemes. Any combination produces a non-null handler.
+        if (_builder.JwtTokenConfig is null && _builder.AdditionalJwtTokenConfigs.Count == 0)
         {
             return null;
         }
 
-        // Initialize the static JWT login handler
-        JwtLoginHandler.Initialize(_builder.JwtTokenConfig);
-        var jwtScheme = _builder.JwtTokenConfig.Scheme;
+        if (_builder.JwtTokenConfig is not null)
+        {
+            JwtLoginHandler.Initialize(_builder.JwtTokenConfig);
+        }
+        foreach (var additional in _builder.AdditionalJwtTokenConfigs)
+        {
+            JwtLoginHandler.Register(additional);
+        }
 
         return async (context, principal, scheme) =>
         {
-            // Only handle if the scheme matches JWT scheme or if no scheme specified and JWT is the default
-            if (scheme is not null && !string.Equals(scheme, jwtScheme, StringComparison.OrdinalIgnoreCase))
+            // Short-circuit if the login function returned a non-JWT scheme — let the cookie/bearer
+            // pipelines handle it. When scheme is null, fall through to JwtLoginHandler which uses
+            // the default (main) scheme.
+            if (scheme is not null && !JwtLoginHandler.IsScheme(scheme))
             {
                 return false;
             }
 
-            return await JwtLoginHandler.HandleLoginAsync(context, principal);
+            return await JwtLoginHandler.HandleLoginAsync(context, principal, scheme);
         };
     }
 

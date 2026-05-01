@@ -510,10 +510,21 @@ if (builder.BearerTokenConfig is not null)
 {
     new TokenRefreshAuth(builder.BearerTokenConfig, app, builder.ClientLogger);
 }
+// Per-scheme bearer-token refresh middlewares. Each scheme that declared its own
+// BearerTokenRefreshPath gets a dedicated middleware listening on that path.
+foreach (var additional in builder.AdditionalBearerTokenConfigs)
+{
+    new TokenRefreshAuth(additional, app, builder.ClientLogger);
+}
 
 if (builder.JwtTokenConfig is not null)
 {
     new JwtRefreshAuth(builder.JwtTokenConfig, app, builder.ClientLogger);
+}
+// Per-scheme JWT refresh middlewares.
+foreach (var additional in builder.AdditionalJwtTokenConfigs)
+{
+    new JwtRefreshAuth(additional, app, builder.ClientLogger);
 }
 
 // Health check endpoints

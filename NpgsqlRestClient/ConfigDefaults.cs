@@ -25,6 +25,17 @@ public static class ConfigDefaults
         return arr;
     }
 
+    // Builds the default RateLimiter Partition Sources array via explicit JsonNode casts so the
+    // JsonArray collection initializer's generic Add<T> doesn't trigger IL3050 under PublishAot.
+    private static JsonArray CreatePartitionSourcesArray()
+    {
+        var arr = new JsonArray();
+        arr.Add((JsonNode?)new JsonObject { ["Type"] = "Claim", ["Name"] = "name_identifier" });
+        arr.Add((JsonNode?)new JsonObject { ["Type"] = "IpAddress" });
+        arr.Add((JsonNode?)new JsonObject { ["Type"] = "Static", ["Value"] = "anonymous" });
+        return arr;
+    }
+
     /// <summary>
     /// Returns a JsonObject containing all default configuration values.
     /// </summary>
@@ -169,7 +180,7 @@ public static class ConfigDefaults
         {
             ["CookieAuth"] = false,
             ["CookieAuthScheme"] = null,
-            ["CookieValidDays"] = 14,
+            ["CookieValid"] = "14 days",
             ["CookieName"] = null,
             ["CookiePath"] = null,
             ["CookieDomain"] = null,
@@ -177,21 +188,49 @@ public static class ConfigDefaults
             ["CookieHttpOnly"] = true,
             ["BearerTokenAuth"] = false,
             ["BearerTokenAuthScheme"] = null,
-            ["BearerTokenExpireHours"] = 1,
+            ["BearerTokenExpire"] = "1 hour",
             ["BearerTokenRefreshPath"] = "/api/token/refresh",
             ["JwtAuth"] = false,
             ["JwtAuthScheme"] = null,
             ["JwtSecret"] = null,
             ["JwtIssuer"] = null,
             ["JwtAudience"] = null,
-            ["JwtExpireMinutes"] = 60,
-            ["JwtRefreshExpireDays"] = 7,
+            ["JwtExpire"] = "60 minutes",
+            ["JwtRefreshExpire"] = "7 days",
             ["JwtValidateIssuer"] = false,
             ["JwtValidateAudience"] = false,
             ["JwtValidateLifetime"] = true,
             ["JwtValidateIssuerSigningKey"] = true,
             ["JwtClockSkew"] = "5 minutes",
             ["JwtRefreshPath"] = "/api/jwt/refresh",
+            ["Schemes"] = new JsonObject
+            {
+                ["short_session"] = new JsonObject
+                {
+                    ["Type"] = "Cookies",
+                    ["Enabled"] = false,
+                    ["CookieValid"] = "1 hour",
+                    ["CookieMultiSessions"] = false
+                },
+                ["api_token"] = new JsonObject
+                {
+                    ["Type"] = "BearerToken",
+                    ["Enabled"] = false,
+                    ["BearerTokenExpire"] = "30 minutes",
+                    ["BearerTokenRefreshPath"] = "/api/api-token/refresh"
+                },
+                ["admin_jwt"] = new JsonObject
+                {
+                    ["Type"] = "Jwt",
+                    ["Enabled"] = false,
+                    ["JwtSecret"] = null,
+                    ["JwtIssuer"] = null,
+                    ["JwtAudience"] = null,
+                    ["JwtExpire"] = "5 minutes",
+                    ["JwtRefreshExpire"] = "1 hour",
+                    ["JwtRefreshPath"] = "/api/admin-jwt/refresh"
+                }
+            },
             ["External"] = new JsonObject
             {
                 ["Enabled"] = false,
@@ -627,6 +666,20 @@ public static class ConfigDefaults
                 ["PermitLimit"] = 10,
                 ["QueueLimit"] = 5,
                 ["OldestFirst"] = true
+            },
+            ["per_user"] = new JsonObject
+            {
+                ["Type"] = "FixedWindow",
+                ["Enabled"] = false,
+                ["PermitLimit"] = 100,
+                ["WindowSeconds"] = 60,
+                ["QueueLimit"] = 10,
+                ["AutoReplenishment"] = true,
+                ["Partition"] = new JsonObject
+                {
+                    ["Sources"] = CreatePartitionSourcesArray(),
+                    ["BypassAuthenticated"] = false
+                }
             }
         };
 
@@ -1240,6 +1293,7 @@ public static class ConfigDefaults
             "Log:OTLResourceAttributes" or
             "CommandRetryOptions:Strategies" or
             "ValidationOptions:Rules" or
+            "Auth:Schemes" or
             "NpgsqlRest:AuthenticationOptions:ContextKeyClaimsMapping" or
             "NpgsqlRest:AuthenticationOptions:ParameterNameClaimsMapping" or
             "NpgsqlRest:ClientCodeGen:CustomHeaders")

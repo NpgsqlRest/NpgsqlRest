@@ -47,8 +47,8 @@ public class JwtTokenConfig
     public string Secret { get; set; } = null!;
     public string? Issuer { get; set; }
     public string? Audience { get; set; }
-    public int ExpireMinutes { get; set; } = 60;
-    public int RefreshExpireDays { get; set; } = 7;
+    public TimeSpan Expire { get; set; } = TimeSpan.FromMinutes(60);
+    public TimeSpan RefreshExpire { get; set; } = TimeSpan.FromDays(7);
     public bool ValidateIssuer { get; set; }
     public bool ValidateAudience { get; set; }
     public bool ValidateLifetime { get; set; } = true;
@@ -84,8 +84,8 @@ public class JwtTokenGenerator
 
     public (string accessToken, string refreshToken, DateTime accessExpires, DateTime refreshExpires) GenerateTokens(ClaimsPrincipal principal)
     {
-        var accessExpires = DateTime.UtcNow.AddMinutes(_config.ExpireMinutes);
-        var refreshExpires = DateTime.UtcNow.AddDays(_config.RefreshExpireDays);
+        var accessExpires = DateTime.UtcNow.Add(_config.Expire);
+        var refreshExpires = DateTime.UtcNow.Add(_config.RefreshExpire);
 
         var accessToken = GenerateAccessToken(principal.Claims, accessExpires);
         var refreshToken = GenerateRefreshToken(principal.Claims, refreshExpires);
@@ -243,46 +243,75 @@ public class JwtRefreshAuth
 }
 
 /// <summary>
-/// Static class that provides JWT token generation for login endpoints.
-/// This is used by the NpgsqlRest login handler when JWT authentication scheme is specified.
+/// Static class that provides JWT token generation for login endpoints. Supports a default JWT scheme
+/// (the main one configured via <c>Auth:JwtAuth</c>) plus any number of additional JWT schemes
+/// registered under <c>Auth:Schemes</c>. The login pipeline calls <see cref="HandleLoginAsync"/> with
+/// the scheme name returned from the login function; this class resolves the matching config and uses
+/// its generator to mint the access/refresh-token pair.
 /// </summary>
 public static class JwtLoginHandler
 {
-    private static JwtTokenConfig? _config;
-    private static JwtTokenGenerator? _tokenGenerator;
+    private static readonly Dictionary<string, (JwtTokenConfig Config, JwtTokenGenerator Generator)> _schemes
+        = new(StringComparer.OrdinalIgnoreCase);
+    // Captured on Initialize() — the main scheme is treated as the default when a login function
+    // returns no scheme value (back-compat with single-JWT setups).
+    private static string? _defaultScheme;
 
     /// <summary>
-    /// Initializes the JWT login handler with the given configuration.
-    /// Must be called before any login attempts with JWT scheme.
+    /// Initializes the JWT login handler with the main JWT configuration. Resets any previously
+    /// registered configs (including additional schemes) and re-registers the main one as the default.
     /// </summary>
     public static void Initialize(JwtTokenConfig config)
     {
-        _config = config;
-        _tokenGenerator = new JwtTokenGenerator(config);
+        _schemes.Clear();
+        _defaultScheme = null;
+        Register(config);
+        _defaultScheme = config.Scheme;
     }
 
     /// <summary>
-    /// Gets whether JWT login handling is configured.
+    /// Registers an additional JWT scheme. Each <c>Auth:Schemes</c> Jwt-type entry calls this once
+    /// during App startup so the login flow can sign the user in under the matching config.
     /// </summary>
-    public static bool IsConfigured => _config is not null && _tokenGenerator is not null;
-
-    /// <summary>
-    /// Gets the configured JWT scheme name, or null if not configured.
-    /// </summary>
-    public static string? Scheme => _config?.Scheme;
-
-    /// <summary>
-    /// Generates JWT tokens for the given claims principal and writes them to the response.
-    /// Returns true if handled, false if JWT is not configured.
-    /// </summary>
-    public static async Task<bool> HandleLoginAsync(HttpContext context, ClaimsPrincipal principal)
+    public static void Register(JwtTokenConfig config)
     {
-        if (_config is null || _tokenGenerator is null)
+        if (string.IsNullOrEmpty(config.Scheme))
+        {
+            throw new ArgumentException("JwtTokenConfig.Scheme must be set when registering with JwtLoginHandler.", nameof(config));
+        }
+        _schemes[config.Scheme] = (config, new JwtTokenGenerator(config));
+    }
+
+    /// <summary>
+    /// Returns true if the given scheme name is registered as a JWT scheme. Used by App.cs to decide
+    /// whether to short-circuit the login handler when a non-JWT scheme is returned by the login function.
+    /// </summary>
+    public static bool IsScheme(string scheme) => _schemes.ContainsKey(scheme);
+
+    /// <summary>
+    /// Gets whether at least one JWT scheme is configured.
+    /// </summary>
+    public static bool IsConfigured => _schemes.Count > 0;
+
+    /// <summary>
+    /// Gets the default (main) JWT scheme name, or null if not configured.
+    /// </summary>
+    public static string? Scheme => _defaultScheme;
+
+    /// <summary>
+    /// Generates JWT tokens for the given claims principal and writes them to the response. The
+    /// <paramref name="scheme"/> argument selects which registered config to use; null means use the
+    /// default (main) scheme. Returns false if no matching scheme is registered.
+    /// </summary>
+    public static async Task<bool> HandleLoginAsync(HttpContext context, ClaimsPrincipal principal, string? scheme = null)
+    {
+        var lookup = scheme ?? _defaultScheme;
+        if (lookup is null || !_schemes.TryGetValue(lookup, out var entry))
         {
             return false;
         }
 
-        var (accessToken, refreshToken, accessExpires, refreshExpires) = _tokenGenerator.GenerateTokens(principal);
+        var (accessToken, refreshToken, accessExpires, refreshExpires) = entry.Generator.GenerateTokens(principal);
 
         context.Response.StatusCode = (int)HttpStatusCode.OK;
         context.Response.ContentType = "application/json";

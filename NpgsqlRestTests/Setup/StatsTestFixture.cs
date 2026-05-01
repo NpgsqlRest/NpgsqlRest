@@ -66,7 +66,7 @@ public class StatsTestFixture : IDisposable
         _app.UseNpgsqlRest(new NpgsqlRestOptions(_connectionString)
         {
             IncludeSchemas = ["public"],
-            NameNotSimilarTo = "(cp[_x]|rlpt[_])%", // exclude functions owned by CacheProfilesTestFixture and RateLimiterPartitionTestFixture
+            NameNotSimilarTo = "(cp[_x]|rlpt[_]|ast[_])%", // exclude functions owned by CacheProfilesTestFixture, RateLimiterPartitionTestFixture, and AuthSchemeTestFixture
             CommentsMode = CommentsMode.ParseAll,
             RequiresAuthorization = false
         });

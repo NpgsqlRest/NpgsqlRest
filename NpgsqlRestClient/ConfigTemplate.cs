@@ -340,11 +340,12 @@ public static partial class ConfigSchemaGenerator
         //
         // Authentication scheme name for cookie authentication. Set to null to use default.
         //
-        "CookieAuthScheme": null,
+        "CookieAuthScheme": "Cookies",
         //
-        // Number of days the cookie remains valid.
+        // Cookie validity duration in Postgres interval syntax: e.g. "14 days", "12 hours", "30 minutes".
+        // Set to null to fall back to the framework default (14 days).
         //
-        "CookieValidDays": 14,
+        "CookieValid": "14 days",
         //
         // Custom name for the authentication cookie. Set to null to use default.
         //
@@ -372,11 +373,12 @@ public static partial class ConfigSchemaGenerator
         //
         // Authentication scheme name for bearer token authentication. Set to null to use default.
         //
-        "BearerTokenAuthScheme": null,
+        "BearerTokenAuthScheme": "BearerToken",
         //
-        // Number of hours before bearer token expires.
+        // Bearer token expiration in Postgres interval syntax: e.g. "1 hour", "30 minutes", "2 days".
+        // Set to null to fall back to the framework default (1 hour).
         //
-        "BearerTokenExpireHours": 1,
+        "BearerTokenExpire": "1 hour",
         // POST { "refresh": "{{refreshToken}}" }
         "BearerTokenRefreshPath": "/api/token/refresh",
         //
@@ -384,9 +386,9 @@ public static partial class ConfigSchemaGenerator
         //
         "JwtAuth": false,
         //
-        // Authentication scheme name for JWT authentication. Set to null to use default "JwtBearer".
+        // Authentication scheme name for JWT authentication. Set to null to fall back to the framework default.
         //
-        "JwtAuthScheme": null,
+        "JwtAuthScheme": "Bearer",
         //
         // Secret key used to sign JWT tokens. Must be at least 32 characters for HS256.
         // IMPORTANT: Use a strong, unique secret in production. Store securely (e.g., environment variable).
@@ -401,13 +403,15 @@ public static partial class ConfigSchemaGenerator
         //
         "JwtAudience": null,
         //
-        // Number of minutes before JWT access token expires. Default is 60 minutes.
+        // JWT access token expiration in Postgres interval syntax: e.g. "60 minutes", "1 hour", "30 seconds".
+        // Set to null to fall back to the framework default (60 minutes).
         //
-        "JwtExpireMinutes": 60,
+        "JwtExpire": "60 minutes",
         //
-        // Number of days before JWT refresh token expires. Default is 7 days.
+        // JWT refresh token expiration in Postgres interval syntax: e.g. "7 days", "168 hours", "1 week".
+        // Set to null to fall back to the framework default (7 days).
         //
-        "JwtRefreshExpireDays": 7,
+        "JwtRefreshExpire": "7 days",
         //
         // Validate the issuer (iss) claim. Set to true if JwtIssuer is configured.
         //
@@ -434,7 +438,53 @@ public static partial class ConfigSchemaGenerator
         // Returns new access token and refresh token pair.
         //
         "JwtRefreshPath": "/api/jwt/refresh",
-        // 
+        //
+        // Named additional authentication schemes. Each entry registers a fully-fledged ASP.NET Core
+        // authentication scheme alongside the main one. A login function returning a scheme name in its
+        // `scheme` column signs the user in under that scheme — useful for "short-lived sensitive
+        // session", "separate admin scope", or "different JWT signing key per scope" patterns alongside
+        // the normal long-lived primary scheme.
+        //
+        // Each scheme has a `Type`: `Cookies`, `BearerToken`, or `Jwt`. Schemes inherit any unset field
+        // from the root Auth section so blocks stay small. See the type-specific override fields below.
+        //
+        // Validation: scheme name must not collide with the main scheme names (CookieAuthScheme,
+        // BearerTokenAuthScheme, JwtAuthScheme). Explicit `CookieName` values must be unique across all
+        // schemes. Refresh paths (BearerTokenRefreshPath / JwtRefreshPath) must be unique across all
+        // schemes that define one. Disabled schemes (`Enabled: false`) are skipped at startup.
+        //
+        "Schemes": {
+          // Example: a short-lived single-session cookie for sensitive operations (admin area, payment flow).
+          // Login functions can return `'short_session'` in the scheme column to sign users in under this scheme.
+          "short_session": {
+            "Type": "Cookies",
+            "Enabled": false,
+            "CookieValid": "1 hour",
+            "CookieMultiSessions": false
+          },
+          // Example: a separate Microsoft bearer-token scheme with a shorter expiration than the main one.
+          // Each scheme can declare its own refresh path; if set, it must be unique across schemes.
+          "api_token": {
+            "Type": "BearerToken",
+            "Enabled": false,
+            "BearerTokenExpire": "30 minutes",
+            "BearerTokenRefreshPath": "/api/api-token/refresh"
+          },
+          // Example: a separate JWT scheme with its own signing secret (different blast radius from the
+          // main JWT) and a much shorter access-token expiration. Inherits any unset JWT field from the
+          // root Auth section. JwtSecret must be ≥32 characters for HS256.
+          "admin_jwt": {
+            "Type": "Jwt",
+            "Enabled": false,
+            "JwtSecret": null,
+            "JwtIssuer": null,
+            "JwtAudience": null,
+            "JwtExpire": "5 minutes",
+            "JwtRefreshExpire": "1 hour",
+            "JwtRefreshPath": "/api/admin-jwt/refresh"
+          }
+        },
+        //
         // Enable external auth providers
         //
         "External": {

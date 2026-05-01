@@ -43,6 +43,10 @@ public class Builder
     public bool UseHsts { get; private set; } = false;
     public BearerTokenConfig? BearerTokenConfig { get; private set; } = null;
     public JwtTokenConfig? JwtTokenConfig { get; private set; } = null;
+    /// <summary>BearerToken-type entries registered under <c>Auth:Schemes</c>. Each carries its own scheme name and (optionally) refresh path.</summary>
+    public List<BearerTokenConfig> AdditionalBearerTokenConfigs { get; } = [];
+    /// <summary>Jwt-type entries registered under <c>Auth:Schemes</c>. Each carries its own scheme name, secret, validation options and (optionally) refresh path.</summary>
+    public List<JwtTokenConfig> AdditionalJwtTokenConfigs { get; } = [];
     public string? ConnectionString { get; private set; } = null;
     public string? ConnectionName { get; private set; } = null;
     public ExternalAuthConfig? ExternalAuthConfig { get; private set; } = null;
@@ -592,14 +596,19 @@ public class Builder
             _ => string.Join("_and_", enabledSchemes)
         };
 
+        // Fail fast if any of the four legacy integer time fields is still present in the user's config
+        // (CookieValidDays / BearerTokenExpireHours / JwtExpireMinutes / JwtRefreshExpireDays). They were
+        // removed in 3.13.0 in favor of the interval-notation fields.
+        DetectLegacyAuthTimeFields(authCfg);
+
         var auth = Instance.Services.AddAuthentication(defaultScheme);
 
         if (cookieAuth is true)
         {
-            var days = _config.GetConfigInt("CookieValidDays", authCfg) ?? 14;
+            var cookieValid = ResolveAuthTimeSpan("CookieValid", TimeSpan.FromDays(14), authCfg);
             auth.AddCookie(cookieScheme, options =>
             {
-                options.ExpireTimeSpan = TimeSpan.FromDays(days);
+                options.ExpireTimeSpan = cookieValid;
                 var name = _config.GetConfigStr("CookieName", authCfg);
                 if (string.IsNullOrEmpty(name) is false)
                 {
@@ -607,15 +616,15 @@ public class Builder
                 }
                 options.Cookie.Path = _config.GetConfigStr("CookiePath", authCfg);
                 options.Cookie.Domain = _config.GetConfigStr("CookieDomain", authCfg);
-                options.Cookie.MaxAge = _config.GetConfigBool("CookieMultiSessions", authCfg, true) is true ? TimeSpan.FromDays(days) : null;
+                options.Cookie.MaxAge = _config.GetConfigBool("CookieMultiSessions", authCfg, true) is true ? cookieValid : null;
                 options.Cookie.HttpOnly = _config.GetConfigBool("CookieHttpOnly", authCfg, true) is true;
             });
-            ClientLogger?.LogDebug("Using Cookie Authentication with scheme {cookieScheme}. Cookie expires in {days} days.", cookieScheme, days);
+            ClientLogger?.LogDebug("Using Cookie Authentication with scheme {cookieScheme}. Cookie expires in {cookieValid}.", cookieScheme, cookieValid);
         }
 
         if (bearerTokenAuth is true)
         {
-            var hours = _config.GetConfigInt("BearerTokenExpireHours", authCfg) ?? 1;
+            var bearerExpire = ResolveAuthTimeSpan("BearerTokenExpire", TimeSpan.FromHours(1), authCfg);
             BearerTokenConfig = new()
             {
                 Scheme = tokenScheme,
@@ -623,14 +632,14 @@ public class Builder
             };
             auth.AddBearerToken(tokenScheme, options =>
             {
-                options.BearerTokenExpiration = TimeSpan.FromHours(hours);
-                options.RefreshTokenExpiration = TimeSpan.FromHours(hours);
+                options.BearerTokenExpiration = bearerExpire;
+                options.RefreshTokenExpiration = bearerExpire;
                 options.Validate();
             });
             ClientLogger?.LogDebug(
-                "Using Bearer Token Authentication with scheme {tokenScheme}. Token expires in {hours} hours. Refresh path is {RefreshPath}",
+                "Using Bearer Token Authentication with scheme {tokenScheme}. Token expires in {bearerExpire}. Refresh path is {RefreshPath}",
                 tokenScheme,
-                hours,
+                bearerExpire,
                 BearerTokenConfig.RefreshPath);
         }
 
@@ -646,8 +655,8 @@ public class Builder
                 throw new InvalidOperationException("JwtSecret must be at least 32 characters long for HS256 algorithm.");
             }
 
-            var expireMinutes = _config.GetConfigInt("JwtExpireMinutes", authCfg) ?? 60;
-            var refreshExpireDays = _config.GetConfigInt("JwtRefreshExpireDays", authCfg) ?? 7;
+            var jwtExpire = ResolveAuthTimeSpan("JwtExpire", TimeSpan.FromMinutes(60), authCfg);
+            var jwtRefreshExpire = ResolveAuthTimeSpan("JwtRefreshExpire", TimeSpan.FromDays(7), authCfg);
             var clockSkew = Parser.ParsePostgresInterval(_config.GetConfigStr("JwtClockSkew", authCfg)) ?? TimeSpan.FromMinutes(5);
 
             JwtTokenConfig = new()
@@ -656,8 +665,8 @@ public class Builder
                 Secret = jwtSecret,
                 Issuer = _config.GetConfigStr("JwtIssuer", authCfg),
                 Audience = _config.GetConfigStr("JwtAudience", authCfg),
-                ExpireMinutes = expireMinutes,
-                RefreshExpireDays = refreshExpireDays,
+                Expire = jwtExpire,
+                RefreshExpire = jwtRefreshExpire,
                 ValidateIssuer = _config.GetConfigBool("JwtValidateIssuer", authCfg),
                 ValidateAudience = _config.GetConfigBool("JwtValidateAudience", authCfg),
                 ValidateLifetime = _config.GetConfigBool("JwtValidateLifetime", authCfg, true),
@@ -673,12 +682,17 @@ public class Builder
             });
 
             ClientLogger?.LogDebug(
-                "Using JWT Authentication with scheme {jwtScheme}. Access token expires in {expireMinutes} minutes. Refresh token expires in {refreshExpireDays} days. Refresh path is {RefreshPath}",
+                "Using JWT Authentication with scheme {jwtScheme}. Access token expires in {jwtExpire}. Refresh token expires in {jwtRefreshExpire}. Refresh path is {RefreshPath}",
                 jwtScheme,
-                expireMinutes,
-                refreshExpireDays,
+                jwtExpire,
+                jwtRefreshExpire,
                 JwtTokenConfig.RefreshPath);
         }
+
+        // Register additional authentication schemes from Auth:Schemes. Each enabled entry registers a
+        // fully-fledged ASP.NET Core authentication scheme (Cookie, BearerToken, or Jwt) so a login
+        // function can return that scheme's name in its `scheme` column to sign in under those options.
+        RegisterAuthSchemes(auth, authCfg, cookieScheme, tokenScheme, jwtScheme);
 
         // Create policy scheme if multiple auth methods are enabled
         if (enabledSchemes.Count > 1)
@@ -724,6 +738,362 @@ public class Builder
             ExternalAuthConfig = new ExternalAuthConfig();
             ExternalAuthConfig.Build(authCfg, _config, this);
         }
+    }
+
+    /// <summary>
+    /// Resolves an auth-related <see cref="TimeSpan"/> from a Postgres-interval string at the given key.
+    /// Returns <paramref name="defaultValue"/> when the field is null/empty/missing. Throws on
+    /// syntactically invalid interval values (fail-fast at startup).
+    ///
+    /// Reads from the section provided in <paramref name="authCfg"/> — this is reused for both the root
+    /// <c>Auth</c> section and individual <c>Auth:Schemes:&lt;name&gt;</c> sections.
+    /// </summary>
+    public TimeSpan ResolveAuthTimeSpan(string key, TimeSpan defaultValue, IConfigurationSection authCfg)
+    {
+        var raw = _config.GetConfigStr(key, authCfg);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return defaultValue;
+        }
+        return Parser.ParsePostgresInterval(raw)
+            ?? throw new InvalidOperationException(
+                $"Invalid interval value for {authCfg.Path}:{key}: '{raw}'. Expected Postgres interval syntax (e.g. '14 days', '1 hour', '60 minutes').");
+    }
+
+    /// <summary>
+    /// Throws if any of the four removed legacy auth time fields appears in the user's config. We
+    /// hard-cut these in 3.13.0 (interval notation is the only supported form). Failing fast — rather
+    /// than silently ignoring legacy fields — prevents the surprising case where an upgraded user's
+    /// "this should be 30 days" expiration silently flips to the new field's default of 14 days.
+    /// </summary>
+    private void DetectLegacyAuthTimeFields(IConfigurationSection authCfg)
+    {
+        DetectLegacyAuthTimeField(authCfg, "CookieValidDays", "CookieValid", "e.g. \"14 days\"");
+        DetectLegacyAuthTimeField(authCfg, "BearerTokenExpireHours", "BearerTokenExpire", "e.g. \"1 hour\"");
+        DetectLegacyAuthTimeField(authCfg, "JwtExpireMinutes", "JwtExpire", "e.g. \"60 minutes\"");
+        DetectLegacyAuthTimeField(authCfg, "JwtRefreshExpireDays", "JwtRefreshExpire", "e.g. \"7 days\"");
+    }
+
+    private void DetectLegacyAuthTimeField(IConfigurationSection authCfg, string legacyKey, string newKey, string example)
+    {
+        // Distinguish "key explicitly set" from "key absent" by checking the section directly. Calling
+        // GetConfigStr/GetConfigInt would return null in both cases.
+        var section = authCfg.GetSection(legacyKey);
+        if (section.Value is null && !section.GetChildren().Any())
+        {
+            return;
+        }
+        throw new InvalidOperationException(
+            $"Auth:{legacyKey} has been removed in 3.13.0. Use Auth:{newKey} with Postgres interval syntax instead ({example}). " +
+            $"See changelog/v3.13.0.md for migration details.");
+    }
+
+    /// <summary>
+    /// Registers additional authentication schemes declared under <c>Auth:Schemes</c>. Each enabled
+    /// entry becomes a fully-fledged ASP.NET Core authentication scheme of type Cookies, BearerToken,
+    /// or Jwt — login functions returning the scheme's name in the <c>scheme</c> column sign in under
+    /// those options.
+    ///
+    /// All scheme types inherit any unset field from the root <c>Auth</c> section so blocks stay small.
+    /// Validation (fail-fast at startup):
+    /// <list type="bullet">
+    ///   <item>Scheme name must not collide with the main scheme names (CookieAuthScheme,
+    ///   BearerTokenAuthScheme, JwtAuthScheme).</item>
+    ///   <item><c>Type</c> must be one of Cookies / BearerToken / Jwt (case-insensitive).</item>
+    ///   <item>Explicit <c>CookieName</c> values must be unique across all cookie schemes.</item>
+    ///   <item>Refresh paths must be unique across all schemes that define one.</item>
+    ///   <item>Jwt schemes inherit <c>JwtSecret</c> from root if unset; secret must be ≥32 chars.</item>
+    /// </list>
+    ///
+    /// BearerToken/Jwt scheme configs are appended to <see cref="AdditionalBearerTokenConfigs"/> /
+    /// <see cref="AdditionalJwtTokenConfigs"/> so <see cref="App"/> can wire per-scheme refresh
+    /// middlewares and the <see cref="JwtLoginHandler"/> can resolve the right config when a login
+    /// function returns one of these scheme names.
+    /// </summary>
+    public void RegisterAuthSchemes(
+        Microsoft.AspNetCore.Authentication.AuthenticationBuilder auth,
+        IConfigurationSection authCfg,
+        string cookieScheme,
+        string tokenScheme,
+        string jwtScheme)
+    {
+        var schemesCfg = authCfg.GetSection("Schemes");
+        if (!schemesCfg.Exists())
+        {
+            return;
+        }
+
+        // Track CookieName values across the main cookie scheme + Cookie-type schemes that set one
+        // explicitly. Schemes that don't set CookieName use ASP.NET's per-scheme `.AspNetCore.<name>`
+        // default which auto-differs and is excluded from collision tracking.
+        var explicitCookieNames = new HashSet<string>(StringComparer.Ordinal);
+        var mainCookieName = _config.GetConfigStr("CookieName", authCfg);
+        if (!string.IsNullOrEmpty(mainCookieName))
+        {
+            explicitCookieNames.Add(mainCookieName);
+        }
+
+        // Track refresh paths across the main scheme + every BearerToken/Jwt-type scheme that defines
+        // one. Two middlewares listening on the same path would race — fail at startup instead.
+        var refreshPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var mainBearerRefreshPath = _config.GetConfigStr("BearerTokenRefreshPath", authCfg);
+        if (!string.IsNullOrEmpty(mainBearerRefreshPath))
+        {
+            refreshPaths.Add(mainBearerRefreshPath);
+        }
+        var mainJwtRefreshPath = _config.GetConfigStr("JwtRefreshPath", authCfg);
+        if (!string.IsNullOrEmpty(mainJwtRefreshPath))
+        {
+            refreshPaths.Add(mainJwtRefreshPath);
+        }
+
+        foreach (var schemeSection in schemesCfg.GetChildren())
+        {
+            var schemeName = schemeSection.Key;
+            if (string.IsNullOrWhiteSpace(schemeName))
+            {
+                throw new InvalidOperationException("Auth:Schemes contains an entry with an empty name.");
+            }
+
+            if (_config.GetConfigBool("Enabled", schemeSection, true) is false)
+            {
+                ClientLogger?.LogDebug("Auth scheme {SchemeName} is disabled. Skipping.", schemeName);
+                continue;
+            }
+
+            var typeStr = _config.GetConfigStr("Type", schemeSection);
+            if (string.IsNullOrWhiteSpace(typeStr))
+            {
+                throw new InvalidOperationException(
+                    $"Auth:Schemes:{schemeName}:Type is required. Valid: Cookies, BearerToken, Jwt.");
+            }
+
+            // Scheme name must not shadow any main scheme — otherwise AddX(name, …) would either
+            // overwrite the main scheme's options or throw on duplicate registration.
+            if (string.Equals(schemeName, cookieScheme, StringComparison.Ordinal)
+                || string.Equals(schemeName, tokenScheme, StringComparison.Ordinal)
+                || string.Equals(schemeName, jwtScheme, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Auth:Schemes:{schemeName}: scheme name collides with a main authentication scheme " +
+                    $"(CookieAuthScheme/BearerTokenAuthScheme/JwtAuthScheme). Choose a distinct name.");
+            }
+
+            if (string.Equals(typeStr, "Cookies", StringComparison.OrdinalIgnoreCase))
+            {
+                RegisterCookieSchemeFromConfig(auth, authCfg, schemeSection, schemeName, mainCookieName, explicitCookieNames);
+            }
+            else if (string.Equals(typeStr, "BearerToken", StringComparison.OrdinalIgnoreCase))
+            {
+                RegisterBearerTokenSchemeFromConfig(auth, authCfg, schemeSection, schemeName, refreshPaths);
+            }
+            else if (string.Equals(typeStr, "Jwt", StringComparison.OrdinalIgnoreCase))
+            {
+                RegisterJwtSchemeFromConfig(auth, authCfg, schemeSection, schemeName, refreshPaths);
+            }
+            else
+            {
+                throw new InvalidOperationException(
+                    $"Auth:Schemes:{schemeName}:Type='{typeStr}' is not supported. Valid: Cookies, BearerToken, Jwt.");
+            }
+        }
+    }
+
+    private void RegisterCookieSchemeFromConfig(
+        Microsoft.AspNetCore.Authentication.AuthenticationBuilder auth,
+        IConfigurationSection authCfg,
+        IConfigurationSection schemeSection,
+        string schemeName,
+        string? mainCookieName,
+        HashSet<string> explicitCookieNames)
+    {
+        // CookieValid: scheme override wins, else inherit root's resolved value, else default 14 days.
+        var expire = ResolveSchemeIntervalWithRootFallback(
+            schemeSection, authCfg, "CookieValid", TimeSpan.FromDays(14));
+
+        var schemeCookieName = _config.GetConfigStr("CookieName", schemeSection);
+        if (string.IsNullOrEmpty(schemeCookieName))
+        {
+            schemeCookieName = mainCookieName;
+        }
+        else if (!explicitCookieNames.Add(schemeCookieName))
+        {
+            throw new InvalidOperationException(
+                $"Auth:Schemes:{schemeName}:CookieName='{schemeCookieName}' collides with another scheme's CookieName. " +
+                $"Each scheme (and the main cookie scheme) that sets CookieName explicitly must use a distinct value.");
+        }
+
+        var path = _config.GetConfigStr("CookiePath", schemeSection)
+            ?? _config.GetConfigStr("CookiePath", authCfg);
+        var domain = _config.GetConfigStr("CookieDomain", schemeSection)
+            ?? _config.GetConfigStr("CookieDomain", authCfg);
+        var multiSessions = _config.GetConfigBool("CookieMultiSessions", schemeSection,
+            _config.GetConfigBool("CookieMultiSessions", authCfg, true));
+        var httpOnly = _config.GetConfigBool("CookieHttpOnly", schemeSection,
+            _config.GetConfigBool("CookieHttpOnly", authCfg, true));
+
+        // Capture locals for the closure (avoid loop-variable issues).
+        var name = schemeCookieName;
+        var capturedPath = path;
+        var capturedDomain = domain;
+        var capturedMulti = multiSessions;
+        var capturedHttp = httpOnly;
+        var capturedExpire = expire;
+        auth.AddCookie(schemeName, options =>
+        {
+            options.ExpireTimeSpan = capturedExpire;
+            if (!string.IsNullOrEmpty(name))
+            {
+                options.Cookie.Name = name;
+            }
+            options.Cookie.Path = capturedPath;
+            options.Cookie.Domain = capturedDomain;
+            options.Cookie.MaxAge = capturedMulti ? capturedExpire : null;
+            options.Cookie.HttpOnly = capturedHttp;
+        });
+        ClientLogger?.LogDebug(
+            "Registered Auth Scheme {SchemeName} (Type=Cookies). Expires in {Expire}. MultiSessions={Multi}, HttpOnly={Http}, CookieName={CookieName}.",
+            schemeName, expire, multiSessions, httpOnly, name ?? $"<default `.AspNetCore.{schemeName}`>");
+    }
+
+    private void RegisterBearerTokenSchemeFromConfig(
+        Microsoft.AspNetCore.Authentication.AuthenticationBuilder auth,
+        IConfigurationSection authCfg,
+        IConfigurationSection schemeSection,
+        string schemeName,
+        HashSet<string> refreshPaths)
+    {
+        var expire = ResolveSchemeIntervalWithRootFallback(
+            schemeSection, authCfg, "BearerTokenExpire", TimeSpan.FromHours(1));
+
+        // RefreshPath is per-scheme (no root inheritance — each scheme owns its refresh middleware or
+        // doesn't have one). Empty/null = no refresh middleware for this scheme.
+        var refreshPath = _config.GetConfigStr("BearerTokenRefreshPath", schemeSection);
+        if (!string.IsNullOrEmpty(refreshPath) && !refreshPaths.Add(refreshPath))
+        {
+            throw new InvalidOperationException(
+                $"Auth:Schemes:{schemeName}:BearerTokenRefreshPath='{refreshPath}' collides with another scheme's refresh path. " +
+                $"Each refresh path must be unique across the main scheme and every scheme that defines one.");
+        }
+
+        var capturedExpire = expire;
+        auth.AddBearerToken(schemeName, options =>
+        {
+            options.BearerTokenExpiration = capturedExpire;
+            options.RefreshTokenExpiration = capturedExpire;
+            options.Validate();
+        });
+
+        AdditionalBearerTokenConfigs.Add(new BearerTokenConfig
+        {
+            Scheme = schemeName,
+            RefreshPath = refreshPath
+        });
+
+        ClientLogger?.LogDebug(
+            "Registered Auth Scheme {SchemeName} (Type=BearerToken). Expires in {Expire}. RefreshPath={RefreshPath}.",
+            schemeName, expire, refreshPath ?? "<none>");
+    }
+
+    private void RegisterJwtSchemeFromConfig(
+        Microsoft.AspNetCore.Authentication.AuthenticationBuilder auth,
+        IConfigurationSection authCfg,
+        IConfigurationSection schemeSection,
+        string schemeName,
+        HashSet<string> refreshPaths)
+    {
+        // Jwt schemes can override every JWT config field; if unset, inherit from root.
+        var secret = _config.GetConfigStr("JwtSecret", schemeSection)
+            ?? _config.GetConfigStr("JwtSecret", authCfg);
+        if (string.IsNullOrEmpty(secret))
+        {
+            throw new InvalidOperationException(
+                $"Auth:Schemes:{schemeName} (Type=Jwt) requires JwtSecret either on the scheme itself or on the root Auth section.");
+        }
+        if (secret.Length < 32)
+        {
+            throw new InvalidOperationException(
+                $"Auth:Schemes:{schemeName}:JwtSecret must be at least 32 characters long for HS256 algorithm.");
+        }
+
+        var issuer = _config.GetConfigStr("JwtIssuer", schemeSection)
+            ?? _config.GetConfigStr("JwtIssuer", authCfg);
+        var audience = _config.GetConfigStr("JwtAudience", schemeSection)
+            ?? _config.GetConfigStr("JwtAudience", authCfg);
+
+        var expire = ResolveSchemeIntervalWithRootFallback(
+            schemeSection, authCfg, "JwtExpire", TimeSpan.FromMinutes(60));
+        var refreshExpire = ResolveSchemeIntervalWithRootFallback(
+            schemeSection, authCfg, "JwtRefreshExpire", TimeSpan.FromDays(7));
+        var clockSkew = ResolveSchemeIntervalWithRootFallback(
+            schemeSection, authCfg, "JwtClockSkew", TimeSpan.FromMinutes(5));
+
+        var validateIssuer = _config.GetConfigBool("JwtValidateIssuer", schemeSection,
+            _config.GetConfigBool("JwtValidateIssuer", authCfg, false));
+        var validateAudience = _config.GetConfigBool("JwtValidateAudience", schemeSection,
+            _config.GetConfigBool("JwtValidateAudience", authCfg, false));
+        var validateLifetime = _config.GetConfigBool("JwtValidateLifetime", schemeSection,
+            _config.GetConfigBool("JwtValidateLifetime", authCfg, true));
+        var validateSigningKey = _config.GetConfigBool("JwtValidateIssuerSigningKey", schemeSection,
+            _config.GetConfigBool("JwtValidateIssuerSigningKey", authCfg, true));
+
+        // Per-scheme JwtRefreshPath is independent of root JwtRefreshPath. Empty = no refresh middleware.
+        var refreshPath = _config.GetConfigStr("JwtRefreshPath", schemeSection);
+        if (!string.IsNullOrEmpty(refreshPath) && !refreshPaths.Add(refreshPath))
+        {
+            throw new InvalidOperationException(
+                $"Auth:Schemes:{schemeName}:JwtRefreshPath='{refreshPath}' collides with another scheme's refresh path. " +
+                $"Each refresh path must be unique across the main scheme and every scheme that defines one.");
+        }
+
+        var jwtConfig = new JwtTokenConfig
+        {
+            Scheme = schemeName,
+            Secret = secret,
+            Issuer = issuer,
+            Audience = audience,
+            Expire = expire,
+            RefreshExpire = refreshExpire,
+            ClockSkew = clockSkew,
+            ValidateIssuer = validateIssuer,
+            ValidateAudience = validateAudience,
+            ValidateLifetime = validateLifetime,
+            ValidateIssuerSigningKey = validateSigningKey,
+            RefreshPath = refreshPath
+        };
+
+        auth.AddJwtBearer(schemeName, options =>
+        {
+            options.TokenValidationParameters = jwtConfig.GetTokenValidationParameters();
+            options.SaveToken = true;
+        });
+
+        AdditionalJwtTokenConfigs.Add(jwtConfig);
+
+        ClientLogger?.LogDebug(
+            "Registered Auth Scheme {SchemeName} (Type=Jwt). Access expires in {Expire}, refresh in {RefreshExpire}. RefreshPath={RefreshPath}.",
+            schemeName, expire, refreshExpire, refreshPath ?? "<none>");
+    }
+
+    /// <summary>
+    /// Resolves a TimeSpan from a scheme section's <paramref name="key"/>, falling back to the root
+    /// <paramref name="authCfg"/> section's same key, then to <paramref name="defaultValue"/>. Throws
+    /// on syntactically invalid interval values at either level.
+    /// </summary>
+    private TimeSpan ResolveSchemeIntervalWithRootFallback(
+        IConfigurationSection schemeSection,
+        IConfigurationSection authCfg,
+        string key,
+        TimeSpan defaultValue)
+    {
+        var schemeRaw = _config.GetConfigStr(key, schemeSection);
+        if (!string.IsNullOrWhiteSpace(schemeRaw))
+        {
+            return Parser.ParsePostgresInterval(schemeRaw)
+                ?? throw new InvalidOperationException(
+                    $"Invalid interval value for Auth:Schemes:{schemeSection.Key}:{key}: '{schemeRaw}'. Expected Postgres interval syntax.");
+        }
+        return ResolveAuthTimeSpan(key, defaultValue, authCfg);
     }
 
     private static bool IsJwtToken(string token)
