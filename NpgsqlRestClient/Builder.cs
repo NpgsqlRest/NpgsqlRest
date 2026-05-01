@@ -1836,6 +1836,19 @@ public class Builder
             }
             foreach (var sectionCfg in policiesCfg.GetChildren())
             {
+                // Detect legacy array form (children keyed by index "0", "1", ...) and fail loudly.
+                // 3.13.0 migrated RateLimiterOptions:Policies to an object keyed by policy name (consistent
+                // with ValidationOptions:Rules and CacheOptions:Profiles). Continuing silently with a numeric
+                // key would register policies under names like "0" and "1", which is impossible for endpoints
+                // to reference — turning rate limiting into a silent no-op.
+                if (int.TryParse(sectionCfg.Key, out _))
+                {
+                    throw new InvalidOperationException(
+                        "RateLimiterOptions:Policies has been changed from an array to an object keyed by policy name in 3.13.0. " +
+                        "Migrate by moving each policy's `Name` value to be the JSON key and dropping the `Name` field. " +
+                        "See changelog/v3.13.0.md for details.");
+                }
+
                 var type = _config.GetConfigEnum<RateLimiterType?>("Type", sectionCfg);
                 if (type is null)
                 {
@@ -1845,7 +1858,8 @@ public class Builder
                 {
                     continue;
                 }
-                var name = _config.GetConfigStr("Name", sectionCfg) ?? type.ToString()!;
+                // Policy name comes from the dict key (e.g. "fixed", "sliding").
+                var name = sectionCfg.Key;
                 
                 if (type == RateLimiterType.FixedWindow)
                 {

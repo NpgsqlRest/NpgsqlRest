@@ -589,48 +589,46 @@ public static class ConfigDefaults
 
     private static JsonObject GetRateLimiterOptionsDefaults()
     {
-        var policies = new JsonArray();
-        policies.Add((JsonNode)new JsonObject
+        var policies = new JsonObject
         {
-            ["Type"] = "FixedWindow",
-            ["Enabled"] = false,
-            ["Name"] = "fixed",
-            ["PermitLimit"] = 100,
-            ["WindowSeconds"] = 60,
-            ["QueueLimit"] = 10,
-            ["AutoReplenishment"] = true
-        });
-        policies.Add((JsonNode)new JsonObject
-        {
-            ["Type"] = "SlidingWindow",
-            ["Enabled"] = false,
-            ["Name"] = "sliding",
-            ["PermitLimit"] = 100,
-            ["WindowSeconds"] = 60,
-            ["SegmentsPerWindow"] = 6,
-            ["QueueLimit"] = 10,
-            ["AutoReplenishment"] = true
-        });
-        policies.Add((JsonNode)new JsonObject
-        {
-            ["Type"] = "TokenBucket",
-            ["Enabled"] = true,
-            ["Name"] = "bucket",
-            ["TokenLimit"] = 100,
-            ["TokensPerPeriod"] = 10,
-            ["ReplenishmentPeriodSeconds"] = 10,
-            ["QueueLimit"] = 10,
-            ["AutoReplenishment"] = true
-        });
-        policies.Add((JsonNode)new JsonObject
-        {
-            ["Type"] = "Concurrency",
-            ["Enabled"] = true,
-            ["Name"] = "concurrency",
-            ["PermitLimit"] = 10,
-            ["QueueLimit"] = 5,
-            ["OldestFirst"] = true
-        });
+            ["fixed"] = new JsonObject
+            {
+                ["Type"] = "FixedWindow",
+                ["Enabled"] = false,
+                ["PermitLimit"] = 100,
+                ["WindowSeconds"] = 60,
+                ["QueueLimit"] = 10,
+                ["AutoReplenishment"] = true
+            },
+            ["sliding"] = new JsonObject
+            {
+                ["Type"] = "SlidingWindow",
+                ["Enabled"] = false,
+                ["PermitLimit"] = 100,
+                ["WindowSeconds"] = 60,
+                ["SegmentsPerWindow"] = 6,
+                ["QueueLimit"] = 10,
+                ["AutoReplenishment"] = true
+            },
+            ["bucket"] = new JsonObject
+            {
+                ["Type"] = "TokenBucket",
+                ["Enabled"] = false,
+                ["TokenLimit"] = 100,
+                ["TokensPerPeriod"] = 10,
+                ["ReplenishmentPeriodSeconds"] = 10,
+                ["QueueLimit"] = 10,
+                ["AutoReplenishment"] = true
+            },
+            ["concurrency"] = new JsonObject
+            {
+                ["Type"] = "Concurrency",
+                ["Enabled"] = false,
+                ["PermitLimit"] = 10,
+                ["QueueLimit"] = 5,
+                ["OldestFirst"] = true
+            }
+        };
 
         return new JsonObject
         {

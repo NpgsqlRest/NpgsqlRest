@@ -1597,45 +1597,57 @@ public static partial class ConfigSchemaGenerator
         "StatusCode": 429,
         "StatusMessage": "Too many requests. Please try again later.",
         "DefaultPolicy": null,
-        // Policy types: FixedWindow, SlidingWindow, BucketWindow, Concurrency
-        "Policies": [{
-            // see https://learn.microsoft.com/en-us/aspnet/core/performance/rate-limit#fixed
+        //
+        // Named rate-limiter policies. The object key is the policy name (referenced from endpoints via the
+        // `rate_limiter_policy <name>` comment annotation, or used as `DefaultPolicy` above).
+        //
+        // Each policy has a `Type` of FixedWindow, SlidingWindow, TokenBucket, or Concurrency, and a set of
+        // type-specific tuning fields. Set `"Enabled": true` to register the policy at startup.
+        //
+        // **Breaking change in 3.13.0**: this section was previously an array of objects with explicit `"Name"`
+        // properties. It is now an object keyed by policy name, matching `ValidationOptions:Rules` and
+        // `CacheOptions:Profiles`. Migrate by moving each policy's `Name` value to be the JSON key and dropping
+        // the `Name` field.
+        //
+        "Policies": {
+          // see https://learn.microsoft.com/en-us/aspnet/core/performance/rate-limit#fixed
+          "fixed": {
             "Type": "FixedWindow",
             "Enabled": false,
-            "Name": "fixed",
             "PermitLimit": 100,
             "WindowSeconds": 60,
             "QueueLimit": 10,
             "AutoReplenishment": true
-        }, {
-            // see https://learn.microsoft.com/en-us/aspnet/core/performance/rate-limit#sliding-window-limiter
+          },
+          // see https://learn.microsoft.com/en-us/aspnet/core/performance/rate-limit#sliding-window-limiter
+          "sliding": {
             "Type": "SlidingWindow",
             "Enabled": false,
-            "Name": "sliding",
             "PermitLimit": 100,
             "WindowSeconds": 60,
             "SegmentsPerWindow": 6,
             "QueueLimit": 10,
             "AutoReplenishment": true
-        }, {
-            // see https://learn.microsoft.com/en-us/aspnet/core/performance/rate-limit#token-bucket-limiter
+          },
+          // see https://learn.microsoft.com/en-us/aspnet/core/performance/rate-limit#token-bucket-limiter
+          "bucket": {
             "Type": "TokenBucket",
             "Enabled": false,
-            "Name": "bucket",
             "TokenLimit": 100,
             "TokensPerPeriod": 10,
             "ReplenishmentPeriodSeconds": 10,
             "QueueLimit": 10,
             "AutoReplenishment": true
-        }, {
-            // see https://learn.microsoft.com/en-us/aspnet/core/performance/rate-limit#concurrency-limiter
+          },
+          // see https://learn.microsoft.com/en-us/aspnet/core/performance/rate-limit#concurrency-limiter
+          "concurrency": {
             "Type": "Concurrency",
             "Enabled": false,
-            "Name": "concurrency",
             "PermitLimit": 10,
             "QueueLimit": 5,
             "OldestFirst": true
-        }]
+          }
+        }
       },
       
       //
