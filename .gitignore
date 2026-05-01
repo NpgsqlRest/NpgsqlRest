@@ -411,3 +411,4 @@ dist/
 .DS_Store
 **/.DS_Store
 .claude/projects
+.vscode/settings.json
