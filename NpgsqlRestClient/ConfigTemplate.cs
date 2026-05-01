@@ -1507,8 +1507,20 @@ public static partial class ConfigSchemaGenerator
         //     A rule's Parameter must be in the profile's "Parameters" list (or in the endpoint's @cached annotation),
         //     otherwise the rule is dropped at startup with a Warning.
         //
-        // Unknown profile names referenced by `cache_profile` annotation cause startup to fail with a single error
-        // listing all typos and the offending endpoints. Unused profiles log an Information warning.
+        // Common patterns:
+        //   - Skip cache when a date is null (always-fresh data):
+        //       "When": [ { "Parameter": "to", "Value": null, "Then": "skip" } ]
+        //   - Tiered TTL by user role:
+        //       "When": [
+        //         { "Parameter": "tier", "Value": "free", "Then": "5 minutes" },
+        //         { "Parameter": "tier", "Value": "pro",  "Then": "1 hour" }
+        //       ]
+        //
+        // Unknown profile names referenced by `@cache_profile` cause startup to fail with a single error listing all
+        // typos and the offending endpoints. Unused profiles (registered but not referenced) log an Information warning.
+        //
+        // Three disabled example profiles below show all three Types and all four profile fields. Flip "Enabled": true
+        // on the one(s) you want to use.
         //
         "Profiles": {
           "fast_memory": {
