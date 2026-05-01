@@ -1618,6 +1618,9 @@ public static partial class ConfigSchemaGenerator
             "WindowSeconds": 60,
             "QueueLimit": 10,
             "AutoReplenishment": true
+            // To partition this policy (per-user, per-IP, etc.) so each request gets its own bucket
+            // instead of sharing a single global one, add a "Partition" block. See the "per_user"
+            // policy below for a complete example.
           },
           // see https://learn.microsoft.com/en-us/aspnet/core/performance/rate-limit#sliding-window-limiter
           "sliding": {
@@ -1646,6 +1649,38 @@ public static partial class ConfigSchemaGenerator
             "PermitLimit": 10,
             "QueueLimit": 5,
             "OldestFirst": true
+          },
+          //
+          // Example of a partitioned policy. With "Partition" set, each request resolves a partition key
+          // (per-user, per-IP, etc.) and gets its own bucket. Without "Partition", all requests under a
+          // policy share a single global bucket. Any of the four limiter Types above can be partitioned —
+          // FixedWindow is shown here only because it is the most common.
+          //
+          // Sources (ordered) — first source returning a non-empty key wins. Fallback "unpartitioned"
+          // is used if no source matches. Source types:
+          //   { "Type": "Claim",     "Name": "<claim type>" }
+          //   { "Type": "IpAddress" }
+          //   { "Type": "Header",    "Name": "<header name>" }
+          //   { "Type": "Static",    "Value": "<literal key>" }   ← terminal fallback
+          //
+          // BypassAuthenticated (bool, default false) — when true, authenticated users skip rate
+          // limiting entirely. Evaluated before Sources, useful for "throttle anonymous only".
+          //
+          "per_user": {
+            "Type": "FixedWindow",
+            "Enabled": false,
+            "PermitLimit": 100,
+            "WindowSeconds": 60,
+            "QueueLimit": 10,
+            "AutoReplenishment": true,
+            "Partition": {
+              "Sources": [
+                { "Type": "Claim",     "Name": "name_identifier" },
+                { "Type": "IpAddress" },
+                { "Type": "Static",    "Value": "anonymous" }
+              ],
+              "BypassAuthenticated": false
+            }
           }
         }
       },

@@ -1860,77 +1860,301 @@ public class Builder
                 }
                 // Policy name comes from the dict key (e.g. "fixed", "sliding").
                 var name = sectionCfg.Key;
-                
+
+                // Read optional partition configuration. When present, every request resolves a partition key
+                // and gets its own bucket. When null, all requests share a single global bucket (legacy behavior).
+                var partition = ReadPartitionConfig(sectionCfg);
+
                 if (type == RateLimiterType.FixedWindow)
                 {
-                    options.AddFixedWindowLimiter(name, config =>
+                    var permitLimit = _config.GetConfigInt("PermitLimit", sectionCfg) ?? 100;
+                    var window = TimeSpan.FromSeconds(_config.GetConfigInt("WindowSeconds", sectionCfg) ?? 60);
+                    var queueLimit = _config.GetConfigInt("QueueLimit", sectionCfg) ?? 10;
+                    var autoReplenish = _config.GetConfigBool("AutoReplenishment", sectionCfg, true);
+                    if (partition is null)
                     {
-                        config.PermitLimit = _config.GetConfigInt("PermitLimit", sectionCfg) ?? 100;
-                        config.Window = TimeSpan.FromSeconds(_config.GetConfigInt("WindowSeconds", sectionCfg) ?? 60);
-                        config.QueueLimit = _config.GetConfigInt("QueueLimit", sectionCfg) ?? 10;
-                        config.AutoReplenishment = _config.GetConfigBool("AutoReplenishment", sectionCfg, true);
-                    });
-                    ClientLogger?.LogDebug("Using Fixed Window rate limiter with name {Name}: PermitLimit={PermitLimit}, WindowSeconds={WindowSeconds}, QueueLimit={QueueLimit}, AutoReplenishment={AutoReplenishment}",
-                        name,
-                        _config.GetConfigInt("PermitLimit", sectionCfg) ?? 100,
-                        _config.GetConfigInt("WindowSeconds", sectionCfg) ?? 60,
-                        _config.GetConfigInt("QueueLimit", sectionCfg) ?? 10,
-                        _config.GetConfigBool("AutoReplenishment", sectionCfg, true));
+                        options.AddFixedWindowLimiter(name, config =>
+                        {
+                            config.PermitLimit = permitLimit;
+                            config.Window = window;
+                            config.QueueLimit = queueLimit;
+                            config.AutoReplenishment = autoReplenish;
+                        });
+                    }
+                    else
+                    {
+                        options.AddPolicy(name, httpContext =>
+                            partition.BypassAuthenticated && httpContext.User?.Identity?.IsAuthenticated == true
+                                ? RateLimitPartition.GetNoLimiter("__authenticated__")
+                                : RateLimitPartition.GetFixedWindowLimiter(
+                                    ResolvePartitionKey(httpContext, partition),
+                                    _ => new FixedWindowRateLimiterOptions
+                                    {
+                                        PermitLimit = permitLimit,
+                                        Window = window,
+                                        QueueLimit = queueLimit,
+                                        AutoReplenishment = autoReplenish
+                                    }));
+                    }
+                    ClientLogger?.LogDebug("Using Fixed Window rate limiter with name {Name}: PermitLimit={PermitLimit}, WindowSeconds={WindowSeconds}, QueueLimit={QueueLimit}, AutoReplenishment={AutoReplenishment}, Partition={Partition}",
+                        name, permitLimit, _config.GetConfigInt("WindowSeconds", sectionCfg) ?? 60, queueLimit, autoReplenish,
+                        FormatPartitionForLog(partition));
                 }
                 else if (type == RateLimiterType.SlidingWindow)
                 {
-                    options.AddSlidingWindowLimiter(name, config =>
+                    var permitLimit = _config.GetConfigInt("PermitLimit", sectionCfg) ?? 100;
+                    var window = TimeSpan.FromSeconds(_config.GetConfigInt("WindowSeconds", sectionCfg) ?? 60);
+                    var segments = _config.GetConfigInt("SegmentsPerWindow", sectionCfg) ?? 6;
+                    var queueLimit = _config.GetConfigInt("QueueLimit", sectionCfg) ?? 10;
+                    var autoReplenish = _config.GetConfigBool("AutoReplenishment", sectionCfg, true);
+                    if (partition is null)
                     {
-                        config.PermitLimit = _config.GetConfigInt("PermitLimit", sectionCfg) ?? 100;
-                        config.Window = TimeSpan.FromSeconds(_config.GetConfigInt("WindowSeconds", sectionCfg) ?? 60);
-                        config.SegmentsPerWindow = _config.GetConfigInt("SegmentsPerWindow", sectionCfg) ?? 6;
-                        config.QueueLimit = _config.GetConfigInt("QueueLimit", sectionCfg) ?? 10;
-                        config.AutoReplenishment = _config.GetConfigBool("AutoReplenishment", sectionCfg, true);
-                    });
-                    ClientLogger?.LogDebug("Using Sliding Window rate limiter with name {Name}: PermitLimit={PermitLimit}, WindowSeconds={WindowSeconds}, SegmentsPerWindow={SegmentsPerWindow}, QueueLimit={QueueLimit}, AutoReplenishment={AutoReplenishment}",
-                        name,
-                        _config.GetConfigInt("PermitLimit", sectionCfg) ?? 100,
-                        _config.GetConfigInt("WindowSeconds", sectionCfg) ?? 60,
-                        _config.GetConfigInt("SegmentsPerWindow", sectionCfg) ?? 6,
-                        _config.GetConfigInt("QueueLimit", sectionCfg) ?? 10,
-                        _config.GetConfigBool("AutoReplenishment", sectionCfg, true));
+                        options.AddSlidingWindowLimiter(name, config =>
+                        {
+                            config.PermitLimit = permitLimit;
+                            config.Window = window;
+                            config.SegmentsPerWindow = segments;
+                            config.QueueLimit = queueLimit;
+                            config.AutoReplenishment = autoReplenish;
+                        });
+                    }
+                    else
+                    {
+                        options.AddPolicy(name, httpContext =>
+                            partition.BypassAuthenticated && httpContext.User?.Identity?.IsAuthenticated == true
+                                ? RateLimitPartition.GetNoLimiter("__authenticated__")
+                                : RateLimitPartition.GetSlidingWindowLimiter(
+                                    ResolvePartitionKey(httpContext, partition),
+                                    _ => new SlidingWindowRateLimiterOptions
+                                    {
+                                        PermitLimit = permitLimit,
+                                        Window = window,
+                                        SegmentsPerWindow = segments,
+                                        QueueLimit = queueLimit,
+                                        AutoReplenishment = autoReplenish
+                                    }));
+                    }
+                    ClientLogger?.LogDebug("Using Sliding Window rate limiter with name {Name}: PermitLimit={PermitLimit}, WindowSeconds={WindowSeconds}, SegmentsPerWindow={SegmentsPerWindow}, QueueLimit={QueueLimit}, AutoReplenishment={AutoReplenishment}, Partition={Partition}",
+                        name, permitLimit, _config.GetConfigInt("WindowSeconds", sectionCfg) ?? 60, segments, queueLimit, autoReplenish,
+                        FormatPartitionForLog(partition));
                 }
                 else if (type == RateLimiterType.TokenBucket)
                 {
-                    options.AddTokenBucketLimiter(name, config =>
+                    var tokenLimit = _config.GetConfigInt("TokenLimit", sectionCfg) ?? 100;
+                    var tokensPerPeriod = _config.GetConfigInt("TokensPerPeriod", sectionCfg) ?? 10;
+                    var replenishSeconds = _config.GetConfigInt("ReplenishmentPeriodSeconds", sectionCfg) ?? 10;
+                    var replenishPeriod = TimeSpan.FromSeconds(replenishSeconds);
+                    var queueLimit = _config.GetConfigInt("QueueLimit", sectionCfg) ?? 10;
+                    var autoReplenish = _config.GetConfigBool("AutoReplenishment", sectionCfg, true);
+                    if (partition is null)
                     {
-                        config.TokenLimit = _config.GetConfigInt("TokenLimit", sectionCfg) ?? 100;
-                        config.TokensPerPeriod = _config.GetConfigInt("TokensPerPeriod", sectionCfg) ?? 10;
-                        config.ReplenishmentPeriod = TimeSpan.FromSeconds(_config.GetConfigInt("ReplenishmentPeriodSeconds", sectionCfg) ?? 10);
-                        config.QueueLimit = _config.GetConfigInt("QueueLimit", sectionCfg) ?? 10;
-                        config.AutoReplenishment = _config.GetConfigBool("AutoReplenishment", sectionCfg, true);
-                    });
-                    ClientLogger?.LogDebug("Using Token Bucket rate limiter with name {Name}: TokenLimit={TokenLimit}, TokensPerPeriod={TokensPerPeriod}, ReplenishmentPeriodSeconds={ReplenishmentPeriodSeconds}, QueueLimit={QueueLimit}, AutoReplenishment={AutoReplenishment}",
-                        name,
-                        _config.GetConfigInt("TokenLimit", sectionCfg) ?? 100,
-                        _config.GetConfigInt("TokensPerPeriod", sectionCfg) ?? 10,
-                        _config.GetConfigInt("ReplenishmentPeriodSeconds", sectionCfg) ?? 10,
-                        _config.GetConfigInt("QueueLimit", sectionCfg) ?? 10,
-                        _config.GetConfigBool("AutoReplenishment", sectionCfg, true));
+                        options.AddTokenBucketLimiter(name, config =>
+                        {
+                            config.TokenLimit = tokenLimit;
+                            config.TokensPerPeriod = tokensPerPeriod;
+                            config.ReplenishmentPeriod = replenishPeriod;
+                            config.QueueLimit = queueLimit;
+                            config.AutoReplenishment = autoReplenish;
+                        });
+                    }
+                    else
+                    {
+                        options.AddPolicy(name, httpContext =>
+                            partition.BypassAuthenticated && httpContext.User?.Identity?.IsAuthenticated == true
+                                ? RateLimitPartition.GetNoLimiter("__authenticated__")
+                                : RateLimitPartition.GetTokenBucketLimiter(
+                                    ResolvePartitionKey(httpContext, partition),
+                                    _ => new TokenBucketRateLimiterOptions
+                                    {
+                                        TokenLimit = tokenLimit,
+                                        TokensPerPeriod = tokensPerPeriod,
+                                        ReplenishmentPeriod = replenishPeriod,
+                                        QueueLimit = queueLimit,
+                                        AutoReplenishment = autoReplenish
+                                    }));
+                    }
+                    ClientLogger?.LogDebug("Using Token Bucket rate limiter with name {Name}: TokenLimit={TokenLimit}, TokensPerPeriod={TokensPerPeriod}, ReplenishmentPeriodSeconds={ReplenishmentPeriodSeconds}, QueueLimit={QueueLimit}, AutoReplenishment={AutoReplenishment}, Partition={Partition}",
+                        name, tokenLimit, tokensPerPeriod, replenishSeconds, queueLimit, autoReplenish,
+                        FormatPartitionForLog(partition));
                 }
                 else if (type == RateLimiterType.Concurrency)
                 {
-                    options.AddConcurrencyLimiter(name, config =>
+                    var permitLimit = _config.GetConfigInt("PermitLimit", sectionCfg) ?? 10;
+                    var queueLimit = _config.GetConfigInt("QueueLimit", sectionCfg) ?? 5;
+                    var oldestFirst = _config.GetConfigBool("OldestFirst", sectionCfg, true);
+                    var queueOrder = oldestFirst ? QueueProcessingOrder.OldestFirst : QueueProcessingOrder.NewestFirst;
+                    if (partition is null)
                     {
-                        config.PermitLimit = _config.GetConfigInt("PermitLimit", sectionCfg) ?? 10;
-                        config.QueueLimit = _config.GetConfigInt("QueueLimit", sectionCfg) ?? 5;
-                        config.QueueProcessingOrder = _config.GetConfigBool("OldestFirst", sectionCfg, true) is true ? QueueProcessingOrder.OldestFirst : QueueProcessingOrder.NewestFirst;
-                    });
-                    ClientLogger?.LogDebug("Using Concurrency rate limiter with name {Name}: PermitLimit={PermitLimit}, QueueLimit={QueueLimit}, OldestFirst={OldestFirst}",
-                        name,
-                        _config.GetConfigInt("PermitLimit", sectionCfg) ?? 10,
-                        _config.GetConfigInt("QueueLimit", sectionCfg) ?? 5,
-                        _config.GetConfigBool("OldestFirst", sectionCfg, true));
+                        options.AddConcurrencyLimiter(name, config =>
+                        {
+                            config.PermitLimit = permitLimit;
+                            config.QueueLimit = queueLimit;
+                            config.QueueProcessingOrder = queueOrder;
+                        });
+                    }
+                    else
+                    {
+                        options.AddPolicy(name, httpContext =>
+                            partition.BypassAuthenticated && httpContext.User?.Identity?.IsAuthenticated == true
+                                ? RateLimitPartition.GetNoLimiter("__authenticated__")
+                                : RateLimitPartition.GetConcurrencyLimiter(
+                                    ResolvePartitionKey(httpContext, partition),
+                                    _ => new ConcurrencyLimiterOptions
+                                    {
+                                        PermitLimit = permitLimit,
+                                        QueueLimit = queueLimit,
+                                        QueueProcessingOrder = queueOrder
+                                    }));
+                    }
+                    ClientLogger?.LogDebug("Using Concurrency rate limiter with name {Name}: PermitLimit={PermitLimit}, QueueLimit={QueueLimit}, OldestFirst={OldestFirst}, Partition={Partition}",
+                        name, permitLimit, queueLimit, oldestFirst,
+                        FormatPartitionForLog(partition));
                 }
             }
         });
 
         return (defaultPolicy, true);
+    }
+
+    /// <summary>
+    /// Parses an optional <c>Partition</c> sub-section under a rate-limiter policy. Returns null if the
+    /// section is absent or contains no usable sources/flags. Logs Warning for individual invalid sources.
+    /// </summary>
+    private RateLimitPartitionConfig? ReadPartitionConfig(IConfigurationSection policyCfg)
+    {
+        var sec = policyCfg.GetSection("Partition");
+        if (!sec.Exists())
+        {
+            return null;
+        }
+
+        var bypassAuthenticated = _config.GetConfigBool("BypassAuthenticated", sec, false);
+        var sources = new List<RateLimitPartitionSource>();
+        var sourcesSec = sec.GetSection("Sources");
+        if (sourcesSec.Exists())
+        {
+            var idx = 0;
+            foreach (var srcSec in sourcesSec.GetChildren())
+            {
+                var typeStr = _config.GetConfigStr("Type", srcSec);
+                if (string.IsNullOrWhiteSpace(typeStr))
+                {
+                    ClientLogger?.LogWarning(
+                        "RateLimiterOptions:Policies:{Policy}:Partition:Sources[{Index}] is missing 'Type'. Skipping. Valid: Claim, IpAddress, Header, Static.",
+                        policyCfg.Key, idx);
+                    idx++;
+                    continue;
+                }
+                if (!Enum.TryParse<RateLimitPartitionSourceType>(typeStr, ignoreCase: true, out var srcType))
+                {
+                    ClientLogger?.LogWarning(
+                        "RateLimiterOptions:Policies:{Policy}:Partition:Sources[{Index}] has invalid Type '{Type}'. Skipping. Valid: Claim, IpAddress, Header, Static.",
+                        policyCfg.Key, idx, typeStr);
+                    idx++;
+                    continue;
+                }
+                var src = new RateLimitPartitionSource
+                {
+                    Type = srcType,
+                    Name = _config.GetConfigStr("Name", srcSec),
+                    Value = _config.GetConfigStr("Value", srcSec)
+                };
+                if (srcType == RateLimitPartitionSourceType.Claim && string.IsNullOrWhiteSpace(src.Name))
+                {
+                    ClientLogger?.LogWarning(
+                        "RateLimiterOptions:Policies:{Policy}:Partition:Sources[{Index}] (Type=Claim) requires 'Name' (claim type). Skipping.",
+                        policyCfg.Key, idx);
+                    idx++;
+                    continue;
+                }
+                if (srcType == RateLimitPartitionSourceType.Header && string.IsNullOrWhiteSpace(src.Name))
+                {
+                    ClientLogger?.LogWarning(
+                        "RateLimiterOptions:Policies:{Policy}:Partition:Sources[{Index}] (Type=Header) requires 'Name' (header name). Skipping.",
+                        policyCfg.Key, idx);
+                    idx++;
+                    continue;
+                }
+                if (srcType == RateLimitPartitionSourceType.Static && string.IsNullOrWhiteSpace(src.Value))
+                {
+                    ClientLogger?.LogWarning(
+                        "RateLimiterOptions:Policies:{Policy}:Partition:Sources[{Index}] (Type=Static) requires 'Value' (the literal partition key). Skipping.",
+                        policyCfg.Key, idx);
+                    idx++;
+                    continue;
+                }
+                sources.Add(src);
+                idx++;
+            }
+        }
+
+        if (sources.Count == 0 && !bypassAuthenticated)
+        {
+            ClientLogger?.LogWarning(
+                "RateLimiterOptions:Policies:{Policy}:Partition has no valid Sources and BypassAuthenticated is false. Partition is non-functional and will be ignored (policy reverts to a single global bucket).",
+                policyCfg.Key);
+            return null;
+        }
+
+        return new RateLimitPartitionConfig
+        {
+            Sources = [.. sources],
+            BypassAuthenticated = bypassAuthenticated
+        };
+    }
+
+    /// <summary>
+    /// Walks <see cref="RateLimitPartitionConfig.Sources"/> top-to-bottom; first source returning a non-empty
+    /// key wins. Falls back to <c>"unpartitioned"</c> if no source matches (so the policy still has a coherent
+    /// bucket). Caller has already short-circuited on <c>BypassAuthenticated</c>.
+    /// </summary>
+    public static string ResolvePartitionKey(Microsoft.AspNetCore.Http.HttpContext ctx, RateLimitPartitionConfig partition)
+    {
+        foreach (var src in partition.Sources)
+        {
+            string? key = src.Type switch
+            {
+                RateLimitPartitionSourceType.Claim =>
+                    src.Name is null ? null : ctx.User?.FindFirst(src.Name)?.Value,
+                RateLimitPartitionSourceType.IpAddress =>
+                    ctx.Request.GetClientIpAddress(),
+                RateLimitPartitionSourceType.Header =>
+                    src.Name is not null && ctx.Request.Headers.TryGetValue(src.Name, out var v) ? v.ToString() : null,
+                RateLimitPartitionSourceType.Static => src.Value,
+                _ => null
+            };
+            if (!string.IsNullOrEmpty(key))
+            {
+                return key;
+            }
+        }
+        return "unpartitioned";
+    }
+
+    private static string FormatPartitionForLog(RateLimitPartitionConfig? partition)
+    {
+        if (partition is null)
+        {
+            return "(none — single global bucket)";
+        }
+        var parts = new List<string>();
+        if (partition.BypassAuthenticated)
+        {
+            parts.Add("BypassAuthenticated=true");
+        }
+        if (partition.Sources.Length > 0)
+        {
+            parts.Add("Sources=[" + string.Join(",", partition.Sources.Select(s =>
+                s.Type switch
+                {
+                    RateLimitPartitionSourceType.Claim => $"Claim:{s.Name}",
+                    RateLimitPartitionSourceType.Header => $"Header:{s.Name}",
+                    RateLimitPartitionSourceType.IpAddress => "IpAddress",
+                    RateLimitPartitionSourceType.Static => $"Static:{s.Value}",
+                    _ => s.Type.ToString()
+                })) + "]");
+        }
+        return string.Join(", ", parts);
     }
 
     public HttpClientOptions BuildHttpClientOptions()

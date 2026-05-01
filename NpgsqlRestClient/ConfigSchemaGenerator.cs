@@ -250,6 +250,12 @@ public static partial class ConfigSchemaGenerator
         ["RateLimiterOptions:Policies"] = "Named rate-limiter policies. The object key is the policy name (referenced from endpoints via the `rate_limiter_policy <name>` comment annotation, or used as `DefaultPolicy`). Each entry has a `Type` and type-specific tuning fields. Set `Enabled: true` per policy to register it at startup.",
         ["RateLimiterOptions:Policies:Type"] = "Rate-limiter algorithm:\n- FixedWindow: see https://learn.microsoft.com/en-us/aspnet/core/performance/rate-limit#fixed\n- SlidingWindow: see https://learn.microsoft.com/en-us/aspnet/core/performance/rate-limit#sliding-window-limiter\n- TokenBucket: see https://learn.microsoft.com/en-us/aspnet/core/performance/rate-limit#token-bucket-limiter\n- Concurrency: see https://learn.microsoft.com/en-us/aspnet/core/performance/rate-limit#concurrency-limiter",
         ["RateLimiterOptions:Policies:Enabled"] = "Set to true to register this policy at startup. Disabled policies are skipped.",
+        ["RateLimiterOptions:Policies:Partition"] = "Optional partitioning. When set, each request resolves a partition key (per-user via claim, per-IP, per-header, or static fallback) and gets its own rate-limit bucket. Without this, all requests under this policy share a single global bucket. Combine `Sources` (ordered list of key sources) with optional `BypassAuthenticated` (true → authenticated users skip rate limiting entirely).",
+        ["RateLimiterOptions:Policies:Partition:Sources"] = "Ordered list of partition-key sources. Walked top-to-bottom at request time; the first source returning a non-empty key wins. If no source matches, the fallback key `unpartitioned` is used. Each source has a `Type` (Claim, IpAddress, Header, Static) and source-dependent `Name` or `Value`.",
+        ["RateLimiterOptions:Policies:Partition:Sources:Type"] = "Source of the partition key:\n- Claim: read `User.FindFirst(Name)?.Value` (Name = claim type)\n- IpAddress: read the client IP via `Request.GetClientIpAddress()` — honors `X-Forwarded-For`, `X-Real-IP`, etc. before falling back to `Connection.RemoteIpAddress`\n- Header: read `Request.Headers[Name]` (Name = header name)\n- Static: always returns `Value` (use as a terminal fallback)",
+        ["RateLimiterOptions:Policies:Partition:Sources:Name"] = "Source-dependent name. For Claim: claim type (e.g. `name_identifier`). For Header: header name. Ignored for IpAddress and Static.",
+        ["RateLimiterOptions:Policies:Partition:Sources:Value"] = "Used only by Static source: the literal partition-key string (terminal fallback when no other source matches).",
+        ["RateLimiterOptions:Policies:Partition:BypassAuthenticated"] = "When true, requests from authenticated users skip rate limiting entirely (no-limiter applied). Evaluated BEFORE Sources — if the user is authenticated and this is true, sources are not consulted. Useful for `anonymous users get throttled, signed-in users don't` patterns. Default false.",
         ["ErrorHandlingOptions"] = "Error handling options for NpgsqlRest middleware",
         ["ErrorHandlingOptions:RemoveTypeUrl"] = "Remove Type URL from error responses. Middleware automatically sets a default Type URL based on the HTTP status code that points to the RFC documentation.",
         ["ErrorHandlingOptions:RemoveTraceId"] = "Remove TraceId field from error responses. Useful in development and debugging scenarios to correlate logs with error responses.",
@@ -537,6 +543,7 @@ public static partial class ConfigSchemaGenerator
 
         // RateLimiterOptions policies
         ["RateLimiterOptions:Policies:Type"] = ["FixedWindow", "SlidingWindow", "TokenBucket", "Concurrency"],
+        ["RateLimiterOptions:Policies:Partition:Sources:Type"] = ["Claim", "IpAddress", "Header", "Static"],
 
         // ValidationOptions rules
         ["ValidationOptions:Rules:Type"] = ["NotNull", "NotEmpty", "Required", "Regex", "MinLength", "MaxLength", "Range"],

@@ -62,7 +62,7 @@ public class HealthChecksTestFixture : IDisposable
         _app.UseNpgsqlRest(new NpgsqlRestOptions(_connectionString)
         {
             IncludeSchemas = ["public"],
-            NameNotSimilarTo = "cp[_x]%", // exclude cache-profile-test functions owned by CacheProfilesTestFixture
+            NameNotSimilarTo = "(cp[_x]|rlpt[_])%", // exclude functions owned by CacheProfilesTestFixture and RateLimiterPartitionTestFixture
             CommentsMode = CommentsMode.ParseAll,
             RequiresAuthorization = false
         });
