@@ -194,6 +194,9 @@ public class Program
             //NameSimilarTo = "get_conn1_connection_name_p",
             //SchemaSimilarTo = "custom_param_schema",
             IncludeSchemas = ["public", "custom_param_schema", "my_schema", "custom_table_param_schema", "tsclient_test", "polp_schema"],
+            // Exclude cp_* and cpx_* functions — those are owned by the bespoke CacheProfilesTestFixture
+            // (and its failure-path siblings) and reference profiles that the default fixture does not have configured.
+            NameNotSimilarTo = "cp[_x]%",
 
             // TsClient configuration for testing - uses tsclient_module annotations for per-function files
             EndpointCreateHandlers = [

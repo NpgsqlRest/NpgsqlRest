@@ -82,6 +82,32 @@ public class RoutineEndpoint(
     public bool Cached { get; set; } = cached;
     public HashSet<string>? CachedParams { get; set; } = cachedParams?.ToHashSet();
     public TimeSpan? CacheExpiresIn { get; set; } = cacheExpiresIn;
+
+    /// <summary>
+    /// Name of the cache profile selected for this endpoint via the <c>@cache_profile &lt;name&gt;</c> annotation.
+    /// Resolved at startup against <see cref="CacheOptions.Profiles"/>; if a name is not found startup fails with
+    /// a single error listing every unresolved name and its offending endpoint.
+    /// </summary>
+    public string? CacheProfile { get; set; }
+
+    /// <summary>
+    /// Resolved cache backend for this endpoint (set during startup if <see cref="CacheProfile"/> is not null).
+    /// At runtime the endpoint uses this instance for read/write/invalidate; falls back to
+    /// <see cref="CacheOptions.DefaultRoutineCache"/> when null.
+    /// </summary>
+    internal IRoutineCache? ResolvedCache { get; set; }
+
+    /// <summary>
+    /// Cache key prefix (set to the resolved profile name) so two profiles sharing the same backend cannot collide.
+    /// Null for endpoints without a profile (root cache; existing key shape unchanged).
+    /// </summary>
+    internal string? CacheKeyPrefix { get; set; }
+
+    /// <summary>
+    /// Conditional rules inherited from <see cref="CacheProfile.When"/>. Evaluated in order at request time
+    /// against resolved parameter values; the first matching rule's action (bypass or TTL override) is applied.
+    /// </summary>
+    internal CacheWhenRule[]? CacheWhen { get; set; }
     public string? ConnectionName { get; set; } = connectionName;
     public bool Upload { get; set; } = upload;
     public string[]? UploadHandlers { get; set; } = uploadHandlers;

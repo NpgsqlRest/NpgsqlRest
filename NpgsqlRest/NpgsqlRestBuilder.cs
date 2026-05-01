@@ -1,6 +1,7 @@
 ﻿using Npgsql;
 using NpgsqlRest.Defaults;
 using System.Collections.Frozen;
+using System.Text;
 using NpgsqlRest.HttpClientType;
 using NpgsqlRest.UploadHandlers;
 
@@ -280,7 +281,8 @@ public static class NpgsqlRestBuilder
                     {
                         InvalidateCache = true,
                         BasicAuth = endpoint.BasicAuth,
-                        RateLimiterPolicy = endpoint.RateLimiterPolicy
+                        RateLimiterPolicy = endpoint.RateLimiterPolicy,
+                        CacheProfile = endpoint.CacheProfile
                     };
 
                     var invalidateKey = string.Concat(method, invalidatePath);
@@ -385,6 +387,171 @@ public static class NpgsqlRestBuilder
                 string db = new NpgsqlConnectionStringBuilder(Options.ConnectionString).Database ?? "NpgsqlRest";
                 Options.AuthenticationOptions.DefaultAuthenticationType = db;
                 Logger?.SetDefaultAuthenticationType(db);
+            }
+        }
+
+        // Cache profile resolution pass: bind each endpoint's @cache_profile name to the profile's IRoutineCache instance,
+        // inherit profile defaults (Expiration, Parameters, When rules) into the endpoint, and verify every referenced
+        // profile name actually exists. Unresolved names are accumulated into a single error so users see all typos
+        // at once rather than discovering them one rebuild at a time.
+        if (Options.CacheOptions.Profiles is not null && Options.CacheOptions.Profiles.Count > 0)
+        {
+            var usedProfiles = new HashSet<string>(StringComparer.Ordinal);
+            var unresolved = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+
+            foreach (var entry in lookup.Values)
+            {
+                var endpoint = entry.Endpoint;
+                if (endpoint.CacheProfile is null)
+                {
+                    continue;
+                }
+
+                if (Options.CacheOptions.Profiles.TryGetValue(endpoint.CacheProfile, out var profile))
+                {
+                    usedProfiles.Add(endpoint.CacheProfile);
+                    endpoint.ResolvedCache = profile.Cache;
+                    endpoint.CacheKeyPrefix = endpoint.CacheProfile;
+
+                    // Annotation wins: endpoint's explicit @cache_expires overrides profile.Expiration.
+                    if (endpoint.CacheExpiresIn is null && profile.Expiration is not null)
+                    {
+                        endpoint.CacheExpiresIn = profile.Expiration;
+                    }
+
+                    // Annotation wins: endpoint's @cached p1, p2 (CachedParams non-null) overrides profile.Parameters.
+                    // null Parameters → all routine params; [] → URL-only cache; named list → those params only.
+                    if (endpoint.CachedParams is null)
+                    {
+                        if (profile.Parameters is null)
+                        {
+                            // Profile says "use all params" — populate with every routine parameter name.
+                            var all = new HashSet<string>(StringComparer.Ordinal);
+                            foreach (var p in endpoint.Routine.Parameters)
+                            {
+                                all.Add(p.ActualName);
+                                if (!string.Equals(p.ConvertedName, p.ActualName, StringComparison.Ordinal))
+                                {
+                                    all.Add(p.ConvertedName);
+                                }
+                            }
+                            endpoint.CachedParams = all;
+                        }
+                        else if (profile.Parameters.Length == 0)
+                        {
+                            // Profile says "URL-only" — empty hash set means no params in the key.
+                            endpoint.CachedParams = [];
+                        }
+                        else
+                        {
+                            endpoint.CachedParams = [.. profile.Parameters];
+                        }
+                    }
+
+                    // Validate When rules: each rule's Parameter must be (a) a real routine parameter and
+                    // (b) present in the resolved CachedParams (so different rule-evaluations don't collide
+                    // on a shared cache entry). Rules failing either check are dropped with a Warning. The
+                    // surviving subset is stored on the endpoint for runtime evaluation.
+                    if (profile.When is not null && profile.When.Length > 0)
+                    {
+                        var validRules = new List<CacheWhenRule>(profile.When.Length);
+                        foreach (var rule in profile.When)
+                        {
+                            if (string.IsNullOrWhiteSpace(rule.Parameter))
+                            {
+                                Logger?.CacheWhenRuleDropped(endpoint.CacheProfile, "(unnamed)", "missing 'Parameter'");
+                                continue;
+                            }
+
+                            // Is rule.Parameter a real routine parameter?
+                            bool isRoutineParam = false;
+                            foreach (var rp in endpoint.Routine.Parameters)
+                            {
+                                if (string.Equals(rp.ActualName, rule.Parameter, StringComparison.Ordinal) ||
+                                    string.Equals(rp.ConvertedName, rule.Parameter, StringComparison.Ordinal))
+                                {
+                                    isRoutineParam = true;
+                                    break;
+                                }
+                            }
+                            if (!isRoutineParam)
+                            {
+                                Logger?.CacheWhenRuleDropped(endpoint.CacheProfile, rule.Parameter,
+                                    $"not a parameter of routine {endpoint.Routine.Schema}.{endpoint.Routine.Name}");
+                                continue;
+                            }
+
+                            // Is rule.Parameter in the resolved cache key set?
+                            // CachedParams null is impossible at this point (we set it from profile.Parameters above),
+                            // but we'd accept any param name as in-key if it ever were null (= use-all-params).
+                            if (endpoint.CachedParams is not null &&
+                                !endpoint.CachedParams.Contains(rule.Parameter))
+                            {
+                                Logger?.CacheWhenRuleDropped(endpoint.CacheProfile, rule.Parameter,
+                                    $"not in the cache-key parameter list for endpoint {endpoint.Method} {endpoint.Path}; would cause cache entries to collide across different rule-matches");
+                                continue;
+                            }
+
+                            validRules.Add(rule);
+                        }
+                        endpoint.CacheWhen = validRules.Count == 0 ? null : [.. validRules];
+                    }
+
+                    Logger?.CacheProfileResolved(
+                        endpoint.CacheProfile,
+                        string.Concat(endpoint.Method.ToString(), " ", endpoint.Path),
+                        endpoint.CacheExpiresIn?.ToString() ?? "(none)",
+                        endpoint.CachedParams is null ? "(none)" : string.Join(",", endpoint.CachedParams),
+                        endpoint.CacheWhen is null ? "(none)" : string.Join(",", endpoint.CacheWhen.Select(r => r.Parameter)));
+                }
+                else
+                {
+                    if (!unresolved.TryGetValue(endpoint.CacheProfile, out var endpoints))
+                    {
+                        endpoints = new List<string>();
+                        unresolved[endpoint.CacheProfile] = endpoints;
+                    }
+                    endpoints.Add(string.Concat(endpoint.Method.ToString(), " ", endpoint.Path));
+                }
+            }
+
+            if (unresolved.Count > 0)
+            {
+                var sb = new StringBuilder();
+                sb.AppendLine("Unknown cache profile name(s) referenced by @cache_profile annotation:");
+                foreach (var (name, endpoints) in unresolved)
+                {
+                    sb.Append("  - '").Append(name).Append("' referenced by ").Append(endpoints.Count).AppendLine(" endpoint(s):");
+                    foreach (var ep in endpoints)
+                    {
+                        sb.Append("      ").AppendLine(ep);
+                    }
+                }
+                sb.Append("Available profiles: ").AppendLine(string.Join(", ", Options.CacheOptions.Profiles.Keys));
+                throw new InvalidOperationException(sb.ToString());
+            }
+
+            // Information-level warning: profile registered but no endpoint references it (likely typo in annotation).
+            foreach (var profileName in Options.CacheOptions.Profiles.Keys)
+            {
+                if (!usedProfiles.Contains(profileName))
+                {
+                    Logger?.CacheProfileUnused(profileName);
+                }
+            }
+        }
+        else
+        {
+            // No profiles configured but endpoints reference one — fail with a clear message rather than silently
+            // ignoring the annotation (which would leave caching half-broken at runtime).
+            foreach (var entry in lookup.Values)
+            {
+                if (entry.Endpoint.CacheProfile is not null)
+                {
+                    throw new InvalidOperationException(
+                        $"Endpoint {entry.Endpoint.Method} {entry.Endpoint.Path} references cache profile " +
+                        $"'{entry.Endpoint.CacheProfile}' but no profiles are configured in CacheOptions.Profiles.");
+                }
             }
         }
 

@@ -1480,7 +1480,58 @@ public static partial class ConfigSchemaGenerator
         // Set this shorter than DefaultExpiration to refresh local cache more frequently from Redis.
         // Accepts PostgreSQL interval format.
         //
-        "HybridCacheLocalCacheExpiration": null
+        "HybridCacheLocalCacheExpiration": null,
+        //
+        // Named caching profiles. Endpoints opt into a profile via the `cache_profile <name>` comment annotation;
+        // the profile then supplies the cache backend, default expiration, default key parameters, and per-parameter
+        // skip-cache conditions. Endpoints WITHOUT `cache_profile` continue to use the root cache configured above.
+        //
+        // Each profile object supports:
+        //   - "Enabled" (bool, default false): set to true to register the profile. Disabled profiles are ignored.
+        //   - "Type": "Memory" | "Redis" | "Hybrid" (required when enabled). Backends are pooled — all profiles of the
+        //     same type share one instance (one Memory cache, one Redis connection, one HybridCache singleton).
+        //     A backend is only instantiated if its type is used by the root or some enabled profile.
+        //   - "Expiration": PostgreSQL interval (e.g. "30 seconds", "5 minutes"); used as the default when the
+        //     endpoint has no `cache_expires` annotation. The annotation overrides this.
+        //   - "Parameters": cache-key parameter list with three semantics:
+        //       null/missing  → use ALL routine parameters (different requests → different entries).
+        //       []            → URL-only cache (one entry per endpoint, regardless of inputs).
+        //       ["x", "y"]    → use only these named parameters as the key.
+        //     The endpoint's `cached p1, p2` annotation overrides this list.
+        //   - "When": optional list of conditional rules. Each rule has:
+        //       - "Parameter": routine parameter name to inspect.
+        //       - "Value": scalar (exact match) or array (OR over entries). JSON null matches .NET null/DBNull (NOT empty string).
+        //       - "Then": "skip" → bypass the cache for this request; or a PostgreSQL interval like "30 seconds" → use this
+        //                 as the TTL override when writing.
+        //     Rules are evaluated in declaration order; first match wins. No match → fall through to "Expiration" above.
+        //     A rule's Parameter must be in the profile's "Parameters" list (or in the endpoint's @cached annotation),
+        //     otherwise the rule is dropped at startup with a Warning.
+        //
+        // Unknown profile names referenced by `cache_profile` annotation cause startup to fail with a single error
+        // listing all typos and the offending endpoints. Unused profiles log an Information warning.
+        //
+        "Profiles": {
+          "fast_memory": {
+            "Enabled": false,
+            "Type": "Memory",
+            "Expiration": "30 seconds",
+            "Parameters": ["user_id"]
+          },
+          "shared_redis": {
+            "Enabled": false,
+            "Type": "Redis",
+            "Expiration": "1 hour"
+          },
+          "date_range_hybrid": {
+            "Enabled": false,
+            "Type": "Hybrid",
+            "Expiration": "5 minutes",
+            "Parameters": ["from", "to"],
+            "When": [
+              { "Parameter": "to", "Value": null, "Then": "skip" }
+            ]
+          }
+        }
       },
     
       //

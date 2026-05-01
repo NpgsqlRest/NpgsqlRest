@@ -323,6 +323,13 @@ internal static partial class DefaultCommentParser
                     TrackAnnotation(line);
                 }
 
+                // cache_profile <name>
+                else if (haveTag is true && StrEquals(wordsLower[0], CacheProfileKey))
+                {
+                    HandleCacheProfile(routineEndpoint, words, len, description);
+                    TrackAnnotation(line);
+                }
+
                 // connection
                 // connection_name
                 else if (haveTag is true && len >= 2 && StrEqualsToArray(wordsLower[0], ConnectionNameKey))

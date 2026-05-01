@@ -135,6 +135,14 @@ internal static partial class DefaultCommentParser
 
         annotations.Add((JsonNode)new JsonObject
         {
+            ["name"] = "cache_profile",
+            ["aliases"] = ToJsonArray1(CacheProfileKey),
+            ["syntax"] = "cache_profile <name>",
+            ["description"] = "Select a named cache profile defined in CacheOptions.Profiles. The profile supplies the cache backend, default expiration, default key parameters, and per-parameter skip conditions. Implies caching even without @cached. Existing @cached and @cache_expires annotations override the profile's defaults. Unknown profile names cause startup to fail."
+        });
+
+        annotations.Add((JsonNode)new JsonObject
+        {
             ["name"] = "connection_name",
             ["aliases"] = ToJsonArray(ConnectionNameKey),
             ["syntax"] = "connection_name <name>",

@@ -113,6 +113,7 @@ public class CompressionTestFixture : IDisposable
         _app.UseNpgsqlRest(new NpgsqlRestOptions(connectionString)
         {
             IncludeSchemas = ["public"],
+            NameNotSimilarTo = "cp[_x]%", // exclude cache-profile-test functions owned by CacheProfilesTestFixture
             CommentsMode = CommentsMode.ParseAll,
         });
 

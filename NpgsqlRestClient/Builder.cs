@@ -1,5 +1,6 @@
 ﻿using System.Collections.Frozen;
 using System.IO.Compression;
+using System.Text.Json.Nodes;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.BearerToken;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -1384,6 +1385,39 @@ public class Builder
     
     public enum CacheType { Memory, Redis, Hybrid }
 
+    /// <summary>
+    /// Computes the union of cache types needed by the application: the root <c>Type</c> plus every enabled
+    /// cache profile's <c>Type</c>. Used both for DI service registration (HybridCache) in
+    /// <see cref="ConfigureCacheServices"/> and for lazy backend instantiation in <see cref="BuildCacheOptions"/>.
+    /// </summary>
+    private HashSet<CacheType> GetUsedCacheTypes(IConfigurationSection cacheCfg)
+    {
+        var types = new HashSet<CacheType>();
+        var rootType = _config.GetConfigEnum<CacheType?>("Type", cacheCfg) ?? CacheType.Memory;
+        types.Add(rootType);
+
+        var profilesSection = cacheCfg.GetSection("Profiles");
+        if (!profilesSection.Exists())
+        {
+            return types;
+        }
+
+        foreach (var profileSection in profilesSection.GetChildren())
+        {
+            // Skip disabled profiles — they're not registered, so their type isn't needed.
+            if (_config.GetConfigBool("Enabled", profileSection, false) is false)
+            {
+                continue;
+            }
+            var profileType = _config.GetConfigEnum<CacheType?>("Type", profileSection);
+            if (profileType.HasValue)
+            {
+                types.Add(profileType.Value);
+            }
+        }
+        return types;
+    }
+
     public CacheType ConfigureCacheServices()
     {
         var cacheCfg = _config.Cfg.GetSection("CacheOptions");
@@ -1392,14 +1426,16 @@ public class Builder
             return CacheType.Memory;
         }
 
-        var type = _config.GetConfigEnum<CacheType?>("Type", cacheCfg) ?? CacheType.Memory;
+        var rootType = _config.GetConfigEnum<CacheType?>("Type", cacheCfg) ?? CacheType.Memory;
+        var usedTypes = GetUsedCacheTypes(cacheCfg);
 
-        if (type == CacheType.Hybrid)
+        // Register HybridCache services if Hybrid is used by root or any enabled profile.
+        // This is the only DI registration step — Memory and Redis backends instantiate later in BuildCacheOptions.
+        if (usedTypes.Contains(CacheType.Hybrid))
         {
             var redisConfiguration = _config.GetConfigStr("RedisConfiguration", cacheCfg);
             var useRedisBackend = _config.GetConfigBool("HybridCacheUseRedisBackend", cacheCfg, false);
 
-            // Only register Redis as L2 cache if explicitly enabled
             if (useRedisBackend && !string.IsNullOrEmpty(redisConfiguration))
             {
                 Instance.Services.AddStackExchangeRedisCache(options =>
@@ -1413,7 +1449,6 @@ public class Builder
                 ClientLogger?.LogDebug("HybridCache services configured with in-memory only (no Redis L2)");
             }
 
-            // Register HybridCache with configuration
             Instance.Services.AddHybridCache(options =>
             {
                 options.MaximumKeyLength = _config.GetConfigInt("HybridCacheMaximumKeyLength", cacheCfg) ?? 1024;
@@ -1430,7 +1465,7 @@ public class Builder
             });
         }
 
-        return type;
+        return rootType;
     }
 
     public CacheOptions BuildCacheOptions(WebApplication app, CacheType configuredCacheType)
@@ -1450,68 +1485,326 @@ public class Builder
         options.UseHashedCacheKeys = _config.GetConfigBool("UseHashedCacheKeys", cacheCfg);
         options.HashKeyThreshold = _config.GetConfigInt("HashKeyThreshold", cacheCfg) ?? 256;
         options.InvalidateCacheSuffix = _config.GetConfigStr("InvalidateCacheSuffix", cacheCfg);
+        options.MemoryCachePruneIntervalSeconds = _config.GetConfigInt("MemoryCachePruneIntervalSeconds", cacheCfg) ?? 60;
 
-        if (configuredCacheType == CacheType.Memory)
+        // Lazy backend instantiation: spin up at most one instance per CacheType, only for types
+        // actually referenced by root config or any enabled profile. Profiles that share a Type
+        // reuse the same backend instance (one Memory cache, one Redis connection, one HybridCache singleton).
+        var usedTypes = GetUsedCacheTypes(cacheCfg);
+        var backendsByType = new Dictionary<CacheType, IRoutineCache>();
+
+        if (usedTypes.Contains(CacheType.Memory))
         {
-            options.MemoryCachePruneIntervalSeconds =
-                _config.GetConfigInt("MemoryCachePruneIntervalSeconds", cacheCfg) ?? 60;
-            options.DefaultRoutineCache = new RoutineCache();
-            ClientLogger?.LogDebug("Using in-memory routine cache with prune interval of {MemoryCachePruneIntervalSeconds} seconds. MaxCacheableRows={MaxCacheableRows}, UseHashedCacheKeys={UseHashedCacheKeys}, HashKeyThreshold={HashKeyThreshold}",
+            backendsByType[CacheType.Memory] = new RoutineCache();
+            ClientLogger?.LogDebug(
+                "Initialized Memory cache backend (MemoryCachePruneIntervalSeconds={Interval}, MaxCacheableRows={MaxRows}, UseHashedCacheKeys={Hash}, HashKeyThreshold={Threshold}).",
                 options.MemoryCachePruneIntervalSeconds, options.MaxCacheableRows, options.UseHashedCacheKeys, options.HashKeyThreshold);
         }
-        else if (configuredCacheType == CacheType.Redis)
+
+        if (usedTypes.Contains(CacheType.Redis))
         {
             var configuration = _config.GetConfigStr("RedisConfiguration", cacheCfg) ??
                                 "localhost:6379,abortConnect=false,ssl=false,connectTimeout=10000,syncTimeout=5000,connectRetry=3";
-
             try
             {
                 var redisCache = new RedisCache(configuration, Logger, options);
-                options.DefaultRoutineCache = redisCache;
-                ClientLogger?.LogDebug("Using Redis routine cache with configuration: {RedisConfiguration}. MaxCacheableRows={MaxCacheableRows}, UseHashedCacheKeys={UseHashedCacheKeys}, HashKeyThreshold={HashKeyThreshold}",
-                    configuration, options.MaxCacheableRows, options.UseHashedCacheKeys, options.HashKeyThreshold);
+                backendsByType[CacheType.Redis] = redisCache;
                 app.Lifetime.ApplicationStopping.Register(() => redisCache.Dispose());
+                ClientLogger?.LogDebug("Initialized Redis cache backend (RedisConfiguration={Configuration}).", configuration);
             }
             catch (Exception ex)
             {
-                ClientLogger?.LogError(ex, "Failed to initialize Redis cache with configuration: {RedisConfiguration}", configuration);
-                ClientLogger?.LogWarning("Falling back to in-memory cache due to Redis initialization failure");
-                options.DefaultRoutineCache = new RoutineCache();
-                options.MemoryCachePruneIntervalSeconds = _config.GetConfigInt("MemoryCachePruneIntervalSeconds", cacheCfg) ?? 60;
+                ClientLogger?.LogError(ex, "Failed to initialize Redis cache backend (RedisConfiguration={Configuration}). Falling back to in-memory.", configuration);
+                if (!backendsByType.ContainsKey(CacheType.Memory))
+                {
+                    backendsByType[CacheType.Memory] = new RoutineCache();
+                }
+                backendsByType[CacheType.Redis] = backendsByType[CacheType.Memory];
             }
         }
-        else if (configuredCacheType == CacheType.Hybrid)
-        {
-            var useRedisBackend = _config.GetConfigBool("HybridCacheUseRedisBackend", cacheCfg, false);
-            var redisConfiguration = _config.GetConfigStr("RedisConfiguration", cacheCfg);
 
+        if (usedTypes.Contains(CacheType.Hybrid))
+        {
             try
             {
                 var hybridCache = app.Services.GetRequiredService<Microsoft.Extensions.Caching.Hybrid.HybridCache>();
-                var hybridCacheWrapper = new HybridCacheWrapper(hybridCache, Logger, options);
-                options.DefaultRoutineCache = hybridCacheWrapper;
-
+                backendsByType[CacheType.Hybrid] = new HybridCacheWrapper(hybridCache, Logger, options);
+                var useRedisBackend = _config.GetConfigBool("HybridCacheUseRedisBackend", cacheCfg, false);
+                var redisConfiguration = _config.GetConfigStr("RedisConfiguration", cacheCfg);
                 if (useRedisBackend && !string.IsNullOrEmpty(redisConfiguration))
                 {
-                    ClientLogger?.LogDebug("Using HybridCache (L1: in-memory, L2: Redis at {RedisConfiguration}). MaxCacheableRows={MaxCacheableRows}, UseHashedCacheKeys={UseHashedCacheKeys}, HashKeyThreshold={HashKeyThreshold}",
-                        redisConfiguration, options.MaxCacheableRows, options.UseHashedCacheKeys, options.HashKeyThreshold);
+                    ClientLogger?.LogDebug("Initialized Hybrid cache backend (L1: in-memory, L2: Redis at {RedisConfiguration}).", redisConfiguration);
                 }
                 else
                 {
-                    ClientLogger?.LogDebug("Using HybridCache (in-memory only, with stampede protection). MaxCacheableRows={MaxCacheableRows}, UseHashedCacheKeys={UseHashedCacheKeys}, HashKeyThreshold={HashKeyThreshold}",
-                        options.MaxCacheableRows, options.UseHashedCacheKeys, options.HashKeyThreshold);
+                    ClientLogger?.LogDebug("Initialized Hybrid cache backend (in-memory only, with stampede protection).");
                 }
             }
             catch (Exception ex)
             {
-                ClientLogger?.LogError(ex, "Failed to initialize HybridCache");
-                ClientLogger?.LogWarning("Falling back to in-memory cache due to HybridCache initialization failure");
-                options.DefaultRoutineCache = new RoutineCache();
-                options.MemoryCachePruneIntervalSeconds = _config.GetConfigInt("MemoryCachePruneIntervalSeconds", cacheCfg) ?? 60;
+                ClientLogger?.LogError(ex, "Failed to initialize Hybrid cache backend. Falling back to in-memory.");
+                if (!backendsByType.ContainsKey(CacheType.Memory))
+                {
+                    backendsByType[CacheType.Memory] = new RoutineCache();
+                }
+                backendsByType[CacheType.Hybrid] = backendsByType[CacheType.Memory];
             }
         }
 
+        // Wire root cache (the implicit default for endpoints without @cache_profile).
+        if (backendsByType.TryGetValue(configuredCacheType, out var rootBackend))
+        {
+            options.DefaultRoutineCache = rootBackend;
+        }
+        else
+        {
+            // Should not happen — usedTypes always contains rootType — but defensively fall back.
+            options.DefaultRoutineCache = new RoutineCache();
+        }
+
+        // Build named profiles, sharing the per-type backend instances above.
+        options.Profiles = BuildCacheProfiles(cacheCfg, backendsByType);
+
         return options;
+    }
+
+    /// <summary>
+    /// Parses the <c>CacheOptions:Profiles</c> JSON section into a dictionary of <see cref="CacheProfile"/> POCOs.
+    /// Each profile is gated by its own <c>"Enabled"</c> flag (default false). Profiles with missing or invalid
+    /// <c>Type</c>, invalid <c>Expiration</c>, or empty/whitespace name are skipped with a Warning. Backends are
+    /// looked up from <paramref name="backendsByType"/>; profiles sharing a Type share the backend instance.
+    /// </summary>
+    private Dictionary<string, CacheProfile>? BuildCacheProfiles(
+        IConfigurationSection cacheCfg,
+        Dictionary<CacheType, IRoutineCache> backendsByType)
+    {
+        var profilesSection = cacheCfg.GetSection("Profiles");
+        if (!profilesSection.Exists())
+        {
+            return null;
+        }
+        var children = profilesSection.GetChildren().ToArray();
+        if (children.Length == 0)
+        {
+            return null;
+        }
+
+        var result = new Dictionary<string, CacheProfile>(StringComparer.Ordinal);
+        var registeredCount = 0;
+
+        foreach (var profileSection in children)
+        {
+            var name = profileSection.Key;
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                ClientLogger?.LogWarning("CacheOptions:Profiles contains a profile with an empty or whitespace name. Skipping.");
+                continue;
+            }
+
+            if (_config.GetConfigBool("Enabled", profileSection, false) is false)
+            {
+                ClientLogger?.LogInformation(
+                    "Skipping cache profile '{Profile}': 'Enabled' is false. Set \"Enabled\": true to activate.",
+                    name);
+                continue;
+            }
+
+            var typeStr = _config.GetConfigStr("Type", profileSection);
+            if (string.IsNullOrWhiteSpace(typeStr))
+            {
+                ClientLogger?.LogWarning(
+                    "Cache profile '{Profile}' is enabled but has no 'Type'. Skipping. Valid: Memory, Redis, Hybrid.",
+                    name);
+                continue;
+            }
+            if (!Enum.TryParse<CacheType>(typeStr, ignoreCase: true, out var profileType))
+            {
+                ClientLogger?.LogWarning(
+                    "Cache profile '{Profile}' has invalid Type '{Type}'. Skipping. Valid: Memory, Redis, Hybrid.",
+                    name, typeStr);
+                continue;
+            }
+
+            TimeSpan? expiration = null;
+            var expirationStr = _config.GetConfigStr("Expiration", profileSection);
+            if (!string.IsNullOrWhiteSpace(expirationStr))
+            {
+                expiration = Parser.ParsePostgresInterval(expirationStr);
+                if (expiration is null)
+                {
+                    ClientLogger?.LogWarning(
+                        "Cache profile '{Profile}' has invalid Expiration '{Expiration}'. Skipping. Use PostgreSQL interval syntax (e.g. '5 minutes', '1 hour', '30 seconds').",
+                        name, expirationStr);
+                    continue;
+                }
+            }
+
+            var parameters = ReadProfileParameters(profileSection);
+            var when = ReadProfileWhenRules(name, profileSection);
+
+            if (!backendsByType.TryGetValue(profileType, out var cacheInstance))
+            {
+                ClientLogger?.LogWarning(
+                    "Cache profile '{Profile}' references Type '{Type}' but no backend was instantiated for that type. Skipping.",
+                    name, profileType);
+                continue;
+            }
+
+            result[name] = new CacheProfile
+            {
+                Cache = cacheInstance,
+                Expiration = expiration,
+                Parameters = parameters,
+                When = when
+            };
+            registeredCount++;
+
+            ClientLogger?.LogInformation(
+                "Registered cache profile '{Profile}' (Type={Type}, Expiration={Expiration}, Parameters={Parameters}, WhenRules={WhenRuleCount}).",
+                name, profileType,
+                expiration?.ToString() ?? "(none)",
+                parameters is null ? "(all)" : (parameters.Length == 0 ? "(URL-only)" : string.Join(",", parameters)),
+                when?.Length ?? 0);
+        }
+
+        if (registeredCount > 0)
+        {
+            ClientLogger?.LogInformation("Total {Count} cache profile(s) registered.", registeredCount);
+        }
+        return result.Count == 0 ? null : result;
+    }
+
+    /// <summary>
+    /// Reads <c>Profile.Parameters</c> from config. Returns <c>null</c> if the section is missing
+    /// (= use all routine params), an empty array if the section is present but empty (= URL-only cache),
+    /// or the explicit list of parameter names otherwise.
+    /// </summary>
+    private static string[]? ReadProfileParameters(IConfigurationSection profileSection)
+    {
+        var section = profileSection.GetSection("Parameters");
+        if (!section.Exists())
+        {
+            return null;
+        }
+        var children = section.GetChildren().ToArray();
+        if (children.Length == 0)
+        {
+            return [];
+        }
+        var list = new List<string>(children.Length);
+        foreach (var child in children)
+        {
+            if (!string.IsNullOrWhiteSpace(child.Value))
+            {
+                list.Add(child.Value);
+            }
+        }
+        return [.. list];
+    }
+
+    /// <summary>
+    /// Reads <c>Profile.When</c> from config into an array of <see cref="CacheWhenRule"/>.
+    ///
+    /// Each entry is a JSON object with fields:
+    ///   - <c>Parameter</c>: required, the routine parameter name to match.
+    ///   - <c>Value</c>: required for matching; scalar (single match) or array (OR over entries). JSON null arrives
+    ///     as a null <see cref="JsonNode"/>. All non-null values arrive as JSON strings (IConfiguration is type-erasing);
+    ///     the runtime matcher compares string-equal case-insensitive.
+    ///   - <c>Then</c>: required action — either the literal string <c>"skip"</c> (bypass cache when matched), or a
+    ///     PostgreSQL interval string (override the entry's TTL, e.g. <c>"5 seconds"</c>).
+    ///
+    /// Rules with missing/invalid fields are skipped with a Warning.
+    /// </summary>
+    private CacheWhenRule[]? ReadProfileWhenRules(string profileName, IConfigurationSection profileSection)
+    {
+        var section = profileSection.GetSection("When");
+        if (!section.Exists())
+        {
+            return null;
+        }
+        var children = section.GetChildren().ToArray();
+        if (children.Length == 0)
+        {
+            return null;
+        }
+        var result = new List<CacheWhenRule>(children.Length);
+        for (var i = 0; i < children.Length; i++)
+        {
+            var entry = children[i];
+
+            var parameter = _config.GetConfigStr("Parameter", entry);
+            if (string.IsNullOrWhiteSpace(parameter))
+            {
+                ClientLogger?.LogWarning(
+                    "Cache profile '{Profile}' When[{Index}] is missing 'Parameter'. Skipping rule.",
+                    profileName, i);
+                continue;
+            }
+
+            var thenStr = _config.GetConfigStr("Then", entry);
+            if (string.IsNullOrWhiteSpace(thenStr))
+            {
+                ClientLogger?.LogWarning(
+                    "Cache profile '{Profile}' When[{Index}] (Parameter='{Parameter}') is missing 'Then'. " +
+                    "Skipping rule. Use \"Then\": \"skip\" to bypass the cache, or a PostgreSQL interval like \"30 seconds\" to override the TTL.",
+                    profileName, i, parameter);
+                continue;
+            }
+
+            bool skip;
+            TimeSpan? thenExpiration = null;
+            if (string.Equals(thenStr, "skip", StringComparison.OrdinalIgnoreCase))
+            {
+                skip = true;
+            }
+            else
+            {
+                var parsed = Parser.ParsePostgresInterval(thenStr);
+                if (parsed is null)
+                {
+                    ClientLogger?.LogWarning(
+                        "Cache profile '{Profile}' When[{Index}] (Parameter='{Parameter}') has invalid 'Then' value '{Then}'. " +
+                        "Skipping rule. Use \"skip\" or a PostgreSQL interval (e.g. \"30 seconds\", \"5 minutes\").",
+                        profileName, i, parameter, thenStr);
+                    continue;
+                }
+                skip = false;
+                thenExpiration = parsed;
+            }
+
+            // Read Value section. If missing, treat as null match condition (matches null/DBNull params).
+            var valueSection = entry.GetSection("Value");
+            JsonNode? value = valueSection.Exists() ? ConfigSectionToJsonNode(valueSection) : null;
+
+            result.Add(new CacheWhenRule
+            {
+                Parameter = parameter!,
+                Value = value,
+                Skip = skip,
+                ThenExpiration = thenExpiration
+            });
+        }
+        return result.Count == 0 ? null : [.. result];
+    }
+
+    /// <summary>
+    /// Converts an <see cref="IConfigurationSection"/> leaf (or array) into a <see cref="JsonNode"/>.
+    /// Leaf with null Value → null. Leaf with non-null Value → JsonValue (string). Section with children
+    /// → JsonArray of children's leaf values.
+    /// </summary>
+    private static JsonNode? ConfigSectionToJsonNode(IConfigurationSection section)
+    {
+        var children = section.GetChildren().ToArray();
+        if (children.Length == 0)
+        {
+            return section.Value is null ? null : JsonValue.Create(section.Value);
+        }
+        var arr = new JsonArray();
+        foreach (var child in children)
+        {
+            arr.Add((JsonNode?)(child.Value is null ? null : JsonValue.Create(child.Value)));
+        }
+        return arr;
     }
     
     public enum RateLimiterType { FixedWindow, SlidingWindow, TokenBucket, Concurrency }

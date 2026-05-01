@@ -58,13 +58,13 @@ public class HybridCacheWrapper : IRoutineCache
         }
     }
 
-    public void AddOrUpdate(RoutineEndpoint endpoint, string key, object? value)
+    public void AddOrUpdate(RoutineEndpoint endpoint, string key, object? value, TimeSpan? overrideExpiration = null)
     {
         try
         {
             var effectiveKey = GetEffectiveKey(key);
             var stringValue = value?.ToString();
-            var expiry = endpoint.CacheExpiresIn;
+            var expiry = overrideExpiration ?? endpoint.CacheExpiresIn;
 
             var entryOptions = expiry.HasValue
                 ? new HybridCacheEntryOptions { Expiration = expiry.Value, LocalCacheExpiration = expiry.Value }

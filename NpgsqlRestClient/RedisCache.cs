@@ -79,7 +79,7 @@ namespace NpgsqlRestClient
             }
         }
 
-        public void AddOrUpdate(RoutineEndpoint endpoint, string key, object? value)
+        public void AddOrUpdate(RoutineEndpoint endpoint, string key, object? value, TimeSpan? overrideExpiration = null)
         {
             if (_disposed)
             {
@@ -91,7 +91,7 @@ namespace NpgsqlRestClient
             {
                 var effectiveKey = GetEffectiveKey(key);
                 var stringValue = value?.ToString();
-                var expiry = endpoint.CacheExpiresIn;
+                var expiry = overrideExpiration ?? endpoint.CacheExpiresIn;
 
                 _db.StringSet(effectiveKey, stringValue, expiry.HasValue ? new Expiration(expiry.Value) : default);
                 _logger?.LogTrace("Cached value for key: {Key} with expiry: {Expiry}", key, expiry);

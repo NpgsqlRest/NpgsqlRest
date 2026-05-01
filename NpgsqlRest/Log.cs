@@ -137,6 +137,24 @@ public static partial class Log
     [LoggerMessage(Level = LogLevel.Warning, Message = "{description} can't set CACHE EXPIRES IN value by the comment annotation. Invalid interval value: {value}")]
     public static partial void InvalidCacheExpiresIn(this ILogger logger, string description, string value);
 
+    [LoggerMessage(Level = LogLevel.Trace, Message = "{description} has set CACHE PROFILE to '{profile}' by the comment annotation.")]
+    public static partial void CommentCacheProfile(this ILogger logger, string description, string profile);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "{description} has invalid @cache_profile annotation: {reason}")]
+    public static partial void CommentInvalidCacheProfile(this ILogger logger, string description, string reason);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Cache profile '{profile}' resolved for endpoint {urlInfo} (Expiration={expiration}, Parameters=[{parameters}], WhenRules=[{whenRules}]).")]
+    public static partial void CacheProfileResolved(this ILogger logger, string profile, string urlInfo, string expiration, string parameters, string whenRules);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Cache profile '{profile}' is registered but not used by any endpoint. Did you forget a @cache_profile annotation?")]
+    public static partial void CacheProfileUnused(this ILogger logger, string profile);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Cache bypassed for {urlInfo} (parameter '{paramName}' matched a When rule with Then=skip).")]
+    public static partial void CacheSkippedDueToWhenRule(this ILogger logger, string urlInfo, string paramName);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Cache profile '{profile}' rule for parameter '{paramName}' was dropped: {reason}.")]
+    public static partial void CacheWhenRuleDropped(this ILogger logger, string profile, string paramName, string reason);
+
     [LoggerMessage(Level = LogLevel.Warning, Message = "{description} tried to set CONNECTION NAME to {conn} but that connection could not be found in the ConnectionStrings dictionary.")]
     public static partial void CommentInvalidConnectionName(this ILogger logger, string description, string conn);
 

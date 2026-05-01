@@ -505,7 +505,38 @@ public static class ConfigDefaults
             ["HybridCacheMaximumKeyLength"] = 1024,
             ["HybridCacheMaximumPayloadBytes"] = 1048576,
             ["HybridCacheDefaultExpiration"] = null,
-            ["HybridCacheLocalCacheExpiration"] = null
+            ["HybridCacheLocalCacheExpiration"] = null,
+            ["Profiles"] = new JsonObject
+            {
+                ["fast_memory"] = new JsonObject
+                {
+                    ["Enabled"] = false,
+                    ["Type"] = "Memory",
+                    ["Expiration"] = "30 seconds",
+                    ["Parameters"] = new JsonArray("user_id")
+                },
+                ["shared_redis"] = new JsonObject
+                {
+                    ["Enabled"] = false,
+                    ["Type"] = "Redis",
+                    ["Expiration"] = "1 hour"
+                },
+                ["date_range_hybrid"] = new JsonObject
+                {
+                    ["Enabled"] = false,
+                    ["Type"] = "Hybrid",
+                    ["Expiration"] = "5 minutes",
+                    ["Parameters"] = new JsonArray("from", "to"),
+                    ["When"] = new JsonArray(
+                        new JsonObject
+                        {
+                            ["Parameter"] = "to",
+                            ["Value"] = null,
+                            ["Then"] = "skip"
+                        }
+                    )
+                }
+            }
         };
     }
 

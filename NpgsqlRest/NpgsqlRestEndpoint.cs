@@ -199,7 +199,13 @@ public partial class NpgsqlRestEndpoint(
 
             if (endpoint.Cached is true)
             {
-                cacheKeys = StringBuilderPool.Rent(routine.Expression.Length + (endpoint.CachedParams?.Count ?? 0) * 32);
+                var prefixLen = endpoint.CacheKeyPrefix?.Length ?? 0;
+                cacheKeys = StringBuilderPool.Rent(routine.Expression.Length + prefixLen + (endpoint.CachedParams?.Count ?? 0) * 32);
+                if (endpoint.CacheKeyPrefix is not null)
+                {
+                    cacheKeys.Append(endpoint.CacheKeyPrefix);
+                    cacheKeys.Append(NpgsqlRestParameter.GetCacheKeySeparator());
+                }
                 cacheKeys.Append(routine.Expression);
             }
 
@@ -1642,6 +1648,18 @@ public partial class NpgsqlRestEndpoint(
             // Cache the cache key string once to avoid repeated ToString() allocations
             string? cacheKeyString = cacheKeys?.ToString();
 
+            // Resolve cache backend: profile's instance if set, otherwise the root DefaultRoutineCache.
+            var resolvedCache = endpoint.ResolvedCache ?? Options.CacheOptions.DefaultRoutineCache;
+
+            // Evaluate the When rules once. First match decides:
+            // - Skip = true  → bypass cache entirely (no read, no write).
+            // - Skip = false → use rule's TTL override when writing (read still hits cache normally).
+            // - No match     → no override; endpoint.CacheExpiresIn is used.
+            // Invalidation requests are NOT subject to bypass — they must always remove on demand.
+            var whenResult = endpoint.InvalidateCache is false ? EvaluateCacheWhenRules(endpoint, command) : default;
+            bool bypassCache = whenResult.Skip;
+            TimeSpan? cacheTtlOverride = whenResult.Skip ? null : whenResult.TtlOverride;
+
             // Handle reverse proxy endpoints
             if (endpoint.IsProxy && Options.ProxyOptions.Enabled)
             {
@@ -1665,9 +1683,10 @@ public partial class NpgsqlRestEndpoint(
                 bool isPassthroughProxy = !endpoint.HasProxyResponseParameters;
                 if (isPassthroughProxy &&
                     endpoint.Cached is true &&
-                    Options.CacheOptions.DefaultRoutineCache is not null)
+                    bypassCache is false &&
+                    resolvedCache is not null)
                 {
-                    if (Options.CacheOptions.DefaultRoutineCache.Get(endpoint, cacheKeyString!, out var cachedProxyResponse))
+                    if (resolvedCache.Get(endpoint, cacheKeyString!, out var cachedProxyResponse))
                     {
                         // Cache hit - return cached proxy response
                         if (cachedProxyResponse is Proxy.ProxyResponse cached)
@@ -1735,9 +1754,9 @@ public partial class NpgsqlRestEndpoint(
                 {
                     // No proxy parameters - return proxy response directly without invoking PostgreSQL
                     // Cache the proxy response if caching is enabled
-                    if (endpoint.Cached is true && Options.CacheOptions.DefaultRoutineCache is not null)
+                    if (endpoint.Cached is true && bypassCache is false && resolvedCache is not null)
                     {
-                        Options.CacheOptions.DefaultRoutineCache.AddOrUpdate(endpoint, cacheKeyString!, proxyResponse);
+                        resolvedCache.AddOrUpdate(endpoint, cacheKeyString!, proxyResponse, cacheTtlOverride);
                     }
                     await Proxy.ProxyRequestHandler.WriteResponseAsync(context, proxyResponse, Options.ProxyOptions, cancellationToken);
                     return;
@@ -1935,11 +1954,12 @@ public partial class NpgsqlRestEndpoint(
                 return;
             }
 
-            // Handle cache invalidation endpoint
-            if (endpoint.InvalidateCache is true && Options.CacheOptions.DefaultRoutineCache is not null && cacheKeys is not null)
+            // Handle cache invalidation endpoint. Routes through the endpoint's resolved cache (profile or root),
+            // never bypassed by When rules — invalidation must always work on demand.
+            if (endpoint.InvalidateCache is true && resolvedCache is not null && cacheKeys is not null)
             {
                 var cacheKey = cacheKeys.ToString();
-                var removed = Options.CacheOptions.DefaultRoutineCache.Remove(cacheKey);
+                var removed = resolvedCache.Remove(cacheKey);
                 context.Response.ContentType = "application/json";
                 context.Response.StatusCode = (int)HttpStatusCode.OK;
                 await context.Response.WriteAsync(removed ? "{\"invalidated\":true}" : "{\"invalidated\":false}", cancellationToken);
@@ -2342,9 +2362,9 @@ public partial class NpgsqlRestEndpoint(
                     TypeDescriptor descriptor = routine.ColumnsTypeDescriptor[0];
 
                     object? valueResult;
-                    if (Options.CacheOptions.DefaultRoutineCache is not null && endpoint.Cached is true)
+                    if (resolvedCache is not null && endpoint.Cached is true && bypassCache is false)
                     {
-                        if (Options.CacheOptions.DefaultRoutineCache.Get(endpoint, cacheKeyString!, out valueResult) is false)
+                        if (resolvedCache.Get(endpoint, cacheKeyString!, out valueResult) is false)
                         {
                             if (await PrepareCommand(connection, command, commandText, context, endpoint, true, cancellationToken) is false)
                             {
@@ -2363,7 +2383,7 @@ public partial class NpgsqlRestEndpoint(
                             if (await reader.ReadAsync(cancellationToken))
                             {
                                 valueResult = descriptor.IsBinary ? reader.GetFieldValue<byte[]>(0) : reader.GetValue(0) as string;
-                                Options.CacheOptions.DefaultRoutineCache.AddOrUpdate(endpoint, cacheKeyString!, valueResult);
+                                resolvedCache.AddOrUpdate(endpoint, cacheKeyString!, valueResult, cacheTtlOverride);
                             }
                             else
                             {
@@ -2488,14 +2508,15 @@ public partial class NpgsqlRestEndpoint(
                     var binary = routine.ColumnsTypeDescriptor.Length == 1 && routine.ColumnsTypeDescriptor[0].IsBinary;
 
                     // Check cache for records/sets (but not for binary or raw mode)
-                    var canCacheRecordsAndSets = Options.CacheOptions.DefaultRoutineCache is not null
+                    var canCacheRecordsAndSets = resolvedCache is not null
                         && endpoint.Cached is true
+                        && bypassCache is false
                         && binary is false
                         && endpoint.Raw is false;
 
                     if (canCacheRecordsAndSets)
                     {
-                        if (Options.CacheOptions.DefaultRoutineCache!.Get(endpoint, cacheKeyString!, out var cachedResult))
+                        if (resolvedCache!.Get(endpoint, cacheKeyString!, out var cachedResult))
                         {
                             if (shouldLog)
                             {
@@ -3061,7 +3082,7 @@ public partial class NpgsqlRestEndpoint(
                         // Store in cache if within limits
                         if (shouldCache && cacheBuffer is not null)
                         {
-                            Options.CacheOptions.DefaultRoutineCache?.AddOrUpdate(endpoint, cacheKeyString!, cacheBuffer.ToString());
+                            resolvedCache?.AddOrUpdate(endpoint, cacheKeyString!, cacheBuffer.ToString(), cacheTtlOverride);
                         }
                     }
 

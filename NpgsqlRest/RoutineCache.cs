@@ -7,7 +7,12 @@ namespace NpgsqlRest;
 public interface IRoutineCache
 {
     bool Get(RoutineEndpoint endpoint, string key, out object? result);
-    void AddOrUpdate(RoutineEndpoint endpoint, string key, object? value);
+    /// <summary>
+    /// Stores or updates a cached value.
+    /// <paramref name="overrideExpiration"/> (when non-null) takes precedence over <see cref="RoutineEndpoint.CacheExpiresIn"/>
+    /// and is used by <see cref="CacheWhenRule"/> "Then" overrides to apply a per-request TTL.
+    /// </summary>
+    void AddOrUpdate(RoutineEndpoint endpoint, string key, object? value, TimeSpan? overrideExpiration = null);
     bool Remove(string key);
 }
 
@@ -101,14 +106,15 @@ public class RoutineCache : IRoutineCache
         return false;
     }
 
-    public void AddOrUpdate(RoutineEndpoint endpoint, string key, object? value)
+    public void AddOrUpdate(RoutineEndpoint endpoint, string key, object? value, TimeSpan? overrideExpiration = null)
     {
         var effectiveKey = CacheKeyHasher.GetEffectiveKey(key, _options);
 
+        var ttl = overrideExpiration ?? endpoint.CacheExpiresIn;
         var entry = new CacheEntry
         {
             Value = value,
-            ExpirationTime = endpoint.CacheExpiresIn.HasValue ? DateTime.UtcNow + endpoint.CacheExpiresIn.Value : null
+            ExpirationTime = ttl.HasValue ? DateTime.UtcNow + ttl.Value : null
         };
 
         _cache[effectiveKey] = entry;

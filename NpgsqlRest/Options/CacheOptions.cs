@@ -40,7 +40,25 @@ public class CacheOptions
     /// For example, if a cached endpoint is /api/my-endpoint/ and this is set to "invalidate",
     /// an invalidation endpoint /api/my-endpoint/invalidate will be created.
     /// Calling the invalidation endpoint with the same parameters removes the cached entry.
+    /// Invalidation routes through the endpoint's resolved cache (profile or root).
     /// Default is null (no invalidation endpoints created).
     /// </summary>
     public string? InvalidateCacheSuffix { get; set; } = null;
+
+    /// <summary>
+    /// Optional named caching profiles. An endpoint opts into a profile via the <c>@cache_profile &lt;name&gt;</c>
+    /// comment annotation; that endpoint then uses the profile's <see cref="CacheProfile.Cache"/> instance and
+    /// inherits the profile's <see cref="CacheProfile.Expiration"/>, <see cref="CacheProfile.Parameters"/>, and
+    /// <see cref="CacheProfile.When"/> defaults.
+    ///
+    /// Endpoints without <c>@cache_profile</c> continue to use <see cref="DefaultRoutineCache"/>.
+    ///
+    /// Unknown profile names referenced by endpoints cause startup to fail (collected and reported as a single
+    /// error listing every unresolved name and the offending endpoints).
+    ///
+    /// Cache key prefix: entries written under a profile are prefixed with the profile name to prevent collisions
+    /// when two profiles share the same backend (e.g., two Memory profiles). Entries written under the default
+    /// (root) cache have no prefix and are wire-compatible with prior versions.
+    /// </summary>
+    public Dictionary<string, CacheProfile>? Profiles { get; set; }
 }

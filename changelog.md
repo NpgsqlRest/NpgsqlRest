@@ -8,6 +8,106 @@ Note: The changelog for older versions (3.11.1 and earlier) can be found here: [
 
 [Full Changelog](https://github.com/NpgsqlRest/NpgsqlRest/compare/3.12.0...3.13.0)
 
+### New: Caching Profiles (`CacheOptions.Profiles` + `@cache_profile` annotation)
+
+Named cache profiles allow you to maintain multiple distinct caching policies in one application — different backends, expirations, key shapes, or bypass conditions — and let endpoints opt into them via a single comment annotation.
+
+```jsonc
+"CacheOptions": {
+  "Enabled": true,
+  "Type": "Memory",
+  "Profiles": {
+    "fast_memory": {
+      "Enabled": false,
+      "Type": "Memory",
+      "Expiration": "30 seconds",
+      "Parameters": ["user_id"]
+    },
+    "shared_redis": {
+      "Enabled": false,
+      "Type": "Redis",
+      "Expiration": "1 hour"
+    },
+    "date_range_hybrid": {
+      "Enabled": false,
+      "Type": "Hybrid",
+      "Expiration": "5 minutes",
+      "Parameters": ["from", "to"],
+      "When": [
+        { "Parameter": "to", "Value": null, "Then": "skip" }
+      ]
+    }
+  }
+}
+```
+
+```sql
+comment on function get_orders(from text, to text) is '
+HTTP GET
+@cache_profile date_range_hybrid
+';
+```
+
+**Profile fields:**
+
+- **`Enabled`** (bool, default `false`) — disabled profiles are skipped at startup; flip to `true` to activate.
+- **`Type`** — `Memory`, `Redis`, or `Hybrid`. Backends are pooled: all profiles of the same type share one instance (one Memory cache, one Redis connection, one HybridCache singleton). A backend type is only instantiated if root or some enabled profile uses it.
+- **`Expiration`** — default expiration in PostgreSQL interval format. Used when the endpoint has no `@cache_expires` annotation.
+- **`Parameters`** — default cache-key parameter list:
+  - `null` (or property omitted): use **all** routine parameters.
+  - `[]` (empty array): URL-only cache (one entry per endpoint, regardless of inputs).
+  - `["x", "y"]`: only those named parameters as the key.
+  
+  The endpoint's `@cached p1, p2` annotation overrides this.
+- **`When`** — list of conditional rules. Each rule has:
+  - **`Parameter`** — the routine parameter name to inspect.
+  - **`Value`** — match condition. Scalar (single match) or array (OR over entries). JSON `null` matches .NET `null`/`DBNull.Value` (does **not** match empty string). Other values are stringify-and-equal case-insensitive.
+  - **`Then`** — the literal string `"skip"` to bypass the cache for that request, OR a PostgreSQL interval (e.g. `"30 seconds"`) to override the entry's TTL when writing.
+
+  Rules evaluate in declaration order; **first match wins**. No match → fall through to the profile's `Expiration`.
+
+  This unlocks scenarios that pure skip-on-condition couldn't express:
+  - Skip-on-null: `[{ "Parameter": "to", "Value": null, "Then": "skip" }]`
+  - Tiered TTL: `[{ "Parameter": "tier", "Value": "free", "Then": "5 minutes" }, { "Parameter": "tier", "Value": "pro", "Then": "1 hour" }]`
+  - Status-aware caching: `[{ "Parameter": "status", "Value": ["draft", null], "Then": "skip" }, { "Parameter": "status", "Value": "published", "Then": "1 hour" }]`
+
+  Validation: a rule whose `Parameter` is not in the resolved cache-key parameter list (`Parameters` or the endpoint's `@cached`) is dropped at startup with a Warning. This prevents the surprising case where two requests with different rule-matched values share the same cache entry.
+
+**Annotation:** `@cache_profile <name>` selects a profile. It implies caching even without a separate `@cached` annotation. The existing `@cached p1, p2` (overrides profile params) and `@cache_expires <interval>` (overrides profile expiration) annotations continue to work and take precedence over the profile's defaults.
+
+**Misconfiguration is loud at startup.** Unknown profile names referenced by `@cache_profile` cause startup to fail with a single `InvalidOperationException` listing every unresolved name and the endpoints that referenced each — so typos surface immediately rather than silently disabling caching at runtime. Profiles registered but unreferenced log an Information warning. Bad `Type` or `Expiration` values warn and skip the profile. Empty/whitespace profile names are rejected.
+
+**Cache key isolation.** Entries written under a profile are prefixed with the profile name, so two profiles sharing the same backend (e.g., two Memory profiles) cannot collide on the same routine + parameters. Endpoints without a profile have no prefix — existing cache entries stay wire-compatible across the upgrade.
+
+The default `appsettings.json` ships with three disabled example profiles covering each Type and demonstrating a `When` rule. Flip `"Enabled": true` on the one(s) you need.
+
+#### Never-expiring (infinite) cache entries
+
+There is no explicit "forever" or "never" literal — instead, **omit the `Expiration` field** to get never-expiring entries. This applies at every level:
+
+- **Endpoint without `@cache_expires`** → entry never expires (today's pre-3.13 behavior, unchanged).
+- **Profile without `Expiration` field** → entries written under that profile never expire.
+- **Both `@cache_expires` and profile `Expiration` set** → annotation wins (the explicit interval is used).
+
+If you need a mix in one app — some profiles with TTL, others never-expiring — define a dedicated profile with no `Expiration`:
+
+```jsonc
+"Profiles": {
+  "static_lookup_data": {
+    "Enabled": true,
+    "Type": "Memory"
+    // No Expiration → entries never expire (suitable for ISO codes, taxonomies, etc.)
+  },
+  "session_data": {
+    "Enabled": true,
+    "Type": "Redis",
+    "Expiration": "1 hour"
+  }
+}
+```
+
+Endpoints opt into the appropriate profile via `@cache_profile`. This pattern handles the common cases (static reference data, immutable historical content) without needing a separate "force never expire" override.
+
 ### New: `WrapInTransaction` Option (Connection Pooler Compatibility)
 
 When set to `true`, **every request** is wrapped in an explicit `BEGIN ... COMMIT`, and all `set_config` calls switch from session-scoped (`is_local=false`) to transaction-local (`is_local=true`).
