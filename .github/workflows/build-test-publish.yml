@@ -61,23 +61,18 @@ jobs:
     - name: Extract changelog for this version
       id: changelog
       run: |
-        # Extract the changelog section for this version
-        # Looks for ## Version [X.X.X] and captures until the next ## Version
+        # Per-version changelog files live under changelog/v<X.Y.Z>.md.
+        # Strip the "v" prefix from RELEASE_VERSION (e.g. "v3.13.0" -> "3.13.0") and read that file.
         VERSION_NUM="${RELEASE_VERSION#v}"
-        CHANGELOG=$(awk -v ver="$VERSION_NUM" '
-          /^## Version \[/ {
-            if (found) exit
-            if (index($0, ver)) found=1
-          }
-          found {print}
-        ' changelog.md | tail -n +2)
+        VERSION_FILE="changelog/v${VERSION_NUM}.md"
 
-        # If changelog extraction failed, use a default message
-        if [ -z "$CHANGELOG" ]; then
-          CHANGELOG="See [full changelog](https://github.com/NpgsqlRest/NpgsqlRest/blob/master/changelog.md) for details."
+        if [ -f "$VERSION_FILE" ]; then
+          # Skip the leading "# Changelog vX.Y.Z (date)" title line
+          CHANGELOG=$(tail -n +2 "$VERSION_FILE")
+        else
+          CHANGELOG="See [full changelog](https://github.com/NpgsqlRest/NpgsqlRest/blob/master/changelog/) for details."
         fi
 
-        # Write to file to preserve formatting
         echo "$CHANGELOG" > release_notes.md
       env:
         RELEASE_VERSION: ${{ env.RELEASE_VERSION }}
