@@ -133,13 +133,21 @@ public static class NpgsqlRestBuilder
             {
                 Logger?.EndpointCreated(urlInfo);
             }
-            if (endpoint.SseEventsPath is not null)
+            // Resolve the notice-level default for any endpoint that participates in SSE — both
+            // subscribers (need it for filtering) and publishers (need it for the broadcast gate).
+            // After B.1 these can be independent: an @sse_publish-only endpoint has no SseEventsPath
+            // but still needs a configured level; an @sse_subscribe-only endpoint has a path but
+            // doesn't publish.
+            if (endpoint.SseEventsPath is not null || endpoint.SsePublishEnabled)
             {
                 if (endpoint.SseEventNoticeLevel is null)
                 {
                     endpoint.SseEventNoticeLevel = Options.DefaultSseEventNoticeLevel;
                 }
-                Logger?.EndpointSsePath($"{endpoint.Method} {endpoint.Path}", endpoint.SseEventsPath, endpoint.SseEventNoticeLevel);
+                if (endpoint.SseEventsPath is not null)
+                {
+                    Logger?.EndpointSsePath($"{endpoint.Method} {endpoint.Path}", endpoint.SseEventsPath, endpoint.SseEventNoticeLevel);
+                }
             }
         }
 
@@ -384,6 +392,16 @@ public static class NpgsqlRestBuilder
                     }
 
                     NpgsqlRestSseEventSource.Paths.Add(endpoint.SseEventsPath);
+                    NpgsqlRestSseEventSource.HasAnySseEndpoints = true;
+                    hasStreamingEvents = true;
+                }
+
+                // Track whether anything in this build publishes to the broadcaster — both feeds the
+                // SSE middleware and (combined with subscribe registrations above) gates the
+                // unbound-RAISE warning so projects that don't use SSE see zero noise.
+                if (endpoint.SsePublishEnabled)
+                {
+                    NpgsqlRestSseEventSource.HasAnySseEndpoints = true;
                     hasStreamingEvents = true;
                 }
 

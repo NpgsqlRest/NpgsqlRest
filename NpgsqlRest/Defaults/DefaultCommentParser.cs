@@ -366,6 +366,22 @@ internal static partial class DefaultCommentParser
                     TrackAnnotation(line);
                 }
 
+                // sse_publish [ on info | notice | warning ]
+                // sse_events_publish [ on info | notice | warning ]
+                else if (haveTag is true && StrEqualsToArray(wordsLower[0], SseEventsPublishKey))
+                {
+                    HandleSseEventsPublish(routineEndpoint, wordsLower, words, len, description);
+                    TrackAnnotation(line);
+                }
+
+                // sse_subscribe [ path ] [ on info | notice | warning ]
+                // sse_events_subscribe [ path ] [ on info | notice | warning ]
+                else if (haveTag is true && StrEqualsToArray(wordsLower[0], SseEventsSubscribeKey))
+                {
+                    HandleSseEventsSubscribe(routineEndpoint, wordsLower, words, len, description);
+                    TrackAnnotation(line);
+                }
+
                 // sse_level [ info | notice | warning ]
                 // sse_events_level [ info | notice | warning ]
                 else if (haveTag is true && len >= 2 && StrEqualsToArray(wordsLower[0], SseEventsLevelKey))
@@ -598,10 +614,39 @@ internal static partial class DefaultCommentParser
 
         else if (StrEqualsToArray(name, SseEventsStreamingPathKey))
         {
+            // Tag-value form of @sse: same shorthand semantics — publish + subscribe on the same path.
             if (bool.TryParse(value, out var parseredStreamingPath))
             {
-                endpoint.SseEventsPath = parseredStreamingPath is true ? 
-                    (endpoint.SseEventNoticeLevel ?? Options.DefaultSseEventNoticeLevel).ToString().ToLowerInvariant() : 
+                endpoint.SseEventsPath = parseredStreamingPath is true ?
+                    (endpoint.SseEventNoticeLevel ?? Options.DefaultSseEventNoticeLevel).ToString().ToLowerInvariant() :
+                    null;
+                endpoint.SsePublishEnabled = parseredStreamingPath;
+            }
+            else
+            {
+                endpoint.SseEventsPath = value;
+                endpoint.SsePublishEnabled = true;
+            }
+        }
+
+        else if (StrEqualsToArray(name, SseEventsPublishKey))
+        {
+            if (bool.TryParse(value, out var parsedPublish))
+            {
+                endpoint.SsePublishEnabled = parsedPublish;
+            }
+            else
+            {
+                endpoint.SsePublishEnabled = true;
+            }
+        }
+
+        else if (StrEqualsToArray(name, SseEventsSubscribeKey))
+        {
+            if (bool.TryParse(value, out var parsedSubscribe))
+            {
+                endpoint.SseEventsPath = parsedSubscribe is true ?
+                    (endpoint.SseEventNoticeLevel ?? Options.DefaultSseEventNoticeLevel).ToString().ToLowerInvariant() :
                     null;
             }
             else

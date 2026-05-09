@@ -334,4 +334,7 @@ public static partial class Log
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Endpoint {path} parameter {paramName} received a {source} value but is auto-bound from claim '{claimName}'. The supplied value is being ignored.")]
     public static partial void ClaimMappedParamReceivedRequestValue(this ILogger logger, string path, string paramName, string source, string claimName);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "RAISE {severity} in endpoint {path} was not broadcast to SSE subscribers — the endpoint has no @sse or @sse_publish annotation. Add @sse_publish to forward this routine's notices, or set NpgsqlRestOptions.WarnUnboundSseNotices=false to silence this warning.")]
+    public static partial void UnboundSseRaise(this ILogger logger, string severity, string path);
 }

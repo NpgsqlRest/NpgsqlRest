@@ -368,6 +368,15 @@ public class NpgsqlRestOptions
     /// Collection of custom server-sent events response headers that will be added to the response when connected to the endpoint that is configured to return server-sent events.
     /// </summary>
     public Dictionary<string, StringValues> SseResponseHeaders { get; set; } = [];
+
+    /// <summary>
+    /// When true (default), log a one-time warning per endpoint when a <c>RAISE</c> at the configured
+    /// SSE notice level fires inside a routine that has no <c>@sse</c> or <c>@sse_publish</c>
+    /// annotation. The notice is logged but is NOT broadcast to SSE subscribers; the warning surfaces
+    /// the likely missing annotation. Inactive when no endpoint in the build participates in SSE
+    /// publishing — so projects that don't use SSE pay zero overhead and see no warnings.
+    /// </summary>
+    public bool WarnUnboundSseNotices { get; set; } = true;
     
     /// <summary>
     /// Default rate limiting policy for all requests. Policy must be configured within application rate limiting options.

@@ -12,6 +12,15 @@ public class NpgsqlRestSseEventSource(RequestDelegate next)
 {
     public static readonly HashSet<string> Paths = [];
     public static readonly Broadcaster<SseEvent> Broadcaster = new();
+
+    /// <summary>
+    /// True if any endpoint in the build participates in SSE — either as a publisher (<c>@sse</c> /
+    /// <c>@sse_publish</c>) or as a subscribe URL (<c>@sse</c> / <c>@sse_subscribe</c>). Used as a fast
+    /// guard for the unbound-RAISE warning so projects that don't use SSE at all pay zero per-notice
+    /// cost. Once any endpoint registers SSE usage, every other endpoint's notices are eligible to
+    /// trigger the warning when their <c>RAISE</c> level matches the configured forwarding level.
+    /// </summary>
+    public static bool HasAnySseEndpoints { get; internal set; } = false;
     
     public async Task InvokeAsync(HttpContext context)
     {
@@ -45,6 +54,23 @@ public class NpgsqlRestSseEventSource(RequestDelegate next)
 
         var connectionId = Guid.NewGuid();
         var reader = Broadcaster.Subscribe(connectionId);
+        // Force the response headers + an initial body byte to flush immediately. SSE permits
+        // comment-only lines (lines starting with ':'); browsers and EventSource clients ignore
+        // them. Without an early flush, the GET stays "headers pending" until the first real event
+        // — which prevents callers (notably integration tests) from sequencing "subscribe THEN
+        // publish": their GET wouldn't return until an event had already been received, and the
+        // server's await-foreach below blocks waiting for that same event. Writing a small comment
+        // breaks the deadlock and acts as a connection-established ping.
+        try
+        {
+            await context.Response.WriteAsync(": connected\n\n", cancellationToken);
+            await context.Response.Body.FlushAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            Broadcaster.Unsubscribe(connectionId);
+            return;
+        }
         try
         {
             await foreach (var noticeEvent in reader.ReadAllAsync(cancellationToken))

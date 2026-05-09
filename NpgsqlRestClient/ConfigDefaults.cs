@@ -777,6 +777,7 @@ public static class ConfigDefaults
             ["ExecutionIdHeaderName"] = "X-NpgsqlRest-ID",
             ["DefaultServerSentEventsEventNoticeLevel"] = "INFO",
             ["ServerSentEventsResponseHeaders"] = new JsonObject(),
+            ["WarnUnboundServerSentEventsNotices"] = true,
 
             ["RoutineOptions"] = new JsonObject
             {

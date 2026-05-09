@@ -47,4 +47,11 @@ public class Broadcaster<T>
         }
         _channels.Clear();
     }
+
+    /// <summary>
+    /// Number of currently subscribed channels. Used by integration tests to wait until an SSE
+    /// subscriber has registered before triggering a publish, avoiding a race between
+    /// <c>Subscribe</c> and the test's HTTP call. Cheap on a <see cref="ConcurrentDictionary{TKey,TValue}"/>.
+    /// </summary>
+    public int SubscriberCount => _channels.Count;
 }

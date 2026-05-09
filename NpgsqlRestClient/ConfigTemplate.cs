@@ -1963,6 +1963,13 @@ public static partial class ConfigSchemaGenerator
         "ServerSentEventsResponseHeaders": {
         },
         //
+        // When true (default), log a one-time warning per endpoint when a RAISE at the configured SSE notice level fires inside a routine
+        // that has no @sse or @sse_publish annotation. Notices are logged but NOT broadcast to SSE subscribers; the warning surfaces the
+        // likely missing annotation. Inactive when no endpoint in the build participates in SSE publishing — projects that don't use SSE
+        // pay zero overhead and see no warnings.
+        //
+        "WarnUnboundServerSentEventsNotices": true,
+        //
         // Options for handling PostgreSQL routines (functions and procedures)
         //
         "RoutineOptions": {

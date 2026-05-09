@@ -3,29 +3,31 @@ namespace NpgsqlRest.Defaults;
 internal static partial class DefaultCommentParser
 {
     /// <summary>
-    /// Annotation: sse | sse_path | sse_events_path
-    /// Syntax: sse
-    ///         sse [path]
-    ///         sse [path] on [info | notice | warning]
+    /// Annotation: sse_subscribe | sse_events_subscribe
+    /// Syntax: sse_subscribe
+    ///         sse_subscribe [path]
+    ///         sse_subscribe [path] on [info | notice | warning]
     ///
-    /// Description: Enable Server-Sent Events for PostgreSQL notices on this path.
+    /// Description: Expose an SSE subscribe URL for this routine — the subscribe half of <c>@sse</c>.
+    /// The routine's body is NEVER executed when a client opens an EventSource against the URL; it
+    /// only registers the path and (optionally) the notice level filter on outgoing events. Pair
+    /// with <c>@sse_publish</c> routines (or other <c>@sse</c> routines) elsewhere to source the
+    /// events that flow through this URL.
     /// </summary>
-    private static readonly string[] SseEventsStreamingPathKey = [
-        "sse",
-        "sse_path",
-        "sse_events_path",
+    private static readonly string[] SseEventsSubscribeKey = [
+        "sse_subscribe",
+        "sse_events_subscribe",
     ];
 
-    private static void HandleSseEventsPath(
+    private static void HandleSseEventsSubscribe(
         RoutineEndpoint endpoint,
         string[] wordsLower,
         string[] words,
         int len,
         string description)
     {
-        // @sse is shorthand for "publish from this routine's RAISE AND expose a subscribe URL on the
-        // same path." See SseEventsPublishHandler / SseEventsSubscribeHandler for the decomposed forms.
-        endpoint.SsePublishEnabled = true;
+        // Subscribe-only: URL exposed but RAISE in this routine's body is NOT forwarded. Don't touch
+        // SsePublishEnabled — leaving it false is the whole point of the decomposition.
         if (len == 1)
         {
             endpoint.SseEventsPath =

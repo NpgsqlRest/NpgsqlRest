@@ -199,7 +199,7 @@ public class Program
             // reference fixture-specific configuration that is not present here (cache profiles,
             // rate-limiter policies named "rlpt-...", auth profiles), so picking them up in the
             // default fixture would fail at startup.
-            NameNotSimilarTo = "(cp[_x]|rlpt[_]|ast[_]|cab[_]|cabx[_])%",
+            NameNotSimilarTo = "(cp[_x]|rlpt[_]|ast[_]|cab[_]|cabx[_]|sset[_])%",
 
             // TsClient configuration for testing - uses tsclient_module annotations for per-function files
             EndpointCreateHandlers = [

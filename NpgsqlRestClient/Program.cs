@@ -459,6 +459,7 @@ NpgsqlRestOptions options = new()
     ExecutionIdHeaderName = config.GetConfigStr("ExecutionIdHeaderName", config.NpgsqlRestCfg) ?? "X-NpgsqlRest-ID",
     DefaultSseEventNoticeLevel = config.GetConfigEnum<PostgresNoticeLevels?>("DefaultServerSentEventsEventNoticeLevel", config.NpgsqlRestCfg) ?? PostgresNoticeLevels.INFO,
     SseResponseHeaders = builder.GetSseResponseHeaders(),
+    WarnUnboundSseNotices = config.GetConfigBool("WarnUnboundServerSentEventsNotices", config.NpgsqlRestCfg, true),
 
     EndpointSources = appInstance.CreateEndpointSources(),
     UploadOptions = appInstance.CreateUploadOptions(),

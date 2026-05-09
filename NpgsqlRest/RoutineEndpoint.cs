@@ -118,6 +118,15 @@ public class RoutineEndpoint(
     public string? SseEventsPath { get; set; } = sseEventsPath;
     public SseEventsScope SseEventsScope { get; set; } = sseEventsScope;
     public HashSet<string>? SseEventsRoles { get; set; } = sseEventsRoles;
+
+    /// <summary>
+    /// When true, <c>RAISE</c> statements in this routine's body whose severity matches the configured
+    /// SSE level are forwarded to the SSE broadcaster. Set by <c>@sse_publish</c> (publish-only, no URL
+    /// exposed) or as a side-effect of the <c>@sse</c> shorthand (publish + subscribe on the same path).
+    /// Independent of <see cref="SseEventsPath"/>: a routine can publish without exposing a subscribe URL,
+    /// and an <c>@sse_subscribe</c>-only routine exposes a URL without publishing from its own body.
+    /// </summary>
+    public bool SsePublishEnabled { get; set; } = false;
     public Auth.EndpointBasicAuthOptions? BasicAuth { get; set; } = null;
     public RetryStrategy? RetryStrategy { get; set; } = null;
     public string? RateLimiterPolicy { get; set; } = null;

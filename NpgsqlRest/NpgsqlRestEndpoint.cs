@@ -122,22 +122,41 @@ public partial class NpgsqlRestEndpoint(
                 return;
             }
 
-            if ( (Options.LogConnectionNoticeEvents && Logger != null) || endpoint.SseEventsPath is not null)
+            // Three reasons to attach a notice handler:
+            //   1. LogConnectionNoticeEvents — log every notice regardless of SSE wiring.
+            //   2. Endpoint publishes to broadcaster — forward matching notices to subscribers.
+            //   3. WarnUnboundSseNotices — and the project actually uses SSE somewhere; warn when a
+            //      RAISE in a non-publishing endpoint matches the SSE forwarding level (a likely
+            //      missing @sse_publish annotation).
+            bool noticeWarnEnabled = Options.WarnUnboundSseNotices
+                && Logger != null
+                && NpgsqlRestSseEventSource.HasAnySseEndpoints
+                && endpoint.SsePublishEnabled is false;
+
+            if ((Options.LogConnectionNoticeEvents && Logger != null)
+                || endpoint.SsePublishEnabled
+                || noticeWarnEnabled)
             {
-                var currentEndpoint = endpoint;
+                var currentEndpointCaptured = endpoint;
                 connection.Notice += (sender, args) =>
                 {
                     if (Options.LogConnectionNoticeEvents && Logger != null)
                     {
                         NpgsqlRestLogger.LogConnectionNotice(args.Notice, Options.LogConnectionNoticeEventsMode);
                     }
-                    if (currentEndpoint.SseEventsPath is not null &&
-                        currentEndpoint.SseEventNoticeLevel is not null && 
-                        string.Equals(args.Notice.Severity, currentEndpoint.SseEventNoticeLevel.ToString(), StringComparison.OrdinalIgnoreCase))
+                    if (currentEndpointCaptured.SsePublishEnabled
+                        && currentEndpointCaptured.SseEventNoticeLevel is not null
+                        && string.Equals(args.Notice.Severity, currentEndpointCaptured.SseEventNoticeLevel.ToString(), StringComparison.OrdinalIgnoreCase))
                     {
                         NpgsqlRestSseEventSource
                             .Broadcaster
-                            .Broadcast(new SseEvent(args.Notice, currentEndpoint, context.Request.Headers[Options.ExecutionIdHeaderName].FirstOrDefault()));
+                            .Broadcast(new SseEvent(args.Notice, currentEndpointCaptured, context.Request.Headers[Options.ExecutionIdHeaderName].FirstOrDefault()));
+                    }
+                    else if (noticeWarnEnabled
+                        && string.Equals(args.Notice.Severity, Options.DefaultSseEventNoticeLevel.ToString(), StringComparison.OrdinalIgnoreCase)
+                        && SseUnboundWarner.TryMarkWarned(currentEndpointCaptured.Path))
+                    {
+                        Logger!.UnboundSseRaise(args.Notice.Severity, currentEndpointCaptured.Path);
                     }
                 };
             }
