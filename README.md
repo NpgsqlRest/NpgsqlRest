@@ -7,9 +7,13 @@
 ![GitHub Stars](https://img.shields.io/github/stars/NpgsqlRest/NpgsqlRest?style=social)
 ![GitHub Forks](https://img.shields.io/github/forks/NpgsqlRest/NpgsqlRest?style=social)
 
+# Your SQL is the API.
+
 **Automatic REST API for PostgreSQL** | [6.1x faster than PostgREST](https://npgsqlrest.github.io/blog/postgresql-rest-api-benchmark-2026.html)
 
 > SQL files and PostgreSQL objects become REST endpoints. TypeScript clients are generated automatically.
+
+**4,500+ req/s** on a single host · **1,800+ integration tests** · **12K LOC SQL** in production · **MIT** licensed
 
 *"Simplicity is the ultimate sophistication."* — Leonardo da Vinci
 
@@ -75,13 +79,33 @@ No framework, no ORM, no boilerplate. Authorization, parameters, type safety —
 
 | Source | What it's good for | Example |
 |--------|-----------|---------|
-| **SQL Files** | Simple queries, multi-command batch scripts, no DB deployment needed | `sql/get_users.sql` → `GET /api/get-users` |
+| **SQL Files** *(recommended starting point)* | Simple queries, multi-command batch scripts, no DB deployment needed | `sql/get_users.sql` → `GET /api/get-users` |
 | **Functions & Procedures** | Full PL/pgSQL power, static type checking, reusable logic | `get_user_by_id(int)` → `GET /api/get-user-by-id` |
-| **Tables & Views** | Automatic CRUD | `users` table → `GET/POST/PUT/DELETE /api/users` |
 
 SQL files are the easiest way to get started — drop a `.sql` file in a folder and you have an endpoint. Functions give you the full power of PL/pgSQL with true end-to-end type checking. Use both together, or whichever fits.
 
 All sources share the same annotation system: `@authorize`, `@param`, `@returns`, `@void`, `@single`, `@cached`, `@path`, and 50+ others.
+
+## Declarative Annotations
+
+Declare what you want from your endpoint — caching, authorization, timeouts, retries, rate limiting, output format — right where the SQL lives:
+
+```sql
+/*
+HTTP GET /users/
+@authorize admin, user
+@cached
+@cache_expires_in 30sec
+@timeout 5min
+@table_format = excel
+@excel_file_name = users.xlsx
+*/
+select id, name, email, role
+from users
+where $1 is null or department_id = $1;
+```
+
+Same pattern for PostgreSQL functions via `comment on function ... is '...'`. No middleware to register, no decorators, no controllers — the SQL is the source of truth. See [all annotations](https://npgsqlrest.github.io/annotations/).
 
 ## Features
 
@@ -106,9 +130,19 @@ All sources share the same annotation system: `@authorize`, `@param`, `@returns`
 
 **[NpgsqlRest vs PostgREST vs Supabase](https://npgsqlrest.github.io/blog/npgsqlrest-vs-postgrest-supabase-comparison.html)**
 
+## From the Blog
+
+- [**Case Study: 74 Endpoints, Zero Backend Code**](https://npgsqlrest.github.io/blog/case-study-zero-backend-code) — A production app built entirely on NpgsqlRest: ~74 endpoints, 12K LOC of SQL, zero C# or Python.
+- [**PostgreSQL REST API Benchmark 2026**](https://npgsqlrest.github.io/blog/postgresql-rest-api-benchmark-2026) — 14 frameworks, identical PostgreSQL functions: NpgsqlRest vs PostgREST, Django, FastAPI, Spring Boot, Go, Rust, and more.
+- [**From SQL to Type-Safe TypeScript**](https://npgsqlrest.github.io/blog/typescript-codegen-walkthrough) — End-to-end type safety: typed fetch modules generated directly from PostgreSQL functions and SQL files.
+
 ## Documentation
 
 **[npgsqlrest.github.io](https://npgsqlrest.github.io/)** — getting started, configuration, annotations, examples.
+
+## About
+
+NpgsqlRest is built and maintained by [Vedran Bilopavlović](https://www.linkedin.com/in/vb-software/). The C# library, parser, codegen, and runtime are hand-written, covered by 1,800+ integration tests, and battle-tested in production.
 
 ## Contributing
 
