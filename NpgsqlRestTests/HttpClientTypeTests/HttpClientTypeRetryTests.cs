@@ -1,6 +1,9 @@
 using WireMock.Server;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
+using WireMock;
+using WireMock.Types;
+using WireMock.Util;
 
 namespace NpgsqlRestTests;
 
@@ -95,29 +98,31 @@ public class HttpClientTypeRetryTests : IClassFixture<WireMockFixture>
     [Fact]
     public async Task Test_retry_basic_succeeds_after_failures()
     {
-        // First 2 calls return 503, third returns 200
-        // AtPriority: lower number = higher priority. Specific state stubs checked before catch-all.
+        // First 2 calls return 503, third returns 200. Implemented via a per-call counter rather
+        // than WireMock's stateful scenarios because the scenario state-transition write races
+        // with retry timing under CI load — three back-to-back hits could land in the catch-all
+        // 503 stub before the prior response's WillSetStateTo had applied. The counter is read
+        // and incremented inside the callback that builds each response, atomic with respect to
+        // the response itself, so there is no transition window for the next request to observe
+        // a stale state.
+        int attempts = 0;
         _server
             .Given(Request.Create().WithPath("/api/retry-basic").UsingGet())
-            .InScenario("retry-basic")
-            .WhenStateIs("attempt-3")
-            .AtPriority(1)
-            .RespondWith(Response.Create().WithStatusCode(200).WithBody("success-after-retry"));
-
-        _server
-            .Given(Request.Create().WithPath("/api/retry-basic").UsingGet())
-            .InScenario("retry-basic")
-            .WhenStateIs("attempt-2")
-            .WillSetStateTo("attempt-3")
-            .AtPriority(1)
-            .RespondWith(Response.Create().WithStatusCode(503).WithBody("service unavailable"));
-
-        _server
-            .Given(Request.Create().WithPath("/api/retry-basic").UsingGet())
-            .InScenario("retry-basic")
-            .WillSetStateTo("attempt-2")
-            .AtPriority(10)
-            .RespondWith(Response.Create().WithStatusCode(503).WithBody("service unavailable"));
+            .RespondWith(Response.Create().WithCallback(req =>
+            {
+                int n = Interlocked.Increment(ref attempts);
+                return n >= 3
+                    ? new ResponseMessage
+                    {
+                        StatusCode = 200,
+                        BodyData = new BodyData { BodyAsString = "success-after-retry", DetectedBodyType = BodyType.String }
+                    }
+                    : new ResponseMessage
+                    {
+                        StatusCode = 503,
+                        BodyData = new BodyData { BodyAsString = "service unavailable", DetectedBodyType = BodyType.String }
+                    };
+            }));
 
         using var response = await _test.Client.GetAsync("/api/get-http-retry-basic/");
         var content = await response.Content.ReadAsStringAsync();
@@ -130,20 +135,26 @@ public class HttpClientTypeRetryTests : IClassFixture<WireMockFixture>
     [Fact]
     public async Task Test_retry_with_codes_retries_on_429()
     {
-        // First call returns 429, second returns 200
+        // Counter-based to avoid the same WireMock-scenario race the basic test hit on CI.
+        // First call returns 429, second returns 200.
+        int attempts = 0;
         _server
             .Given(Request.Create().WithPath("/api/retry-with-codes").UsingGet())
-            .InScenario("retry-429")
-            .WhenStateIs("attempt-2")
-            .AtPriority(1)
-            .RespondWith(Response.Create().WithStatusCode(200).WithBody("ok-after-429"));
-
-        _server
-            .Given(Request.Create().WithPath("/api/retry-with-codes").UsingGet())
-            .InScenario("retry-429")
-            .WillSetStateTo("attempt-2")
-            .AtPriority(10)
-            .RespondWith(Response.Create().WithStatusCode(429).WithBody("rate limited"));
+            .RespondWith(Response.Create().WithCallback(req =>
+            {
+                int n = Interlocked.Increment(ref attempts);
+                return n >= 2
+                    ? new ResponseMessage
+                    {
+                        StatusCode = 200,
+                        BodyData = new BodyData { BodyAsString = "ok-after-429", DetectedBodyType = BodyType.String }
+                    }
+                    : new ResponseMessage
+                    {
+                        StatusCode = 429,
+                        BodyData = new BodyData { BodyAsString = "rate limited", DetectedBodyType = BodyType.String }
+                    };
+            }));
 
         using var response = await _test.Client.GetAsync("/api/get-http-retry-with-codes/");
         var content = await response.Content.ReadAsStringAsync();

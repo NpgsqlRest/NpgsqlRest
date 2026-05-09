@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-  RELEASE_VERSION: v3.13.0
+  RELEASE_VERSION: v3.14.0
 
 # Add workflow-level permissions
 permissions:
@@ -62,7 +62,7 @@ jobs:
       id: changelog
       run: |
         # Per-version changelog files live under changelog/v<X.Y.Z>.md.
-        # Strip the "v" prefix from RELEASE_VERSION (e.g. "v3.13.0" -> "3.13.0") and read that file.
+        # Strip the "v" prefix from RELEASE_VERSION (e.g. "v3.14.0" -> "3.14.0") and read that file.
         VERSION_NUM="${RELEASE_VERSION#v}"
         VERSION_FILE="changelog/v${VERSION_NUM}.md"
 
