@@ -64,5 +64,6 @@
         <InternalsVisibleTo Include="NpgsqlRestTests" />
         <InternalsVisibleTo Include="NpgsqlRest.TsClient" />
         <InternalsVisibleTo Include="NpgsqlRestClient" />
+        <InternalsVisibleTo Include="BenchmarkTests" />
     </ItemGroup>
 </Project>

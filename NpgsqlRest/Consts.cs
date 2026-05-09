@@ -36,12 +36,13 @@ public static class Consts
     public const string SetContextLocal = "select set_config($1,$2,true)";
 
     // Pre-computed UTF8 bytes for JSON structure characters used in rendering hot paths.
-    // Eliminates per-request Encoding.UTF8.GetBytes() calls for constant values.
-    public static readonly byte[] Utf8OpenBrace = [(byte)'{'];
-    public static readonly byte[] Utf8CloseBrace = [(byte)'}'];
-    public static readonly byte[] Utf8OpenBracket = [(byte)'['];
-    public static readonly byte[] Utf8CloseBracket = [(byte)']'];
-    public static readonly byte[] Utf8Comma = [(byte)','];
-    public static readonly byte[] Utf8Colon = [(byte)':'];
-    public static readonly byte[] Utf8Null = "null"u8.ToArray();
+    // ReadOnlySpan<byte> properties using "x"u8 literals point directly at assembly metadata —
+    // zero allocation per access (vs. byte[] fields, which allocate once at type-init).
+    public static ReadOnlySpan<byte> Utf8OpenBrace    => "{"u8;
+    public static ReadOnlySpan<byte> Utf8CloseBrace   => "}"u8;
+    public static ReadOnlySpan<byte> Utf8OpenBracket  => "["u8;
+    public static ReadOnlySpan<byte> Utf8CloseBracket => "]"u8;
+    public static ReadOnlySpan<byte> Utf8Comma        => ","u8;
+    public static ReadOnlySpan<byte> Utf8Colon        => ":"u8;
+    public static ReadOnlySpan<byte> Utf8Null         => "null"u8;
 }

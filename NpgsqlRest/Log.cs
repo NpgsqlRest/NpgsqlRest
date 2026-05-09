@@ -328,4 +328,7 @@ public static partial class Log
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "{description} cannot rename parameter to '{newName}': {reason}.")]
     public static partial void CommentParamInvalidName(this ILogger logger, string description, string newName, string reason);
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "Column decryption failed; falling back to raw value. Error: {error}")]
+    public static partial void DecryptColumnFailed(this ILogger logger, string error);
 }

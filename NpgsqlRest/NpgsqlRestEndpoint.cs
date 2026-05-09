@@ -1,4 +1,5 @@
-﻿using System.Collections.Frozen;
+﻿using System.Buffers;
+using System.Collections.Frozen;
 using System.Data;
 using System.IO.Pipelines;
 using System.Net;
@@ -48,6 +49,10 @@ public partial class NpgsqlRestEndpoint(
         StringBuilder? commandTextBuilder = null;
         StringBuilder? rowBuilder = null;
         StringBuilder? compositeFieldBuffer = null;
+        // Multi-command per-iteration builders — set to null after each iteration's Return,
+        // so outer finally won't double-return; if iteration throws, finally still cleans up.
+        StringBuilder? mcRowBuilder = null;
+        StringBuilder? mcCompositeBuffer = null;
 
         // proxy_out: capture function output into a buffer instead of writing to the real response
         MemoryStream? proxyOutBuffer = null;
@@ -2022,7 +2027,7 @@ public partial class NpgsqlRestEndpoint(
                 context.Response.ContentType = Application.Json;
 
                 // Write opening {
-                Consts.Utf8OpenBrace.CopyTo(writer.GetSpan(1)); writer.Advance(1);
+                writer.Write(Consts.Utf8OpenBrace);
 
                 bool firstResultWritten = false;
                 for (int cmdIndex = 0; cmdIndex < routine.MultiCommandInfo.Length; cmdIndex++)
@@ -2059,7 +2064,7 @@ public partial class NpgsqlRestEndpoint(
                     // Write comma between results
                     if (firstResultWritten)
                     {
-                        Consts.Utf8Comma.CopyTo(writer.GetSpan(1)); writer.Advance(1);
+                        writer.Write(Consts.Utf8Comma);
                     }
                     firstResultWritten = true;
 
@@ -2089,10 +2094,10 @@ public partial class NpgsqlRestEndpoint(
 
                         if (!currentCmd.IsSingle)
                         {
-                            Consts.Utf8OpenBracket.CopyTo(writer.GetSpan(1)); writer.Advance(1);
+                            writer.Write(Consts.Utf8OpenBracket);
                         }
                         bool mcFirstRow = true;
-                        var mcRowBuilder = StringBuilderPool.Rent(512);
+                        mcRowBuilder = StringBuilderPool.Rent(512);
                         var mcBufferRows = endpoint.BufferRows ?? Options.BufferRows;
                         ulong mcRowCount = 0;
 
@@ -2117,7 +2122,7 @@ public partial class NpgsqlRestEndpoint(
                             }
                             if (mcNestedMap.Count == 0) mcNestedMap = null;
                         }
-                        StringBuilder? mcCompositeBuffer = mcNestedMap is not null ? StringBuilderPool.Rent(256) : null;
+                        mcCompositeBuffer = mcNestedMap is not null ? StringBuilderPool.Rent(256) : null;
                         bool mcCompositeHasValue = false;
                         string? mcCurrentCompName = null;
                         string? mcCurrentJsonCompName = null;
@@ -2148,7 +2153,10 @@ public partial class NpgsqlRestEndpoint(
                                     {
                                         raw = Options.AuthenticationOptions.DefaultDataProtector.Unprotect((string)value).AsSpan();
                                     }
-                                    catch { /* use raw as-is */ }
+                                    catch (Exception decryptEx)
+                                    {
+                                        Logger?.DecryptColumnFailed(decryptEx.Message);
+                                    }
                                 }
 
                                 var mcDescriptor = currentCmd.ColumnTypeDescriptors[col];
@@ -2315,7 +2323,7 @@ public partial class NpgsqlRestEndpoint(
                         if (currentCmd.IsSingle && mcRowCount == 0)
                         {
                             // Empty result with @single — write null
-                            Consts.Utf8Null.CopyTo(writer.GetSpan(4)); writer.Advance(4);
+                            writer.Write(Consts.Utf8Null);
                         }
 
                         if (mcRowBuilder.Length > 0)
@@ -2323,17 +2331,22 @@ public partial class NpgsqlRestEndpoint(
                             WriteStringBuilderToWriter(mcRowBuilder, writer);
                         }
                         StringBuilderPool.Return(mcRowBuilder);
-                        if (mcCompositeBuffer is not null) StringBuilderPool.Return(mcCompositeBuffer);
+                        mcRowBuilder = null;
+                        if (mcCompositeBuffer is not null)
+                        {
+                            StringBuilderPool.Return(mcCompositeBuffer);
+                            mcCompositeBuffer = null;
+                        }
 
                         if (!currentCmd.IsSingle)
                         {
-                            Consts.Utf8CloseBracket.CopyTo(writer.GetSpan(1)); writer.Advance(1);
+                            writer.Write(Consts.Utf8CloseBracket);
                         }
                     }
                 }
 
                 // Write closing }
-                Consts.Utf8CloseBrace.CopyTo(writer.GetSpan(1)); writer.Advance(1);
+                writer.Write(Consts.Utf8CloseBrace);
                 await writer.FlushAsync(cancellationToken);
                 return;
             }
@@ -2437,9 +2450,9 @@ public partial class NpgsqlRestEndpoint(
                         {
                             valueResult = Options.AuthenticationOptions.DefaultDataProtector.Unprotect(scalarStr);
                         }
-                        catch
+                        catch (Exception decryptEx)
                         {
-                            // If decryption fails, use raw value as-is
+                            Logger?.DecryptColumnFailed(decryptEx.Message);
                         }
                     }
 
@@ -2479,7 +2492,7 @@ public partial class NpgsqlRestEndpoint(
                         {
                             if (endpoint.TextResponseNullHandling == TextResponseNullHandling.NullLiteral)
                             {
-                                Consts.Utf8Null.CopyTo(writer.GetSpan(4)); writer.Advance(4);
+                                writer.Write(Consts.Utf8Null);
                             }
                             else if (endpoint.TextResponseNullHandling == TextResponseNullHandling.NoContent)
                             {
@@ -2633,7 +2646,7 @@ public partial class NpgsqlRestEndpoint(
                     bool multiCmdWriteWrapper = multiCmd is not null && binary is false && endpoint.Raw is false;
                     if (multiCmdWriteWrapper)
                     {
-                        Consts.Utf8OpenBrace.CopyTo(writer.GetSpan(1)); writer.Advance(1);
+                        writer.Write(Consts.Utf8OpenBrace);
                     }
 
                     // Begin result set loop (single pass for normal, do/while for multi-command)
@@ -2653,7 +2666,7 @@ public partial class NpgsqlRestEndpoint(
                             // Write command name key in JSON wrapper
                             if (multiCmdFirstWritten)
                             {
-                                Consts.Utf8Comma.CopyTo(writer.GetSpan(1)); writer.Advance(1);
+                                writer.Write(Consts.Utf8Comma);
                             }
                             var nameJson = string.Concat(cmdInfo.JsonName, ":");
                             writer.Advance(Encoding.UTF8.GetBytes(nameJson.AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(nameJson.Length))));
@@ -2690,7 +2703,7 @@ public partial class NpgsqlRestEndpoint(
 
                     if (routine.ReturnsSet && endpoint.Raw is false && binary is false && isSingleRecord is false)
                     {
-                        Consts.Utf8OpenBracket.CopyTo(writer.GetSpan(1)); writer.Advance(1);
+                        writer.Write(Consts.Utf8OpenBracket);
                         if (shouldCache)
                         {
                             cacheBuffer!.Append(Consts.OpenBracket);
@@ -2807,9 +2820,9 @@ public partial class NpgsqlRestEndpoint(
                                     {
                                         raw = Options.AuthenticationOptions.DefaultDataProtector.Unprotect((string)value).AsSpan();
                                     }
-                                    catch
+                                    catch (Exception decryptEx)
                                     {
-                                        // If decryption fails, use raw value as-is
+                                        Logger?.DecryptColumnFailed(decryptEx.Message);
                                     }
                                 }
 
@@ -3041,11 +3054,11 @@ public partial class NpgsqlRestEndpoint(
                         if (multiCmd is not null)
                         {
                             // Multi-command: always write null for empty @single results
-                            Consts.Utf8Null.CopyTo(writer.GetSpan(4)); writer.Advance(4);
+                            writer.Write(Consts.Utf8Null);
                         }
                         else if (endpoint.TextResponseNullHandling == TextResponseNullHandling.NullLiteral)
                         {
-                            Consts.Utf8Null.CopyTo(writer.GetSpan(4)); writer.Advance(4);
+                            writer.Write(Consts.Utf8Null);
                             await writer.FlushAsync(cancellationToken);
                         }
                         else if (endpoint.TextResponseNullHandling == TextResponseNullHandling.NoContent)
@@ -3072,7 +3085,7 @@ public partial class NpgsqlRestEndpoint(
                         }
                         if (routine.ReturnsSet && endpoint.Raw is false && isSingleRecord is false)
                         {
-                            Consts.Utf8CloseBracket.CopyTo(writer.GetSpan(1)); writer.Advance(1);
+                            writer.Write(Consts.Utf8CloseBracket);
                             if (shouldCache)
                             {
                                 cacheBuffer!.Append(Consts.CloseBracket);
@@ -3092,7 +3105,7 @@ public partial class NpgsqlRestEndpoint(
                     // Close multi-command JSON object
                     if (multiCmdWriteWrapper)
                     {
-                        Consts.Utf8CloseBrace.CopyTo(writer.GetSpan(1)); writer.Advance(1);
+                        writer.Write(Consts.Utf8CloseBrace);
                     }
 
                     return;
@@ -3182,32 +3195,38 @@ public partial class NpgsqlRestEndpoint(
             // proxy_out: capture buffered function output and forward to upstream proxy
             if (proxyOutBuffer is not null && proxyOutOriginalBody is not null)
             {
-                // Only forward to proxy if the function executed successfully (no error status)
-                if (context.Response.StatusCode >= 200 && context.Response.StatusCode < 400)
+                try
                 {
-                    // Extract bytes directly — avoid string allocation and double UTF-8 conversion
-                    var functionBodyBytes = proxyOutBuffer.Length > 0
-                        ? proxyOutBuffer.ToArray()
-                        : [];
+                    // Only forward to proxy if the function executed successfully (no error status)
+                    if (context.Response.StatusCode >= 200 && context.Response.StatusCode < 400)
+                    {
+                        // Extract bytes directly — avoid string allocation and double UTF-8 conversion
+                        var functionBodyBytes = proxyOutBuffer.Length > 0
+                            ? proxyOutBuffer.ToArray()
+                            : [];
 
-                    // Restore original response body and reset response state
-                    context.Response.Body = proxyOutOriginalBody;
-                    context.Response.Headers.Clear();
-                    context.Response.StatusCode = 200;
+                        // Restore original response body and reset response state
+                        context.Response.Body = proxyOutOriginalBody;
+                        context.Response.Headers.Clear();
+                        context.Response.StatusCode = 200;
 
-                    var proxyResponse = await Proxy.ProxyRequestHandler.InvokeOutAsync(
-                        context, endpoint, functionBodyBytes, cancellationToken);
-                    await Proxy.ProxyRequestHandler.WriteResponseAsync(
-                        context, proxyResponse, Options.ProxyOptions, cancellationToken);
+                        var proxyResponse = await Proxy.ProxyRequestHandler.InvokeOutAsync(
+                            context, endpoint, functionBodyBytes, cancellationToken);
+                        await Proxy.ProxyRequestHandler.WriteResponseAsync(
+                            context, proxyResponse, Options.ProxyOptions, cancellationToken);
+                    }
+                    else
+                    {
+                        // Function errored — restore original body and copy error content through
+                        proxyOutBuffer.Position = 0;
+                        context.Response.Body = proxyOutOriginalBody;
+                        await proxyOutBuffer.CopyToAsync(proxyOutOriginalBody, cancellationToken);
+                    }
                 }
-                else
+                finally
                 {
-                    // Function errored — restore original body and copy error content through
-                    proxyOutBuffer.Position = 0;
-                    context.Response.Body = proxyOutOriginalBody;
-                    await proxyOutBuffer.CopyToAsync(proxyOutOriginalBody, cancellationToken);
+                    proxyOutBuffer.Dispose();
                 }
-                proxyOutBuffer.Dispose();
             }
 
             await context.Response.CompleteAsync();
@@ -3246,6 +3265,14 @@ public partial class NpgsqlRestEndpoint(
             if (compositeFieldBuffer is not null)
             {
                 StringBuilderPool.Return(compositeFieldBuffer);
+            }
+            if (mcRowBuilder is not null)
+            {
+                StringBuilderPool.Return(mcRowBuilder);
+            }
+            if (mcCompositeBuffer is not null)
+            {
+                StringBuilderPool.Return(mcCompositeBuffer);
             }
         }
     }

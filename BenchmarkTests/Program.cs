@@ -11,6 +11,12 @@ var runHttpBenchmarks = args.Contains("--http") || args.Contains("-h");
 var runInProcessBenchmarks = args.Contains("--inprocess") || args.Contains("-i");
 var runAll = args.Contains("--all") || args.Contains("-a");
 
+if (args.Contains("--pgconv-only"))
+{
+    BenchmarkRunner.Run<PgConverterAndWriterBenchmarks>();
+    return;
+}
+
 // Default: run in-process benchmarks if no arguments provided
 if (!runHttpBenchmarks && !runInProcessBenchmarks && !runAll)
 {
@@ -26,6 +32,7 @@ if (runInProcessBenchmarks || runAll)
     BenchmarkRunner.Run<TypeCategoryBenchmarks>();
     BenchmarkRunner.Run<ParameterParserBenchmarks>();
     BenchmarkRunner.Run<SerializationBenchmarks>();
+    BenchmarkRunner.Run<PgConverterAndWriterBenchmarks>();
 }
 
 // HTTP benchmarks (require external server)
