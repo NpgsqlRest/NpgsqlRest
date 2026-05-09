@@ -362,6 +362,15 @@ public partial class NpgsqlRestEndpoint(
                         }
                         else if (context.User?.Identity?.IsAuthenticated is true && Options.AuthenticationOptions.ParameterNameClaimsMapping.TryGetValue(parameter.ActualName, out var claimType))
                         {
+                            // Claim auto-bind always wins (security routines depend on it). If the
+                            // request also supplied a value, it would otherwise be silently dropped —
+                            // surface that as a WARN so a parameter naming collision is visible.
+                            if (queryCollection is not null
+                                && (queryCollection.ContainsKey(parameter.ConvertedName) || queryCollection.ContainsKey(parameter.ActualName)))
+                            {
+                                Logger?.ClaimMappedParamReceivedRequestValue(
+                                    endpoint.Path, parameter.ActualName, "query", claimType);
+                            }
                             parameter.Value = claimsDict!.GetClaimDbParam(claimType);
                         }
                         else if (context.User?.Identity?.IsAuthenticated is true && parameter.IsUserClaims is true)
@@ -1028,6 +1037,15 @@ public partial class NpgsqlRestEndpoint(
                         }
                         else if (context.User?.Identity?.IsAuthenticated is true && Options.AuthenticationOptions.ParameterNameClaimsMapping.TryGetValue(parameter.ActualName, out var claimType))
                         {
+                            // Claim auto-bind always wins (security routines depend on it). If the
+                            // request also supplied a value, it would otherwise be silently dropped —
+                            // surface that as a WARN so a parameter naming collision is visible.
+                            if (bodyDict is not null
+                                && (bodyDict.ContainsKey(parameter.ConvertedName) || bodyDict.ContainsKey(parameter.ActualName)))
+                            {
+                                Logger?.ClaimMappedParamReceivedRequestValue(
+                                    endpoint.Path, parameter.ActualName, "body", claimType);
+                            }
                             parameter.Value = claimsDict!.GetClaimDbParam(claimType);
                         }
                         else if (context.User?.Identity?.IsAuthenticated is true && parameter.IsUserClaims is true)

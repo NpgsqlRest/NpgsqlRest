@@ -331,4 +331,7 @@ public static partial class Log
 
     [LoggerMessage(Level = LogLevel.Trace, Message = "Column decryption failed; falling back to raw value. Error: {error}")]
     public static partial void DecryptColumnFailed(this ILogger logger, string error);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Endpoint {path} parameter {paramName} received a {source} value but is auto-bound from claim '{claimName}'. The supplied value is being ignored.")]
+    public static partial void ClaimMappedParamReceivedRequestValue(this ILogger logger, string path, string paramName, string source, string claimName);
 }

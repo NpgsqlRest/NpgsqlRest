@@ -325,6 +325,29 @@ public static class NpgsqlRestBuilder
                     }
                 }
 
+                // Fail-fast if a claim-mapped parameter is declared with a known non-text type.
+                // Claim values are strings, so binding to e.g. an Integer parameter would crash
+                // every authenticated request with a misleading InvalidCastException deep inside
+                // Npgsql ("Writing values of 'System.String' is not supported for parameters
+                // having NpgsqlDbType '<X>'"). NpgsqlDbType.Unknown is allowed — Npgsql resolves
+                // it server-side, which is the SqlFileSource path where param types aren't
+                // inferred. There is no scenario where the known-non-text configuration is valid,
+                // so surface it as a hard error at startup rather than letting it ship to prod.
+                if (endpoint.UseUserParameters is true && Options.AuthenticationOptions.ParameterNameClaimsMapping.Count > 0)
+                {
+                    for (int p = 0; p < routine.Parameters.Length; p++)
+                    {
+                        var param = routine.Parameters[p];
+                        if (param.UserClaim is not null
+                            && param.TypeDescriptor.IsText is false
+                            && param.TypeDescriptor.BaseDbType != NpgsqlTypes.NpgsqlDbType.Unknown)
+                        {
+                            throw new ArgumentException(
+                                $"Endpoint {method} {endpoint.Path} parameter {param.ActualName} is mapped to claim '{param.UserClaim}' but its type is '{param.TypeDescriptor.OriginalType}' which is not text-compatible. Claim values are strings, so binding would fail at runtime with InvalidCastException. Declare the parameter as text/varchar/char/json/jsonb/xml/jsonpath, or remove '{param.ActualName}' from ParameterNameClaimsMapping.");
+                        }
+                    }
+                }
+
                 // Warn if @table_format is set on non-applicable endpoints
                 if (Options.TableFormatHandlers is not null
                     && endpoint.CustomParameters is not null
