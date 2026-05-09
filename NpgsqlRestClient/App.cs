@@ -4,7 +4,6 @@ using NpgsqlRest;
 using NpgsqlRest.HttpFiles;
 using NpgsqlRest.TsClient;
 using Serilog;
-using NpgsqlRest.CrudSource;
 using NpgsqlRest.SqlFileSource;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.DataProtection;
@@ -581,31 +580,6 @@ public class App
             }
             sources.Add(source);
             _builder.ClientLogger?.LogDebug("Using {name} PostrgeSQL Source", nameof(RoutineSource));
-        }
-
-        var crudSourceCfg = _config.NpgsqlRestCfg.GetSection("CrudSource");
-        if (crudSourceCfg.Exists() is true && _config.GetConfigBool("Enabled", crudSourceCfg, true) is true)
-        {
-            sources.Add(new CrudSource()
-            {
-                SchemaSimilarTo = _config.GetConfigStr("SchemaSimilarTo", crudSourceCfg),
-                SchemaNotSimilarTo = _config.GetConfigStr("SchemaNotSimilarTo", crudSourceCfg),
-                IncludeSchemas = _config.GetConfigEnumerable("IncludeSchemas", crudSourceCfg)?.ToArray(),
-                ExcludeSchemas = _config.GetConfigEnumerable("ExcludeSchemas", crudSourceCfg)?.ToArray(),
-                NameSimilarTo = _config.GetConfigStr("NameSimilarTo", crudSourceCfg),
-                NameNotSimilarTo = _config.GetConfigStr("NameNotSimilarTo", crudSourceCfg),
-                IncludeNames = _config.GetConfigEnumerable("IncludeNames", crudSourceCfg)?.ToArray(),
-                ExcludeNames = _config.GetConfigEnumerable("ExcludeNames", crudSourceCfg)?.ToArray(),
-                CommentsMode = _config.GetConfigEnum<CommentsMode?>("CommentsMode", crudSourceCfg),
-                CrudTypes = _config.GetConfigFlag<CrudCommandType>("CrudTypes", crudSourceCfg),
-
-                ReturningUrlPattern = _config.GetConfigStr("ReturningUrlPattern", crudSourceCfg) ?? "{0}/returning",
-                OnConflictDoNothingUrlPattern = _config.GetConfigStr("OnConflictDoNothingUrlPattern", crudSourceCfg) ?? "{0}/on-conflict-do-nothing",
-                OnConflictDoNothingReturningUrlPattern = _config.GetConfigStr("OnConflictDoNothingReturningUrlPattern", crudSourceCfg) ?? "{0}/on-conflict-do-nothing/returning",
-                OnConflictDoUpdateUrlPattern = _config.GetConfigStr("OnConflictDoUpdateUrlPattern", crudSourceCfg) ?? "{0}/on-conflict-do-update",
-                OnConflictDoUpdateReturningUrlPattern = _config.GetConfigStr("OnConflictDoUpdateReturningUrlPattern", crudSourceCfg) ?? "{0}/on-conflict-do-update/returning",
-            });
-            _builder.ClientLogger?.LogDebug("Using {name} PostrgeSQL Source", nameof(CrudSource));
         }
 
         var sqlFileSourceCfg = _config.NpgsqlRestCfg.GetSection("SqlFileSource");

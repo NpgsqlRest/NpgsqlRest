@@ -797,7 +797,6 @@ public static class ConfigDefaults
             ["ClientCodeGen"] = GetClientCodeGenDefaults(),
             ["HttpClientOptions"] = GetHttpClientOptionsDefaults(),
             ["ProxyOptions"] = GetProxyOptionsDefaults(),
-            ["CrudSource"] = GetCrudSourceDefaults(),
             ["SqlFileSource"] = GetSqlFileSourceDefaults()
         };
     }
@@ -1008,29 +1007,6 @@ public static class ConfigDefaults
             ["ResponseSuccessParameter"] = "_proxy_success",
             ["ResponseErrorMessageParameter"] = "_proxy_error_message",
             ["ForwardUploadContent"] = false
-        };
-    }
-
-    private static JsonObject GetCrudSourceDefaults()
-    {
-        return new JsonObject
-        {
-            ["Enabled"] = false,
-            ["SchemaSimilarTo"] = null,
-            ["SchemaNotSimilarTo"] = null,
-            ["IncludeSchemas"] = null,
-            ["ExcludeSchemas"] = null,
-            ["NameSimilarTo"] = null,
-            ["NameNotSimilarTo"] = null,
-            ["IncludeNames"] = null,
-            ["ExcludeNames"] = null,
-            ["CommentsMode"] = "OnlyWithHttpTag",
-            ["ReturningUrlPattern"] = "{0}/returning",
-            ["OnConflictDoNothingUrlPattern"] = "{0}/on-conflict-do-nothing",
-            ["OnConflictDoNothingReturningUrlPattern"] = "{0}/on-conflict-do-nothing/returning",
-            ["OnConflictDoUpdateUrlPattern"] = "{0}/on-conflict-do-update",
-            ["OnConflictDoUpdateReturningUrlPattern"] = "{0}/on-conflict-do-update/returning",
-            ["CrudTypes"] = CreateStringArray("All")
         };
     }
 
