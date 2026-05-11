@@ -188,13 +188,75 @@ public class CliCommandTests
     }
 
     [Fact]
-    public async Task Config_WithUnknownKey_FailsValidation()
+    public async Task Config_WithUnknownKey_DefaultWarningMode_StillDumpsConfig()
     {
         var (stdout, stderr, exitCode) = await RunCliAsync("--xxx=test", "--config");
 
-        exitCode.Should().Be(1);
+        exitCode.Should().Be(0);
+        stderr.Should().Contain("Warning");
         stderr.Should().Contain("unknown key");
         stderr.Should().Contain("xxx");
+        stdout.TrimStart().Should().StartWith("{");
+        var json = ParseJsonc(stdout);
+        json.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Config_WithUnknownKey_ErrorMode_FailsValidation()
+    {
+        var (stdout, stderr, exitCode) = await RunCliAsync(
+            "--Config:ValidateConfigKeys=Error",
+            "--xxx=test",
+            "--config");
+
+        exitCode.Should().Be(1);
+        stderr.Should().Contain("failed");
+        stderr.Should().Contain("unknown key");
+        stderr.Should().Contain("xxx");
+        stdout.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Config_WithUnknownKey_IgnoreMode_DumpsConfigSilently()
+    {
+        var (stdout, stderr, exitCode) = await RunCliAsync(
+            "--Config:ValidateConfigKeys=Ignore",
+            "--xxx=test",
+            "--config");
+
+        exitCode.Should().Be(0);
+        stderr.Should().BeEmpty();
+        stdout.TrimStart().Should().StartWith("{");
+    }
+
+    [Fact]
+    public async Task Validate_Json_WithUnknownKey_DefaultWarningMode_ConfigStillValid()
+    {
+        var (stdout, _, _) = await RunCliAsync("--xxx=test", "--validate", "--json");
+
+        var json = JsonNode.Parse(stdout);
+        json.Should().NotBeNull();
+        json!["configValid"]!.GetValue<bool>().Should().BeTrue();
+        json["warningsAreFatal"]!.GetValue<bool>().Should().BeFalse();
+        json["validationMode"]!.GetValue<string>().Should().Be("Warning");
+        json["warnings"]!.AsArray().Count.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task Validate_Json_WithUnknownKey_ErrorMode_ConfigInvalid()
+    {
+        var (stdout, _, _) = await RunCliAsync(
+            "--Config:ValidateConfigKeys=Error",
+            "--xxx=test",
+            "--validate",
+            "--json");
+
+        var json = JsonNode.Parse(stdout);
+        json.Should().NotBeNull();
+        json!["configValid"]!.GetValue<bool>().Should().BeFalse();
+        json["warningsAreFatal"]!.GetValue<bool>().Should().BeTrue();
+        json["validationMode"]!.GetValue<string>().Should().Be("Error");
+        json["warnings"]!.AsArray().Count.Should().BeGreaterThan(0);
     }
 
     [Fact]

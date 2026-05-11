@@ -1225,6 +1225,24 @@ public static class ConfigDefaults
             {
                 var fullPath = string.IsNullOrEmpty(path) ? kvp.Key : $"{path}:{kvp.Key}";
 
+                // Auth:Schemes is a name-keyed open dictionary, but the keys *inside* each named scheme
+                // are not arbitrary — they depend on the scheme's Type. Pick a type-discriminated schema
+                // so any name (including the docs-example names short_session/api_token/admin_jwt) gets
+                // the same per-type validation. Without this, a scheme name that happens to match an
+                // example in defaults would be validated against that example's incomplete key set,
+                // flagging perfectly valid per-type override keys (Bug A in CONFIG_VALIDATION_NAMED_SCHEMES_BUG.md).
+                if (string.Equals(path, "Auth:Schemes", StringComparison.Ordinal) && kvp.Value is JsonObject schemeObj)
+                {
+                    var schemeSchema = GetAuthSchemeSchemaByType(schemeObj);
+                    if (schemeSchema is not null)
+                    {
+                        warnings.AddRange(FindUnknownConfigKeys(schemeSchema, schemeObj, fullPath));
+                    }
+                    // No/invalid Type: skip validation. RegisterAuthSchemes throws a clear error at
+                    // startup for missing/invalid Type; no point double-reporting it here.
+                    continue;
+                }
+
                 if (ContainsKeyIgnoreCase(defaultObj, kvp.Key, out var matchedKey))
                 {
                     var defaultChild = defaultObj[matchedKey!];
@@ -1250,6 +1268,77 @@ public static class ConfigDefaults
         }
 
         return warnings;
+    }
+
+    /// <summary>
+    /// Returns the per-type schema for a named entry under <c>Auth:Schemes</c>, keyed off the scheme's
+    /// <c>Type</c> field. Returns null when Type is missing/invalid so the caller can skip validation
+    /// (RegisterAuthSchemes will throw a clearer error at startup).
+    /// </summary>
+    private static JsonObject? GetAuthSchemeSchemaByType(JsonObject scheme)
+    {
+        string? type = null;
+        foreach (var kvp in scheme)
+        {
+            if (string.Equals(kvp.Key, "Type", StringComparison.OrdinalIgnoreCase))
+            {
+                if (kvp.Value is JsonValue val && val.TryGetValue<string>(out var s))
+                {
+                    type = s;
+                }
+                break;
+            }
+        }
+        if (string.IsNullOrWhiteSpace(type))
+        {
+            return null;
+        }
+        if (string.Equals(type, "Cookies", StringComparison.OrdinalIgnoreCase))
+        {
+            return new JsonObject
+            {
+                ["Type"] = "Cookies",
+                ["Enabled"] = true,
+                ["CookieValid"] = "14 days",
+                ["CookieName"] = null,
+                ["CookiePath"] = null,
+                ["CookieDomain"] = null,
+                ["CookieMultiSessions"] = true,
+                ["CookieHttpOnly"] = true,
+                ["CookieSameSite"] = null,
+                ["CookieSecure"] = null
+            };
+        }
+        if (string.Equals(type, "BearerToken", StringComparison.OrdinalIgnoreCase))
+        {
+            return new JsonObject
+            {
+                ["Type"] = "BearerToken",
+                ["Enabled"] = true,
+                ["BearerTokenExpire"] = "1 hour",
+                ["BearerTokenRefreshPath"] = null
+            };
+        }
+        if (string.Equals(type, "Jwt", StringComparison.OrdinalIgnoreCase))
+        {
+            return new JsonObject
+            {
+                ["Type"] = "Jwt",
+                ["Enabled"] = true,
+                ["JwtSecret"] = null,
+                ["JwtIssuer"] = null,
+                ["JwtAudience"] = null,
+                ["JwtExpire"] = "60 minutes",
+                ["JwtRefreshExpire"] = "7 days",
+                ["JwtClockSkew"] = "5 minutes",
+                ["JwtValidateIssuer"] = false,
+                ["JwtValidateAudience"] = false,
+                ["JwtValidateLifetime"] = true,
+                ["JwtValidateIssuerSigningKey"] = true,
+                ["JwtRefreshPath"] = null
+            };
+        }
+        return null;
     }
 
     private static bool ContainsKeyIgnoreCase(JsonObject obj, string key, out string? matchedKey)

@@ -155,17 +155,24 @@ catch (ArgumentException ex)
 if (args.Any(a => string.Equals(a, "--config", StringComparison.CurrentCultureIgnoreCase) || a.StartsWith("--config=", StringComparison.CurrentCultureIgnoreCase)))
 {
     var (valMode, valWarnings) = config.ValidateConfigKeys();
+    bool warningsAreFatal = string.Equals(valMode, "Error", StringComparison.OrdinalIgnoreCase);
     if (valWarnings.Count > 0)
     {
-        Console.ForegroundColor = ConsoleColor.Red;
-        Console.Error.WriteLine($"Config validation failed: {valWarnings.Count} unknown key(s):");
+        Console.ForegroundColor = warningsAreFatal ? ConsoleColor.Red : ConsoleColor.Yellow;
+        var header = warningsAreFatal
+            ? $"Config validation failed: {valWarnings.Count} unknown key(s):"
+            : $"Config validation ({valMode}): {valWarnings.Count} unknown key(s):";
+        Console.Error.WriteLine(header);
         foreach (var warning in valWarnings)
         {
             Console.Error.WriteLine($"  - {warning}");
         }
         Console.ResetColor();
-        Environment.ExitCode = 1;
-        return;
+        if (warningsAreFatal)
+        {
+            Environment.ExitCode = 1;
+            return;
+        }
     }
     var outWriter = new Out();
     if (config.ConfigFilter is not null)
@@ -183,7 +190,8 @@ if (args.Any(a => string.Equals(a, "--validate", StringComparison.CurrentCulture
 {
     bool jsonOutput = args.Any(a => string.Equals(a, "--json", StringComparison.OrdinalIgnoreCase));
     var (valMode, valWarnings) = config.ValidateConfigKeys();
-    bool configValid = valWarnings.Count == 0;
+    bool warningsAreFatal = string.Equals(valMode, "Error", StringComparison.OrdinalIgnoreCase);
+    bool configValid = valWarnings.Count == 0 || !warningsAreFatal;
 
     // Test database connection
     string? connectionError = null;
@@ -210,6 +218,7 @@ if (args.Any(a => string.Equals(a, "--validate", StringComparison.CurrentCulture
             ["valid"] = valid,
             ["configValid"] = configValid,
             ["validationMode"] = valMode,
+            ["warningsAreFatal"] = warningsAreFatal,
             ["warnings"] = new System.Text.Json.Nodes.JsonArray(
                 valWarnings.Select(w => (System.Text.Json.Nodes.JsonNode)System.Text.Json.Nodes.JsonValue.Create(w)!).ToArray()),
             ["connectionTest"] = connectionError is null ? "ok" : connectionError
@@ -222,10 +231,11 @@ if (args.Any(a => string.Equals(a, "--validate", StringComparison.CurrentCulture
         _.Logo();
         if (valWarnings.Count > 0)
         {
-            _.Line($"Config validation ({valMode}): {valWarnings.Count} unknown key(s):", ConsoleColor.Yellow);
+            var color = warningsAreFatal ? ConsoleColor.Red : ConsoleColor.Yellow;
+            _.Line($"Config validation ({valMode}): {valWarnings.Count} unknown key(s):", color);
             foreach (var warning in valWarnings)
             {
-                _.Line($"  - {warning}", ConsoleColor.Yellow);
+                _.Line($"  - {warning}", color);
             }
         }
         else
