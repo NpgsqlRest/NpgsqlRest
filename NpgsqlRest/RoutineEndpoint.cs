@@ -158,6 +158,21 @@ public class RoutineEndpoint(
     /// Instead of executing the routine, it removes the cached entry for the given parameters.
     /// </summary>
     public bool InvalidateCache { get; set; } = false;
+    /// <summary>
+    /// When true, this endpoint is excluded from the OpenAPI document produced by the
+    /// <c>NpgsqlRest.OpenApi</c> plugin. The HTTP endpoint itself is unaffected — only its appearance
+    /// in the generated spec. Set via the <c>openapi hide</c> / <c>openapi hidden</c> / <c>openapi ignore</c>
+    /// comment annotation. Ignored when the OpenAPI plugin is not loaded.
+    /// </summary>
+    public bool OpenApiHide { get; set; } = false;
+    /// <summary>
+    /// Tags emitted on this endpoint in the OpenAPI document. When null, the plugin defaults to the
+    /// routine's schema name (existing behavior). When set (via <c>openapi tag &lt;name&gt;</c> /
+    /// <c>openapi tags &lt;a&gt;,&lt;b&gt;</c>), these values replace the default. Drives grouping in
+    /// Swagger UI / ReDoc, so this is the lever for "partner" vs "internal" sections in a shared
+    /// document. Ignored when the OpenAPI plugin is not loaded.
+    /// </summary>
+    public string[]? OpenApiTags { get; set; } = null;
 
     /// <summary>
     /// Dictionary of parameter names to SQL expressions that resolve their values server-side.

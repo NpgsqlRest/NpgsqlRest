@@ -295,6 +295,108 @@ public class App
         };
     }
 
+    /// <summary>
+    /// Builds the <see cref="OpenApiOptions"/> from the <c>NpgsqlRest:OpenApiOptions</c> config
+    /// section. Returns null when the section is absent or <c>Enabled</c> is false — callers add the
+    /// OpenAPI plugin only on a non-null result. Extracted from <see cref="Configure"/> so the
+    /// config-to-options wiring (filename / paths / filters / servers / security schemes) is
+    /// independently testable from the WebApplication setup.
+    /// </summary>
+    public OpenApiOptions? BuildOpenApiOptions(string? connectionString)
+    {
+        var openApiCfg = _config.NpgsqlRestCfg.GetSection("OpenApiOptions");
+        if (openApiCfg is null || _config.GetConfigBool("Enabled", openApiCfg) is not true)
+        {
+            return null;
+        }
+
+        var openApi = new OpenApiOptions
+        {
+            FileName = _config.GetConfigStr("FileName", openApiCfg),
+            UrlPath = _config.GetConfigStr("UrlPath", openApiCfg),
+            FileOverwrite = _config.GetConfigBool("FileOverwrite", openApiCfg, true),
+            DocumentTitle = _config.GetConfigStr("DocumentTitle", openApiCfg),
+            DocumentVersion = _config.GetConfigStr("DocumentVersion", openApiCfg) ?? "1.0.0",
+            DocumentDescription = _config.GetConfigStr("DocumentDescription", openApiCfg),
+            ConnectionString = connectionString,
+            AddCurrentServer = _config.GetConfigBool("AddCurrentServer", openApiCfg, true),
+            IncludeSchemas = _config.GetConfigEnumerable("IncludeSchemas", openApiCfg)?.ToArray(),
+            ExcludeSchemas = _config.GetConfigEnumerable("ExcludeSchemas", openApiCfg)?.ToArray(),
+            NameSimilarTo = _config.GetConfigStr("NameSimilarTo", openApiCfg),
+            NameNotSimilarTo = _config.GetConfigStr("NameNotSimilarTo", openApiCfg),
+            RequiresAuthorizationOnly = _config.GetConfigBool("RequiresAuthorizationOnly", openApiCfg, false),
+        };
+
+        if (openApi.UrlPath is null && openApi.FileName is null)
+        {
+            // Caller will log the warning. Return the options as-is so the warning fires through
+            // the same code path it always has.
+            return openApi;
+        }
+
+        var serversCfg = openApiCfg.GetSection("Servers");
+        var servers = new List<OpenApiServer>(3);
+        foreach (var serverSection in serversCfg.GetChildren())
+        {
+            var url = _config.GetConfigStr("Url", serverSection);
+            if (url is null)
+            {
+                continue;
+            }
+            servers.Add(new OpenApiServer
+            {
+                Url = _config.GetConfigStr("Url", serverSection)!,
+                Description = _config.GetConfigStr("Description", serverSection)
+            });
+        }
+        if (servers.Count > 0)
+        {
+            openApi.Servers = servers.ToArray();
+        }
+
+        var securitySchemesCfg = openApiCfg.GetSection("SecuritySchemes");
+        var securitySchemes = new List<OpenApiSecurityScheme>(2);
+        foreach (var schemeSection in securitySchemesCfg.GetChildren())
+        {
+            var name = _config.GetConfigStr("Name", schemeSection);
+            var type = _config.GetConfigEnum<OpenApiSecuritySchemeType?>("Type", schemeSection);
+            if (name is null || type is null)
+            {
+                continue;
+            }
+
+            var scheme = new OpenApiSecurityScheme
+            {
+                Name = name,
+                Type = type.Value,
+                Description = _config.GetConfigStr("Description", schemeSection)
+            };
+
+            // HTTP scheme configuration (Bearer/Basic)
+            if (type == OpenApiSecuritySchemeType.Http)
+            {
+                scheme.Scheme = _config.GetConfigEnum<HttpAuthScheme?>("Scheme", schemeSection);
+                scheme.BearerFormat = _config.GetConfigStr("BearerFormat", schemeSection);
+            }
+
+            // API Key configuration (Cookie/Header/Query)
+            if (type == OpenApiSecuritySchemeType.ApiKey)
+            {
+                scheme.In = _config.GetConfigStr("In", schemeSection);
+                scheme.ApiKeyLocation = _config.GetConfigEnum<ApiKeyLocation?>("ApiKeyLocation", schemeSection);
+            }
+
+            securitySchemes.Add(scheme);
+        }
+
+        if (securitySchemes.Count > 0)
+        {
+            openApi.SecuritySchemes = securitySchemes.ToArray();
+        }
+
+        return openApi;
+    }
+
     public Action<RoutineEndpoint?>? CreateEndpointCreatedHandler(IConfigurationSection authCfg)
     {
         if (_config.Exists(authCfg) is false)
@@ -379,86 +481,15 @@ public class App
                 _config.GetConfigStr("Name", httpFilecfg) ?? "generated from connection string");
         }
         
-        var openApiCfg = _config.NpgsqlRestCfg.GetSection("OpenApiOptions");
-        if (openApiCfg is not null && _config.GetConfigBool("Enabled", openApiCfg) is true)
+        var openApi = BuildOpenApiOptions(connectionString);
+        if (openApi is not null)
         {
-            var openApi = new OpenApiOptions
-            {
-                FileName = _config.GetConfigStr("FileName", openApiCfg),
-                UrlPath = _config.GetConfigStr("UrlPath", openApiCfg),
-                FileOverwrite = _config.GetConfigBool("FileOverwrite", openApiCfg, true),
-                DocumentTitle = _config.GetConfigStr("DocumentTitle", openApiCfg),
-                DocumentVersion = _config.GetConfigStr("DocumentVersion", openApiCfg) ?? "1.0.0",
-                DocumentDescription = _config.GetConfigStr("DocumentDescription", openApiCfg),
-                ConnectionString = connectionString,
-                AddCurrentServer = _config.GetConfigBool("AddCurrentServer", openApiCfg, true),
-            };
             if (openApi.UrlPath is null && openApi.FileName is null)
             {
                 _builder.ClientLogger?.LogWarning("OpenAPI generation is disabled because both FileName and UrlPath are not set.");
             }
             else
             {
-                var serversCfg = openApiCfg.GetSection("Servers");
-                var servers = new List<OpenApiServer>(3);
-                foreach (var serverSection in serversCfg.GetChildren())
-                {
-                    var url = _config.GetConfigStr("Url", serverSection);
-                    if (url is null)
-                    {
-                        continue;
-                    }
-                    servers.Add(new OpenApiServer
-                    {
-                        Url = _config.GetConfigStr("Url", serverSection)!,
-                        Description = _config.GetConfigStr("Description", serverSection)
-                    });
-                }
-                if (servers.Count > 0)
-                {
-                    openApi.Servers = servers.ToArray();
-                }
-
-                var securitySchemesCfg = openApiCfg.GetSection("SecuritySchemes");
-                var securitySchemes = new List<OpenApiSecurityScheme>(2);
-                foreach (var schemeSection in securitySchemesCfg.GetChildren())
-                {
-                    var name = _config.GetConfigStr("Name", schemeSection);
-                    var type = _config.GetConfigEnum<OpenApiSecuritySchemeType?>("Type", schemeSection);
-                    if (name is null || type is null)
-                    {
-                        continue;
-                    }
-
-                    var scheme = new OpenApiSecurityScheme
-                    {
-                        Name = name,
-                        Type = type.Value,
-                        Description = _config.GetConfigStr("Description", schemeSection)
-                    };
-
-                    // HTTP scheme configuration (Bearer/Basic)
-                    if (type == OpenApiSecuritySchemeType.Http)
-                    {
-                        scheme.Scheme = _config.GetConfigEnum<HttpAuthScheme?>("Scheme", schemeSection);
-                        scheme.BearerFormat = _config.GetConfigStr("BearerFormat", schemeSection);
-                    }
-
-                    // API Key configuration (Cookie/Header/Query)
-                    if (type == OpenApiSecuritySchemeType.ApiKey)
-                    {
-                        scheme.In = _config.GetConfigStr("In", schemeSection);
-                        scheme.ApiKeyLocation = _config.GetConfigEnum<ApiKeyLocation?>("ApiKeyLocation", schemeSection);
-                    }
-
-                    securitySchemes.Add(scheme);
-                }
-
-                if (securitySchemes.Count > 0)
-                {
-                    openApi.SecuritySchemes = securitySchemes.ToArray();
-                }
-
                 handlers.Add(new OpenApi(openApi));
                 _builder.ClientLogger?.LogDebug("OpenAPI generation enabled. FileName={FileName}, UrlPath={UrlPath}",
                     openApi.FileName ?? "not set", openApi.UrlPath ?? "not set");

@@ -29,10 +29,10 @@
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
         <PackageReadmeFile>README.MD</PackageReadmeFile>
         <DocumentationFile>bin\$(Configuration)\$(AssemblyName).xml</DocumentationFile>
-        <Version>3.14.0</Version>
-        <AssemblyVersion>3.14.0</AssemblyVersion>
-        <FileVersion>3.14.0</FileVersion>
-        <PackageVersion>3.14.0</PackageVersion>
+        <Version>3.15.0</Version>
+        <AssemblyVersion>3.15.0</AssemblyVersion>
+        <FileVersion>3.15.0</FileVersion>
+        <PackageVersion>3.15.0</PackageVersion>
         <EnableRequestDelegateGenerator>true</EnableRequestDelegateGenerator>
     </PropertyGroup>
 

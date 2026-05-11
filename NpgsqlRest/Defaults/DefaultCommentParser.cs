@@ -115,6 +115,16 @@ internal static partial class DefaultCommentParser
                     TrackAnnotation(line);
                 }
 
+                // openapi
+                // openapi hide | hidden | ignore
+                // openapi tag tag1, tag2, ...
+                // openapi tags tag1, tag2, ...
+                else if (haveTag is true && StrEquals(wordsLower[0], OpenApiKey))
+                {
+                    HandleOpenApi(routineEndpoint, wordsLower, words, len, description);
+                    TrackAnnotation(line);
+                }
+
                 // HTTP
                 // HTTP [ GET | POST | PUT | DELETE ]
                 // HTTP [ GET | POST | PUT | DELETE ] path

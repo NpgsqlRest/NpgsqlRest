@@ -186,6 +186,8 @@ public static class ConfigDefaults
             ["CookieDomain"] = null,
             ["CookieMultiSessions"] = true,
             ["CookieHttpOnly"] = true,
+            ["CookieSameSite"] = null,
+            ["CookieSecure"] = null,
             ["BearerTokenAuth"] = false,
             ["BearerTokenAuthScheme"] = null,
             ["BearerTokenExpire"] = "1 hour",
@@ -933,7 +935,12 @@ public static class ConfigDefaults
             ["DocumentDescription"] = null,
             ["AddCurrentServer"] = true,
             ["Servers"] = new JsonArray(),
-            ["SecuritySchemes"] = new JsonArray()
+            ["SecuritySchemes"] = new JsonArray(),
+            ["IncludeSchemas"] = new JsonArray(),
+            ["ExcludeSchemas"] = new JsonArray(),
+            ["NameSimilarTo"] = null,
+            ["NameNotSimilarTo"] = null,
+            ["RequiresAuthorizationOnly"] = false
         };
     }
 

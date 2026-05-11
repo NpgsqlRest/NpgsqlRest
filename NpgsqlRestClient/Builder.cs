@@ -47,6 +47,14 @@ public class Builder
     public List<BearerTokenConfig> AdditionalBearerTokenConfigs { get; } = [];
     /// <summary>Jwt-type entries registered under <c>Auth:Schemes</c>. Each carries its own scheme name, secret, validation options and (optionally) refresh path.</summary>
     public List<JwtTokenConfig> AdditionalJwtTokenConfigs { get; } = [];
+    /// <summary>
+    /// Every registered cookie scheme in registration order — main scheme first (when CookieAuth is on),
+    /// then each Cookie-type entry under <c>Auth:Schemes</c>. Each tuple pairs the scheme name with the
+    /// HTTP cookie name actually written to the request. Consumed by the cookie-aware
+    /// <c>ForwardDefaultSelector</c> on the policy scheme so that requests bearing a named-scheme cookie
+    /// authenticate under that scheme (not just the default).
+    /// </summary>
+    public List<(string SchemeName, string CookieName)> CookieSchemesInOrder { get; } = [];
     public string? ConnectionString { get; private set; } = null;
     public string? ConnectionName { get; private set; } = null;
     public ExternalAuthConfig? ExternalAuthConfig { get; private set; } = null;
@@ -590,11 +598,41 @@ public class Builder
         if (bearerTokenAuth) enabledSchemes.Add(tokenScheme);
         if (jwtAuth) enabledSchemes.Add(jwtScheme);
 
-        string defaultScheme = enabledSchemes.Count switch
+        // Pre-scan Auth:Schemes for enabled Cookie-type entries so we can decide upfront whether a
+        // policy scheme is needed (and, if so, whether the existing composite name collides with a
+        // single main scheme's own name). Full registration runs later in RegisterAuthSchemes.
+        var namedCookieSchemeCount = CountEnabledNamedCookieSchemes(authCfg);
+        var totalCookieSchemes = (cookieAuth ? 1 : 0) + namedCookieSchemeCount;
+
+        // Policy scheme triggers:
+        //   - Existing case: more than one of {cookies, bearer, jwt} is enabled.
+        //   - New case: cookies enabled plus one or more named cookie schemes — so requests bearing a
+        //     named-scheme cookie can still authenticate against ASP.NET's default scheme.
+        var needsPolicyScheme = enabledSchemes.Count > 1 || totalCookieSchemes > 1;
+
+        // defaultScheme is what ASP.NET treats as the DefaultAuthenticateScheme. When we register a
+        // policy scheme, this MUST be the policy scheme's name. The composite "_and_"-joined name is
+        // distinct from any individual scheme. But when only one main scheme is enabled, we can't
+        // reuse its name for the policy scheme (collides with the existing AddCookie/AddJwtBearer/...
+        // registration), so a synthetic name is used instead.
+        const string SyntheticPolicySchemeName = "NpgsqlRest_PolicyScheme";
+        string defaultScheme;
+        string? policySchemeName;
+        if (enabledSchemes.Count > 1)
         {
-            1 => enabledSchemes[0],
-            _ => string.Join("_and_", enabledSchemes)
-        };
+            defaultScheme = string.Join("_and_", enabledSchemes);
+            policySchemeName = defaultScheme;
+        }
+        else if (needsPolicyScheme)
+        {
+            defaultScheme = SyntheticPolicySchemeName;
+            policySchemeName = SyntheticPolicySchemeName;
+        }
+        else
+        {
+            defaultScheme = enabledSchemes[0];
+            policySchemeName = null;
+        }
 
         // Fail fast if any of the four legacy integer time fields is still present in the user's config
         // (CookieValidDays / BearerTokenExpireHours / JwtExpireMinutes / JwtRefreshExpireDays). They were
@@ -606,20 +644,33 @@ public class Builder
         if (cookieAuth is true)
         {
             var cookieValid = ResolveAuthTimeSpan("CookieValid", TimeSpan.FromDays(14), authCfg);
+            var mainCookieNameRaw = _config.GetConfigStr("CookieName", authCfg);
+            var mainSameSite = ResolveSameSiteMode("CookieSameSite", authCfg);
+            var mainSecure = ResolveCookieSecurePolicy("CookieSecure", authCfg);
+            WarnIfSameSiteNoneWithoutSecure(authCfg.Path, mainSameSite, mainSecure);
             auth.AddCookie(cookieScheme, options =>
             {
                 options.ExpireTimeSpan = cookieValid;
-                var name = _config.GetConfigStr("CookieName", authCfg);
-                if (string.IsNullOrEmpty(name) is false)
+                if (string.IsNullOrEmpty(mainCookieNameRaw) is false)
                 {
-                    options.Cookie.Name = _config.GetConfigStr("CookieName", authCfg);
+                    options.Cookie.Name = mainCookieNameRaw;
                 }
                 options.Cookie.Path = _config.GetConfigStr("CookiePath", authCfg);
                 options.Cookie.Domain = _config.GetConfigStr("CookieDomain", authCfg);
                 options.Cookie.MaxAge = _config.GetConfigBool("CookieMultiSessions", authCfg, true) is true ? cookieValid : null;
                 options.Cookie.HttpOnly = _config.GetConfigBool("CookieHttpOnly", authCfg, true) is true;
+                if (mainSameSite is not null) options.Cookie.SameSite = mainSameSite.Value;
+                if (mainSecure is not null) options.Cookie.SecurePolicy = mainSecure.Value;
             });
-            ClientLogger?.LogDebug("Using Cookie Authentication with scheme {cookieScheme}. Cookie expires in {cookieValid}.", cookieScheme, cookieValid);
+            // Track the resolved cookie name for the policy-scheme selector. When CookieName is unset,
+            // ASP.NET defaults Cookie.Name to ".AspNetCore.<schemeName>".
+            CookieSchemesInOrder.Add((cookieScheme,
+                string.IsNullOrEmpty(mainCookieNameRaw) ? $".AspNetCore.{cookieScheme}" : mainCookieNameRaw));
+            ClientLogger?.LogDebug(
+                "Using Cookie Authentication with scheme {cookieScheme}. Cookie expires in {cookieValid}. SameSite={SameSite}, Secure={Secure}.",
+                cookieScheme, cookieValid,
+                mainSameSite?.ToString() ?? "<default>",
+                mainSecure?.ToString() ?? "<default>");
         }
 
         if (bearerTokenAuth is true)
@@ -694,10 +745,17 @@ public class Builder
         // function can return that scheme's name in its `scheme` column to sign in under those options.
         RegisterAuthSchemes(auth, authCfg, cookieScheme, tokenScheme, jwtScheme);
 
-        // Create policy scheme if multiple auth methods are enabled
-        if (enabledSchemes.Count > 1)
+        // Register the policy scheme whenever we have:
+        //   - more than one of {cookies, bearer, jwt} enabled (legacy case), OR
+        //   - more than one cookie scheme (main + named, or multiple named) — the named-schemes case.
+        // For the cookie-only case the synthetic policy name is used (see SyntheticPolicySchemeName
+        // above) to avoid colliding with the main cookie scheme's own AddCookie registration.
+        if (needsPolicyScheme)
         {
-            auth.AddPolicyScheme(defaultScheme, defaultScheme, options =>
+            // Capture the cookie-scheme list by reference: it gets filled out below by
+            // RegisterAuthSchemes → RegisterCookieSchemeFromConfig before any request is dispatched.
+            var cookieSchemes = CookieSchemesInOrder;
+            auth.AddPolicyScheme(policySchemeName!, policySchemeName!, options =>
             {
                 // runs on each request
                 options.ForwardDefaultSelector = context =>
@@ -721,6 +779,19 @@ public class Builder
                         }
                     }
 
+                    // Cookie-aware dispatch: walk registered cookie schemes in order and return the
+                    // first one whose configured cookie name is present in the request. This lets
+                    // named-scheme cookies authenticate against their own scheme (so any endpoint that
+                    // consults context.User — passkey endpoints, @authorize, plain IsAuthenticated
+                    // checks — accepts them just like the main cookie).
+                    foreach (var (schemeName, cookieName) in cookieSchemes)
+                    {
+                        if (context.Request.Cookies.ContainsKey(cookieName))
+                        {
+                            return schemeName;
+                        }
+                    }
+
                     // Default to cookie auth if enabled
                     if (cookieAuth)
                     {
@@ -738,6 +809,103 @@ public class Builder
             ExternalAuthConfig = new ExternalAuthConfig();
             ExternalAuthConfig.Build(authCfg, _config, this);
         }
+    }
+
+    /// <summary>
+    /// Resolves a <see cref="Microsoft.AspNetCore.Http.SameSiteMode"/> from a string config value. Accepts the four ASP.NET enum
+    /// names case-insensitively (<c>Unspecified</c>, <c>None</c>, <c>Lax</c>, <c>Strict</c>). Returns
+    /// null when the key is unset/empty so the caller can preserve ASP.NET's per-handler default.
+    /// Throws on unknown values — silently falling back hides typos in security-relevant config.
+    /// </summary>
+    private Microsoft.AspNetCore.Http.SameSiteMode? ResolveSameSiteMode(string key, IConfigurationSection section)
+    {
+        var raw = _config.GetConfigStr(key, section);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+        if (Enum.TryParse<Microsoft.AspNetCore.Http.SameSiteMode>(raw, ignoreCase: true, out var parsed)
+            && Enum.IsDefined(parsed))
+        {
+            return parsed;
+        }
+        throw new InvalidOperationException(
+            $"Invalid value '{raw}' for {section.Path}:{key}. Expected one of: Unspecified, None, Lax, Strict.");
+    }
+
+    /// <summary>
+    /// Resolves a <see cref="CookieSecurePolicy"/> from a string config value. Accepts the three
+    /// ASP.NET enum names case-insensitively (<c>SameAsRequest</c>, <c>Always</c>, <c>None</c>).
+    /// Returns null when unset so ASP.NET's default (<c>SameAsRequest</c>) applies. Throws on unknown
+    /// values.
+    /// </summary>
+    private CookieSecurePolicy? ResolveCookieSecurePolicy(string key, IConfigurationSection section)
+    {
+        var raw = _config.GetConfigStr(key, section);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+        if (Enum.TryParse<CookieSecurePolicy>(raw, ignoreCase: true, out var parsed)
+            && Enum.IsDefined(parsed))
+        {
+            return parsed;
+        }
+        throw new InvalidOperationException(
+            $"Invalid value '{raw}' for {section.Path}:{key}. Expected one of: SameAsRequest, Always, None.");
+    }
+
+    /// <summary>
+    /// Logs a warning at startup when a cookie scheme is configured with <c>SameSite=None</c> but
+    /// without forcing <c>Secure=Always</c>. Browsers silently drop <c>SameSite=None</c> cookies that
+    /// lack the <c>Secure</c> attribute, which produces a hard-to-diagnose "logs in, but no cookie
+    /// arrives on the next request" symptom — especially under local HTTP testing.
+    /// </summary>
+    private void WarnIfSameSiteNoneWithoutSecure(string sectionPath, Microsoft.AspNetCore.Http.SameSiteMode? sameSite, CookieSecurePolicy? secure)
+    {
+        if (sameSite == Microsoft.AspNetCore.Http.SameSiteMode.None && secure != CookieSecurePolicy.Always)
+        {
+            ClientLogger?.LogWarning(
+                "{Path}:CookieSameSite=None requires CookieSecure=Always — browsers drop SameSite=None cookies " +
+                "without the Secure attribute. Set {Path}:CookieSecure to \"Always\".",
+                sectionPath, sectionPath);
+        }
+    }
+
+    /// <summary>
+    /// Pre-scan helper: counts enabled Cookie-type entries under <c>Auth:Schemes</c> without registering
+    /// them. Used by <see cref="BuildAuthentication"/> to decide upfront whether a policy scheme is
+    /// needed (and what default scheme name to pass to <c>AddAuthentication</c>) before
+    /// <see cref="RegisterAuthSchemes"/> runs the real registration. Validation and full processing
+    /// happen later in <see cref="RegisterCookieSchemeFromConfig"/>; this method is intentionally lax —
+    /// it skips entries whose <c>Type</c> isn't <c>Cookies</c> and trusts <see cref="RegisterAuthSchemes"/>
+    /// to throw on shape errors.
+    /// </summary>
+    private int CountEnabledNamedCookieSchemes(IConfigurationSection authCfg)
+    {
+        var schemesCfg = authCfg.GetSection("Schemes");
+        if (!schemesCfg.Exists())
+        {
+            return 0;
+        }
+        var count = 0;
+        foreach (var sch in schemesCfg.GetChildren())
+        {
+            if (string.IsNullOrWhiteSpace(sch.Key))
+            {
+                continue;
+            }
+            if (_config.GetConfigBool("Enabled", sch, true) is false)
+            {
+                continue;
+            }
+            var typeStr = _config.GetConfigStr("Type", sch);
+            if (string.Equals(typeStr, "Cookies", StringComparison.OrdinalIgnoreCase))
+            {
+                count++;
+            }
+        }
+        return count;
     }
 
     /// <summary>
@@ -931,6 +1099,12 @@ public class Builder
             _config.GetConfigBool("CookieMultiSessions", authCfg, true));
         var httpOnly = _config.GetConfigBool("CookieHttpOnly", schemeSection,
             _config.GetConfigBool("CookieHttpOnly", authCfg, true));
+        // SameSite / Secure: scheme-level value wins, else inherit root, else leave null (ASP.NET default).
+        var sameSite = ResolveSameSiteMode("CookieSameSite", schemeSection)
+            ?? ResolveSameSiteMode("CookieSameSite", authCfg);
+        var secure = ResolveCookieSecurePolicy("CookieSecure", schemeSection)
+            ?? ResolveCookieSecurePolicy("CookieSecure", authCfg);
+        WarnIfSameSiteNoneWithoutSecure(schemeSection.Path, sameSite, secure);
 
         // Capture locals for the closure (avoid loop-variable issues).
         var name = schemeCookieName;
@@ -939,6 +1113,8 @@ public class Builder
         var capturedMulti = multiSessions;
         var capturedHttp = httpOnly;
         var capturedExpire = expire;
+        var capturedSameSite = sameSite;
+        var capturedSecure = secure;
         auth.AddCookie(schemeName, options =>
         {
             options.ExpireTimeSpan = capturedExpire;
@@ -950,10 +1126,19 @@ public class Builder
             options.Cookie.Domain = capturedDomain;
             options.Cookie.MaxAge = capturedMulti ? capturedExpire : null;
             options.Cookie.HttpOnly = capturedHttp;
+            if (capturedSameSite is not null) options.Cookie.SameSite = capturedSameSite.Value;
+            if (capturedSecure is not null) options.Cookie.SecurePolicy = capturedSecure.Value;
         });
+        // Track for the policy-scheme cookie-aware selector. Empty name → ASP.NET-defaulted
+        // .AspNetCore.<schemeName>.
+        CookieSchemesInOrder.Add((schemeName,
+            string.IsNullOrEmpty(name) ? $".AspNetCore.{schemeName}" : name));
         ClientLogger?.LogDebug(
-            "Registered Auth Scheme {SchemeName} (Type=Cookies). Expires in {Expire}. MultiSessions={Multi}, HttpOnly={Http}, CookieName={CookieName}.",
-            schemeName, expire, multiSessions, httpOnly, name ?? $"<default `.AspNetCore.{schemeName}`>");
+            "Registered Auth Scheme {SchemeName} (Type=Cookies). Expires in {Expire}. MultiSessions={Multi}, HttpOnly={Http}, CookieName={CookieName}, SameSite={SameSite}, Secure={Secure}.",
+            schemeName, expire, multiSessions, httpOnly,
+            name ?? $"<default `.AspNetCore.{schemeName}`>",
+            sameSite?.ToString() ?? "<default>",
+            secure?.ToString() ?? "<default>");
     }
 
     private void RegisterBearerTokenSchemeFromConfig(

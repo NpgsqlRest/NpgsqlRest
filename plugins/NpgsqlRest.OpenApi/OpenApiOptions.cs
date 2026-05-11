@@ -65,6 +65,46 @@ public class OpenApiOptions
     /// If null or empty, a default Bearer authentication scheme will be added for endpoints requiring authorization.
     /// </summary>
     public OpenApiSecurityScheme[]? SecuritySchemes { get; set; } = null;
+
+    /// <summary>
+    /// Schema-name allow-list. When non-null and non-empty, only endpoints whose routine schema appears
+    /// in this list are documented; all others are skipped. Comparison is case-sensitive
+    /// (PostgreSQL identifiers are already lowercased unless quoted). Combine with
+    /// <see cref="ExcludeSchemas"/> for fine-grained control — both filters apply.
+    /// Default null = document every schema (existing behavior).
+    /// </summary>
+    public string[]? IncludeSchemas { get; set; } = null;
+
+    /// <summary>
+    /// Schema-name deny-list. When non-null and non-empty, any endpoint whose routine schema appears
+    /// in this list is skipped. Applied alongside <see cref="IncludeSchemas"/> — both must pass.
+    /// Default null = no schema exclusions.
+    /// </summary>
+    public string[]? ExcludeSchemas { get; set; } = null;
+
+    /// <summary>
+    /// PostgreSQL-style SIMILAR TO pattern matched against the routine name. When set, only endpoints
+    /// whose name matches the pattern are documented. <c>_</c> matches any single character and <c>%</c>
+    /// matches any sequence (including empty); other PostgreSQL SIMILAR TO meta-characters (<c>|</c>,
+    /// <c>*</c>, <c>+</c>, <c>?</c>, <c>(...)</c>, <c>[...]</c>) work via translation to .NET regex.
+    /// The match is anchored — the pattern must cover the entire name. Default null = no name filter.
+    /// </summary>
+    public string? NameSimilarTo { get; set; } = null;
+
+    /// <summary>
+    /// PostgreSQL-style SIMILAR TO pattern matched against the routine name; matches are excluded from
+    /// the OpenAPI document. Same syntax as <see cref="NameSimilarTo"/>. Applied alongside
+    /// <see cref="NameSimilarTo"/> — both must pass. Default null = no name exclusion.
+    /// </summary>
+    public string? NameNotSimilarTo { get; set; } = null;
+
+    /// <summary>
+    /// When true, only endpoints that require authorization (<see cref="RoutineEndpoint.RequiresAuthorization"/>)
+    /// are documented. Anonymous endpoints — typically health checks, login, internal probes — are
+    /// omitted. Default false = document everything. Useful for partner-facing documents where the
+    /// internal anonymous surface should not be advertised.
+    /// </summary>
+    public bool RequiresAuthorizationOnly { get; set; } = false;
 }
 
 /// <summary>

@@ -1,6 +1,7 @@
 ﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Npgsql;
 using static NpgsqlRest.NpgsqlRestOptions;
 
@@ -18,6 +19,10 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
     private JsonObject _paths = default!;
     private JsonObject _schemas = default!;
     private JsonObject? _securitySchemes = null;
+    private HashSet<string>? _includeSchemas = null;
+    private HashSet<string>? _excludeSchemas = null;
+    private Regex? _nameSimilarRegex = null;
+    private Regex? _nameNotSimilarRegex = null;
 
     public void Setup(IApplicationBuilder builder, NpgsqlRestOptions options)
     {
@@ -66,10 +71,85 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
                 _document["components"]!["securitySchemes"] = _securitySchemes;
             }
         }
+
+        // Pre-compile filter sets and regexes once. Hot path (Handle) just consults these.
+        if (openApiOptions.IncludeSchemas is { Length: > 0 } incl)
+        {
+            _includeSchemas = new HashSet<string>(incl, StringComparer.Ordinal);
+        }
+        if (openApiOptions.ExcludeSchemas is { Length: > 0 } excl)
+        {
+            _excludeSchemas = new HashSet<string>(excl, StringComparer.Ordinal);
+        }
+        if (!string.IsNullOrEmpty(openApiOptions.NameSimilarTo))
+        {
+            _nameSimilarRegex = SimilarToRegex(openApiOptions.NameSimilarTo);
+        }
+        if (!string.IsNullOrEmpty(openApiOptions.NameNotSimilarTo))
+        {
+            _nameNotSimilarRegex = SimilarToRegex(openApiOptions.NameNotSimilarTo);
+        }
+    }
+
+    /// <summary>
+    /// Translates a PostgreSQL <c>SIMILAR TO</c> pattern into an anchored .NET regex. <c>_</c> →
+    /// <c>.</c>, <c>%</c> → <c>.*</c>. The remaining meta-characters PostgreSQL accepts (<c>|</c>,
+    /// <c>*</c>, <c>+</c>, <c>?</c>, <c>(...)</c>, <c>[...]</c>, <c>{m,n}</c>) overlap with .NET regex
+    /// syntax and pass through unchanged. The result is anchored with <c>\A...\z</c> so the pattern
+    /// must cover the whole identifier, matching PostgreSQL's <c>SIMILAR TO</c> semantics.
+    /// Compiled and cached at <see cref="Setup"/>; no per-request allocation.
+    /// </summary>
+    private static Regex SimilarToRegex(string pattern)
+    {
+        var sb = new System.Text.StringBuilder(pattern.Length + 8);
+        sb.Append(@"\A");
+        foreach (var c in pattern)
+        {
+            if (c == '_') sb.Append('.');
+            else if (c == '%') sb.Append(".*");
+            else sb.Append(c);
+        }
+        sb.Append(@"\z");
+        return new Regex(sb.ToString(), RegexOptions.Compiled | RegexOptions.CultureInvariant);
     }
 
     public void Handle(RoutineEndpoint endpoint)
     {
+        // Filter gate — applied in order of decreasing specificity. First match short-circuits.
+        // The endpoint itself remains registered with NpgsqlRest; only its documentation is skipped.
+
+        // Per-endpoint opt-out from comment annotation (`openapi hide`).
+        if (endpoint.OpenApiHide)
+        {
+            return;
+        }
+        // Document only authenticated endpoints when configured — anonymous routes (health, login,
+        // probes) typically shouldn't appear in a partner-facing document.
+        if (openApiOptions.RequiresAuthorizationOnly && !endpoint.RequiresAuthorization)
+        {
+            return;
+        }
+        // Schema allow-list / deny-list. Both apply: include must pass AND exclude must not match.
+        var schema = endpoint.Routine.Schema;
+        if (_includeSchemas is not null && !_includeSchemas.Contains(schema))
+        {
+            return;
+        }
+        if (_excludeSchemas is not null && _excludeSchemas.Contains(schema))
+        {
+            return;
+        }
+        // Name-pattern filters. PostgreSQL-style SIMILAR TO, compiled once in Setup.
+        var name = endpoint.Routine.Name;
+        if (_nameSimilarRegex is not null && !_nameSimilarRegex.IsMatch(name))
+        {
+            return;
+        }
+        if (_nameNotSimilarRegex is not null && _nameNotSimilarRegex.IsMatch(name))
+        {
+            return;
+        }
+
         var path = endpoint.Path;
         var method = endpoint.Method.ToString().ToLowerInvariant();
 
@@ -97,8 +177,21 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
             operation["summary"] = $"{endpoint.Routine.Type} {endpoint.Routine.Schema}.{endpoint.Routine.Name}";
         }
 
-        // Add tags based on schema
-        operation["tags"] = new JsonArray(endpoint.Routine.Schema);
+        // Tag selection: explicit `openapi tag/tags` annotation values win over the default schema
+        // grouping. Drives the section headings in Swagger UI / ReDoc.
+        if (endpoint.OpenApiTags is { Length: > 0 } customTags)
+        {
+            var tagsArray = new JsonArray();
+            foreach (var tag in customTags)
+            {
+                tagsArray.Add((JsonNode)tag);
+            }
+            operation["tags"] = tagsArray;
+        }
+        else
+        {
+            operation["tags"] = new JsonArray(endpoint.Routine.Schema);
+        }
 
         // Add operation ID
         operation["operationId"] = $"{endpoint.Routine.Schema}_{endpoint.Routine.Name}_{method}";

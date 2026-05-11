@@ -367,6 +367,27 @@ public static partial class ConfigSchemaGenerator
         //
         "CookieHttpOnly": true,
         //
+        // Controls the SameSite attribute on the authentication cookie. Accepted values:
+        //   "Strict"      — cookie sent only on same-site requests. Most restrictive; CSRF-safe.
+        //   "Lax"         — cookie sent on same-site requests and top-level cross-site GETs (default).
+        //   "None"        — cookie sent on all cross-site requests. REQUIRED for cross-origin SPAs /
+        //                   mobile clients calling this API from a different origin. Browsers drop
+        //                   "SameSite=None" cookies without the Secure attribute, so CookieSecure
+        //                   must be set to "Always".
+        //   "Unspecified" — omit the SameSite attribute entirely (legacy browser behavior).
+        // Set to null to use ASP.NET Core's default (typically "Lax").
+        //
+        "CookieSameSite": null,
+        //
+        // Controls when the cookie's Secure attribute is set. Accepted values:
+        //   "SameAsRequest" — Secure is set only when the request itself is HTTPS (default).
+        //   "Always"        — Secure is always set; browsers only send the cookie over HTTPS. REQUIRED
+        //                     alongside CookieSameSite="None" for cross-origin auth.
+        //   "None"          — Secure is never set; cookies are sent over HTTP as well as HTTPS.
+        // Set to null to use ASP.NET Core's default ("SameAsRequest").
+        //
+        "CookieSecure": null,
+        //
         // Enable Microsoft Bearer Token Auth (proprietary format, not JWT)
         //
         "BearerTokenAuth": false,
@@ -2459,7 +2480,42 @@ public static partial class ConfigSchemaGenerator
               "ApiKeyLocation": "Cookie",
               "Description": "Cookie-based authentication"
             }*/
-          ]
+          ],
+          //
+          // Filters that control which endpoints appear in the OpenAPI document. The HTTP endpoints
+          // themselves are unaffected — only their inclusion in the generated spec is. Combine with
+          // the per-routine `openapi hide` / `openapi tag <name>` comment annotations for fine-grained
+          // control. Use case: expose a partner-facing document that hides the internal anonymous
+          // surface (health, login, probes) and the internal-only schemas.
+          //
+          // Schema allow-list. When non-empty, only endpoints whose routine schema appears here are
+          // documented. Empty array (default) = document every schema.
+          //
+          "IncludeSchemas": [/* "partner" */],
+          //
+          // Schema deny-list. Any endpoint whose routine schema appears here is skipped. Applied
+          // alongside IncludeSchemas — both must pass. Empty array (default) = no schema exclusions.
+          //
+          "ExcludeSchemas": [/* "internal" */],
+          //
+          // PostgreSQL-style SIMILAR TO pattern matched against the routine NAME. When set, only
+          // routines whose name matches are documented. `_` matches one char, `%` matches any
+          // sequence; the rest of SIMILAR TO syntax (`|`, `*`, `+`, `?`, `(...)`, `[...]`) is
+          // supported. Anchored (must cover the whole name). Default null = no name filter.
+          //
+          "NameSimilarTo": null,
+          //
+          // PostgreSQL-style SIMILAR TO pattern matched against the routine NAME for EXCLUSION.
+          // Matches are skipped. Same syntax as NameSimilarTo. Applied alongside it — both must
+          // pass. Default null = no name exclusion.
+          //
+          "NameNotSimilarTo": null,
+          //
+          // When true, only authenticated endpoints (those that require authorization) are
+          // documented. Anonymous endpoints — typically health, login, probes — are omitted. Useful
+          // for partner-facing documents. Default false = document everything.
+          //
+          "RequiresAuthorizationOnly": false
         },
         
         //
