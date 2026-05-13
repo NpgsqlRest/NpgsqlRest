@@ -1225,12 +1225,15 @@ public static class ConfigDefaults
             {
                 var fullPath = string.IsNullOrEmpty(path) ? kvp.Key : $"{path}:{kvp.Key}";
 
-                // Auth:Schemes is a name-keyed open dictionary, but the keys *inside* each named scheme
-                // are not arbitrary — they depend on the scheme's Type. Pick a type-discriminated schema
-                // so any name (including the docs-example names short_session/api_token/admin_jwt) gets
-                // the same per-type validation. Without this, a scheme name that happens to match an
-                // example in defaults would be validated against that example's incomplete key set,
-                // flagging perfectly valid per-type override keys (Bug A in CONFIG_VALIDATION_NAMED_SCHEMES_BUG.md).
+                // Name-keyed open dictionaries: the named children are arbitrary (user-chosen) but each
+                // child has a well-defined inner shape. Pick that shape and validate against it. Without
+                // these intercepts, the validator falls back to looking up the user-chosen name in
+                // defaults and either flags it as unknown (if the name has no example match) or matches
+                // it against an example's partial key set (if the name *does* collide with an example,
+                // which falsely rejects valid per-type override keys).
+                //
+                // Each intercept short-circuits the rest of the loop body so neither the example-lookup
+                // path nor the IsOpenDictionarySection fallback fires.
                 if (string.Equals(path, "Auth:Schemes", StringComparison.Ordinal) && kvp.Value is JsonObject schemeObj)
                 {
                     var schemeSchema = GetAuthSchemeSchemaByType(schemeObj);
@@ -1240,6 +1243,26 @@ public static class ConfigDefaults
                     }
                     // No/invalid Type: skip validation. RegisterAuthSchemes throws a clear error at
                     // startup for missing/invalid Type; no point double-reporting it here.
+                    continue;
+                }
+                if (string.Equals(path, "RateLimiterOptions:Policies", StringComparison.Ordinal) && kvp.Value is JsonObject policyObj)
+                {
+                    var policySchema = GetRateLimiterPolicySchemaByType(policyObj);
+                    if (policySchema is not null)
+                    {
+                        warnings.AddRange(FindUnknownConfigKeys(policySchema, policyObj, fullPath));
+                    }
+                    // BuildRateLimiter silently skips policies with no/invalid Type — match that here.
+                    continue;
+                }
+                if (string.Equals(path, "CacheOptions:Profiles", StringComparison.Ordinal) && kvp.Value is JsonObject profileObj)
+                {
+                    warnings.AddRange(FindUnknownConfigKeys(GetCacheProfileSchema(), profileObj, fullPath));
+                    continue;
+                }
+                if (string.Equals(path, "ValidationOptions:Rules", StringComparison.Ordinal) && kvp.Value is JsonObject ruleObj)
+                {
+                    warnings.AddRange(FindUnknownConfigKeys(GetValidationRuleSchema(), ruleObj, fullPath));
                     continue;
                 }
 
@@ -1341,6 +1364,134 @@ public static class ConfigDefaults
         return null;
     }
 
+    private static string? ReadStringField(JsonObject obj, string key)
+    {
+        foreach (var kvp in obj)
+        {
+            if (string.Equals(kvp.Key, key, StringComparison.OrdinalIgnoreCase))
+            {
+                if (kvp.Value is JsonValue val && val.TryGetValue<string>(out var s))
+                {
+                    return s;
+                }
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private static JsonObject PartitionSchema() => new()
+    {
+        ["Sources"] = new JsonArray(new JsonObject
+        {
+            ["Type"] = null,
+            ["Name"] = null,
+            ["Value"] = null
+        }),
+        ["BypassAuthenticated"] = false
+    };
+
+    /// <summary>
+    /// Returns the per-type schema for a named entry under <c>RateLimiterOptions:Policies</c>, keyed
+    /// off the policy's <c>Type</c> field (FixedWindow / SlidingWindow / TokenBucket / Concurrency).
+    /// Returns null when Type is missing/invalid — BuildRateLimiter silently skips such policies, so
+    /// the validator does the same to avoid double-reporting.
+    /// </summary>
+    private static JsonObject? GetRateLimiterPolicySchemaByType(JsonObject policy)
+    {
+        var type = ReadStringField(policy, "Type");
+        if (string.IsNullOrWhiteSpace(type))
+        {
+            return null;
+        }
+        if (string.Equals(type, "FixedWindow", StringComparison.OrdinalIgnoreCase))
+        {
+            return new JsonObject
+            {
+                ["Type"] = "FixedWindow",
+                ["Enabled"] = true,
+                ["PermitLimit"] = 100,
+                ["WindowSeconds"] = 60,
+                ["QueueLimit"] = 10,
+                ["AutoReplenishment"] = true,
+                ["Partition"] = PartitionSchema()
+            };
+        }
+        if (string.Equals(type, "SlidingWindow", StringComparison.OrdinalIgnoreCase))
+        {
+            return new JsonObject
+            {
+                ["Type"] = "SlidingWindow",
+                ["Enabled"] = true,
+                ["PermitLimit"] = 100,
+                ["WindowSeconds"] = 60,
+                ["SegmentsPerWindow"] = 6,
+                ["QueueLimit"] = 10,
+                ["AutoReplenishment"] = true,
+                ["Partition"] = PartitionSchema()
+            };
+        }
+        if (string.Equals(type, "TokenBucket", StringComparison.OrdinalIgnoreCase))
+        {
+            return new JsonObject
+            {
+                ["Type"] = "TokenBucket",
+                ["Enabled"] = true,
+                ["TokenLimit"] = 100,
+                ["TokensPerPeriod"] = 10,
+                ["ReplenishmentPeriodSeconds"] = 10,
+                ["QueueLimit"] = 10,
+                ["AutoReplenishment"] = true,
+                ["Partition"] = PartitionSchema()
+            };
+        }
+        if (string.Equals(type, "Concurrency", StringComparison.OrdinalIgnoreCase))
+        {
+            return new JsonObject
+            {
+                ["Type"] = "Concurrency",
+                ["Enabled"] = true,
+                ["PermitLimit"] = 10,
+                ["QueueLimit"] = 5,
+                ["OldestFirst"] = true,
+                ["Partition"] = PartitionSchema()
+            };
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Returns the schema for any entry under <c>CacheOptions:Profiles</c>. All profiles share the same
+    /// key set regardless of <c>Type</c> (Memory / Redis / Hybrid); only the backend selection varies.
+    /// </summary>
+    private static JsonObject GetCacheProfileSchema() => new()
+    {
+        ["Enabled"] = false,
+        ["Type"] = null,
+        ["Expiration"] = null,
+        ["Parameters"] = new JsonArray(),
+        ["When"] = new JsonArray(new JsonObject
+        {
+            ["Parameter"] = null,
+            ["Value"] = null,
+            ["Then"] = null
+        })
+    };
+
+    /// <summary>
+    /// Returns the schema for any entry under <c>ValidationOptions:Rules</c>. All rules share the same
+    /// key set regardless of <c>Type</c> (NotNull / NotEmpty / Required / Regex / MinLength / MaxLength).
+    /// </summary>
+    private static JsonObject GetValidationRuleSchema() => new()
+    {
+        ["Type"] = null,
+        ["Pattern"] = null,
+        ["MinLength"] = null,
+        ["MaxLength"] = null,
+        ["Message"] = null,
+        ["StatusCode"] = 400
+    };
+
     private static bool ContainsKeyIgnoreCase(JsonObject obj, string key, out string? matchedKey)
     {
         foreach (var kvp in obj)
@@ -1360,13 +1511,16 @@ public static class ConfigDefaults
     /// </summary>
     private static bool IsOpenDictionarySection(string path)
     {
+        // NOTE: Auth:Schemes, RateLimiterOptions:Policies, CacheOptions:Profiles, and
+        // ValidationOptions:Rules are intentionally NOT in this list. They are name-keyed open
+        // dictionaries too, but each is intercepted earlier in FindUnknownConfigKeys with a
+        // type/shape-discriminated schema so user-chosen names get the same per-entry validation that
+        // matching example names get. Adding them here would silently disable that.
         if (path is
             "ConnectionStrings" or
             "Log:MinimalLevels" or
             "Log:OTLResourceAttributes" or
             "CommandRetryOptions:Strategies" or
-            "ValidationOptions:Rules" or
-            "Auth:Schemes" or
             "NpgsqlRest:AuthenticationOptions:ContextKeyClaimsMapping" or
             "NpgsqlRest:AuthenticationOptions:ParameterNameClaimsMapping" or
             "NpgsqlRest:ClientCodeGen:CustomHeaders")
