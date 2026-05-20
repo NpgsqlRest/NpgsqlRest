@@ -208,11 +208,35 @@ public static class ParameterParsers
 
     private static bool TryParseDate(string? value, out object? result)
     {
+        // Fast path: bare date or naive date-time string. DateOnly.TryParse handles
+        // "2026-05-20" and "2026-05-20T06:00:00" but rejects any Z- or offset-bearing
+        // input outright.
         if (DateOnly.TryParse(value, out var v))
         {
             result = v;
             return true;
         }
+
+        // Fallback for Z- and offset-bearing strings (e.g. "2026-05-20T03:00:00Z"). The
+        // legacy parser returned false here, forcing callers to strip the time portion
+        // client-side. The fallback parses as DateTime and extracts the date portion.
+        // The UTC-vs-host-local semantic mirrors JsonTimestampsAreUtc so that the
+        // chosen date is deterministic on UTC hosts (true) or matches the host's
+        // calendar day (false).
+        if (JsonTimestampsAreUtc)
+        {
+            if (DateTime.TryParse(value, CultureInfo.InvariantCulture, UtcStyles, out var dt))
+            {
+                result = DateOnly.FromDateTime(dt);
+                return true;
+            }
+        }
+        else if (DateTime.TryParse(value, out var dt))
+        {
+            result = DateOnly.FromDateTime(dt);
+            return true;
+        }
+
         result = null;
         return false;
     }

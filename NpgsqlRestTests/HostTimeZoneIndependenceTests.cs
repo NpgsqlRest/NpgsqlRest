@@ -25,6 +25,11 @@ create function host_tz_echo_timetz(_t timetz)
 returns json
 language sql
 as $$ select json_build_object('v', _t) $$;
+
+create function host_tz_echo_date(_d date)
+returns json
+language sql
+as $$ select json_build_object('v', _d) $$;
 ");
     }
 }
@@ -92,5 +97,55 @@ public class HostTimeZoneIndependenceTests(TestFixture test)
         var v = await EchoAsync(test.Client, "/api/host-tz-echo-time/",
             """{"t":"06:00:00Z"}""");
         v.Should().Be("06:00:00");
+    }
+
+    // The legacy `TryParseDate` rejected Z- and offset-bearing strings outright. The
+    // 3.16.0 enhancement falls back to a UTC DateTime parse and extracts the date
+    // portion, matching the JsonTimestampsAreUtc semantic.
+    [Fact]
+    public async Task Date_BareDateString_StillRoundTrips()
+    {
+        var v = await EchoAsync(test.Client, "/api/host-tz-echo-date/",
+            """{"d":"2026-05-20"}""");
+        v.Should().Be("2026-05-20");
+    }
+
+    [Fact]
+    public async Task Date_NaiveDateTimeString_TakesDatePortion()
+    {
+        var v = await EchoAsync(test.Client, "/api/host-tz-echo-date/",
+            """{"d":"2026-05-20T06:00:00"}""");
+        v.Should().Be("2026-05-20");
+    }
+
+    [Fact]
+    public async Task Date_ZSuffix_TakesUtcDate()
+    {
+        // 2026-05-20T03:00:00Z is still May 20 in UTC.
+        var v = await EchoAsync(test.Client, "/api/host-tz-echo-date/",
+            """{"d":"2026-05-20T03:00:00Z"}""");
+        v.Should().Be("2026-05-20");
+    }
+
+    [Fact]
+    public async Task Date_NumericOffset_ConvertsToUtcDateFirst()
+    {
+        // 2026-05-21T01:30:00+02:00 == 2026-05-20T23:30:00 UTC → date is 2026-05-20.
+        // On a non-UTC host the legacy mode would shift this differently; here we
+        // assert the UTC interpretation that the default mode produces.
+        var v = await EchoAsync(test.Client, "/api/host-tz-echo-date/",
+            """{"d":"2026-05-21T01:30:00+02:00"}""");
+        v.Should().Be("2026-05-20");
+    }
+
+    [Fact]
+    public async Task Date_LateUtcEvening_DoesNotRollToNextLocalDay()
+    {
+        // 2026-05-20T23:00:00Z is May 20 in UTC. The legacy `DateOnly.TryParse`
+        // would have rejected this entirely; the new fallback resolves it as
+        // 2026-05-20 regardless of the host's local TZ.
+        var v = await EchoAsync(test.Client, "/api/host-tz-echo-date/",
+            """{"d":"2026-05-20T23:00:00Z"}""");
+        v.Should().Be("2026-05-20");
     }
 }
