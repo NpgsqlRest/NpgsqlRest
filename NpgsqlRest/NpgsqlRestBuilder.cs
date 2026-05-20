@@ -40,6 +40,7 @@ public static class NpgsqlRestBuilder
         }
         
         Options = options;
+        ParameterParsers.JsonTimestampsAreUtc = options.JsonTimestampsAreUtc;
         var factory = builder.Services.GetRequiredService<ILoggerFactory>();
         Logger = factory.CreateLogger(options.LoggerName ?? typeof(NpgsqlRestBuilder).Namespace ?? "NpgsqlRest");
 

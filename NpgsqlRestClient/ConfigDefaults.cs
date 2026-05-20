@@ -760,6 +760,7 @@ public static class ConfigDefaults
             ["RequestHeadersContextKey"] = "request.headers",
             ["RequestHeadersParameterName"] = "_headers",
             ["WrapInTransaction"] = false,
+            ["JsonTimestampsAreUtc"] = true,
             ["BeforeRoutineCommands"] = new JsonArray(
                 new JsonObject
                 {

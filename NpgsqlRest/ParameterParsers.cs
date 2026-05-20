@@ -159,13 +159,28 @@ public static class ParameterParsers
     private const DateTimeStyles UtcStyles =
         DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal;
 
+    /// <summary>
+    /// Process-wide toggle wired from <see cref="NpgsqlRestOptions.JsonTimestampsAreUtc"/>. When true (default), the
+    /// datetime parsers convert any input to UTC and assume naive strings are UTC. When false, the legacy pre-3.16.0
+    /// host-local-interpretation behavior is restored.
+    /// </summary>
+    public static bool JsonTimestampsAreUtc = true;
+
     private static bool TryParseTimestamp(string? value, out object? result)
     {
-        if (DateTime.TryParse(value, CultureInfo.InvariantCulture, UtcStyles, out var v))
+        if (JsonTimestampsAreUtc)
         {
-            // Strip Kind so Npgsql sends the UTC clock-time verbatim as the
-            // naive wall-clock value for `timestamp without time zone`.
-            result = DateTime.SpecifyKind(v, DateTimeKind.Unspecified);
+            if (DateTime.TryParse(value, CultureInfo.InvariantCulture, UtcStyles, out var v))
+            {
+                // Strip Kind so Npgsql sends the UTC clock-time verbatim as the
+                // naive wall-clock value for `timestamp without time zone`.
+                result = DateTime.SpecifyKind(v, DateTimeKind.Unspecified);
+                return true;
+            }
+        }
+        else if (DateTime.TryParse(value, out var v))
+        {
+            result = v;
             return true;
         }
         result = null;
@@ -174,9 +189,17 @@ public static class ParameterParsers
 
     private static bool TryParseTimestampTz(string? value, out object? result)
     {
-        if (DateTime.TryParse(value, CultureInfo.InvariantCulture, UtcStyles, out var v))
+        if (JsonTimestampsAreUtc)
         {
-            result = v;
+            if (DateTime.TryParse(value, CultureInfo.InvariantCulture, UtcStyles, out var v))
+            {
+                result = v;
+                return true;
+            }
+        }
+        else if (DateTime.TryParse(value, out var v))
+        {
+            result = DateTime.SpecifyKind(v, DateTimeKind.Utc);
             return true;
         }
         result = null;
@@ -196,7 +219,15 @@ public static class ParameterParsers
 
     private static bool TryParseTime(string? value, out object? result)
     {
-        if (DateTime.TryParse(value, CultureInfo.InvariantCulture, UtcStyles, out var v))
+        if (JsonTimestampsAreUtc)
+        {
+            if (DateTime.TryParse(value, CultureInfo.InvariantCulture, UtcStyles, out var v))
+            {
+                result = TimeOnly.FromDateTime(v);
+                return true;
+            }
+        }
+        else if (DateTime.TryParse(value, out var v))
         {
             result = TimeOnly.FromDateTime(v);
             return true;
@@ -207,9 +238,17 @@ public static class ParameterParsers
 
     private static bool TryParseTimeTz(string? value, out object? result)
     {
-        if (DateTime.TryParse(value, CultureInfo.InvariantCulture, UtcStyles, out var v))
+        if (JsonTimestampsAreUtc)
         {
-            result = new DateTimeOffset(v, TimeSpan.Zero);
+            if (DateTime.TryParse(value, CultureInfo.InvariantCulture, UtcStyles, out var v))
+            {
+                result = new DateTimeOffset(v, TimeSpan.Zero);
+                return true;
+            }
+        }
+        else if (DateTime.TryParse(value, out var v))
+        {
+            result = new DateTimeOffset(DateTime.SpecifyKind(v, DateTimeKind.Utc));
             return true;
         }
         result = null;

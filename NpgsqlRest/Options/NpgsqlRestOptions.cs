@@ -263,6 +263,17 @@ public class NpgsqlRestOptions
     public bool WrapInTransaction { get; set; } = false;
 
     /// <summary>
+    /// Controls how JSON datetime strings are interpreted when bound to `timestamp`, `timestamptz`, `time`, or `timetz`
+    /// parameters. When true (the default, since 3.16.0), `Z`- and offset-bearing strings are converted to UTC and naive
+    /// strings (no offset, no `Z`) are assumed UTC — making stored values identical regardless of the host process's
+    /// `TZ` environment. When false, the legacy pre-3.16.0 behavior is restored: `DateTime.TryParse` interprets the
+    /// string in the host's local time zone, which silently shifts stored values by the host's UTC offset on non-UTC
+    /// hosts. Only set to false if you have callers that depend on the host-local interpretation of naive datetime
+    /// strings and you cannot update them to send `Z`-suffixed values.
+    /// </summary>
+    public bool JsonTimestampsAreUtc { get; set; } = true;
+
+    /// <summary>
     /// SQL commands executed after any context is set but before the main routine call. They run in the same batch as the
     /// context `set_config` calls, so no extra round-trip. Each command can be either a raw SQL string (no parameters) or
     /// a `BeforeRoutineCommand` object with positional parameters bound from claims, request headers, or the client IP.
