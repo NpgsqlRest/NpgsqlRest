@@ -151,11 +151,21 @@ public static class ParameterParsers
         return false;
     }
 
+    // AssumeUniversal: naive ISO strings (no offset, no Z) are treated as UTC -
+    // the canonical JSON-over-HTTP convention. AdjustToUniversal: Z- and offset-
+    // bearing values are converted to UTC. Together they yield Kind=Utc holding
+    // the true UTC instant regardless of the host's TZ. Without these styles,
+    // DateTime.TryParse silently shifts to host-local time and tags Kind=Local.
+    private const DateTimeStyles UtcStyles =
+        DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal;
+
     private static bool TryParseTimestamp(string? value, out object? result)
     {
-        if (DateTime.TryParse(value, out var v))
+        if (DateTime.TryParse(value, CultureInfo.InvariantCulture, UtcStyles, out var v))
         {
-            result = v;
+            // Strip Kind so Npgsql sends the UTC clock-time verbatim as the
+            // naive wall-clock value for `timestamp without time zone`.
+            result = DateTime.SpecifyKind(v, DateTimeKind.Unspecified);
             return true;
         }
         result = null;
@@ -164,9 +174,9 @@ public static class ParameterParsers
 
     private static bool TryParseTimestampTz(string? value, out object? result)
     {
-        if (DateTime.TryParse(value, out var v))
+        if (DateTime.TryParse(value, CultureInfo.InvariantCulture, UtcStyles, out var v))
         {
-            result = DateTime.SpecifyKind(v, DateTimeKind.Utc);
+            result = v;
             return true;
         }
         result = null;
@@ -186,7 +196,7 @@ public static class ParameterParsers
 
     private static bool TryParseTime(string? value, out object? result)
     {
-        if (DateTime.TryParse(value, out var v))
+        if (DateTime.TryParse(value, CultureInfo.InvariantCulture, UtcStyles, out var v))
         {
             result = TimeOnly.FromDateTime(v);
             return true;
@@ -197,9 +207,9 @@ public static class ParameterParsers
 
     private static bool TryParseTimeTz(string? value, out object? result)
     {
-        if (DateTime.TryParse(value, out var v))
+        if (DateTime.TryParse(value, CultureInfo.InvariantCulture, UtcStyles, out var v))
         {
-            result = new DateTimeOffset(DateTime.SpecifyKind(v, DateTimeKind.Utc));
+            result = new DateTimeOffset(v, TimeSpan.Zero);
             return true;
         }
         result = null;
