@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using NpgsqlRest;
 using StackExchange.Redis;
 
@@ -9,6 +10,10 @@ namespace NpgsqlRestClient
         private readonly IDatabase _db;
         private readonly ILogger? _logger;
         private readonly CacheOptions _cacheOptions;
+        // In-process in-flight factory invocations (single-instance coalescing). Cross-process
+        // coalescing across NpgsqlRest instances is intentionally out of scope; this only collapses
+        // a burst hitting THIS instance into one execution. See memory RoutineCache for the pattern.
+        private readonly ConcurrentDictionary<string, Lazy<Task<object?>>> _inflight = new(StringComparer.Ordinal);
         private bool _disposed;
 
         public RedisCache(string configuration, ILogger? logger = null, CacheOptions? cacheOptions = null)
@@ -103,6 +108,63 @@ namespace NpgsqlRestClient
             catch (Exception ex)
             {
                 _logger?.LogError(ex, "Unexpected error while setting key in Redis: {Key}", key);
+            }
+        }
+
+        public async ValueTask<object?> GetOrCreateAsync(
+            RoutineEndpoint endpoint,
+            string key,
+            Func<CancellationToken, ValueTask<object?>> factory,
+            TimeSpan? overrideExpiration = null,
+            CancellationToken cancellationToken = default)
+        {
+            var effectiveKey = GetEffectiveKey(key);
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (Get(endpoint, key, out var cached))
+                {
+                    return cached;
+                }
+
+                var lazy = _inflight.GetOrAdd(
+                    effectiveKey,
+                    _ => new Lazy<Task<object?>>(() => RunFactoryAsync(endpoint, key, effectiveKey, factory, overrideExpiration, cancellationToken)));
+
+                try
+                {
+                    return await lazy.Value.WaitAsync(cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    // Lead caller cancelled before this waiter; retry (value may be cached now, or this
+                    // caller becomes the new lead with its own live resources).
+                }
+            }
+        }
+
+        private async Task<object?> RunFactoryAsync(
+            RoutineEndpoint endpoint,
+            string key,
+            string effectiveKey,
+            Func<CancellationToken, ValueTask<object?>> factory,
+            TimeSpan? overrideExpiration,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                var result = await factory(cancellationToken).ConfigureAwait(false);
+                AddOrUpdate(endpoint, key, result, overrideExpiration);
+                return result;
+            }
+            finally
+            {
+                _inflight.TryRemove(effectiveKey, out _);
             }
         }
 

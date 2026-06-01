@@ -412,3 +412,5 @@ dist/
 **/.DS_Store
 .claude/projects
 .vscode/settings.json
+
+scrap/

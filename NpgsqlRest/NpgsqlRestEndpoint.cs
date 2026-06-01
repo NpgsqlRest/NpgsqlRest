@@ -1,4 +1,5 @@
 ﻿using System.Buffers;
+using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using System.Data;
 using System.IO.Pipelines;
@@ -23,6 +24,36 @@ public partial class NpgsqlRestEndpoint(
     NpgsqlRestMetadataEntry entry,
     FrozenDictionary<string, NpgsqlRestMetadataEntry> overloads)
 {
+    // Signals a non-value exit from inside a cache GetOrCreateAsync factory, so the result is never
+    // cached and concurrent waiters observe the same outcome. NoRow → the command returned no row
+    // (caller maps to 500); ResponseAlreadyWritten → PrepareCommand short-circuited via
+    // CommandCallbackAsync and already wrote the lead caller's response (caller just returns).
+    private enum CacheFactoryAbortReason { NoRow, ResponseAlreadyWritten }
+
+    private sealed class CacheFactoryAbortException(CacheFactoryAbortReason reason) : Exception
+    {
+        public CacheFactoryAbortReason Reason { get; } = reason;
+    }
+
+    // Per-cache-key execution gates for the streaming records/sets path. That path cannot use the
+    // value-shaped GetOrCreateAsync factory model because it streams rows to the client and disables
+    // caching mid-stream once a response exceeds MaxCacheableRows. The gate serializes concurrent
+    // requests for the same key: the lead executes and (when within limits) populates the cache, so
+    // the rest get a cache hit instead of re-executing; over-limit responses simply run one-at-a-time,
+    // which still caps concurrent DB executions per key at one.
+    //
+    // The outer map is keyed by the cache instance itself (reference identity, so distinct cache
+    // profiles never share a gate even if they reuse a key string) and an inner map holds one gate per
+    // key. SemaphoreSlim instances are never disposed — they hold no OS handle unless AvailableWaitHandle
+    // is touched, and their count is bounded by (cache instances × distinct keys), bounded by the schema.
+    private static readonly ConcurrentDictionary<IRoutineCache, ConcurrentDictionary<string, SemaphoreSlim>> _recordCacheGates
+        = new(ReferenceEqualityComparer.Instance);
+
+    private static SemaphoreSlim GetRecordCacheGate(IRoutineCache cache, string key) =>
+        _recordCacheGates
+            .GetOrAdd(cache, static _ => new(StringComparer.Ordinal))
+            .GetOrAdd(key, static _ => new SemaphoreSlim(1, 1));
+
     public async Task InvokeAsync(HttpContext context, IServiceProvider serviceProvider, CancellationToken cancellationToken = default)
     {
         Routine routine = entry.Endpoint.Routine;
@@ -40,6 +71,8 @@ public partial class NpgsqlRestEndpoint(
         string? commandText = null;
         bool shouldDispose = true;
         bool shouldCommit = true;
+        // Held (when non-null) for the streaming records/sets cache path; released in the outer finally.
+        SemaphoreSlim? recordCacheGate = null;
         IUploadHandler? uploadHandler = null;
         var shouldLog = Options.LogCommands && Logger != null;
 
@@ -1721,28 +1754,9 @@ public partial class NpgsqlRestEndpoint(
                     }
                 }
 
-                // Check cache for passthrough proxy endpoints (those without proxy response parameters)
+                // Passthrough proxy endpoints (those without proxy response parameters) may be cached;
+                // the cache read/execute/coalesce is handled at the InvokeAsync call below.
                 bool isPassthroughProxy = !endpoint.HasProxyResponseParameters;
-                if (isPassthroughProxy &&
-                    endpoint.Cached is true &&
-                    bypassCache is false &&
-                    resolvedCache is not null)
-                {
-                    if (resolvedCache.Get(endpoint, cacheKeyString!, out var cachedProxyResponse))
-                    {
-                        // Cache hit - return cached proxy response
-                        if (cachedProxyResponse is Proxy.ProxyResponse cached)
-                        {
-                            if (shouldLog)
-                            {
-                                cmdLog?.AppendLine("/* proxy response from cache */");
-                                NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", commandText);
-                            }
-                            await Proxy.ProxyRequestHandler.WriteResponseAsync(context, cached, Options.ProxyOptions, cancellationToken);
-                            return;
-                        }
-                    }
-                }
 
                 // Build user context headers if UserContext is enabled
                 Dictionary<string, string>? userContextHeaders = null;
@@ -1785,6 +1799,36 @@ public partial class NpgsqlRestEndpoint(
                     }
                 }
 
+                // Cacheable passthrough proxy: route the upstream call through GetOrCreateAsync so a burst
+                // of identical requests coalesces into a single upstream call (stampede protection), and
+                // the response is cached for subsequent hits.
+                bool proxyCacheable = isPassthroughProxy && endpoint.Cached is true && bypassCache is false && resolvedCache is not null;
+                if (proxyCacheable)
+                {
+                    bool factoryRan = false;
+                    var cachedProxy = await resolvedCache!.GetOrCreateAsync(
+                        endpoint,
+                        cacheKeyString!,
+                        async ct =>
+                        {
+                            factoryRan = true;
+                            return await Proxy.ProxyRequestHandler.InvokeAsync(context, endpoint, body, command.Parameters, userContextHeaders, ct);
+                        },
+                        cacheTtlOverride,
+                        cancellationToken);
+
+                    if (shouldLog && factoryRan is false)
+                    {
+                        cmdLog?.AppendLine("/* proxy response from cache */");
+                        NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", commandText);
+                    }
+                    if (cachedProxy is Proxy.ProxyResponse cachedProxyResponse)
+                    {
+                        await Proxy.ProxyRequestHandler.WriteResponseAsync(context, cachedProxyResponse, Options.ProxyOptions, cancellationToken);
+                    }
+                    return;
+                }
+
                 var proxyResponse = await Proxy.ProxyRequestHandler.InvokeAsync(context, endpoint, body, command.Parameters, userContextHeaders, cancellationToken);
 
                 if (endpoint.HasProxyResponseParameters)
@@ -1794,12 +1838,7 @@ public partial class NpgsqlRestEndpoint(
                 }
                 else
                 {
-                    // No proxy parameters - return proxy response directly without invoking PostgreSQL
-                    // Cache the proxy response if caching is enabled
-                    if (endpoint.Cached is true && bypassCache is false && resolvedCache is not null)
-                    {
-                        resolvedCache.AddOrUpdate(endpoint, cacheKeyString!, proxyResponse, cacheTtlOverride);
-                    }
+                    // No proxy parameters and not cacheable - return proxy response directly without PostgreSQL.
                     await Proxy.ProxyRequestHandler.WriteResponseAsync(context, proxyResponse, Options.ProxyOptions, cancellationToken);
                     return;
                 }
@@ -2414,41 +2453,55 @@ public partial class NpgsqlRestEndpoint(
                     object? valueResult;
                     if (resolvedCache is not null && endpoint.Cached is true && bypassCache is false)
                     {
-                        if (resolvedCache.Get(endpoint, cacheKeyString!, out valueResult) is false)
+                        // Route through GetOrCreateAsync so a burst of identical requests coalesces into a
+                        // single connection-open + execution (stampede protection). The connection is opened
+                        // by PrepareCommand *inside* the factory, so coalesced waiters never touch the DB.
+                        bool factoryRan = false;
+                        try
                         {
-                            if (await PrepareCommand(connection, command, commandText, context, endpoint, true, cancellationToken) is false)
-                            {
-                                return;
-                            }
-                            
-                            await using var reader = await command.ExecuteReaderWithRetryAsync(
-                                CommandBehavior.SequentialAccess,
-                                endpoint.RetryStrategy,
-                                cancellationToken,
-                                errorCodePolicy: endpoint.ErrorCodePolicy ?? Options.ErrorHandlingOptions.DefaultErrorCodePolicy);
-                            if (shouldLog)
-                            {
-                                NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", command.CommandText);
-                            }
-                            if (await reader.ReadAsync(cancellationToken))
-                            {
-                                valueResult = descriptor.IsBinary ? reader.GetFieldValue<byte[]>(0) : reader.GetValue(0) as string;
-                                resolvedCache.AddOrUpdate(endpoint, cacheKeyString!, valueResult, cacheTtlOverride);
-                            }
-                            else
+                            valueResult = await resolvedCache.GetOrCreateAsync(
+                                endpoint,
+                                cacheKeyString!,
+                                async ct =>
+                                {
+                                    factoryRan = true;
+                                    if (await PrepareCommand(connection, command, commandText, context, endpoint, true, ct) is false)
+                                    {
+                                        throw new CacheFactoryAbortException(CacheFactoryAbortReason.ResponseAlreadyWritten);
+                                    }
+
+                                    await using var reader = await command.ExecuteReaderWithRetryAsync(
+                                        CommandBehavior.SequentialAccess,
+                                        endpoint.RetryStrategy,
+                                        ct,
+                                        errorCodePolicy: endpoint.ErrorCodePolicy ?? Options.ErrorHandlingOptions.DefaultErrorCodePolicy);
+                                    if (shouldLog)
+                                    {
+                                        NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", command.CommandText);
+                                    }
+                                    if (await reader.ReadAsync(ct))
+                                    {
+                                        return descriptor.IsBinary ? reader.GetFieldValue<byte[]>(0) : reader.GetValue(0) as string;
+                                    }
+                                    throw new CacheFactoryAbortException(CacheFactoryAbortReason.NoRow);
+                                },
+                                cacheTtlOverride,
+                                cancellationToken);
+                        }
+                        catch (CacheFactoryAbortException abort)
+                        {
+                            if (abort.Reason == CacheFactoryAbortReason.NoRow)
                             {
                                 Logger?.CouldNotReadCommand(command.CommandText, context.Request.Method, context.Request.Path);
                                 context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
-                                return;
                             }
+                            // ResponseAlreadyWritten: PrepareCommand already wrote the lead caller's response.
+                            return;
                         }
-                        else
+                        if (factoryRan is false && shouldLog)
                         {
-                            if (shouldLog)
-                            {
-                                cmdLog?.AppendLine("/* from cache */");
-                                NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", commandText);
-                            }
+                            cmdLog?.AppendLine("/* from cache */");
+                            NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", commandText);
                         }
                     }
                     else
@@ -2566,6 +2619,13 @@ public partial class NpgsqlRestEndpoint(
 
                     if (canCacheRecordsAndSets)
                     {
+                        // Stampede protection for the streaming set path: serialize concurrent requests
+                        // for this key. The lead executes and (within MaxCacheableRows) populates the cache
+                        // below, so the waiters that acquire the gate next fall straight into this cache-hit
+                        // branch instead of re-executing. Released in the outer finally.
+                        recordCacheGate = GetRecordCacheGate(resolvedCache!, cacheKeyString!);
+                        await recordCacheGate.WaitAsync(cancellationToken);
+
                         if (resolvedCache!.Get(endpoint, cacheKeyString!, out var cachedResult))
                         {
                             if (shouldLog)
@@ -3227,6 +3287,10 @@ public partial class NpgsqlRestEndpoint(
         }
         finally
         {
+            // Release the records/sets stampede gate (if this request acquired it) so the next waiter
+            // for this key can proceed — by now the cache is either populated or the response was over-limit.
+            recordCacheGate?.Release();
+
             await writer.CompleteAsync();
 
             // proxy_out: capture buffered function output and forward to upstream proxy

@@ -82,6 +82,30 @@ public class HybridCacheWrapper : IRoutineCache
         }
     }
 
+    public async ValueTask<object?> GetOrCreateAsync(
+        RoutineEndpoint endpoint,
+        string key,
+        Func<CancellationToken, ValueTask<object?>> factory,
+        TimeSpan? overrideExpiration = null,
+        CancellationToken cancellationToken = default)
+    {
+        // Delegate straight to HybridCache.GetOrCreateAsync: N concurrent calls with the same key
+        // share ONE factory invocation (its built-in stampede protection). Values are stored as the
+        // serialized string form, matching AddOrUpdate above (binary payloads are not supported by the
+        // Hybrid backend, same as before). The factory's exceptions propagate without being cached.
+        var effectiveKey = GetEffectiveKey(key);
+        var expiry = overrideExpiration ?? endpoint.CacheExpiresIn;
+        var options = expiry.HasValue
+            ? new HybridCacheEntryOptions { Expiration = expiry.Value, LocalCacheExpiration = expiry.Value }
+            : new HybridCacheEntryOptions();
+
+        return await _cache.GetOrCreateAsync<string?>(
+            effectiveKey,
+            async ct => (await factory(ct))?.ToString(),
+            options,
+            cancellationToken: cancellationToken);
+    }
+
     public bool Remove(string key)
     {
         try
