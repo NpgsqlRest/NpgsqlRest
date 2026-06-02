@@ -366,6 +366,30 @@ public class ConfigValidationTests
     }
 
     [Fact]
+    public void RateLimiter_PerPolicyStatusOverrides_AcceptsKeys()
+    {
+        // Per-policy StatusCode/StatusMessage overrides (3.16.2) must validate cleanly on every Type.
+        var actual = ActualFromJson("""
+        {
+          "RateLimiterOptions": {
+            "StatusCode": 429,
+            "StatusMessage": "Global.",
+            "Policies": {
+              "login_throttle": { "Type": "FixedWindow",   "PermitLimit": 10, "WindowSeconds": 60, "StatusCode": 429, "StatusMessage": "Too many logins." },
+              "search_window":  { "Type": "SlidingWindow", "PermitLimit": 50, "WindowSeconds": 60, "SegmentsPerWindow": 6, "StatusMessage": "Slow down." },
+              "api_burst":      { "Type": "TokenBucket",   "TokenLimit": 100, "TokensPerPeriod": 10, "ReplenishmentPeriodSeconds": 1, "StatusCode": 503 },
+              "compute":        { "Type": "Concurrency",   "PermitLimit": 4, "QueueLimit": 0, "OldestFirst": true, "StatusCode": 503, "StatusMessage": "Busy." }
+            }
+          }
+        }
+        """);
+
+        var warnings = ConfigDefaults.FindUnknownConfigKeys(Defaults(), actual);
+
+        warnings.Should().BeEmpty();
+    }
+
+    [Fact]
     public void RateLimiter_TypoInsidePolicy_Flagged()
     {
         // Type-discriminated validation must still catch typos inside a policy.

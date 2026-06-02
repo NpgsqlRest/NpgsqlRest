@@ -2379,16 +2379,16 @@ public class Builder
 
         var defaultPolicy = _config.GetConfigStr("DefaultPolicy", rateLimiterCfg);
         var message = _config.GetConfigStr("StatusMessage", rateLimiterCfg);
+        var globalStatusCode = _config.GetConfigInt("StatusCode", rateLimiterCfg) ?? 429;
+        // Per-policy StatusCode/StatusMessage overrides, keyed by policy name (the dict key). The top-level
+        // StatusCode/StatusMessage stay as the global defaults; an individual policy may override either one
+        // independently. The override that applies to a rejected request is resolved at rejection time from
+        // the endpoint's policy name (see ApplyRateLimiterRejectionAsync) — the framework's single global
+        // OnRejected/RejectionStatusCode otherwise fire for every policy regardless of which bucket tripped.
+        var rejectionOverrides = new Dictionary<string, (int? StatusCode, string? Message)>();
         Instance.Services.AddRateLimiter(options =>
         {
-            options.RejectionStatusCode = _config.GetConfigInt("StatusCode", rateLimiterCfg) ?? 429;
-            if (string.IsNullOrEmpty(message) is false)
-            {
-                options.OnRejected = async (context, cancellationToken) =>
-                {
-                    await context.HttpContext.Response.WriteAsync(message, cancellationToken);
-                };
-            }
+            options.RejectionStatusCode = globalStatusCode;
             foreach (var sectionCfg in policiesCfg.GetChildren())
             {
                 // Detect legacy array form (children keyed by index "0", "1", ...) and fail loudly.
@@ -2415,6 +2415,14 @@ public class Builder
                 }
                 // Policy name comes from the dict key (e.g. "fixed", "sliding").
                 var name = sectionCfg.Key;
+
+                // Optional per-policy rejection overrides. Either may be omitted to inherit the global value.
+                var policyStatusCode = _config.GetConfigInt("StatusCode", sectionCfg);
+                var policyMessage = _config.GetConfigStr("StatusMessage", sectionCfg);
+                if (policyStatusCode.HasValue || string.IsNullOrEmpty(policyMessage) is false)
+                {
+                    rejectionOverrides[name] = (policyStatusCode, policyMessage);
+                }
 
                 // Read optional partition configuration. When present, every request resolves a partition key
                 // and gets its own bucket. When null, all requests share a single global bucket (legacy behavior).
@@ -2566,9 +2574,54 @@ public class Builder
                         FormatPartitionForLog(partition));
                 }
             }
+
+            // Install a single global OnRejected only when there is something to write or override: either a
+            // global StatusMessage, or at least one policy carrying its own StatusCode/StatusMessage. When
+            // neither is present, leaving OnRejected unset preserves the legacy empty-body rejection.
+            if (string.IsNullOrEmpty(message) is false || rejectionOverrides.Count > 0)
+            {
+                var overrides = rejectionOverrides.ToFrozenDictionary();
+                options.OnRejected = (context, cancellationToken) =>
+                    ApplyRateLimiterRejectionAsync(context.HttpContext, overrides, globalStatusCode, message, cancellationToken);
+            }
         });
 
         return (defaultPolicy, true);
+    }
+
+    /// <summary>
+    /// Resolves and writes a rate-limiter rejection response, honoring per-policy <c>StatusCode</c>/
+    /// <c>StatusMessage</c> overrides. The framework exposes only one global <c>OnRejected</c>/
+    /// <c>RejectionStatusCode</c>, so this looks up the policy that rejected the current request via the
+    /// endpoint's <see cref="EnableRateLimitingAttribute"/> and applies that policy's override when present,
+    /// otherwise falling back to the global status code and message. The status code is set inside
+    /// <c>OnRejected</c> (which runs after the framework has applied <c>RejectionStatusCode</c>), so a
+    /// per-policy code wins. Public so the test fixtures can drive the exact production wiring.
+    /// </summary>
+    public static ValueTask ApplyRateLimiterRejectionAsync(
+        Microsoft.AspNetCore.Http.HttpContext httpContext,
+        FrozenDictionary<string, (int? StatusCode, string? Message)> overrides,
+        int globalStatusCode,
+        string? globalMessage,
+        CancellationToken cancellationToken)
+    {
+        int? statusCode = null;
+        string? messageText = null;
+        var policyName = httpContext.GetEndpoint()?.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName;
+        if (policyName is not null && overrides.TryGetValue(policyName, out var ov))
+        {
+            statusCode = ov.StatusCode;
+            messageText = ov.Message;
+        }
+
+        httpContext.Response.StatusCode = statusCode ?? globalStatusCode;
+
+        var finalMessage = messageText ?? globalMessage;
+        if (string.IsNullOrEmpty(finalMessage) is false)
+        {
+            return new ValueTask(httpContext.Response.WriteAsync(finalMessage, cancellationToken));
+        }
+        return ValueTask.CompletedTask;
     }
 
     /// <summary>

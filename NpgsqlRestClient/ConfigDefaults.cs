@@ -36,6 +36,14 @@ public static class ConfigDefaults
         return arr;
     }
 
+    // IP-only partition sources for the default login_throttle policy (one bucket per client IP).
+    private static JsonArray CreateIpPartitionSourcesArray()
+    {
+        var arr = new JsonArray();
+        arr.Add((JsonNode?)new JsonObject { ["Type"] = "IpAddress" });
+        return arr;
+    }
+
     /// <summary>
     /// Returns a JsonObject containing all default configuration values.
     /// </summary>
@@ -680,6 +688,21 @@ public static class ConfigDefaults
                 ["Partition"] = new JsonObject
                 {
                     ["Sources"] = CreatePartitionSourcesArray(),
+                    ["BypassAuthenticated"] = false
+                }
+            },
+            ["login_throttle"] = new JsonObject
+            {
+                ["Type"] = "FixedWindow",
+                ["Enabled"] = false,
+                ["PermitLimit"] = 10,
+                ["WindowSeconds"] = 60,
+                ["QueueLimit"] = 0,
+                ["AutoReplenishment"] = true,
+                ["StatusMessage"] = "Too many login attempts. Please wait a minute and try again.",
+                ["Partition"] = new JsonObject
+                {
+                    ["Sources"] = CreateIpPartitionSourcesArray(),
                     ["BypassAuthenticated"] = false
                 }
             }
@@ -1415,6 +1438,8 @@ public static class ConfigDefaults
                 ["WindowSeconds"] = 60,
                 ["QueueLimit"] = 10,
                 ["AutoReplenishment"] = true,
+                ["StatusCode"] = null,
+                ["StatusMessage"] = null,
                 ["Partition"] = PartitionSchema()
             };
         }
@@ -1429,6 +1454,8 @@ public static class ConfigDefaults
                 ["SegmentsPerWindow"] = 6,
                 ["QueueLimit"] = 10,
                 ["AutoReplenishment"] = true,
+                ["StatusCode"] = null,
+                ["StatusMessage"] = null,
                 ["Partition"] = PartitionSchema()
             };
         }
@@ -1443,6 +1470,8 @@ public static class ConfigDefaults
                 ["ReplenishmentPeriodSeconds"] = 10,
                 ["QueueLimit"] = 10,
                 ["AutoReplenishment"] = true,
+                ["StatusCode"] = null,
+                ["StatusMessage"] = null,
                 ["Partition"] = PartitionSchema()
             };
         }
@@ -1455,6 +1484,8 @@ public static class ConfigDefaults
                 ["PermitLimit"] = 10,
                 ["QueueLimit"] = 5,
                 ["OldestFirst"] = true,
+                ["StatusCode"] = null,
+                ["StatusMessage"] = null,
                 ["Partition"] = PartitionSchema()
             };
         }
