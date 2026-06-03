@@ -82,7 +82,10 @@ public class CsvUploadHandler(RetryStrategy? retryStrategy) : BaseUploadHandler,
         if (paramCount >= 1) command.Parameters.Add(NpgsqlRestParameter.CreateParamWithType(NpgsqlDbType.Integer));
         if (paramCount >= 2) command.Parameters.Add(NpgsqlRestParameter.CreateParamWithType(NpgsqlDbType.Text | NpgsqlDbType.Array));
         if (paramCount >= 3) command.Parameters.Add(new NpgsqlParameter());
-        if (paramCount >= 4) command.Parameters.Add(NpgsqlRestParameter.CreateParamWithType(NpgsqlDbType.Json));
+        // Unknown (not Json): PostgreSQL resolves $4 server-side via the target type's input function,
+        // so the row_command's metadata parameter may be declared json, jsonb OR text. A hardcoded Json
+        // would only match a json parameter (jsonb/text -> 42883 "function does not exist").
+        if (paramCount >= 4) command.Parameters.Add(NpgsqlRestParameter.CreateParamWithType(NpgsqlDbType.Unknown));
 
         // Build user claims JSON once (reused for all rows)
         string? userClaimsJson = null;

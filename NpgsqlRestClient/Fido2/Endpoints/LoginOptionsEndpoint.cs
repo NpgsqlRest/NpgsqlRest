@@ -85,7 +85,7 @@ public sealed class LoginOptionsEndpoint(PasskeyEndpointContext ctx)
             command.Parameters.Add(new NpgsqlParameter
             {
                 Value = bodyJson ?? (object)DBNull.Value,
-                NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Json
+                NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Unknown
             });
         }
 

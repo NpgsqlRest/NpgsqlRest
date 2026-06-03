@@ -202,7 +202,7 @@ public sealed class RegistrationEndpoint(PasskeyEndpointContext ctx)
             storeCommand.Parameters.Add(new NpgsqlParameter
             {
                 Value = request.UserContext,
-                NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Json
+                NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Unknown
             });
         }
 
@@ -220,7 +220,7 @@ public sealed class RegistrationEndpoint(PasskeyEndpointContext ctx)
                     storeCommand.Parameters.Add(new NpgsqlParameter
                     {
                         Value = analyticsData?.ToJsonString() ?? (object)DBNull.Value,
-                        NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Json
+                        NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Unknown
                     });
                 }
                 catch
@@ -228,7 +228,7 @@ public sealed class RegistrationEndpoint(PasskeyEndpointContext ctx)
                     storeCommand.Parameters.Add(new NpgsqlParameter
                     {
                         Value = DBNull.Value,
-                        NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Json
+                        NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Unknown
                     });
                 }
             }
@@ -237,7 +237,7 @@ public sealed class RegistrationEndpoint(PasskeyEndpointContext ctx)
                 storeCommand.Parameters.Add(new NpgsqlParameter
                 {
                     Value = DBNull.Value,
-                    NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Json
+                    NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Unknown
                 });
             }
         }

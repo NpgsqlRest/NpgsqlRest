@@ -392,7 +392,10 @@ public class ExternalAuth
         if (paramCount >= 4) command.Parameters.Add(new NpgsqlParameter()
         {
             Value = infoNode is not null ? infoContent.ToString() : DBNull.Value,
-            NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Json
+            // Unknown (not Json): PostgreSQL resolves it server-side via the target type's input
+            // function, so the LoginCommand's data parameter may be declared json, jsonb OR text
+            // (text/json/jsonb as documented). A hardcoded Json matches only a json parameter.
+            NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Unknown
         });
         if (paramCount >= 5)
         {
@@ -409,7 +412,8 @@ public class ExternalAuth
                     command.Parameters.Add(new NpgsqlParameter()
                     {
                         Value = analyticsData.ToJsonString(),
-                        NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Json
+                        // Unknown (not Json): allow the analytics parameter to be json, jsonb or text.
+                        NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Unknown
                     });
                 }
             }

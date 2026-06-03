@@ -110,7 +110,8 @@ public class ExcelUploadHandler(
         {
             if (dataAsJson is true)
             {
-                command.Parameters.Add(NpgsqlRestParameter.CreateParamWithType(NpgsqlDbType.Json));
+                // Unknown (not Json): let the row_command's data parameter be json, jsonb or text.
+                command.Parameters.Add(NpgsqlRestParameter.CreateParamWithType(NpgsqlDbType.Unknown));
             }
             else
             {
@@ -118,7 +119,8 @@ public class ExcelUploadHandler(
             }
         }
         if (paramCount >= 3) command.Parameters.Add(new NpgsqlParameter());
-        if (paramCount >= 4) command.Parameters.Add(NpgsqlRestParameter.CreateParamWithType(NpgsqlDbType.Json));
+        // Unknown (not Json): let the row_command's metadata parameter be json, jsonb or text.
+        if (paramCount >= 4) command.Parameters.Add(NpgsqlRestParameter.CreateParamWithType(NpgsqlDbType.Unknown));
 
         // Build user claims JSON once (reused for all rows)
         string? userClaimsJson = null;

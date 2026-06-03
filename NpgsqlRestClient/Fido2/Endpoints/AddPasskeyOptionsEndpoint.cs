@@ -94,7 +94,7 @@ public sealed class AddPasskeyOptionsEndpoint(PasskeyEndpointContext ctx)
             command.Parameters.Add(new NpgsqlParameter
             {
                 Value = claimsParam,
-                NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Json
+                NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Unknown
             });
         }
         if (paramCount >= 2)
@@ -102,7 +102,7 @@ public sealed class AddPasskeyOptionsEndpoint(PasskeyEndpointContext ctx)
             command.Parameters.Add(new NpgsqlParameter
             {
                 Value = bodyParam ?? (object)DBNull.Value,
-                NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Json
+                NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Unknown
             });
         }
 

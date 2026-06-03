@@ -112,7 +112,7 @@ public sealed class RegistrationOptionsEndpoint(PasskeyEndpointContext ctx)
         command.Parameters.Add(new NpgsqlParameter
         {
             Value = jsonParam,
-            NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Json
+            NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Unknown
         });
 
         CommandLogger.LogCommand(command, ctx.Logger, LogRegistrationOptions);
