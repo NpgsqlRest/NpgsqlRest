@@ -105,7 +105,8 @@ public class CompressionTestFixture : IDisposable
             authorizePaths: null,
             unauthorizedRedirectPath: null,
             unautorizedReturnToQueryParameter: null,
-            availableClaimTypes: null,
+            availableClaims: null,
+            availableEnvVars: null,
             logger: null);
         _app.UseMiddleware<AppStaticFileMiddleware>();
 

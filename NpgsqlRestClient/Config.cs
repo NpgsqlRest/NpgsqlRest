@@ -262,6 +262,61 @@ public class Config
         return result;
     }
 
+    /// <summary>
+    /// Reads a config section that accepts BOTH an array of names and an object of name→default pairs,
+    /// returning a name→default map. Used by <c>AvailableClaims</c> and <c>AvailableEnvVars</c> under
+    /// <c>StaticFiles:ParseContentOptions</c>.
+    /// <list type="bullet">
+    /// <item>Array form <c>["A","B"]</c> → IConfiguration exposes numeric child keys; each name maps to
+    /// <c>null</c> meaning "no explicit default" (the caller supplies the per-feed fallback).</item>
+    /// <item>Object form <c>{"A":"x","B":""}</c> → each name maps to its configured default value.</item>
+    /// </list>
+    /// Env-var tokens inside values are substituted via <see cref="EnvDict"/> consistent with the rest
+    /// of the config reader. Returns null when the section is absent or empty.
+    /// </summary>
+    public Dictionary<string, string?>? GetConfigNameDefaults(string key, IConfiguration? subsection = null)
+    {
+        var section = subsection is not null ? subsection.GetSection(key) : Cfg.GetSection(key);
+        if (section.Exists() is false)
+        {
+            return null;
+        }
+        var children = section.GetChildren().ToArray();
+        if (children.Length == 0)
+        {
+            return null;
+        }
+
+        // Array form when every child key is a numeric index (how IConfiguration represents a JSON array).
+        bool arrayForm = children.All(c => int.TryParse(c.Key, out _));
+        var result = new Dictionary<string, string?>(children.Length);
+        if (arrayForm)
+        {
+            foreach (var c in children)
+            {
+                if (string.IsNullOrEmpty(c.Value))
+                {
+                    continue;
+                }
+                var name = EnvDict is not null ? Formatter.FormatString(c.Value.AsSpan(), EnvDict).ToString() : c.Value!;
+                result[name] = null;
+            }
+        }
+        else
+        {
+            foreach (var c in children)
+            {
+                if (c.Value is null)
+                {
+                    continue; // skip nested objects/arrays - only scalar name→default pairs are valid here
+                }
+                var def = EnvDict is not null ? Formatter.FormatString(c.Value.AsSpan(), EnvDict).ToString() : c.Value;
+                result[c.Key] = def;
+            }
+        }
+        return result.Count == 0 ? null : result;
+    }
+
     public Dictionary<string, string>? GetConfigDict(IConfiguration config)
     {
         var result = new Dictionary<string, string>();

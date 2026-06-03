@@ -1105,8 +1105,15 @@ public static partial class ConfigSchemaGenerator
           "Enabled": false,
           //
           // List of claims types used. These will be parsed to NULL if not found in the claims collection or user is not authenticated.
+          // Accepts an array of claim names ["name","email"] or an object of name->default {"name":"guest"} where the default is used when the claim is absent.
           //
           "AvailableClaims": [],
+          //
+          // List of environment variable names whose values are templated into static content (the same {NAME} tag syntax as claims).
+          // Resolved once at startup. Accepts an array ["BUILD_LABEL"] (missing -> empty string) or an object {"DEMO_FLAG":"false"} with per-name defaults.
+          // SECURITY: every listed value is served to any client - never list a secret (DB password, API key, signing token).
+          //
+          "AvailableEnvVars": [],
           //
           // Set to true to cache the parsed files in memory. This will improve the performance of the static files. It only applies to parsed content.
           // Note: caching will occur before parsing, it applies only to templates, not parsed content.

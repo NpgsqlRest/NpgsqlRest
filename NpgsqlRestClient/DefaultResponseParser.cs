@@ -8,8 +8,39 @@ public class DefaultResponseParser(
     NpgsqlRestAuthenticationOptions options,
     string? antiforgeryFieldNameTag,
     string? antiforgeryTokenTag,
-    string[]? availableClaimTypes)
+    Dictionary<string, string?>? availableClaims,
+    Dictionary<string, string?>? availableEnvVars = null)
 {
+    // Env vars are resolved ONCE at construction. They don't change within the pod's lifetime, so
+    // re-reading per request would just add System.Environment overhead with no payoff. A K8s pod
+    // restart re-instantiates the middleware (and thus this parser), which re-reads the values.
+    private readonly Dictionary<string, string> _envVarReplacements = ResolveEnvVars(availableEnvVars);
+
+    private static Dictionary<string, string> ResolveEnvVars(Dictionary<string, string?>? envVars)
+    {
+        if (envVars is null || envVars.Count == 0)
+        {
+            return [];
+        }
+        var result = new Dictionary<string, string>(envVars.Count);
+        foreach (var (name, def) in envVars)
+        {
+            // present env var wins → configured default → empty string.
+            var raw = Environment.GetEnvironmentVariable(name) ?? def ?? string.Empty;
+            // JSON-escape exactly like the claim path below (PgConverters.SerializeString). The
+            // substituted value is a complete JSON literal (a quoted, escaped string) so templates
+            // use a bare {NAME} token with no surrounding quotes and an accidental quote/backslash in
+            // the value cannot break the JS string. NOTE: the relaxed encoder does NOT escape '<'/'>',
+            // so this is not a defence against a hostile value - env values are operator-controlled,
+            // matching the claim path's trust model.
+            // SECURITY: this is an explicit allowlist - only names listed in AvailableEnvVars are ever
+            // read. NEVER widen this to the whole environment (Environment.GetEnvironmentVariables) -
+            // that would leak secrets (DB passwords, keys) to every client.
+            result[name] = PgConverters.SerializeString(raw);
+        }
+        return result;
+    }
+
     public ReadOnlySpan<char> Parse(
         ReadOnlySpan<char> input, 
         HttpContext context, 
@@ -67,11 +98,23 @@ public class DefaultResponseParser(
                 replacements.Add(antiforgeryTokenTag, tokenSet.RequestToken);
             }
         }
-        if (availableClaimTypes is not null && availableClaimTypes.Length > 0)
+        // Listed-but-absent claims fall back to their configured default, or Consts.Null (the
+        // historical behaviour) when the array form gives no explicit default. Claim values added
+        // above from context.User.Claims are already present and win via TryAdd.
+        if (availableClaims is not null && availableClaims.Count > 0)
         {
-            for (int i = 0; i < availableClaimTypes.Length; i++)
+            foreach (var (name, def) in availableClaims)
             {
-                replacements.TryAdd(availableClaimTypes[i], Consts.Null);
+                replacements.TryAdd(name, def ?? Consts.Null);
+            }
+        }
+        // Feed app-wide env-var values into the same dictionary. Per-request claim values added above
+        // WIN over env vars if the names ever collide (TryAdd does not overwrite).
+        if (_envVarReplacements.Count > 0)
+        {
+            foreach (var (name, value) in _envVarReplacements)
+            {
+                replacements.TryAdd(name, value);
             }
         }
         return Formatter.FormatString(input, replacements);

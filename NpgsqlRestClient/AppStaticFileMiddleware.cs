@@ -47,7 +47,8 @@ public class AppStaticFileMiddleware(RequestDelegate next, IWebHostEnvironment h
         string[]? authorizePaths,
         string? unauthorizedRedirectPath,
         string? unautorizedReturnToQueryParameter,
-        string[]? availableClaimTypes,
+        Dictionary<string, string?>? availableClaims,
+        Dictionary<string, string?>? availableEnvVars,
         ILogger? logger)
     {
         _parsePatterns = parse == false || parsePatterns == null || parsePatterns.Length == 0 ? null : parsePatterns?.Where(p => !string.IsNullOrEmpty(p)).ToArray();
@@ -57,7 +58,7 @@ public class AppStaticFileMiddleware(RequestDelegate next, IWebHostEnvironment h
         }
         else
         {
-            _parser = new DefaultResponseParser(options, antiforgeryFieldNameTag, antiforgeryTokenTag, availableClaimTypes);
+            _parser = new DefaultResponseParser(options, antiforgeryFieldNameTag, antiforgeryTokenTag, availableClaims, availableEnvVars);
         }
 
         _antiforgery = antiforgery;

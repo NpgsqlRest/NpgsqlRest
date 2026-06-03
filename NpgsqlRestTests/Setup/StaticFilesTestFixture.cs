@@ -101,7 +101,8 @@ public class StaticFilesTestFixture : IDisposable
             authorizePaths: ["/protected/*", "*.secret.html"],
             unauthorizedRedirectPath: "/login.html",
             unautorizedReturnToQueryParameter: "return_to",
-            availableClaimTypes: ["user_id", "user_name", "user_roles"],
+            availableClaims: new() { ["user_id"] = null, ["user_name"] = null, ["user_roles"] = null },
+            availableEnvVars: null,
             logger: null);
 
         _app.UseMiddleware<AppStaticFileMiddleware>();

@@ -123,8 +123,9 @@ public class App
         var filePaths = _config.GetConfigEnumerable("FilePaths", parseCfg)?.ToArray();
         var antiforgeryFieldNameTag = _config.GetConfigStr("AntiforgeryFieldName", parseCfg);
         var antiforgeryTokenTag = _config.GetConfigStr("AntiforgeryToken", parseCfg);
-        var availableClaims = _config.GetConfigEnumerable("AvailableClaims", parseCfg)?.ToArray();
-        
+        var availableClaims = _config.GetConfigNameDefaults("AvailableClaims", parseCfg);
+        var availableEnvVars = _config.GetConfigNameDefaults("AvailableEnvVars", parseCfg);
+
         var antiforgery = app.Services.GetService<IAntiforgery>();
 
         AppStaticFileMiddleware.ConfigureStaticFileMiddleware(
@@ -140,6 +141,7 @@ public class App
             unauthorizedRedirectPath,
             unauthorizedReturnToQueryParameter,
             availableClaims,
+            availableEnvVars,
             _builder.ClientLogger);
 
         app.UseMiddleware<AppStaticFileMiddleware>();

@@ -651,4 +651,46 @@ public class ConfigValidationTests
 
         warnings.Should().BeEmpty();
     }
+
+    [Fact]
+    public void ParseContentOptions_AvailableEnvVars_ArrayForm_ValidatesClean()
+    {
+        var actual = ActualFromJson("""
+        {
+          "StaticFiles": {
+            "ParseContentOptions": {
+              "Enabled": true,
+              "AvailableClaims": [ "user_id", "user_name" ],
+              "AvailableEnvVars": [ "BUILD_LABEL", "DEMO_FLAG", "TRACKING_ID" ]
+            }
+          }
+        }
+        """);
+
+        var warnings = ConfigDefaults.FindUnknownConfigKeys(Defaults(), actual);
+
+        warnings.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ParseContentOptions_AvailableEnvVars_ObjectForm_ValidatesClean()
+    {
+        // The object (name->default) form must not trip the unknown-key validator: the user-chosen
+        // env-var names are arbitrary and must not be looked up against the defaults schema.
+        var actual = ActualFromJson("""
+        {
+          "StaticFiles": {
+            "ParseContentOptions": {
+              "Enabled": true,
+              "AvailableClaims": { "user_id": "0", "user_name": "guest" },
+              "AvailableEnvVars": { "BUILD_LABEL": "local", "DEMO_FLAG": "false" }
+            }
+          }
+        }
+        """);
+
+        var warnings = ConfigDefaults.FindUnknownConfigKeys(Defaults(), actual);
+
+        warnings.Should().BeEmpty();
+    }
 }

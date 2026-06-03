@@ -432,6 +432,7 @@ public static class ConfigDefaults
             {
                 ["Enabled"] = false,
                 ["AvailableClaims"] = new JsonArray(),
+                ["AvailableEnvVars"] = new JsonArray(),
                 ["CacheParsedFile"] = true,
                 ["Headers"] = CreateStringArray("Cache-Control: no-store, no-cache, must-revalidate", "Pragma: no-cache", "Expires: 0"),
                 ["FilePaths"] = CreateStringArray("*.html"),
