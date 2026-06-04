@@ -1,7 +1,6 @@
 ﻿using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using NpgsqlRest;
 
 namespace NpgsqlRestClient;
 
@@ -133,9 +132,16 @@ public class Config
             return defaultVal;
         }
 
-        var value = EnvDict is not null ? 
-            Formatter.FormatString(section.Value.AsSpan(), EnvDict).ToString() : 
-            section.Value;
+        // {NAME} optional -> empty when the env var is unset; {!NAME} required -> throws here if unset.
+        var value = ResolveEnv(section.Value) ?? string.Empty;
+
+        // An optional env var that is unset resolves to empty (and, with env parsing off, can remain a
+        // literal {TOKEN}). Either way there is no value to parse, so fall back to the default rather
+        // than crashing startup - e.g. a feature flag wired to "{GITHUB_AUTH_ENABLED}" defaults to off.
+        if (string.IsNullOrEmpty(value) || HasUnresolvedToken(value))
+        {
+            return defaultVal;
+        }
 
         // Handle various boolean representations
         return value.ToLowerInvariant() switch
@@ -146,6 +152,76 @@ public class Config
         };
     }
 
+    // True when the value still contains a {TOKEN} placeholder, i.e. an environment variable that was
+    // not resolved because it is not set. Typed config values (bool/int) never legitimately contain
+    // braces, so an unresolved token is unambiguously a missing-env-var, not a real value.
+    private static bool HasUnresolvedToken(string value)
+    {
+        var open = value.IndexOf('{');
+        return open >= 0 && value.IndexOf('}', open + 1) > open;
+    }
+
+    /// <summary>
+    /// Substitutes environment-variable placeholders in a configuration value. Applies to every config
+    /// value type (bool, int, string, enum, arrays, dictionaries):
+    /// <list type="bullet">
+    /// <item><c>{NAME}</c> - optional: replaced with the variable's value when set; when it is <b>not</b>
+    /// set the placeholder is left untouched (so non-env brace syntax such as Serilog output templates
+    /// "{Timestamp}" is preserved, and typed readers like <see cref="GetConfigBool"/> fall back to their
+    /// default rather than crashing).</item>
+    /// <item><c>{!NAME}</c> - required: replaced with the variable's value, or throws at startup when it is not set.</item>
+    /// </list>
+    /// Returns the input unchanged when environment-variable parsing is disabled (<see cref="EnvDict"/> is null,
+    /// i.e. <c>Config:ParseEnvironmentVariables</c> is false).
+    /// </summary>
+    public string? ResolveEnv(string? value)
+    {
+        if (value is null || EnvDict is null || value.IndexOf('{') < 0)
+        {
+            return value;
+        }
+        var sb = new StringBuilder(value.Length);
+        int i = 0;
+        while (i < value.Length)
+        {
+            var c = value[i];
+            if (c != '{')
+            {
+                sb.Append(c);
+                i++;
+                continue;
+            }
+            var close = value.IndexOf('}', i + 1);
+            if (close < 0)
+            {
+                sb.Append(value, i, value.Length - i); // unterminated brace - emit the rest verbatim
+                break;
+            }
+            var token = value.Substring(i + 1, close - i - 1);
+            var required = token.StartsWith('!');
+            var name = required ? token[1..] : token;
+            if (EnvDict.TryGetValue(name, out var envValue))
+            {
+                sb.Append(envValue);
+            }
+            else if (required)
+            {
+                throw new InvalidOperationException(
+                    $"Required environment variable '{name}' (referenced as '{{!{name}}}' in configuration) is not set.");
+            }
+            else
+            {
+                // optional + missing -> leave the placeholder untouched. This preserves the historical
+                // behaviour (only known env vars were ever substituted), so legitimate non-env brace
+                // syntax - Serilog output templates, etc. - is not destroyed. Typed bool/int readers
+                // treat a leftover {TOKEN} as "not configured" via HasUnresolvedToken.
+                sb.Append('{').Append(token).Append('}');
+            }
+            i = close + 1;
+        }
+        return sb.ToString();
+    }
+
     public string? GetConfigStr(string key, IConfiguration? subsection = null)
     {
         var section = subsection?.GetSection(key) ?? Cfg.GetSection(key);
@@ -153,9 +229,7 @@ public class Config
         {
             return null;
         }
-        return EnvDict is not null ? 
-            Formatter.FormatString(section.Value.AsSpan(), EnvDict).ToString() : 
-            section.Value;
+        return ResolveEnv(section.Value);
     }
 
     public int? GetConfigInt(string key, IConfiguration? subsection = null)
@@ -165,10 +239,13 @@ public class Config
         {
             return null;
         }
-        var configValue = EnvDict is not null ? 
-            Formatter.FormatString(section.Value.AsSpan(), EnvDict).ToString() : 
-            section.Value;
-        return int.TryParse(configValue, out var value) ? value : 
+        var configValue = ResolveEnv(section.Value) ?? string.Empty;
+        // Unset env var (empty or, with env parsing off, an unresolved {TOKEN}) → treat as not configured.
+        if (string.IsNullOrEmpty(configValue) || HasUnresolvedToken(configValue))
+        {
+            return null;
+        }
+        return int.TryParse(configValue, out var value) ? value :
             throw new InvalidOperationException($"Invalid integer value '{configValue}' for configuration key '{key}'.");
     }
     
@@ -179,10 +256,8 @@ public class Config
         {
             return default;
         }
-        var value = EnvDict is not null ? 
-            Formatter.FormatString(section.Value.AsSpan(), EnvDict).ToString() : 
-            section.Value;
-        return GetEnum<T>(section?.Value);
+        var value = ResolveEnv(section.Value);
+        return GetEnum<T>(value);
     }
 
     public T? GetEnum<T>(string? value)
@@ -217,15 +292,9 @@ public class Config
             return null;
         }
 
-        if (EnvDict is not null)
-        {
-            return children
-                .Where(c => string.IsNullOrEmpty(c.Value) is false)
-                .Select(c => Formatter.FormatString(c.Value.AsSpan(), EnvDict).ToString());
-        }
         return children
             .Where(c => string.IsNullOrEmpty(c.Value) is false)
-            .Select(c => c.Value!);
+            .Select(c => ResolveEnv(c.Value)!);
     }
 
     public T? GetConfigFlag<T>(string key, IConfiguration? subsection = null)
@@ -298,7 +367,7 @@ public class Config
                 {
                     continue;
                 }
-                var name = EnvDict is not null ? Formatter.FormatString(c.Value.AsSpan(), EnvDict).ToString() : c.Value!;
+                var name = ResolveEnv(c.Value)!;
                 result[name] = null;
             }
         }
@@ -310,7 +379,7 @@ public class Config
                 {
                     continue; // skip nested objects/arrays - only scalar name→default pairs are valid here
                 }
-                var def = EnvDict is not null ? Formatter.FormatString(c.Value.AsSpan(), EnvDict).ToString() : c.Value;
+                var def = ResolveEnv(c.Value);
                 result[c.Key] = def;
             }
         }
@@ -324,11 +393,7 @@ public class Config
         {
             if (section.Value is not null)
             {
-                var value = EnvDict is not null ? 
-                    Formatter.FormatString(section.Value.AsSpan(), EnvDict).ToString() : 
-                    section.Value;
-                
-                result.TryAdd(section.Key, value);
+                result.TryAdd(section.Key, ResolveEnv(section.Value)!);
             }
         }
         return result.Count == 0 ? null : result;
@@ -960,9 +1025,7 @@ public class Config
             {
                 return null;
             }
-            var value = EnvDict is not null ?
-                Formatter.FormatString(section.Value.AsSpan(), EnvDict).ToString() :
-                section.Value;
+            var value = ResolveEnv(section.Value) ?? string.Empty;
             if (bool.TryParse(value, out bool boolean))
             {
                 return JsonValue.Create(boolean);
@@ -1097,7 +1160,7 @@ public class Config
 
             if (child.Value is not null)
             {
-                dict[key] = Formatter.FormatString(child.Value.AsSpan(), EnvDict!).ToString();
+                dict[key] = ResolveEnv(child.Value)!;
             }
 
             CollectTransformedValues(child, key, dict);
