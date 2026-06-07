@@ -17,8 +17,6 @@ internal static partial class DefaultCommentParser
             return routineEndpoint;
         }
 
-        var originalUrl = routineEndpoint.Path;
-        var originalMethod = routineEndpoint.Method;
         var originalParamType = routineEndpoint.RequestParamType;
 
         var comment = routine.Comment;

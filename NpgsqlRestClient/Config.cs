@@ -24,7 +24,6 @@ public class Config
         var tempBuilder = new ConfigurationBuilder();
         IConfigurationRoot tempCfg;
 
-        var arguments = new Out();
         var (configFiles, commandLineArgs) = BuildFromArgs(args);
         
         if (configFiles.Count > 0)
@@ -521,7 +520,6 @@ public class Config
                     else if (changedPaths.TryGetValue(currentPath, out var newVal))
                     {
                         // Substitute the value
-                        var indent = line.TrimEnd('\r')[..^(line.TrimEnd('\r').Length - line.TrimEnd('\r').Length + line.TrimEnd('\r').Length - line.TrimEnd('\r').TrimStart().Length)];
                         var endsWithComma = trimmed.TrimEnd().EndsWith(',');
                         var inlineComment = "";
 

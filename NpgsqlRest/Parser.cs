@@ -144,7 +144,6 @@ public static partial class Parser
                         pi2 = singleStarPi;
                         continue;
                     }
-                    singleStarPi = -1;
                 }
                 if (doubleStarPi >= 0)
                 {
