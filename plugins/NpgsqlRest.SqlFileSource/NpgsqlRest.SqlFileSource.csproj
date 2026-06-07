@@ -52,4 +52,13 @@
     <ItemGroup>
       <ProjectReference Include="..\..\NpgsqlRest\NpgsqlRest.csproj" />
     </ItemGroup>
+
+    <!-- Shared source (NpgsqlRest.Common): compiled directly into this assembly, not a separate
+         dll/package. Type is internal, so this plugin gets its own private copy (no clash with the
+         copy compiled into the referenced NpgsqlRest core). -->
+    <ItemGroup>
+        <Compile Include="..\..\NpgsqlRest.Common\*.cs">
+            <Link>Common\%(Filename)%(Extension)</Link>
+        </Compile>
+    </ItemGroup>
 </Project>

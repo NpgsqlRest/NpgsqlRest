@@ -50,86 +50,9 @@ internal static partial class DefaultCommentParser
         return result;
     }
 
-    public static bool StrEquals(string str1, string str2)
-    {
-        // Support optional @ prefix for annotations (e.g., "@authorize" == "authorize")
-        var s1 = str1.Length > 0 && str1[0] == '@' ? str1[1..] : str1;
-        return s1.Equals(str2, StringComparison.OrdinalIgnoreCase);
-    }
-
-    public static bool StrEqualsToArray(string str, params string[] arr)
-    {
-        // Support optional @ prefix for annotations (e.g., "@authorize" matches "authorize")
-        var s = str.Length > 0 && str[0] == '@' ? str[1..] : str;
-        for (var i = 0; i < arr.Length; i++)
-        {
-            if (s.Equals(arr[i], StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    public static string[] SplitWordsLower(this string str)
-    {
-        if (str is null)
-        {
-            return [];
-        }
-        return [.. str
-            .Split(WordSeparators, StringSplitOptions.RemoveEmptyEntries)
-            .Select(x => x.Trim().ToLowerInvariant())
-        ];
-    }
-
-    public static string[] SplitWords(this string str)
-    {
-        if (str is null)
-        {
-            return [];
-        }
-        return [.. str
-            .Split(WordSeparators, StringSplitOptions.RemoveEmptyEntries)
-            .Select(x => x.Trim())
-        ];
-    }
-
-    public static bool SplitBySeparatorChar(string str, char sep, out string part1, out string part2)
-    {
-        part1 = null!;
-        part2 = null!;
-        if (str.Contains(sep) is false)
-        {
-            return false;
-        }
-
-        var parts = str.Split(sep, 2);
-        if (parts.Length == 2)
-        {
-            part1 = parts[0].Trim();
-            part2 = parts[1].Trim();
-            if (ContainsValidNameCharacter(part1))
-            {
-                return false;
-            }
-            return true;
-        }
-        return false;
-    }
-
-    private static bool ContainsValidNameCharacter(string input)
-    {
-        foreach (char c in input)
-        {
-            // Allow @ as first character for annotation prefix (e.g., "@timeout = 30s")
-            if (char.IsLetterOrDigit(c) is false && c != '-' && c != '_' && c != '@')
-            {
-                return true;
-            }
-        }
-        return false;
-    }
+    // String primitives (StrEquals / StrEqualsToArray / SplitWords / SplitWordsLower /
+    // SplitBySeparatorChar) live in the shared NpgsqlRest.Common.CommentPrimitives and are
+    // imported project-wide via global usings (see NpgsqlRest.csproj) — called directly here.
 
     /// <summary>
     /// For SQL file routines, update column type descriptors when @param annotations have

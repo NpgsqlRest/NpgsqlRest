@@ -1,3 +1,5 @@
+using NpgsqlRest.Common;
+
 namespace NpgsqlRest.SqlFileSource;
 
 /// <summary>
@@ -464,18 +466,14 @@ public static class SqlFileParser
             var s = trimmed.StartsWith('@') ? trimmed[1..] : trimmed;
 
             // @single / @single_record / @single_result
-            if (s.Equals("single", StringComparison.OrdinalIgnoreCase) ||
-                s.Equals("single_record", StringComparison.OrdinalIgnoreCase) ||
-                s.Equals("single_result", StringComparison.OrdinalIgnoreCase))
+            if (CommentPrimitives.StrEqualsToArray(s, "single", "single_record", "single_result"))
             {
                 result.SingleCommands.Add(statementIndex);
                 continue;
             }
 
             // @skip / @skip_result / @no_result
-            if (s.Equals("skip", StringComparison.OrdinalIgnoreCase) ||
-                s.Equals("skip_result", StringComparison.OrdinalIgnoreCase) ||
-                s.Equals("no_result", StringComparison.OrdinalIgnoreCase))
+            if (CommentPrimitives.StrEqualsToArray(s, "skip", "skip_result", "no_result"))
             {
                 result.SkipCommands.Add(statementIndex);
                 continue;

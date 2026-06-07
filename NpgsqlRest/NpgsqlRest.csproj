@@ -66,4 +66,20 @@
         <InternalsVisibleTo Include="NpgsqlRestClient" />
         <InternalsVisibleTo Include="BenchmarkTests" />
     </ItemGroup>
+
+    <!-- Shared source (NpgsqlRest.Common): compiled directly into this assembly, not a separate
+         dll/package. Type is internal, so each consumer gets its own private copy. -->
+    <ItemGroup>
+        <Compile Include="..\NpgsqlRest.Common\*.cs">
+            <Link>Common\%(Filename)%(Extension)</Link>
+        </Compile>
+    </ItemGroup>
+
+    <!-- Import the shared comment-parsing primitives project-wide: the namespace enables the
+         SplitWords/SplitWordsLower extension methods; the static import enables bare calls to
+         StrEquals / StrEqualsToArray / SplitBySeparatorChar across the comment parsers. -->
+    <ItemGroup>
+        <Using Include="NpgsqlRest.Common" />
+        <Using Include="NpgsqlRest.Common.CommentPrimitives" Static="true" />
+    </ItemGroup>
 </Project>

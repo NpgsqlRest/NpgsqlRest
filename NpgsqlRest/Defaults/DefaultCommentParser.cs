@@ -5,7 +5,6 @@ namespace NpgsqlRest.Defaults;
 internal static partial class DefaultCommentParser
 {
     private static readonly char[] NewlineSeparator = ['\r', '\n'];
-    private static readonly char[] WordSeparators = [Consts.Space, Consts.Comma];
 
     // All annotation keys moved to their respective handler files in CommentParsers directory
 
