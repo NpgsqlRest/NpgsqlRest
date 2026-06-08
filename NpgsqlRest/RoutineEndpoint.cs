@@ -137,6 +137,42 @@ public class RoutineEndpoint(
     /// (InternalRequestHandler). It is NOT registered as an HTTP route.
     /// </summary>
     public bool InternalOnly { get; set; } = false;
+
+    /// <summary>
+    /// Comment lines that were NOT recognized as built-in NpgsqlRest directives, in order, with
+    /// original case (trimmed). Null when the comment had no such lines. This is the extension point
+    /// for plugins (e.g. NpgsqlRest.Mcp): a plugin parses its own annotations out of these lines in
+    /// its endpoint-create handler, and treats the remainder as the human-readable description.
+    /// Core itself attaches no meaning to these lines.
+    /// </summary>
+    public string[]? UnhandledCommentLines { get; set; } = null;
+
+    private Dictionary<string, object?>? _items;
+
+    /// <summary>
+    /// Generic per-endpoint property bag for plugin-attached metadata, namespaced by key
+    /// (e.g. "mcp", "openapi"). Core attaches no meaning to its contents — it is the typed
+    /// extension point for plugins (parse from <see cref="UnhandledCommentLines"/> in an
+    /// endpoint-create handler, stash the result here). Populated at build time, read-only at
+    /// runtime. Lazily allocated, so endpoints with no plugin metadata cost nothing.
+    /// </summary>
+    public IDictionary<string, object?> Items => _items ??= new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Non-allocating read of an <see cref="Items"/> entry. Returns false (without allocating the
+    /// bag) when no items have been stored. Use this for reads on the hot/common path so endpoints
+    /// with no plugin metadata cost nothing.
+    /// </summary>
+    public bool TryGetItem(string key, out object? value)
+    {
+        if (_items is not null)
+        {
+            return _items.TryGetValue(key, out value);
+        }
+        value = null;
+        return false;
+    }
+
     /// <summary>
     /// When true, encrypt ALL text parameters using the default data protector.
     /// </summary>

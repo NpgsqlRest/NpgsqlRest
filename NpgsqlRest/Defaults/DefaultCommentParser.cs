@@ -42,6 +42,10 @@ internal static partial class DefaultCommentParser
             string[] lines = comment.Split(NewlineSeparator, StringSplitOptions.RemoveEmptyEntries);
             routineEndpoint.CommentWordLines = new string[lines.Length][];
             bool hasHttpTag = false;
+            // Accumulates comment lines that are NOT recognized as built-in directives. Exposed via
+            // RoutineEndpoint.UnhandledCommentLines for plugins (e.g. MCP) to parse their own
+            // annotations and/or derive a human description. Core attaches no meaning to them.
+            List<string>? unhandledCommentLines = null;
             for (var i = 0; i < lines.Length; i++)
             {
                 string line = lines[i].Trim();
@@ -109,16 +113,6 @@ internal static partial class DefaultCommentParser
                 {
                     routineEndpoint.InternalOnly = true;
                     CommentLogger?.LogTrace("Endpoint {Description} marked as internal-only", description);
-                    TrackAnnotation(line);
-                }
-
-                // openapi
-                // openapi hide | hidden | ignore
-                // openapi tag tag1, tag2, ...
-                // openapi tags tag1, tag2, ...
-                else if (haveTag is true && StrEquals(wordsLower[0], OpenApiKey))
-                {
-                    HandleOpenApi(routineEndpoint, wordsLower, words, len, description);
                     TrackAnnotation(line);
                 }
 
@@ -509,7 +503,35 @@ internal static partial class DefaultCommentParser
                     HandleNestedJson(routineEndpoint, description);
                     TrackAnnotation(line);
                 }
+                else
+                {
+                    // Not a built-in directive — offer it to plugin comment handlers in a single
+                    // pass (no second iteration / re-tokenization per plugin). First handler to
+                    // claim it (non-null label) wins; core logs it centrally, consistent with
+                    // built-in annotation logging. If no handler claims it, it's prose → surfaced
+                    // via RoutineEndpoint.UnhandledCommentLines.
+                    string? pluginLabel = null;
+                    foreach (var handler in Options.EndpointCreateHandlers)
+                    {
+                        pluginLabel = handler.HandleCommentLine(routineEndpoint, line, words, wordsLower);
+                        if (pluginLabel is not null)
+                        {
+                            break;
+                        }
+                    }
+                    if (pluginLabel is not null)
+                    {
+                        CommentLogger?.LogTrace("Plugin comment annotation '{Label}' for {Description}", pluginLabel, description);
+                    }
+                    else
+                    {
+                        (unhandledCommentLines ??= []).Add(line);
+                    }
+                }
             }
+
+            routineEndpoint.UnhandledCommentLines = unhandledCommentLines?.ToArray();
+
             if (disabled)
             {
                 Logger?.CommentDisabled(description);
