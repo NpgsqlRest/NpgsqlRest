@@ -243,7 +243,8 @@ public partial class Mcp
         // Business/execution outcome → a normal result with isError; the routine's response is the
         // text content verbatim. (Only structural problems above use a JSON-RPC error.)
         var content = new JsonArray();
-        content.Add(new JsonObject { ["type"] = "text", ["text"] = invoke.Body ?? string.Empty });
+        // Cast to JsonNode? to bind the non-generic JsonArray.Add (the generic Add<T> is not AOT/trim-safe).
+        content.Add((JsonNode?)new JsonObject { ["type"] = "text", ["text"] = invoke.Body ?? string.Empty });
 
         var toolResult = new JsonObject
         {

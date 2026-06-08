@@ -89,6 +89,7 @@ public partial class Mcp(McpOptions options) : IEndpointCreateHandler
 
         var tool = BuildTool(endpoint, info);
         var name = tool["name"]!.GetValue<string>();
+        WarnIfNonApplicableFeature(endpoint, name);
         if (_tools.TryAdd(name, tool))
         {
             _toolEndpoints[name] = endpoint;
@@ -99,6 +100,28 @@ public partial class Mcp(McpOptions options) : IEndpointCreateHandler
             // TODO: overload disambiguation (mcp_name, or a typed/arity suffix).
             Logger?.LogWarning("MCP tool name '{Name}' is already in use ({Schema}.{Routine} skipped).",
                 name, endpoint.Routine.Schema, endpoint.Routine.Name);
+        }
+    }
+
+    /// <summary>
+    /// Warns when a routine opted in with <c>mcp</c> also carries a feature that does not translate to an
+    /// MCP tool call (auth flows, file upload, SSE). The tool is still exposed — this only flags that it
+    /// likely won't behave as expected over JSON-RPC.
+    /// </summary>
+    private static void WarnIfNonApplicableFeature(RoutineEndpoint endpoint, string toolName)
+    {
+        var feature =
+            endpoint.Login ? "login" :
+            endpoint.Logout ? "logout" :
+            endpoint.BasicAuth is not null ? "basic auth" :
+            endpoint.Upload ? "upload" :
+            endpoint.SseEventsPath is not null ? "server-sent events" :
+            null;
+        if (feature is not null)
+        {
+            Logger?.LogWarning(
+                "MCP tool '{Name}' ({Schema}.{Routine}) is annotated `mcp` but uses a feature that does not apply to MCP tools ({Feature}). The tool is exposed but may not behave as expected over JSON-RPC.",
+                toolName, endpoint.Routine.Schema, endpoint.Routine.Name, feature);
         }
     }
 
