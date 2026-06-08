@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using NpgsqlRest.Mcp;
@@ -20,11 +21,15 @@ public class McpPluginTestFixture : IDisposable
 {
     private readonly WebApplication _app;
     private readonly HttpClient _client;
+    private readonly Mcp _mcp = new(new McpOptions { Enabled = true });
 
     public HttpClient Client => _client;
 
     /// <summary>Fully-parsed endpoints captured at build time, keyed by routine name.</summary>
     public Dictionary<string, RoutineEndpoint> Endpoints { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>The MCP tool catalog produced by the plugin (tool name → tools/list Tool object).</summary>
+    public IReadOnlyDictionary<string, JsonObject> Tools => _mcp.Tools;
 
     public McpPluginTestFixture()
     {
@@ -43,7 +48,7 @@ public class McpPluginTestFixture : IDisposable
             // requests an endpoint (e.g. `mcp`). OpenApi is loaded too so we can assert that a pure
             // modifier (`openapi hide`) on a non-HTTP routine does NOT spawn an endpoint.
             CommentsMode = CommentsMode.OnlyAnnotated,
-            EndpointCreateHandlers = [new Mcp(new McpOptions { Enabled = true }), new OpenApi(new OpenApiOptions())],
+            EndpointCreateHandlers = [_mcp, new OpenApi(new OpenApiOptions())],
             EndpointsCreated = endpoints =>
             {
                 foreach (var endpoint in endpoints)

@@ -1,4 +1,7 @@
+using System.Text.Json.Nodes;
+using Microsoft.Extensions.Logging;
 using NpgsqlRest.Common;
+using static NpgsqlRest.NpgsqlRestOptions;
 
 namespace NpgsqlRest.Mcp;
 
@@ -26,6 +29,15 @@ public class Mcp(McpOptions options) : IEndpointCreateHandler
     public const string ItemsKey = "mcp";
 
     private readonly McpOptions _options = options;
+
+    private readonly Dictionary<string, JsonObject> _tools = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The MCP tool catalog, keyed by tool name. Built during endpoint creation (<see cref="Handle"/>)
+    /// from the routines opted in via the `mcp` annotation. Each value is a tools/list `Tool` object
+    /// (name, description, inputSchema, annotations).
+    /// </summary>
+    public IReadOnlyDictionary<string, JsonObject> Tools => _tools;
 
     public CommentLineResult? HandleCommentLine(RoutineEndpoint endpoint, string line, string[] words, string[] wordsLower)
     {
@@ -63,6 +75,104 @@ public class Mcp(McpOptions options) : IEndpointCreateHandler
         }
 
         return null;
+    }
+
+    public void Handle(RoutineEndpoint endpoint)
+    {
+        if (!endpoint.TryGetItem(ItemsKey, out var value) || value is not McpToolInfo info || !info.Enabled)
+        {
+            return;
+        }
+
+        var tool = BuildTool(endpoint, info);
+        var name = tool["name"]!.GetValue<string>();
+        if (!_tools.TryAdd(name, tool))
+        {
+            // Tool names must be unique (e.g. overloaded routines collide). Keep the first; log the rest.
+            // TODO: overload disambiguation (mcp_name, or a typed/arity suffix).
+            Logger?.LogWarning("MCP tool name '{Name}' is already in use ({Schema}.{Routine} skipped).",
+                name, endpoint.Routine.Schema, endpoint.Routine.Name);
+        }
+    }
+
+    private JsonObject BuildTool(RoutineEndpoint endpoint, McpToolInfo info)
+    {
+        var routine = endpoint.Routine;
+        var name = string.IsNullOrWhiteSpace(info.ToolName) ? routine.Name : info.ToolName!;
+
+        var description = info.Description;
+        if (string.IsNullOrWhiteSpace(description))
+        {
+            description = DeriveDescription(endpoint);
+        }
+        if (string.IsNullOrWhiteSpace(description))
+        {
+            description = routine.Name;
+            Logger?.LogWarning("MCP tool '{Name}' has no description — provide `mcp <text>` or comment prose so agents call it well.", name);
+        }
+
+        var properties = new JsonObject();
+        var required = new JsonArray();
+        foreach (var p in routine.Parameters)
+        {
+            if (IsExcludedFromInput(p, endpoint))
+            {
+                continue;
+            }
+            properties[p.ConvertedName] = SchemaMapper.GetSchemaForType(p.TypeDescriptor);
+            // A parameter is required unless it has a default (PG DEFAULT, tracked on the type
+            // descriptor) or an explicit annotation default.
+            if (!p.TypeDescriptor.HasDefault && p.DefaultValue is null)
+            {
+                required.Add((JsonNode?)p.ConvertedName);
+            }
+        }
+
+        var inputSchema = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = properties,
+        };
+        if (required.Count > 0)
+        {
+            inputSchema["required"] = required;
+        }
+
+        // Safety hints derived from the HTTP method. GET → read-only; DELETE → destructive.
+        var annotations = new JsonObject { ["readOnlyHint"] = endpoint.Method == Method.GET };
+        if (endpoint.Method == Method.DELETE)
+        {
+            annotations["destructiveHint"] = true;
+        }
+
+        return new JsonObject
+        {
+            ["name"] = name,
+            ["description"] = description,
+            ["inputSchema"] = inputSchema,
+            ["annotations"] = annotations,
+        };
+    }
+
+    /// <summary>
+    /// Parameters that the agent must NOT supply are excluded from inputSchema: claim-sourced, IP,
+    /// virtual, or server-resolved (via a resolved-parameter SQL expression).
+    /// </summary>
+    private static bool IsExcludedFromInput(NpgsqlRestParameter p, RoutineEndpoint endpoint)
+    {
+        if (p.IsFromUserClaims || p.IsIpAddress || p.IsVirtual)
+        {
+            return true;
+        }
+        var resolved = endpoint.ResolvedParameterExpressions;
+        return resolved is not null
+            && (resolved.ContainsKey(p.ActualName) || resolved.ContainsKey(p.ConvertedName));
+    }
+
+    private static string? DeriveDescription(RoutineEndpoint endpoint)
+    {
+        var lines = endpoint.UnhandledCommentLines;
+        return lines is { Length: > 0 } ? string.Join('\n', lines) : null;
     }
 
     private static McpToolInfo GetOrAdd(RoutineEndpoint endpoint)

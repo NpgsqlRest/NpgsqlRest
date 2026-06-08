@@ -225,7 +225,7 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
 
                 if (routineParam != null)
                 {
-                    pathParameter["schema"] = GetSchemaForType(routineParam.TypeDescriptor);
+                    pathParameter["schema"] = SchemaMapper.GetSchemaForType(routineParam.TypeDescriptor);
                 }
                 else
                 {
@@ -275,7 +275,7 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
                         ["name"] = param.ConvertedName,
                         ["in"] = "query",
                         ["required"] = !param.TypeDescriptor.HasDefault,
-                        ["schema"] = GetSchemaForType(param.TypeDescriptor)
+                        ["schema"] = SchemaMapper.GetSchemaForType(param.TypeDescriptor)
                     };
 
                     parameters.Add((JsonNode)parameter);
@@ -314,7 +314,7 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
                         }
                     }
 
-                    properties![param.ConvertedName] = GetSchemaForType(param.TypeDescriptor);
+                    properties![param.ConvertedName] = SchemaMapper.GetSchemaForType(param.TypeDescriptor);
                     if (!param.TypeDescriptor.HasDefault)
                     {
                         required.Add((JsonNode?)JsonValue.Create(param.ConvertedName));
@@ -366,7 +366,7 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
                     {
                         ["text/plain"] = new JsonObject
                         {
-                            ["schema"] = GetSchemaForType(bodyParam.TypeDescriptor)
+                            ["schema"] = SchemaMapper.GetSchemaForType(bodyParam.TypeDescriptor)
                         }
                     }
                 };
@@ -559,86 +559,6 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
         }
     }
 
-    private JsonObject GetSchemaForType(TypeDescriptor type)
-    {
-        var schema = new JsonObject();
-
-        if (type.IsArray)
-        {
-            schema["type"] = "array";
-            var itemType = new TypeDescriptor(type.Type, type.HasDefault);
-            schema["items"] = GetSchemaForType(itemType);
-            return schema;
-        }
-
-        if (type.IsNumeric)
-        {
-            if (type.Type.Contains("int", StringComparison.OrdinalIgnoreCase))
-            {
-                schema["type"] = "integer";
-                if (type.Type.Contains("big", StringComparison.OrdinalIgnoreCase) ||
-                    type.Type == "int8")
-                {
-                    schema["format"] = "int64";
-                }
-                else
-                {
-                    schema["format"] = "int32";
-                }
-            }
-            else
-            {
-                schema["type"] = "number";
-                if (type.Type == "real" || type.Type == "float4")
-                {
-                    schema["format"] = "float";
-                }
-                else if (type.Type == "double precision" || type.Type == "float8")
-                {
-                    schema["format"] = "double";
-                }
-            }
-            return schema;
-        }
-
-        if (type.IsBoolean)
-        {
-            schema["type"] = "boolean";
-            return schema;
-        }
-
-        if (type.IsDateTime)
-        {
-            schema["type"] = "string";
-            schema["format"] = "date-time";
-            return schema;
-        }
-
-        if (type.IsDate)
-        {
-            schema["type"] = "string";
-            schema["format"] = "date";
-            return schema;
-        }
-
-        if (type.Type == "uuid")
-        {
-            schema["type"] = "string";
-            schema["format"] = "uuid";
-            return schema;
-        }
-
-        if (type.IsJson)
-        {
-            schema["type"] = "object";
-            return schema;
-        }
-
-        // Default to string
-        schema["type"] = "string";
-        return schema;
-    }
-
     private JsonObject GetResponseSchema(Routine routine)
     {
         if (routine.ReturnsSet)
@@ -653,7 +573,7 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
             var properties = itemSchema["properties"] as JsonObject;
             for (int i = 0; i < routine.ColumnCount; i++)
             {
-                properties![routine.ColumnNames[i]] = GetSchemaForType(routine.ColumnsTypeDescriptor[i]);
+                properties![routine.ColumnNames[i]] = SchemaMapper.GetSchemaForType(routine.ColumnsTypeDescriptor[i]);
             }
 
             return new JsonObject
@@ -674,7 +594,7 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
             var properties = schema["properties"] as JsonObject;
             for (int i = 0; i < routine.ColumnCount; i++)
             {
-                properties![routine.ColumnNames[i]] = GetSchemaForType(routine.ColumnsTypeDescriptor[i]);
+                properties![routine.ColumnNames[i]] = SchemaMapper.GetSchemaForType(routine.ColumnsTypeDescriptor[i]);
             }
 
             return schema;
@@ -682,7 +602,7 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
         else if (routine.ColumnCount == 1)
         {
             // Returns single value
-            return GetSchemaForType(routine.ColumnsTypeDescriptor[0]);
+            return SchemaMapper.GetSchemaForType(routine.ColumnsTypeDescriptor[0]);
         }
 
         // Default

@@ -59,6 +59,25 @@ authorize';
 create function mcp.tool_openapi_hide_only() returns text language sql as 'select ''oh''';
 comment on function mcp.tool_openapi_hide_only() is '
 openapi hide';
+
+-- params: required (no default) + optional (default) -> inputSchema properties + required
+create function mcp.tool_params(id int, label text default 'x') returns text language sql as 'select ''p''';
+comment on function mcp.tool_params(int, text) is '
+HTTP GET
+@mcp Fetch by id.';
+
+-- a server-resolved param must be excluded from inputSchema (agent must not supply it)
+create function mcp.tool_resolved(id int, secret text) returns text language sql as 'select ''r''';
+comment on function mcp.tool_resolved(int, text) is '
+HTTP GET
+@mcp
+secret = select ''sekret''';
+
+-- no inline text and no prose -> description falls back to the routine name
+create function mcp.tool_nodesc() returns text language sql as 'select ''nd''';
+comment on function mcp.tool_nodesc() is '
+HTTP GET
+@mcp';
 ");
     }
 }
@@ -128,5 +147,54 @@ public class McpPluginAnnotationTests(McpPluginTestFixture test)
         // OnlyAnnotated: a comment with only a modifier (no HTTP tag, no exposure request) creates nothing.
         test.Endpoints.ContainsKey("tool_modifier_only").Should().BeFalse();   // `authorize` (core modifier)
         test.Endpoints.ContainsKey("tool_openapi_hide_only").Should().BeFalse(); // `openapi hide` (plugin modifier)
+    }
+}
+
+[Collection("McpPluginFixture")]
+public class McpToolCatalogTests(McpPluginTestFixture test)
+{
+    [Fact]
+    public void Catalog_contains_only_mcp_tools_keyed_by_tool_name()
+    {
+        test.Tools.Should().ContainKey("tool_basic");
+        test.Tools.Should().ContainKey("cancel_booking");        // @mcp_name override
+        test.Tools.Should().NotContainKey("tool_named");          // superseded by the explicit name
+        test.Tools.Should().NotContainKey("tool_http_only");      // HTTP, not MCP
+        test.Tools.Should().NotContainKey("tool_modifier_only");  // not created at all
+    }
+
+    [Fact]
+    public void Description_derives_from_prose_inline_text_and_falls_back_to_name()
+    {
+        test.Tools["tool_basic"]!["description"]!.GetValue<string>().Should().Be("Fetch basic data for the agent.");
+        test.Tools["tool_inline_desc"]!["description"]!.GetValue<string>().Should().Be("Cancel a booking and release the room.");
+        test.Tools["tool_nodesc"]!["description"]!.GetValue<string>().Should().Be("tool_nodesc"); // fallback
+    }
+
+    [Fact]
+    public void InputSchema_lists_params_and_marks_only_non_default_as_required()
+    {
+        var schema = test.Tools["tool_params"]!["inputSchema"]!;
+        var props = schema["properties"]!.AsObject();
+        props.ContainsKey("id").Should().BeTrue();
+        props.ContainsKey("label").Should().BeTrue();
+        props["id"]!["type"]!.GetValue<string>().Should().Be("integer");
+
+        var required = schema["required"]!.AsArray().Select(n => n!.GetValue<string>()).ToArray();
+        required.Should().Equal("id"); // `label` has a DEFAULT → optional, not required
+    }
+
+    [Fact]
+    public void Server_resolved_params_are_excluded_from_inputSchema()
+    {
+        var props = test.Tools["tool_resolved"]!["inputSchema"]!["properties"]!.AsObject();
+        props.ContainsKey("id").Should().BeTrue();
+        props.ContainsKey("secret").Should().BeFalse(); // resolved server-side → agent must not supply it
+    }
+
+    [Fact]
+    public void Get_tools_carry_read_only_hint()
+    {
+        test.Tools["tool_basic"]!["annotations"]!["readOnlyHint"]!.GetValue<bool>().Should().BeTrue();
     }
 }
