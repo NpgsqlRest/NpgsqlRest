@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Npgsql;
+using NpgsqlRest.Common;
 using static NpgsqlRest.NpgsqlRestOptions;
 
 namespace NpgsqlRest.OpenAPI;
@@ -115,11 +116,16 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
 
     public void Handle(RoutineEndpoint endpoint)
     {
+        // openapi hide/tags were parsed during core's single comment pass (HandleCommentLine) and
+        // stashed in Items. Core is OpenAPI-agnostic.
+        var openApiHide = endpoint.TryGetItem(ItemHide, out var hideVal) && hideVal is true;
+        var openApiTags = endpoint.TryGetItem(ItemTags, out var tagsVal) ? tagsVal as string[] : null;
+
         // Filter gate — applied in order of decreasing specificity. First match short-circuits.
         // The endpoint itself remains registered with NpgsqlRest; only its documentation is skipped.
 
         // Per-endpoint opt-out from comment annotation (`openapi hide`).
-        if (endpoint.OpenApiHide)
+        if (openApiHide)
         {
             return;
         }
@@ -179,7 +185,7 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
 
         // Tag selection: explicit `openapi tag/tags` annotation values win over the default schema
         // grouping. Drives the section headings in Swagger UI / ReDoc.
-        if (endpoint.OpenApiTags is { Length: > 0 } customTags)
+        if (openApiTags is { Length: > 0 } customTags)
         {
             var tagsArray = new JsonArray();
             foreach (var tag in customTags)
@@ -451,6 +457,52 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
         }
 
         pathItem![method] = operation;
+    }
+
+    private const string ItemHide = "openapi:hide";
+    private const string ItemTags = "openapi:tags";
+
+    /// <summary>
+    /// Claims the `openapi` comment annotations during core's single parse pass and stashes the
+    /// result in RoutineEndpoint.Items (read later in Handle):
+    ///   openapi                        -> hide (bare form)
+    ///   openapi hide | hidden | ignore -> hide
+    ///   openapi tag | tags  a, b, ...   -> tag overrides (original casing preserved)
+    /// Returns a log label when claimed, null otherwise.
+    /// </summary>
+    public string? HandleCommentLine(RoutineEndpoint endpoint, string line, string[] words, string[] wordsLower)
+    {
+        if (wordsLower.Length == 0 || !CommentPrimitives.StrEquals(wordsLower[0], "openapi"))
+        {
+            return null;
+        }
+
+        if (wordsLower.Length < 2)
+        {
+            endpoint.Items[ItemHide] = true; // bare `openapi`
+            return "openapi hide";
+        }
+
+        var sub = wordsLower[1];
+        if (CommentPrimitives.StrEqualsToArray(sub, "hide", "hidden", "ignore"))
+        {
+            endpoint.Items[ItemHide] = true;
+            return "openapi hide";
+        }
+
+        if (CommentPrimitives.StrEqualsToArray(sub, "tag", "tags"))
+        {
+            if (wordsLower.Length < 3)
+            {
+                return "openapi tag (ignored: no tag value)";
+            }
+            var tags = words[2..]; // original casing for tag values
+            endpoint.Items[ItemTags] = tags;
+            return "openapi tags: " + string.Join(", ", tags);
+        }
+
+        // Recognized `openapi` keyword but unknown sub-command — claim it so it isn't treated as prose.
+        return $"openapi (ignored: unknown sub-command '{sub}')";
     }
 
     public void Cleanup()

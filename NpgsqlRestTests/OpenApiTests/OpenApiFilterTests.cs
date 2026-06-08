@@ -91,8 +91,19 @@ public class OpenApiFilterTests
             bodyParameterName: null,
             textResponseNullHandling: TextResponseNullHandling.EmptyString,
             queryStringNullHandling: QueryStringNullHandling.EmptyString);
-        endpoint.OpenApiHide = openApiHide;
-        endpoint.OpenApiTags = openApiTags;
+        // openapi hide/tags are parsed by the plugin's HandleCommentLine hook (which core invokes
+        // during its single parse pass) and stashed in endpoint.Items. Drive that hook directly so
+        // the test exercises the real parse path rather than pre-seeding Items.
+        var plugin = new OpenApi(new OpenApiOptions());
+        if (openApiHide)
+        {
+            plugin.HandleCommentLine(endpoint, "openapi hide", ["openapi", "hide"], ["openapi", "hide"]);
+        }
+        if (openApiTags is { Length: > 0 })
+        {
+            var words = new[] { "openapi", "tag" }.Concat(openApiTags).ToArray();
+            plugin.HandleCommentLine(endpoint, "openapi tag " + string.Join(", ", openApiTags), words, words.Select(w => w.ToLowerInvariant()).ToArray());
+        }
         return endpoint;
     }
 
