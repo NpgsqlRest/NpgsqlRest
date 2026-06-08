@@ -468,9 +468,10 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
     ///   openapi                        -> hide (bare form)
     ///   openapi hide | hidden | ignore -> hide
     ///   openapi tag | tags  a, b, ...   -> tag overrides (original casing preserved)
-    /// Returns a log label when claimed, null otherwise.
+    /// Returns a result when claimed (RequestsEndpoint stays false — these are document-only
+    /// modifiers and must NOT by themselves create an endpoint), null otherwise.
     /// </summary>
-    public string? HandleCommentLine(RoutineEndpoint endpoint, string line, string[] words, string[] wordsLower)
+    public CommentLineResult? HandleCommentLine(RoutineEndpoint endpoint, string line, string[] words, string[] wordsLower)
     {
         if (wordsLower.Length == 0 || !CommentPrimitives.StrEquals(wordsLower[0], "openapi"))
         {
@@ -480,29 +481,29 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
         if (wordsLower.Length < 2)
         {
             endpoint.Items[ItemHide] = true; // bare `openapi`
-            return "openapi hide";
+            return new CommentLineResult("openapi hide");
         }
 
         var sub = wordsLower[1];
         if (CommentPrimitives.StrEqualsToArray(sub, "hide", "hidden", "ignore"))
         {
             endpoint.Items[ItemHide] = true;
-            return "openapi hide";
+            return new CommentLineResult("openapi hide");
         }
 
         if (CommentPrimitives.StrEqualsToArray(sub, "tag", "tags"))
         {
             if (wordsLower.Length < 3)
             {
-                return "openapi tag (ignored: no tag value)";
+                return new CommentLineResult("openapi tag (ignored: no tag value)");
             }
             var tags = words[2..]; // original casing for tag values
             endpoint.Items[ItemTags] = tags;
-            return "openapi tags: " + string.Join(", ", tags);
+            return new CommentLineResult("openapi tags: " + string.Join(", ", tags));
         }
 
         // Recognized `openapi` keyword but unknown sub-command — claim it so it isn't treated as prose.
-        return $"openapi (ignored: unknown sub-command '{sub}')";
+        return new CommentLineResult($"openapi (ignored: unknown sub-command '{sub}')");
     }
 
     public void Cleanup()

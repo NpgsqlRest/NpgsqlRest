@@ -765,7 +765,7 @@ public static class ConfigDefaults
             ["NameNotSimilarTo"] = null,
             ["IncludeNames"] = null,
             ["ExcludeNames"] = null,
-            ["CommentsMode"] = "OnlyWithHttpTag",
+            ["CommentsMode"] = "OnlyAnnotated",
             ["UrlPathPrefix"] = "/api",
             ["KebabCaseUrls"] = true,
             ["CamelCaseNames"] = true,
@@ -1048,7 +1048,7 @@ public static class ConfigDefaults
         {
             ["Enabled"] = false,
             ["FilePattern"] = "",
-            ["CommentsMode"] = "OnlyWithHttpTag",
+            ["CommentsMode"] = "OnlyAnnotated",
             ["CommentScope"] = "All",
             ["ErrorMode"] = "Exit",
             ["ResultPrefix"] = "result",

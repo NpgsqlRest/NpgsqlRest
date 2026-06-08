@@ -309,7 +309,7 @@ public static partial class ConfigSchemaGenerator
         ["NpgsqlRest:NameNotSimilarTo"] = "Filter names NOT similar to this parameter or `null` to ignore this parameter.",
         ["NpgsqlRest:IncludeNames"] = "List of names to be included or `null` to ignore this parameter.",
         ["NpgsqlRest:ExcludeNames"] = "List of names to be excluded or `null` to ignore this parameter.",
-        ["NpgsqlRest:CommentsMode"] = "Configure how the comment annotations will behave. `Ignore` will create all endpoints and ignore comment annotations. `ParseAll` will create all endpoints and parse comment annotations to alter the endpoint. `OnlyWithHttpTag` (default) will only create endpoints that contain the `HTTP` tag in the comments and then parse comment annotations.",
+        ["NpgsqlRest:CommentsMode"] = "Configure how comment annotations behave and which routines become endpoints. `Ignore` creates all endpoints and ignores annotations. `ParseAll` creates all endpoints and parses annotations. `OnlyAnnotated` (default) creates only routines whose comment has a recognized exposure tag — an `HTTP` tag, or a plugin annotation that requests an endpoint (e.g. `mcp`); modifier-only comments (e.g. just `authorize`) create nothing. `OnlyWithHttpTag` is a backward-compatible alias of `OnlyAnnotated` (identical behavior; existing configs keep working).",
         ["NpgsqlRest:UrlPathPrefix"] = "The URL prefix string for every URL created by the default URL builder or `null` to ignore the URL prefix.",
         ["NpgsqlRest:KebabCaseUrls"] = "Convert all URL paths to kebab-case from the original PostgreSQL names.",
         ["NpgsqlRest:CamelCaseNames"] = "Convert all parameter names to camel case from the original PostgreSQL paramater names.",
@@ -494,7 +494,7 @@ public static partial class ConfigSchemaGenerator
         ["NpgsqlRest:SqlFileSource"] = "SQL file source for generating REST API endpoints from .sql files.",
         ["NpgsqlRest:SqlFileSource:Enabled"] = "Enable or disable SQL file source endpoints. Default is false.",
         ["NpgsqlRest:SqlFileSource:FilePattern"] = "Glob pattern for SQL files, e.g. \"sql/**/*.sql\", \"queries/*.sql\".\nSupports * (any chars), ** (recursive, any including /), ? (single char).\nEmpty string disables the feature.",
-        ["NpgsqlRest:SqlFileSource:CommentsMode"] = "How comment annotations are processed for SQL file endpoints.\nPossible values: Ignore, ParseAll, OnlyWithHttpTag.\nDefault: OnlyWithHttpTag — SQL files must contain an explicit HTTP annotation (e.g., '-- HTTP GET') to become endpoints.",
+        ["NpgsqlRest:SqlFileSource:CommentsMode"] = "How comment annotations are processed for SQL file endpoints.\nPossible values: Ignore, ParseAll, OnlyAnnotated, OnlyWithHttpTag.\nDefault: OnlyAnnotated (OnlyWithHttpTag is a back-compat alias) — SQL files must contain an explicit HTTP annotation (e.g., '-- HTTP GET') to become endpoints.",
         ["NpgsqlRest:SqlFileSource:CommentScope"] = "Which comments in the SQL file to parse as annotations.\nPossible values: All (default — all comments), Header (only comments before the first statement).",
         ["NpgsqlRest:SqlFileSource:ErrorMode"] = "Behavior when a SQL file fails to parse or describe.\nPossible values: Exit (default — log error, exit process), Skip (log error, continue).",
         ["NpgsqlRest:SqlFileSource:ResultPrefix"] = "Prefix for result keys in multi-command JSON responses.\nDefault keys are \"result1\", \"result2\", etc. Override per-result with the positional @result annotation in the SQL file.",
@@ -538,7 +538,7 @@ public static partial class ConfigSchemaGenerator
         ["CacheOptions:Type"] = ["Memory", "Redis", "Hybrid"],
 
         // NpgsqlRest core
-        ["NpgsqlRest:CommentsMode"] = ["Ignore", "ParseAll", "OnlyWithHttpTag"],
+        ["NpgsqlRest:CommentsMode"] = ["Ignore", "ParseAll", "OnlyAnnotated", "OnlyWithHttpTag"],
         ["NpgsqlRest:DefaultHttpMethod"] = ["GET", "PUT", "POST", "DELETE", "PATCH", "HEAD", "OPTIONS"],
         ["NpgsqlRest:DefaultRequestParamType"] = ["QueryString", "BodyJson"],
         ["NpgsqlRest:QueryStringNullHandling"] = ["Ignore", "EmptyString", "NullLiteral"],

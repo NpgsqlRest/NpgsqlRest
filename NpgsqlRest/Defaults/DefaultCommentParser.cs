@@ -24,7 +24,7 @@ internal static partial class DefaultCommentParser
         bool haveTag = true;
         if (string.IsNullOrEmpty(comment))
         {
-            if (Options.CommentsMode == CommentsMode.OnlyWithHttpTag)
+            if (Options.CommentsMode is CommentsMode.OnlyWithHttpTag or CommentsMode.OnlyAnnotated)
             {
                 return null;
             }
@@ -42,6 +42,9 @@ internal static partial class DefaultCommentParser
             string[] lines = comment.Split(NewlineSeparator, StringSplitOptions.RemoveEmptyEntries);
             routineEndpoint.CommentWordLines = new string[lines.Length][];
             bool hasHttpTag = false;
+            // True when a plugin handler claims a line with RequestsEndpoint=true (exposure intent) —
+            // under OnlyWithHttpTag/OnlyAnnotated this creates the endpoint even with no HTTP tag.
+            bool anyHandlerRequestedEndpoint = false;
             // Accumulates comment lines that are NOT recognized as built-in directives. Exposed via
             // RoutineEndpoint.UnhandledCommentLines for plugins (e.g. MCP) to parse their own
             // annotations and/or derive a human description. Core attaches no meaning to them.
@@ -510,18 +513,22 @@ internal static partial class DefaultCommentParser
                     // claim it (non-null label) wins; core logs it centrally, consistent with
                     // built-in annotation logging. If no handler claims it, it's prose → surfaced
                     // via RoutineEndpoint.UnhandledCommentLines.
-                    string? pluginLabel = null;
+                    CommentLineResult? handled = null;
                     foreach (var handler in Options.EndpointCreateHandlers)
                     {
-                        pluginLabel = handler.HandleCommentLine(routineEndpoint, line, words, wordsLower);
-                        if (pluginLabel is not null)
+                        handled = handler.HandleCommentLine(routineEndpoint, line, words, wordsLower);
+                        if (handled is not null)
                         {
                             break;
                         }
                     }
-                    if (pluginLabel is not null)
+                    if (handled is { } result)
                     {
-                        CommentLogger?.LogTrace("Plugin comment annotation '{Label}' for {Description}", pluginLabel, description);
+                        CommentLogger?.LogTrace("Plugin comment annotation '{Label}' for {Description}", result.Label, description);
+                        if (result.RequestsEndpoint)
+                        {
+                            anyHandlerRequestedEndpoint = true;
+                        }
                     }
                     else
                     {
@@ -537,7 +544,8 @@ internal static partial class DefaultCommentParser
                 Logger?.CommentDisabled(description);
                 return null;
             }
-            if (Options.CommentsMode == CommentsMode.OnlyWithHttpTag && !hasHttpTag)
+            if (Options.CommentsMode is CommentsMode.OnlyWithHttpTag or CommentsMode.OnlyAnnotated
+                && !hasHttpTag && !anyHandlerRequestedEndpoint)
             {
                 return null;
             }

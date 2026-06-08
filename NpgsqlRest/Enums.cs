@@ -38,9 +38,17 @@ public enum CommentsMode
     /// </summary>
     ParseAll,
     /// <summary>
-    /// Creates only endpoints from routines containing a comment with HTTP tag and and configures endpoint meta data.
+    /// Legacy alias of <see cref="OnlyAnnotated"/>, kept for back-compat. Behaves identically: an
+    /// endpoint is created when its comment has an HTTP tag OR a plugin requests an endpoint (e.g. `mcp`).
     /// </summary>
-    OnlyWithHttpTag
+    OnlyWithHttpTag,
+    /// <summary>
+    /// Creates only endpoints whose comment opts the routine in via a recognized EXPOSURE tag — an
+    /// HTTP tag (HTTP endpoint) or a plugin annotation that requests an endpoint (e.g. `mcp`, which can
+    /// be HTTP+MCP, or MCP-only when combined with `internal`). Transport-agnostic. Modifier-only
+    /// comments (e.g. just `authorize`, `cached`, or `openapi hide` on a non-HTTP routine) create nothing.
+    /// </summary>
+    OnlyAnnotated
 }
 
 public enum RequestHeadersMode

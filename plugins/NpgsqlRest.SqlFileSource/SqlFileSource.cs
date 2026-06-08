@@ -94,9 +94,14 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
         var parseResult = SqlFileParser.Parse(content, options.CommentScope);
 
 
-        // When CommentsMode is OnlyWithHttpTag, skip files that don't have an HTTP tag
-        // BEFORE attempting to describe — avoids errors on non-endpoint SQL files (migrations, utility scripts, etc.)
-        if (options.CommentsMode == NpgsqlRest.CommentsMode.OnlyWithHttpTag && !HasHttpTag(parseResult.Comment))
+        // When CommentsMode gates endpoint creation (OnlyAnnotated, or its back-compat alias
+        // OnlyWithHttpTag), skip files without an HTTP tag BEFORE attempting to describe — avoids
+        // errors on non-endpoint SQL files (migrations, utility scripts, etc.).
+        // NOTE: this pre-filter is HTTP-tag-only, so a SQL file exposed solely via a non-HTTP plugin
+        // annotation (e.g. `mcp` with no HTTP tag) is currently skipped here. Revisit if/when SQL-file
+        // routines need to be MCP-only.
+        if (options.CommentsMode is NpgsqlRest.CommentsMode.OnlyWithHttpTag or NpgsqlRest.CommentsMode.OnlyAnnotated
+            && !HasHttpTag(parseResult.Comment))
         {
             return null;
         }

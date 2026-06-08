@@ -26,7 +26,7 @@ internal static partial class DefaultCommentParser
             ["name"] = "http",
             ["aliases"] = ToJsonArray1(HttpKey),
             ["syntax"] = "http [GET|POST|PUT|DELETE] [path]",
-            ["description"] = "Enable endpoint and configure HTTP method and/or path. Required when CommentsMode is OnlyWithHttpTag."
+            ["description"] = "Enable endpoint and configure HTTP method and/or path. Required (for HTTP exposure) when CommentsMode is OnlyAnnotated (or its alias OnlyWithHttpTag)."
         });
 
         annotations.Add((JsonNode)new JsonObject
