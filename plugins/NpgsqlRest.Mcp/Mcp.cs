@@ -23,7 +23,7 @@ namespace NpgsqlRest.Mcp;
 /// `mcp` + `internal`. (With <see cref="CommentsMode.OnlyAnnotated"/>, `mcp` alone creates the
 /// endpoint even without an HTTP tag.)
 /// </summary>
-public class Mcp(McpOptions options) : IEndpointCreateHandler
+public partial class Mcp(McpOptions options) : IEndpointCreateHandler
 {
     /// <summary>Key under which <see cref="McpToolInfo"/> is stored in <see cref="RoutineEndpoint.Items"/>.</summary>
     public const string ItemsKey = "mcp";
