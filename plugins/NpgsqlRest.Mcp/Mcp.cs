@@ -117,6 +117,11 @@ public partial class Mcp(McpOptions options) : IEndpointCreateHandler
             description = routine.Name;
             Logger?.LogWarning("MCP tool '{Name}' has no description — provide `mcp <text>` or comment prose so agents call it well.", name);
         }
+        // Optional shared suffix injected into every tool description (McpOptions.ToolDescriptionSuffix).
+        if (!string.IsNullOrWhiteSpace(_options.ToolDescriptionSuffix))
+        {
+            description = $"{description} {_options.ToolDescriptionSuffix.Trim()}";
+        }
 
         var properties = new JsonObject();
         var required = new JsonArray();

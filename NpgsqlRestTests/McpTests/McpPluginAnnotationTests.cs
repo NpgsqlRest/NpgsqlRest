@@ -172,6 +172,21 @@ public class McpToolCatalogTests(McpPluginTestFixture test)
     }
 
     [Fact]
+    public void ToolDescriptionSuffix_is_appended_to_every_tool_description()
+    {
+        // A fresh plugin instance with a suffix, fed the same parsed endpoints. Handle() only reads the
+        // endpoint and writes to its own catalog, so the fixture's suffix-less Tools are unaffected.
+        var mcp = new Mcp(new McpOptions { Enabled = true, ToolDescriptionSuffix = "(Acme demo — read-only.)" });
+        mcp.Handle(test.Endpoints["tool_basic"]);  // derived-prose description
+        mcp.Handle(test.Endpoints["tool_nodesc"]); // name-fallback description
+
+        mcp.Tools["tool_basic"]!["description"]!.GetValue<string>()
+            .Should().Be("Fetch basic data for the agent. (Acme demo — read-only.)");
+        mcp.Tools["tool_nodesc"]!["description"]!.GetValue<string>()
+            .Should().Be("tool_nodesc (Acme demo — read-only.)");
+    }
+
+    [Fact]
     public void InputSchema_lists_params_and_marks_only_non_default_as_required()
     {
         var schema = test.Tools["tool_params"]!["inputSchema"]!;

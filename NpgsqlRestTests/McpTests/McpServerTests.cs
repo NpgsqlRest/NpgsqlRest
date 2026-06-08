@@ -23,7 +23,8 @@ public class McpServerTests(McpPluginTestFixture test)
         var result = r["result"]!;
         result["protocolVersion"]!.GetValue<string>().Should().Be("2025-11-25");
         result["capabilities"]!["tools"].Should().NotBeNull();          // tools capability advertised
-        result["serverInfo"]!["name"]!.GetValue<string>().Should().Be("NpgsqlRest");
+        // ServerName is unset in the fixture, so it falls back to the database name from the connection string.
+        result["serverInfo"]!["name"]!.GetValue<string>().Should().Be("npgsql_rest_test");
     }
 
     [Fact]

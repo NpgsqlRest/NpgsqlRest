@@ -821,6 +821,7 @@ public static class ConfigDefaults
             ["AuthenticationOptions"] = GetAuthenticationOptionsDefaults(),
             ["HttpFileOptions"] = GetHttpFileOptionsDefaults(),
             ["OpenApiOptions"] = GetOpenApiOptionsDefaults(),
+            ["McpOptions"] = GetMcpOptionsDefaults(),
             ["ClientCodeGen"] = GetClientCodeGenDefaults(),
             ["HttpClientOptions"] = GetHttpClientOptionsDefaults(),
             ["ProxyOptions"] = GetProxyOptionsDefaults(),
@@ -966,6 +967,19 @@ public static class ConfigDefaults
             ["NameSimilarTo"] = null,
             ["NameNotSimilarTo"] = null,
             ["RequiresAuthorizationOnly"] = false
+        };
+    }
+
+    private static JsonObject GetMcpOptionsDefaults()
+    {
+        return new JsonObject
+        {
+            ["Enabled"] = false,
+            ["UrlPath"] = "/mcp",
+            ["ServerName"] = null,
+            ["ServerVersion"] = "1.0.0",
+            ["Instructions"] = null,
+            ["ToolDescriptionSuffix"] = null
         };
     }
 

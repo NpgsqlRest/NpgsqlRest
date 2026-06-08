@@ -2564,7 +2564,33 @@ public static partial class ConfigSchemaGenerator
           //
           "RequiresAuthorizationOnly": false
         },
-        
+        //
+        // Enable or disable the MCP (Model Context Protocol) server endpoint. Disabled by default. Tools are NEVER auto-exposed: only routines explicitly opted in with the `mcp` comment annotation become MCP tools. Implements MCP specification 2025-11-25.
+        //
+        "McpOptions": {
+          "Enabled": false,
+          //
+          // URL path for the MCP endpoint (Streamable HTTP, single JSON-RPC endpoint).
+          //
+          "UrlPath": "/mcp",
+          //
+          // serverInfo.name reported in the MCP initialize handshake. When null, the database name from the connection string is used (falling back to "NpgsqlRest").
+          //
+          "ServerName": null,
+          //
+          // serverInfo.version reported in the MCP initialize handshake.
+          //
+          "ServerVersion": "1.0.0",
+          //
+          // Optional server-level instructions returned in the MCP initialize handshake (high-level guidance for the agent).
+          //
+          "Instructions": null,
+          //
+          // Optional text appended to every MCP tool description. Null = no-op. Use for short shared context the agent should always see (e.g. "Read-only Acme CRM."); for longer server-wide guidance prefer Instructions.
+          //
+          "ToolDescriptionSuffix": null
+        },
+
         //
         // Enable or disable the generation of TypeScript/Javascript client source code files for NpgsqlRest endpoints.
         //

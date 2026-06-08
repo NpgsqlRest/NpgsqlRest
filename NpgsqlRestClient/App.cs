@@ -587,6 +587,7 @@ public class App
                 ServerName = _config.GetConfigStr("ServerName", mcpCfg),
                 ServerVersion = _config.GetConfigStr("ServerVersion", mcpCfg),
                 Instructions = _config.GetConfigStr("Instructions", mcpCfg),
+                ToolDescriptionSuffix = _config.GetConfigStr("ToolDescriptionSuffix", mcpCfg),
             }));
             _builder.ClientLogger?.LogDebug("MCP server enabled. UrlPath={UrlPath}",
                 _config.GetConfigStr("UrlPath", mcpCfg) ?? "/mcp");

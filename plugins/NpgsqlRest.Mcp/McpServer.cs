@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Npgsql;
 
 namespace NpgsqlRest.Mcp;
 
@@ -16,8 +17,13 @@ public partial class Mcp
     private const string ProtocolVersion = "2025-11-25";
 
     private IApplicationBuilder _builder = default!;
+    private string? _connectionString;
 
-    public void Setup(IApplicationBuilder builder, NpgsqlRestOptions options) => _builder = builder;
+    public void Setup(IApplicationBuilder builder, NpgsqlRestOptions options)
+    {
+        _builder = builder;
+        _connectionString = options.ConnectionString;
+    }
 
     public void Cleanup()
     {
@@ -186,7 +192,7 @@ public partial class Mcp
             ["capabilities"] = new JsonObject { ["tools"] = new JsonObject() },
             ["serverInfo"] = new JsonObject
             {
-                ["name"] = string.IsNullOrWhiteSpace(_options.ServerName) ? "NpgsqlRest" : _options.ServerName,
+                ["name"] = GetServerName(),
                 ["version"] = string.IsNullOrWhiteSpace(_options.ServerVersion) ? "1.0.0" : _options.ServerVersion,
             },
         };
@@ -195,6 +201,28 @@ public partial class Mcp
             result["instructions"] = _options.Instructions;
         }
         return result;
+    }
+
+    /// <summary>
+    /// serverInfo.name for the initialize handshake. Explicit <see cref="McpOptions.ServerName"/> wins;
+    /// otherwise the database name from the connection string is used (mirrors the OpenAPI document title),
+    /// falling back to "NpgsqlRest" when it cannot be resolved.
+    /// </summary>
+    private string GetServerName()
+    {
+        if (!string.IsNullOrWhiteSpace(_options.ServerName))
+        {
+            return _options.ServerName;
+        }
+        if (!string.IsNullOrWhiteSpace(_connectionString))
+        {
+            var database = new NpgsqlConnectionStringBuilder(_connectionString).Database;
+            if (!string.IsNullOrWhiteSpace(database))
+            {
+                return database;
+            }
+        }
+        return "NpgsqlRest";
     }
 
     private JsonObject BuildToolsListResult()
