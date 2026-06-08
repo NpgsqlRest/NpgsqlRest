@@ -21,7 +21,17 @@ public class McpPluginTestFixture : IDisposable
 {
     private readonly WebApplication _app;
     private readonly HttpClient _client;
-    private readonly Mcp _mcp = new(new McpOptions { Enabled = true });
+    private readonly Mcp _mcp = new(new McpOptions
+    {
+        Enabled = true,
+        // OAuth 2.1 Resource Server config: an AS is configured, so the Protected Resource Metadata
+        // (RFC 9728) document is served. RequireAuthorization stays false — anonymous requests still work.
+        Authorization = new McpAuthorizationOptions
+        {
+            AuthorizationServers = ["https://as.example.com"],
+            ScopesSupported = ["mcp.read", "mcp.write"],
+        }
+    });
 
     public HttpClient Client => _client;
 

@@ -33,8 +33,17 @@ public partial class Mcp
         }
 
         var path = _options.UrlPath;
+        // Protected Resource Metadata (RFC 9728) is served only when an Authorization Server is configured
+        // — without one the document carries no useful discovery information.
+        var servePrm = _options.Authorization.AuthorizationServers.Length > 0;
+        var prmPath = ProtectedResourceMetadataPath();
         _builder.Use(async (context, next) =>
         {
+            if (servePrm && string.Equals(context.Request.Path, prmPath, StringComparison.Ordinal))
+            {
+                await HandleProtectedResourceMetadataAsync(context);
+                return;
+            }
             if (string.Equals(context.Request.Path, path, StringComparison.Ordinal))
             {
                 await HandleAsync(context);
@@ -44,8 +53,79 @@ public partial class Mcp
         });
     }
 
+    /// <summary>The RFC 9728 well-known path for this resource (overridable via config).</summary>
+    private string ProtectedResourceMetadataPath() =>
+        _options.Authorization.ProtectedResourceMetadataPath
+        ?? "/.well-known/oauth-protected-resource" + _options.UrlPath;
+
+    private async Task HandleProtectedResourceMetadataAsync(HttpContext context)
+    {
+        if (!HttpMethods.IsGet(context.Request.Method))
+        {
+            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+            return;
+        }
+
+        var auth = _options.Authorization;
+        // The canonical resource URI tokens must target (RFC 8707). Explicit Audience wins; otherwise
+        // derive it from the request so it matches the live origin.
+        var resource = string.IsNullOrWhiteSpace(auth.Audience)
+            ? $"{context.Request.Scheme}://{context.Request.Host}{_options.UrlPath}"
+            : auth.Audience;
+
+        var authServers = new JsonArray();
+        foreach (var server in auth.AuthorizationServers)
+        {
+            authServers.Add((JsonNode?)server);
+        }
+        var doc = new JsonObject
+        {
+            ["resource"] = resource,
+            ["authorization_servers"] = authServers,
+            ["bearer_methods_supported"] = new JsonArray((JsonNode?)"header"),
+        };
+        if (auth.ScopesSupported.Length > 0)
+        {
+            var scopes = new JsonArray();
+            foreach (var scope in auth.ScopesSupported)
+            {
+                scopes.Add((JsonNode?)scope);
+            }
+            doc["scopes_supported"] = scopes;
+        }
+
+        context.Response.StatusCode = StatusCodes.Status200OK;
+        context.Response.ContentType = "application/json";
+        await context.Response.WriteAsync(JsonSerializer.Serialize(doc, McpJsonContext.Default.JsonObject), context.RequestAborted);
+    }
+
+    /// <summary>
+    /// 401 with the RFC 9728 §5.1 <c>WWW-Authenticate: Bearer</c> challenge. When an Authorization Server
+    /// is configured, the challenge carries <c>resource_metadata</c> so the client can discover it.
+    /// </summary>
+    private void WriteUnauthorized(HttpContext context)
+    {
+        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        var challenge = "Bearer";
+        if (_options.Authorization.AuthorizationServers.Length > 0)
+        {
+            var prm = $"{context.Request.Scheme}://{context.Request.Host}{ProtectedResourceMetadataPath()}";
+            challenge = $"Bearer resource_metadata=\"{prm}\"";
+        }
+        context.Response.Headers.Append("WWW-Authenticate", challenge);
+    }
+
     private async Task HandleAsync(HttpContext context)
     {
+        // Transport authorization gate (OAuth 2.1 Resource Server). When RequireAuthorization is on, the
+        // host's bearer middleware must have authenticated the principal; otherwise reject with 401 and
+        // point the client at the Protected Resource Metadata (RFC 9728) so it can discover the AS.
+        if (_options.Authorization.RequireAuthorization && context.User?.Identity?.IsAuthenticated != true)
+        {
+            WriteUnauthorized(context);
+            return;
+        }
+
         // POST carries JSON-RPC. (GET would open an SSE stream — not supported in the stateless model.)
         if (!HttpMethods.IsPost(context.Request.Method))
         {

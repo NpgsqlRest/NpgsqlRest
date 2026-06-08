@@ -979,7 +979,15 @@ public static class ConfigDefaults
             ["ServerName"] = null,
             ["ServerVersion"] = "1.0.0",
             ["Instructions"] = null,
-            ["ToolDescriptionSuffix"] = null
+            ["ToolDescriptionSuffix"] = null,
+            ["Authorization"] = new JsonObject
+            {
+                ["RequireAuthorization"] = false,
+                ["AuthorizationServers"] = new JsonArray(),
+                ["ScopesSupported"] = new JsonArray(),
+                ["Audience"] = null,
+                ["ProtectedResourceMetadataPath"] = null
+            }
         };
     }
 

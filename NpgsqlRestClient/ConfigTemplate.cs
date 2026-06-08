@@ -2588,7 +2588,32 @@ public static partial class ConfigSchemaGenerator
           //
           // Optional text appended to every MCP tool description. Null = no-op. Use for short shared context the agent should always see (e.g. "Read-only Acme CRM."); for longer server-wide guidance prefer Instructions.
           //
-          "ToolDescriptionSuffix": null
+          "ToolDescriptionSuffix": null,
+          //
+          // OAuth 2.1 Resource Server settings. Token validation reuses the host's bearer authentication; these keys configure the transport gate and the Protected Resource Metadata document (RFC 9728). NpgsqlRest is not an Authorization Server — point AuthorizationServers at an external IdP.
+          //
+          "Authorization": {
+            //
+            // When true, every MCP request requires an authenticated principal. When false (default), anonymous is allowed and a tool's own `authorize` annotation still gates it per call.
+            //
+            "RequireAuthorization": false,
+            //
+            // Authorization Server issuer URL(s) advertised in the Protected Resource Metadata. When empty, no PRM document is served.
+            //
+            "AuthorizationServers": [],
+            //
+            // Optional scopes advertised in the Protected Resource Metadata (scopes_supported).
+            //
+            "ScopesSupported": [],
+            //
+            // Canonical resource URI tokens must target (RFC 8707 audience) and the PRM "resource" value. Null = derived from the request (scheme + host + UrlPath).
+            //
+            "Audience": null,
+            //
+            // Path the Protected Resource Metadata document is served at. Null = the RFC 9728 well-known path derived from UrlPath.
+            //
+            "ProtectedResourceMetadataPath": null
+          }
         },
 
         //

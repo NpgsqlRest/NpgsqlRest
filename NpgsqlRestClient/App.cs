@@ -580,6 +580,7 @@ public class App
         var mcpCfg = _config.NpgsqlRestCfg.GetSection("McpOptions");
         if (mcpCfg is not null && _config.GetConfigBool("Enabled", mcpCfg) is true)
         {
+            var mcpAuthCfg = mcpCfg.GetSection("Authorization");
             handlers.Add(new Mcp(new McpOptions
             {
                 Enabled = true,
@@ -588,6 +589,14 @@ public class App
                 ServerVersion = _config.GetConfigStr("ServerVersion", mcpCfg),
                 Instructions = _config.GetConfigStr("Instructions", mcpCfg),
                 ToolDescriptionSuffix = _config.GetConfigStr("ToolDescriptionSuffix", mcpCfg),
+                Authorization = new McpAuthorizationOptions
+                {
+                    RequireAuthorization = _config.GetConfigBool("RequireAuthorization", mcpAuthCfg),
+                    AuthorizationServers = [.. _config.GetConfigEnumerable("AuthorizationServers", mcpAuthCfg) ?? []],
+                    ScopesSupported = [.. _config.GetConfigEnumerable("ScopesSupported", mcpAuthCfg) ?? []],
+                    Audience = _config.GetConfigStr("Audience", mcpAuthCfg),
+                    ProtectedResourceMetadataPath = _config.GetConfigStr("ProtectedResourceMetadataPath", mcpAuthCfg),
+                },
             }));
             _builder.ClientLogger?.LogDebug("MCP server enabled. UrlPath={UrlPath}",
                 _config.GetConfigStr("UrlPath", mcpCfg) ?? "/mcp");

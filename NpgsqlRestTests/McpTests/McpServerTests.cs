@@ -88,4 +88,23 @@ public class McpServerTests(McpPluginTestFixture test)
         var r = await RpcAsync("""{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"nope","arguments":{}}}""");
         r["error"]!["code"]!.GetValue<int>().Should().Be(-32602);
     }
+
+    [Fact]
+    public async Task Protected_resource_metadata_is_served_at_the_well_known_path()
+    {
+        // RFC 9728: the well-known path is "/.well-known/oauth-protected-resource" + the resource path ("/mcp").
+        using var response = await test.Client.GetAsync("/.well-known/oauth-protected-resource/mcp");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+
+        var doc = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+        // resource is derived from the request origin + UrlPath (no explicit Audience configured).
+        doc["resource"]!.GetValue<string>().Should().EndWith("/mcp");
+        doc["authorization_servers"]!.AsArray().Select(n => n!.GetValue<string>())
+            .Should().Equal("https://as.example.com");
+        doc["scopes_supported"]!.AsArray().Select(n => n!.GetValue<string>())
+            .Should().Equal("mcp.read", "mcp.write");
+        doc["bearer_methods_supported"]!.AsArray().Select(n => n!.GetValue<string>())
+            .Should().Equal("header");
+    }
 }

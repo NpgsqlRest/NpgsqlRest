@@ -29,4 +29,7 @@ public class McpOptions
     /// server-wide guidance prefer <see cref="Instructions"/>, which is returned once at initialize.
     /// </summary>
     public string? ToolDescriptionSuffix { get; set; } = null;
+
+    /// <summary>OAuth 2.1 Resource Server settings: the transport authorization gate and Protected Resource Metadata (RFC 9728).</summary>
+    public McpAuthorizationOptions Authorization { get; set; } = new();
 }
