@@ -44,7 +44,8 @@ internal static class InternalRequestHandler
         Dictionary<string, string>? headers,
         string? body,
         string? contentType,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        System.Security.Claims.ClaimsPrincipal? user = null)
     {
         if (_endpointHandlers is null || _serviceProvider is null)
         {
@@ -75,6 +76,13 @@ internal static class InternalRequestHandler
 
         var responseBody = new NonClosingMemoryStream();
         var context = new DefaultHttpContext { RequestServices = scope.ServiceProvider };
+
+        // Forward the caller's principal so execution-level @authorize / claims-to-parameter binding
+        // runs as the real user (e.g. an MCP tool call carrying the validated bearer principal).
+        if (user is not null)
+        {
+            context.User = user;
+        }
 
         // Request setup
         context.Request.Method = method;

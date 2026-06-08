@@ -60,4 +60,31 @@ public class McpServerTests(McpPluginTestFixture test)
         using var response = await test.Client.PostAsync("/mcp", content);
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);
     }
+
+    [Fact]
+    public async Task Tools_call_executes_the_routine_and_returns_text_content()
+    {
+        var r = await RpcAsync("""{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"tool_basic","arguments":{}}}""");
+        var result = r["result"]!;
+        result["isError"]!.GetValue<bool>().Should().BeFalse();
+        result["content"]!.AsArray()[0]!["type"]!.GetValue<string>().Should().Be("text");
+        result["content"]!.AsArray()[0]!["text"]!.GetValue<string>().Should().Be("basic");
+    }
+
+    [Fact]
+    public async Task Tools_call_passes_arguments_through()
+    {
+        // tool_params(id int, label default) ignores its args (returns 'p'); this exercises the
+        // query-string build path without error.
+        var r = await RpcAsync("""{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"tool_params","arguments":{"id":5}}}""");
+        r["result"]!["isError"]!.GetValue<bool>().Should().BeFalse();
+        r["result"]!["content"]!.AsArray()[0]!["text"]!.GetValue<string>().Should().Be("p");
+    }
+
+    [Fact]
+    public async Task Tools_call_unknown_tool_is_a_jsonrpc_error()
+    {
+        var r = await RpcAsync("""{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"nope","arguments":{}}}""");
+        r["error"]!["code"]!.GetValue<int>().Should().Be(-32602);
+    }
 }

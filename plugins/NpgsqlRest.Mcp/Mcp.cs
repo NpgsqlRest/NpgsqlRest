@@ -32,6 +32,9 @@ public partial class Mcp(McpOptions options) : IEndpointCreateHandler
 
     private readonly Dictionary<string, JsonObject> _tools = new(StringComparer.Ordinal);
 
+    // tool name → endpoint, for tools/call execution.
+    private readonly Dictionary<string, RoutineEndpoint> _toolEndpoints = new(StringComparer.Ordinal);
+
     /// <summary>
     /// The MCP tool catalog, keyed by tool name. Built during endpoint creation (<see cref="Handle"/>)
     /// from the routines opted in via the `mcp` annotation. Each value is a tools/list `Tool` object
@@ -86,7 +89,11 @@ public partial class Mcp(McpOptions options) : IEndpointCreateHandler
 
         var tool = BuildTool(endpoint, info);
         var name = tool["name"]!.GetValue<string>();
-        if (!_tools.TryAdd(name, tool))
+        if (_tools.TryAdd(name, tool))
+        {
+            _toolEndpoints[name] = endpoint;
+        }
+        else
         {
             // Tool names must be unique (e.g. overloaded routines collide). Keep the first; log the rest.
             // TODO: overload disambiguation (mcp_name, or a typed/arity suffix).

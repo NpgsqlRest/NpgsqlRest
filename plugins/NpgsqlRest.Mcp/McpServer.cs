@@ -74,6 +74,12 @@ public partial class Mcp
             return;
         }
 
+        if (method == "tools/call")
+        {
+            await HandleToolCallAsync(context, request, id);
+            return;
+        }
+
         JsonObject? result = method switch
         {
             "initialize" => BuildInitializeResult(),
@@ -94,6 +100,82 @@ public partial class Mcp
             ["id"] = id,
             ["result"] = result,
         });
+    }
+
+    private async Task HandleToolCallAsync(HttpContext context, JsonNode? request, JsonNode? id)
+    {
+        var prms = request?["params"];
+        var name = prms?["name"]?.GetValue<string>();
+        if (name is null || !_toolEndpoints.TryGetValue(name, out var endpoint))
+        {
+            // Structural failure → JSON-RPC error (not a tool result).
+            await WriteResponseAsync(context, ErrorEnvelope(id, -32602, $"Unknown tool: {name}"));
+            return;
+        }
+
+        var (httpMethod, path, body, contentType) = BuildInvocation(endpoint, prms?["arguments"] as JsonObject);
+
+        // Forward the /mcp request's principal so the routine's authorize/claims binding applies.
+        var invoke = await RoutineInvoker.InvokeAsync(
+            httpMethod, path, headers: null, body: body, contentType: contentType,
+            user: context.User, cancellationToken: context.RequestAborted);
+
+        // Business/execution outcome → a normal result with isError; the routine's response is the
+        // text content verbatim. (Only structural problems above use a JSON-RPC error.)
+        var content = new JsonArray();
+        content.Add(new JsonObject { ["type"] = "text", ["text"] = invoke.Body ?? string.Empty });
+
+        var toolResult = new JsonObject
+        {
+            ["content"] = content,
+            ["isError"] = !invoke.IsSuccess,
+        };
+
+        await WriteResponseAsync(context, new JsonObject
+        {
+            ["jsonrpc"] = "2.0",
+            ["id"] = id,
+            ["result"] = toolResult,
+        });
+    }
+
+    /// <summary>
+    /// Maps a flat MCP arguments object onto the endpoint's HTTP shape: path-parameter substitution,
+    /// then query string (QueryString endpoints) or a JSON body (BodyJson endpoints).
+    /// </summary>
+    private static (string Method, string Path, string? Body, string? ContentType) BuildInvocation(
+        RoutineEndpoint endpoint, JsonObject? arguments)
+    {
+        var args = arguments is null ? new JsonObject() : (JsonObject)arguments.DeepClone();
+        var path = endpoint.Path;
+
+        if (endpoint.PathParameters is { Length: > 0 } pathParams)
+        {
+            foreach (var pp in pathParams)
+            {
+                if (args.TryGetPropertyValue(pp, out var v) && v is not null)
+                {
+                    path = path.Replace("{" + pp + "}", Uri.EscapeDataString(v.ToString()));
+                    args.Remove(pp);
+                }
+            }
+        }
+
+        var method = endpoint.Method.ToString();
+
+        if (endpoint.RequestParamType == RequestParamType.BodyJson)
+        {
+            return (method, path, args.ToJsonString(), "application/json");
+        }
+
+        // QueryString endpoints (GET/DELETE by default).
+        if (args.Count > 0)
+        {
+            var query = string.Join("&", args.Select(kv =>
+                string.Concat(Uri.EscapeDataString(kv.Key), "=", Uri.EscapeDataString(kv.Value?.ToString() ?? string.Empty))));
+            path = string.Concat(path, path.Contains('?') ? "&" : "?", query);
+        }
+        return (method, path, null, null);
     }
 
     private JsonObject BuildInitializeResult()
