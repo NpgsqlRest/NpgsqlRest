@@ -1,0 +1,55 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+    <PropertyGroup>
+        <OutputType>Library</OutputType>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <NoDefaultLaunchSettingsFile>true</NoDefaultLaunchSettingsFile>
+        <NoWarn>$(NoWarn);1591</NoWarn>
+        <IsPackable>true</IsPackable>
+        <Title>NpgsqlRest.Mcp</Title>
+        <Authors>Vedran Bilopavlović</Authors>
+        <Company>VB-Consulting</Company>
+        <Description>MCP (Model Context Protocol) server for NpgsqlRest — projects opted-in PostgreSQL routines as MCP tools. Implements MCP 2025-11-25.</Description>
+        <PackageTags>api;mcp;model-context-protocol;ai;agent;llm;postgres;dotnet;database;rest;server;postgresql;npgsqlrest;pgsql;pg;tools</PackageTags>
+        <PackageProjectUrl>https://github.com/NpgsqlRest/NpgsqlRest/NpgsqlRest.Mcp</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/NpgsqlRest/NpgsqlRest</RepositoryUrl>
+        <PackageReleaseNotes>https://github.com/NpgsqlRest/NpgsqlRest/blob/master/changelog.md</PackageReleaseNotes>
+        <PackageId>NpgsqlRest.Mcp</PackageId>
+        <PackageLicenseFile>LICENSE</PackageLicenseFile>
+        <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+        <Version>1.0.0</Version>
+        <AssemblyVersion>1.0.0</AssemblyVersion>
+        <FileVersion>1.0.0</FileVersion>
+        <PackageVersion>1.0.0</PackageVersion>
+        <LangVersion>14</LangVersion>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(GITHUB_ACTIONS)' == 'true'">
+        <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.300" PrivateAssets="All" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="..\..\LICENSE">
+            <Pack>True</Pack>
+            <PackagePath></PackagePath>
+        </None>
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\..\NpgsqlRest\NpgsqlRest.csproj" />
+    </ItemGroup>
+
+    <!-- Shared source (NpgsqlRest.Common): linked, compiled into this assembly. Internal type, own
+         private copy. Used to parse the `mcp` annotations out of RoutineEndpoint.UnhandledCommentLines. -->
+    <ItemGroup>
+        <Compile Include="..\..\NpgsqlRest.Common\*.cs">
+            <Link>Common\%(Filename)%(Extension)</Link>
+        </Compile>
+    </ItemGroup>
+</Project>
