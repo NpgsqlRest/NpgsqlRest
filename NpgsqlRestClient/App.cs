@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.DataProtection;
 using NpgsqlRest.UploadHandlers;
 using NpgsqlRest.Auth;
 using NpgsqlRest.OpenAPI;
+using NpgsqlRest.Mcp;
 
 namespace NpgsqlRestClient;
 
@@ -574,6 +575,21 @@ public class App
 
             handlers.Add(new TsClient(ts));
             _builder.ClientLogger?.LogDebug("TypeScript client code generation enabled. FilePath={FilePath}", ts.FilePath);
+        }
+
+        var mcpCfg = _config.NpgsqlRestCfg.GetSection("McpOptions");
+        if (mcpCfg is not null && _config.GetConfigBool("Enabled", mcpCfg) is true)
+        {
+            handlers.Add(new Mcp(new McpOptions
+            {
+                Enabled = true,
+                UrlPath = _config.GetConfigStr("UrlPath", mcpCfg) ?? "/mcp",
+                ServerName = _config.GetConfigStr("ServerName", mcpCfg),
+                ServerVersion = _config.GetConfigStr("ServerVersion", mcpCfg),
+                Instructions = _config.GetConfigStr("Instructions", mcpCfg),
+            }));
+            _builder.ClientLogger?.LogDebug("MCP server enabled. UrlPath={UrlPath}",
+                _config.GetConfigStr("UrlPath", mcpCfg) ?? "/mcp");
         }
 
         return handlers;
