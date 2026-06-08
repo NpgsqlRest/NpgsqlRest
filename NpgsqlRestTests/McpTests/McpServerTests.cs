@@ -90,6 +90,20 @@ public class McpServerTests(McpPluginTestFixture test)
     }
 
     [Fact]
+    public async Task Tools_call_on_an_authorized_tool_by_anonymous_caller_returns_401()
+    {
+        // tool_authorized has `@authorize admin`; the fixture has no auth middleware, so the forwarded
+        // principal is anonymous and the execution pipeline returns 401 → translated to an HTTP challenge.
+        using var content = new StringContent(
+            """{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"tool_authorized","arguments":{}}}""",
+            Encoding.UTF8, "application/json");
+        using var response = await test.Client.PostAsync("/mcp", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.Headers.WwwAuthenticate.ToString().Should().Contain("resource_metadata=");
+    }
+
+    [Fact]
     public async Task Protected_resource_metadata_is_served_at_the_well_known_path()
     {
         // RFC 9728: the well-known path is "/.well-known/oauth-protected-resource" + the resource path ("/mcp").

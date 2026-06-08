@@ -78,6 +78,13 @@ create function mcp.tool_nodesc() returns text language sql as 'select ''nd''';
 comment on function mcp.tool_nodesc() is '
 HTTP GET
 @mcp';
+
+-- role-restricted tool: exercises the tools/call auth translation (401 anonymous, 403 wrong role)
+create function mcp.tool_authorized() returns text language sql as 'select ''secret''';
+comment on function mcp.tool_authorized() is '
+HTTP GET
+@mcp Admin-only data.
+@authorize admin';
 ");
     }
 }

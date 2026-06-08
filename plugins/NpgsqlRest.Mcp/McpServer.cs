@@ -115,6 +115,26 @@ public partial class Mcp
         context.Response.Headers.Append("WWW-Authenticate", challenge);
     }
 
+    /// <summary>
+    /// 403 with a <c>WWW-Authenticate: Bearer error="insufficient_scope"</c> challenge (RFC 6750 §3.1):
+    /// the principal is authenticated but lacks the permission the tool's <c>authorize</c> requires.
+    /// </summary>
+    private void WriteForbidden(HttpContext context)
+    {
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        var challenge = "Bearer error=\"insufficient_scope\"";
+        if (_options.Authorization.ScopesSupported.Length > 0)
+        {
+            challenge += $", scope=\"{string.Join(' ', _options.Authorization.ScopesSupported)}\"";
+        }
+        if (_options.Authorization.AuthorizationServers.Length > 0)
+        {
+            var prm = $"{context.Request.Scheme}://{context.Request.Host}{ProtectedResourceMetadataPath()}";
+            challenge += $", resource_metadata=\"{prm}\"";
+        }
+        context.Response.Headers.Append("WWW-Authenticate", challenge);
+    }
+
     private async Task HandleAsync(HttpContext context)
     {
         // Transport authorization gate (OAuth 2.1 Resource Server). When RequireAuthorization is on, the
@@ -205,6 +225,20 @@ public partial class Mcp
         var invoke = await RoutineInvoker.InvokeAsync(
             httpMethod, path, headers: null, body: body, contentType: contentType,
             user: context.User, cancellationToken: context.RequestAborted);
+
+        // Authorization outcome from the execution pipeline (core ran the tool's `authorize`/role check
+        // against the forwarded principal) → spec-level HTTP challenges, not a tool result. 401 = the tool
+        // needs authentication; 403 = authenticated but insufficient permission (RFC 9728/6750).
+        if (invoke.StatusCode == StatusCodes.Status401Unauthorized)
+        {
+            WriteUnauthorized(context);
+            return;
+        }
+        if (invoke.StatusCode == StatusCodes.Status403Forbidden)
+        {
+            WriteForbidden(context);
+            return;
+        }
 
         // Business/execution outcome → a normal result with isError; the routine's response is the
         // text content verbatim. (Only structural problems above use a JSON-RPC error.)
