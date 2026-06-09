@@ -130,11 +130,14 @@ public partial class Mcp(McpOptions options) : IEndpointCreateHandler
         var routine = endpoint.Routine;
         var name = string.IsNullOrWhiteSpace(info.ToolName) ? routine.Name : info.ToolName!;
 
-        var description = info.Description;
-        if (string.IsNullOrWhiteSpace(description))
-        {
-            description = DeriveDescription(endpoint);
-        }
+        // Description = inline `@mcp <text>` (if any) followed by the comment prose (UnhandledCommentLines).
+        // Either alone is used as-is; both are combined with the inline text as the lead line. Falling back
+        // to the routine name only when there is neither.
+        var inline = string.IsNullOrWhiteSpace(info.Description) ? null : info.Description;
+        var prose = DeriveDescription(endpoint);
+        var description = inline is not null && prose is not null
+            ? string.Concat(inline, "\n", prose)
+            : inline ?? prose;
         if (string.IsNullOrWhiteSpace(description))
         {
             description = routine.Name;

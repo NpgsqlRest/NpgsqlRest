@@ -85,6 +85,14 @@ comment on function mcp.tool_authorized() is '
 HTTP GET
 @mcp Admin-only data.
 @authorize admin';
+
+-- inline `@mcp <text>` AND comment prose -> description combines both (inline as the lead line)
+create function mcp.tool_inline_and_prose() returns text language sql as 'select ''ip''';
+comment on function mcp.tool_inline_and_prose() is '
+HTTP GET
+@mcp Lead description.
+More detail line one.
+More detail line two.';
 ");
     }
 }
@@ -186,6 +194,11 @@ public class McpToolCatalogTests(McpPluginTestFixture test)
         test.Tools["tool_nodesc"]!.ToJsonString().Should().Be(
             """{"name":"tool_nodesc","description":"tool_nodesc","inputSchema":{"type":"object","properties":{}},"annotations":{"readOnlyHint":true},"outputSchema":{"type":"object","properties":{"value":{"type":["string","null"]}}}}""");
     }
+
+    [Fact]
+    public void Inline_mcp_text_and_comment_prose_combine_into_the_description()
+        => test.Tools["tool_inline_and_prose"]!.ToJsonString().Should().Be(
+            """{"name":"tool_inline_and_prose","description":"Lead description.\nMore detail line one.\nMore detail line two.","inputSchema":{"type":"object","properties":{}},"annotations":{"readOnlyHint":true},"outputSchema":{"type":"object","properties":{"value":{"type":["string","null"]}}}}""");
 
     [Fact]
     public void ToolDescriptionSuffix_is_appended_to_every_tool_description()
