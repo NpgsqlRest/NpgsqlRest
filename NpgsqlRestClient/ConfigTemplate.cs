@@ -2616,7 +2616,11 @@ public static partial class ConfigSchemaGenerator
             //
             // Path the Protected Resource Metadata document is served at. Null = the RFC 9728 well-known path derived from UrlPath.
             //
-            "ProtectedResourceMetadataPath": null
+            "ProtectedResourceMetadataPath": null,
+            //
+            // When true, tools/list hides tools the calling principal could not run (their routine's authorize/role check would deny it). When false (default), every opted-in tool is listed (discoverable) and authorization is enforced on tools/call.
+            //
+            "FilterToolsByRole": false
           }
         },
 

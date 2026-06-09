@@ -1,4 +1,6 @@
-﻿using Microsoft.Extensions.Primitives;
+﻿using System.Security.Claims;
+using Microsoft.Extensions.Primitives;
+using NpgsqlRest.Auth;
 
 namespace NpgsqlRest;
 
@@ -219,6 +221,49 @@ public class RoutineEndpoint(
     /// Returns true if this endpoint has any path parameters defined.
     /// </summary>
     public bool HasPathParameters => PathParameters is not null && PathParameters.Length > 0;
+
+    /// <summary>
+    /// Whether <paramref name="user"/> may invoke this endpoint, given its authorization annotations.
+    /// Login endpoints are always callable; otherwise an authenticated principal is required when the
+    /// endpoint requires authorization or restricts roles, and a matching role claim when roles are set.
+    /// This is the single source of truth shared by the request-time authorization check and the MCP
+    /// tools/list role filter.
+    /// </summary>
+    public bool IsCallableBy(ClaimsPrincipal? user, NpgsqlRestAuthenticationOptions auth)
+    {
+        if (Login)
+        {
+            return true;
+        }
+        if ((RequiresAuthorization || AuthorizeRoles is not null) && user?.Identity?.IsAuthenticated is not true)
+        {
+            return false;
+        }
+        return HasAuthorizeRoleMatch(user, auth);
+    }
+
+    /// <summary>
+    /// True when <see cref="AuthorizeRoles"/> is unset, or <paramref name="user"/> has a user-id / name /
+    /// role claim whose value is one of the authorized roles.
+    /// </summary>
+    public bool HasAuthorizeRoleMatch(ClaimsPrincipal? user, NpgsqlRestAuthenticationOptions auth)
+    {
+        if (AuthorizeRoles is null)
+        {
+            return true;
+        }
+        foreach (var claim in user?.Claims ?? [])
+        {
+            if ((string.Equals(claim.Type, auth.DefaultUserIdClaimType, StringComparison.Ordinal) ||
+                 string.Equals(claim.Type, auth.DefaultNameClaimType, StringComparison.Ordinal) ||
+                 string.Equals(claim.Type, auth.DefaultRoleClaimType, StringComparison.Ordinal))
+                && AuthorizeRoles.Contains(claim.Value))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
 
     /// <summary>
     /// Ensures the PathParametersHashSet is initialized for fast lookups.

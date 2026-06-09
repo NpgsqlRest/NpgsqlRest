@@ -33,4 +33,11 @@ public class McpAuthorizationOptions
     /// derived from the MCP URL path (<c>/.well-known/oauth-protected-resource</c> + UrlPath).
     /// </summary>
     public string? ProtectedResourceMetadataPath { get; set; } = null;
+
+    /// <summary>
+    /// When true, <c>tools/list</c> hides tools the calling principal could not run (their routine's
+    /// <c>authorize</c>/role check would deny it). False (default) lists every opted-in tool — keeping
+    /// them discoverable — and authorization is enforced on <c>tools/call</c> regardless.
+    /// </summary>
+    public bool FilterToolsByRole { get; set; } = false;
 }

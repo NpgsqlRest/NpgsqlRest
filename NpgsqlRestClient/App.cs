@@ -597,6 +597,7 @@ public class App
                     ScopesSupported = [.. _config.GetConfigEnumerable("ScopesSupported", mcpAuthCfg) ?? []],
                     Audience = _config.GetConfigStr("Audience", mcpAuthCfg),
                     ProtectedResourceMetadataPath = _config.GetConfigStr("ProtectedResourceMetadataPath", mcpAuthCfg),
+                    FilterToolsByRole = _config.GetConfigBool("FilterToolsByRole", mcpAuthCfg),
                 },
             }));
             _builder.ClientLogger?.LogDebug("MCP server enabled. UrlPath={UrlPath}",

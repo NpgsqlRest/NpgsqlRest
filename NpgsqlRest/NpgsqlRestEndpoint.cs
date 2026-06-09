@@ -1532,32 +1532,15 @@ public partial class NpgsqlRestEndpoint(
                     return;
                 }
 
-                if (endpoint.AuthorizeRoles is not null)
+                if (endpoint.AuthorizeRoles is not null
+                    && endpoint.HasAuthorizeRoleMatch(context.User, Options.AuthenticationOptions) is false)
                 {
-                    bool ok = false;
-                    foreach (var claim in context.User?.Claims ?? [])
-                    {
-                        if (
-                            string.Equals(claim.Type, Options.AuthenticationOptions.DefaultUserIdClaimType, StringComparison.Ordinal) ||
-                            string.Equals(claim.Type, Options.AuthenticationOptions.DefaultNameClaimType, StringComparison.Ordinal) ||
-                            string.Equals(claim.Type, Options.AuthenticationOptions.DefaultRoleClaimType, StringComparison.Ordinal))
-                        {
-                            if (endpoint.AuthorizeRoles.Contains(claim.Value) is true)
-                            {
-                                ok = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (ok is false)
-                    {
-                        await Results.Problem(
-                            type: null,
-                            statusCode: (int)HttpStatusCode.Forbidden,
-                            title: "Forbidden",
-                            detail: null).ExecuteAsync(context);
-                        return;
-                    }
+                    await Results.Problem(
+                        type: null,
+                        statusCode: (int)HttpStatusCode.Forbidden,
+                        title: "Forbidden",
+                        detail: null).ExecuteAsync(context);
+                    return;
                 }
             }
 

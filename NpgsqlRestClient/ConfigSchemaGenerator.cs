@@ -450,6 +450,7 @@ public static partial class ConfigSchemaGenerator
         ["NpgsqlRest:McpOptions:Authorization:ScopesSupported"] = "Optional scopes advertised in the Protected Resource Metadata (scopes_supported).",
         ["NpgsqlRest:McpOptions:Authorization:Audience"] = "Canonical resource URI tokens must target (RFC 8707 audience) and the PRM \"resource\" value. Null = derived from the request (scheme + host + UrlPath).",
         ["NpgsqlRest:McpOptions:Authorization:ProtectedResourceMetadataPath"] = "Path the Protected Resource Metadata document is served at. Null = the RFC 9728 well-known path derived from UrlPath.",
+        ["NpgsqlRest:McpOptions:Authorization:FilterToolsByRole"] = "When true, tools/list hides tools the calling principal could not run (their routine's authorize/role check would deny it). When false (default), every opted-in tool is listed (discoverable) and authorization is enforced on tools/call.",
         ["NpgsqlRest:ClientCodeGen"] = "Enable or disable the generation of TypeScript/Javascript client source code files for NpgsqlRest endpoints.",
         ["NpgsqlRest:ClientCodeGen:FilePath"] = "File path for the generated code. Set to null to skip the code generation. Use {0} to set schema name when BySchema is true",
         ["NpgsqlRest:ClientCodeGen:FileOverwrite"] = "Force file overwrite.",

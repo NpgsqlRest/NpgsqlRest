@@ -54,6 +54,8 @@ public class McpAuthRoleTestFixture : IDisposable
                         RequireAuthorization = false,
                         AuthorizationServers = ["https://as.example.com"],
                         ScopesSupported = ["mcp.read"],
+                        // tools/list hides tools the caller can't run (tool_authorized requires `admin`).
+                        FilterToolsByRole = true,
                     }
                 })
             ]

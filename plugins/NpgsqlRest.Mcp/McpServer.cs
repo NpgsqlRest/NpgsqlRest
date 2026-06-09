@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -7,6 +8,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using NpgsqlRest.Auth;
 using NpgsqlRest.Common;
 using static NpgsqlRest.NpgsqlRestOptions;
 
@@ -28,11 +30,13 @@ public partial class Mcp
 
     private IApplicationBuilder _builder = default!;
     private string? _connectionString;
+    private NpgsqlRestAuthenticationOptions _authOptions = new();
 
     public void Setup(IApplicationBuilder builder, NpgsqlRestOptions options)
     {
         _builder = builder;
         _connectionString = options.ConnectionString;
+        _authOptions = options.AuthenticationOptions;
     }
 
     public void Cleanup()
@@ -302,7 +306,7 @@ public partial class Mcp
         {
             "initialize" => BuildInitializeResult(),
             "ping" => new JsonObject(),
-            "tools/list" => BuildToolsListResult(),
+            "tools/list" => BuildToolsListResult(context.User),
             _ => null,
         };
 
@@ -602,11 +606,18 @@ public partial class Mcp
         return "NpgsqlRest";
     }
 
-    private JsonObject BuildToolsListResult()
+    private JsonObject BuildToolsListResult(ClaimsPrincipal? user)
     {
+        // Optional role filter: hide tools the caller couldn't run (their routine's authorize/role check
+        // would deny). Off by default — the list stays fully discoverable and tools/call enforces anyway.
+        var filter = _options.Authorization.FilterToolsByRole;
         var tools = new JsonArray();
-        foreach (var tool in _tools.Values)
+        foreach (var (name, tool) in _tools)
         {
+            if (filter && _toolEndpoints.TryGetValue(name, out var endpoint) && !endpoint.IsCallableBy(user, _authOptions))
+            {
+                continue;
+            }
             tools.Add(tool.DeepClone()); // catalog entries are owned by _tools; clone before reparenting
         }
         return new JsonObject { ["tools"] = tools };

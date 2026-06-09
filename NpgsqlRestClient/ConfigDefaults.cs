@@ -987,7 +987,8 @@ public static class ConfigDefaults
                 ["AuthorizationServers"] = new JsonArray(),
                 ["ScopesSupported"] = new JsonArray(),
                 ["Audience"] = null,
-                ["ProtectedResourceMetadataPath"] = null
+                ["ProtectedResourceMetadataPath"] = null,
+                ["FilterToolsByRole"] = false
             }
         };
     }
