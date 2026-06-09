@@ -123,6 +123,15 @@ public partial class Mcp(McpOptions options) : IEndpointCreateHandler
                 "MCP tool '{Name}' ({Schema}.{Routine}) is annotated `mcp` but uses a feature that does not apply to MCP tools ({Feature}). The tool is exposed but may not behave as expected over JSON-RPC.",
                 toolName, endpoint.Routine.Schema, endpoint.Routine.Name, feature);
         }
+
+        // A routine's `rate_limiter` policy applies to its HTTP route, not to MCP — tools/call invokes the
+        // routine directly, bypassing route middleware. Use McpOptions.RateLimiterPolicy for the /mcp endpoint.
+        if (endpoint.RateLimiterPolicy is not null)
+        {
+            Logger?.LogWarning(
+                "MCP tool '{Name}' ({Schema}.{Routine}) has a `rate_limiter` annotation, but route-level rate limiting does not apply to MCP calls. Set McpOptions.RateLimiterPolicy to throttle the /mcp endpoint.",
+                toolName, endpoint.Routine.Schema, endpoint.Routine.Name);
+        }
     }
 
     private JsonObject BuildTool(RoutineEndpoint endpoint, McpToolInfo info)

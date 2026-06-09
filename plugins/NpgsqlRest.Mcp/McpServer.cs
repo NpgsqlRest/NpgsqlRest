@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -66,6 +67,31 @@ public partial class Mcp
         // — without one the document carries no useful discovery information.
         var servePrm = _options.Authorization.AuthorizationServers.Length > 0;
         var prmPath = ProtectedResourceMetadataPath();
+
+        // Prefer mapped endpoints over middleware: an ASP.NET rate-limiter policy (RateLimiterPolicy) can
+        // only be attached to a mapped endpoint via RequireRateLimiting — not to a middleware path. Map both
+        // GET and POST so HandleAsync keeps emitting the in-handler 405 for GET (rather than a routing 405),
+        // preserving the transport behavior. Fall back to middleware on hosts without endpoint routing.
+        if (_builder is IEndpointRouteBuilder routes)
+        {
+            var mcp = routes.MapMethods(path, ["GET", "POST"], HandleAsync);
+            if (!string.IsNullOrWhiteSpace(_options.RateLimiterPolicy))
+            {
+                mcp.RequireRateLimiting(_options.RateLimiterPolicy);
+            }
+            if (servePrm)
+            {
+                routes.MapMethods(prmPath, ["GET"], HandleProtectedResourceMetadataAsync);
+            }
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_options.RateLimiterPolicy))
+        {
+            Logger?.LogWarning(
+                "MCP RateLimiterPolicy '{Policy}' is configured but the host does not use endpoint routing, so it will not be applied to {Path}.",
+                _options.RateLimiterPolicy, _options.UrlPath);
+        }
         _builder.Use(async (context, next) =>
         {
             if (servePrm && string.Equals(context.Request.Path, prmPath, StringComparison.Ordinal))

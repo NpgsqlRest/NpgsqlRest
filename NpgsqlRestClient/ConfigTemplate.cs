@@ -2590,6 +2590,10 @@ public static partial class ConfigSchemaGenerator
           //
           "ToolDescriptionSuffix": null,
           //
+          // Name of an ASP.NET rate-limiter policy applied to the whole /mcp endpoint. Null = no limiting. A routine's own rate_limiter annotation does not carry to MCP (tools/call bypasses route middleware), so this is how MCP traffic is throttled. The named policy must be registered on the host (AddRateLimiter + UseRateLimiter); an unregistered name surfaces as the framework's error when a request hits the endpoint.
+          //
+          "RateLimiterPolicy": null,
+          //
           // Allowed values of the HTTP Origin header (DNS-rebinding protection for the Streamable HTTP transport). A request whose Origin is present but matches neither this list nor the server's own origin is rejected with 403. Requests without an Origin header (e.g. server-to-server) are allowed. Empty = only same-origin browser requests pass.
           //
           "AllowedOrigins": [],

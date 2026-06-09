@@ -30,6 +30,15 @@ public class McpOptions
     /// </summary>
     public string? ToolDescriptionSuffix { get; set; } = null;
 
+    /// <summary>
+    /// Name of an ASP.NET rate-limiter policy applied to the whole <c>/mcp</c> endpoint. Null = no limiting.
+    /// A routine's own <c>rate_limiter</c> annotation does not carry to MCP (tools/call bypasses route
+    /// middleware), so this is how MCP traffic is throttled. The named policy must be registered on the
+    /// host (<c>AddRateLimiter(o =&gt; o.AddPolicy("name", …))</c> + <c>UseRateLimiter()</c>); an unregistered
+    /// name surfaces as the framework's error when a request hits the endpoint.
+    /// </summary>
+    public string? RateLimiterPolicy { get; set; } = null;
+
     /// <summary>OAuth 2.1 Resource Server settings: the transport authorization gate and Protected Resource Metadata (RFC 9728).</summary>
     public McpAuthorizationOptions Authorization { get; set; } = new();
 

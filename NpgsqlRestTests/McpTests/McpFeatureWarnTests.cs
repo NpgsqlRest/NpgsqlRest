@@ -20,6 +20,13 @@ comment on function mcp_warn.tool_login() is '
 HTTP POST
 login
 @mcp Sign in.';
+
+-- @mcp on a routine with a rate_limiter: route-level rate limiting does not carry to MCP.
+create function mcp_warn.tool_rate_limited() returns text language sql as 'select ''x''';
+comment on function mcp_warn.tool_rate_limited() is '
+HTTP GET
+@mcp Rate-limited routine.
+rate_limiter mcp_warn_policy';
 ");
     }
 }
@@ -44,6 +51,15 @@ public class McpFeatureWarnTests(McpFeatureWarnTestFixture test)
         var summary = test.StartupLogs.FirstOrDefault(l => l.Message.Contains("annotations: ["));
         summary.Should().NotBeNull("each created endpoint logs an annotations summary");
         summary!.Message.Should().Contain("Sign in."); // tool_login's `@mcp Sign in.` annotation
+    }
+
+    [Fact]
+    public void A_rate_limiter_annotation_on_an_mcp_routine_logs_a_warning()
+    {
+        var warning = test.StartupLogs.FirstOrDefault(l =>
+            l.Message.Contains("route-level rate limiting does not apply to MCP") && l.Message.Contains("tool_rate_limited"));
+        warning.Should().NotBeNull("the plugin should warn that a routine's rate_limiter doesn't carry to MCP");
+        warning!.Level.Should().Be(LogLevel.Warning);
     }
 
     [Fact]
