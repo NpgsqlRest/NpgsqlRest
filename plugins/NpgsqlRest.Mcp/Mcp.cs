@@ -15,9 +15,14 @@ namespace NpgsqlRest.Mcp;
 /// added in later increments.
 ///
 /// Annotations:
-///   mcp              opt this routine in as an MCP tool; description = comment prose (derived)
-///   mcp &lt;text&gt;       opt in; &lt;text&gt; is the tool description (overrides derived prose)
-///   mcp_name name    explicit tool name (otherwise derived from the routine name)
+///   mcp                    opt this routine in as an MCP tool; description = comment prose (derived)
+///   mcp &lt;text&gt;             opt in; &lt;text&gt; is an inline (explicit) tool description
+///   mcp_description &lt;text&gt; explicit, authoritative description (alias: mcp_desc)
+///   mcp_name name          explicit tool name (otherwise derived from the routine name)
+///
+/// Description precedence — highest-priority source present wins, regardless of the order the lines appear;
+/// an explicit description suppresses the comment-prose fallback, so unrelated comment lines never leak in:
+/// mcp_description &gt; inline mcp &lt;text&gt; &gt; comment prose &gt; routine name.
 ///
 /// MCP-only (tool exposed, no public HTTP route) is composed with the core `internal` annotation:
 /// `mcp` + `internal`. (With <see cref="CommentsMode.OnlyAnnotated"/>, `mcp` alone creates the
@@ -63,8 +68,10 @@ public partial class Mcp(McpOptions options) : IEndpointCreateHandler
             return new CommentLineResult(string.Concat("mcp_name ", info.ToolName), RequestsEndpoint: true);
         }
 
-        // mcp | mcp <text>  — text (rest of line, case preserved) becomes the tool description.
-        if (CommentPrimitives.StrEquals(key, "mcp"))
+        // mcp_description <text> | mcp_desc <text>  — explicit, authoritative description (rest of line,
+        // case preserved). Wins over inline `mcp <text>` and suppresses the comment-prose fallback, so
+        // unrelated comment lines never leak into the description.
+        if (CommentPrimitives.StrEquals(key, "mcp_description") || CommentPrimitives.StrEquals(key, "mcp_desc"))
         {
             var info = GetOrAdd(endpoint);
             info.Enabled = true;
@@ -72,6 +79,19 @@ public partial class Mcp(McpOptions options) : IEndpointCreateHandler
             if (!string.IsNullOrWhiteSpace(text))
             {
                 info.Description = text;
+            }
+            return new CommentLineResult(string.Concat("mcp_description: ", text), RequestsEndpoint: true);
+        }
+
+        // mcp | mcp <text>  — opt in; <text> (rest of line, case preserved) is an inline description.
+        if (CommentPrimitives.StrEquals(key, "mcp"))
+        {
+            var info = GetOrAdd(endpoint);
+            info.Enabled = true;
+            var text = RemainderAfterFirstWord(line);
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                info.InlineText = text;
                 return new CommentLineResult(string.Concat("mcp: ", text), RequestsEndpoint: true);
             }
             return new CommentLineResult("mcp", RequestsEndpoint: true);
@@ -139,18 +159,22 @@ public partial class Mcp(McpOptions options) : IEndpointCreateHandler
         var routine = endpoint.Routine;
         var name = string.IsNullOrWhiteSpace(info.ToolName) ? routine.Name : info.ToolName!;
 
-        // Description = inline `@mcp <text>` (if any) followed by the comment prose (UnhandledCommentLines).
-        // Either alone is used as-is; both are combined with the inline text as the lead line. Falling back
-        // to the routine name only when there is neither.
-        var inline = string.IsNullOrWhiteSpace(info.Description) ? null : info.Description;
-        var prose = DeriveDescription(endpoint);
-        var description = inline is not null && prose is not null
-            ? string.Concat(inline, "\n", prose)
-            : inline ?? prose;
+        // Description precedence — highest-priority source present wins, regardless of the order the lines
+        // appear in the comment; an explicit description suppresses the prose fallback, so unrelated comment
+        // lines never leak in:
+        //   1. `@mcp_description <text>`  — explicit, authoritative (info.Description)
+        //   2. inline `@mcp <text>`       — explicit (info.InlineText)
+        //   3. comment prose (UnhandledCommentLines) — zero-annotation fallback
+        //   4. the routine name           — last resort (with a warning)
+        var explicitText =
+            !string.IsNullOrWhiteSpace(info.Description) ? info.Description :
+            !string.IsNullOrWhiteSpace(info.InlineText) ? info.InlineText :
+            null;
+        var description = explicitText ?? DeriveDescription(endpoint);
         if (string.IsNullOrWhiteSpace(description))
         {
             description = routine.Name;
-            Logger?.LogWarning("MCP tool '{Name}' has no description — provide `mcp <text>` or comment prose so agents call it well.", name);
+            Logger?.LogWarning("MCP tool '{Name}' has no description — provide `mcp <text>`, `mcp_description <text>`, or comment prose so agents call it well.", name);
         }
         // Optional shared suffix injected into every tool description (McpOptions.ToolDescriptionSuffix).
         if (!string.IsNullOrWhiteSpace(_options.ToolDescriptionSuffix))

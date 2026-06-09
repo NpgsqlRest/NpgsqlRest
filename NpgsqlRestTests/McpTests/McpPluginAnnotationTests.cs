@@ -86,13 +86,20 @@ HTTP GET
 @mcp Admin-only data.
 @authorize admin';
 
--- inline `@mcp <text>` AND comment prose -> description combines both (inline as the lead line)
+-- inline `@mcp <text>` is explicit -> it is the description and SUPPRESSES the comment prose below it
 create function mcp.tool_inline_and_prose() returns text language sql as 'select ''ip''';
 comment on function mcp.tool_inline_and_prose() is '
 HTTP GET
 @mcp Lead description.
-More detail line one.
-More detail line two.';
+This prose is ignored because an explicit description is present.';
+
+-- `@mcp_description` is authoritative: it wins over inline `@mcp <text>` and suppresses the prose
+create function mcp.tool_explicit_desc() returns text language sql as 'select ''ed''';
+comment on function mcp.tool_explicit_desc() is '
+HTTP GET
+@mcp inline text that must be ignored
+@mcp_description The authoritative tool description.
+This prose must also be ignored.';
 
 -- composite-type parameter -> NpgsqlRest flattens it into typed scalar params (pX, pY)
 create type mcp.point as (x int, y int);
@@ -130,11 +137,12 @@ public class McpPluginAnnotationTests(McpPluginTestFixture test)
     }
 
     [Fact]
-    public void Mcp_inline_text_is_the_description()
+    public void Mcp_inline_text_is_recorded_as_the_inline_description()
     {
         var info = Info(test.Endpoints["tool_inline_desc"])!;
         info.Enabled.Should().BeTrue();
-        info.Description.Should().Be("Cancel a booking and release the room.");
+        info.InlineText.Should().Be("Cancel a booking and release the room.");
+        info.Description.Should().BeNull();   // no explicit @mcp_description
     }
 
     [Fact]
@@ -222,9 +230,14 @@ public class McpToolCatalogTests(McpPluginTestFixture test)
             """{"type":"object","properties":{"pts":{"type":"array","items":{"type":"string"}}},"required":["pts"]}""");
 
     [Fact]
-    public void Inline_mcp_text_and_comment_prose_combine_into_the_description()
+    public void Inline_mcp_text_is_the_description_and_suppresses_comment_prose()
         => test.Tools["tool_inline_and_prose"]!.ToJsonString().Should().Be(
-            """{"name":"tool_inline_and_prose","description":"Lead description.\nMore detail line one.\nMore detail line two.","inputSchema":{"type":"object","properties":{}},"annotations":{"readOnlyHint":true},"outputSchema":{"type":"object","properties":{"value":{"type":["string","null"]}}}}""");
+            """{"name":"tool_inline_and_prose","description":"Lead description.","inputSchema":{"type":"object","properties":{}},"annotations":{"readOnlyHint":true},"outputSchema":{"type":"object","properties":{"value":{"type":["string","null"]}}}}""");
+
+    [Fact]
+    public void Mcp_description_is_authoritative_over_inline_text_and_prose()
+        => test.Tools["tool_explicit_desc"]!.ToJsonString().Should().Be(
+            """{"name":"tool_explicit_desc","description":"The authoritative tool description.","inputSchema":{"type":"object","properties":{}},"annotations":{"readOnlyHint":true},"outputSchema":{"type":"object","properties":{"value":{"type":["string","null"]}}}}""");
 
     [Fact]
     public void ToolDescriptionSuffix_is_appended_to_every_tool_description()

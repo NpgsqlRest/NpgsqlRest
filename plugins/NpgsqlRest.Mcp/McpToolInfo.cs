@@ -14,7 +14,11 @@ public sealed class McpToolInfo
     /// <summary>Explicit tool name from <c>mcp_name</c>; null = derive from the routine name.</summary>
     public string? ToolName { get; set; }
 
-    /// <summary>Explicit tool description from <c>mcp_description</c> / <c>mcp_desc</c>; null = derive
-    /// from the comment prose (<see cref="RoutineEndpoint.UnhandledCommentLines"/>).</summary>
+    /// <summary>Explicit, authoritative tool description from <c>mcp_description</c> / <c>mcp_desc</c>.
+    /// When set it wins over everything and suppresses the comment-prose fallback.</summary>
     public string? Description { get; set; }
+
+    /// <summary>Inline description from <c>mcp &lt;text&gt;</c>. Used when <see cref="Description"/> is not
+    /// set; like it, an inline description is explicit and suppresses the comment-prose fallback.</summary>
+    public string? InlineText { get; set; }
 }
