@@ -7,19 +7,22 @@ public class HybridCacheWrapper : IRoutineCache
 {
     private readonly HybridCache _cache;
     private readonly ILogger? _logger;
-    private readonly CacheOptions _cacheOptions;
 
-    public HybridCacheWrapper(HybridCache cache, ILogger? logger = null, CacheOptions? cacheOptions = null)
+    public HybridCacheWrapper(HybridCache cache, ILogger? logger = null)
     {
         _cache = cache;
         _logger = logger;
-        _cacheOptions = cacheOptions ?? new CacheOptions();
         _logger?.LogInformation("HybridCache wrapper initialized");
     }
 
-    private string GetEffectiveKey(string key)
+    // HybridCache rejects keys containing control bytes (notably \x00, which NpgsqlRest's null marker
+    // historically used, and which is unsafe across Redis keys / log collectors) with
+    // "Cache key contains invalid content." We always hash into a 64-char hex string so the wrapper is a
+    // correct adapter regardless of source-key content. (UseHashedCacheKeys / HashKeyThreshold remain a
+    // Redis-memory optimization for the Redis backend; they are a no-op here since this always hashes.)
+    private static string GetSafeKey(string key)
     {
-        return CacheKeyHasher.GetEffectiveKey(key, _cacheOptions);
+        return CacheKeyHasher.ComputeHash(key);
     }
 
     public bool Get(RoutineEndpoint endpoint, string key, out object? result)
@@ -28,7 +31,7 @@ public class HybridCacheWrapper : IRoutineCache
 
         try
         {
-            var effectiveKey = GetEffectiveKey(key);
+            var effectiveKey = GetSafeKey(key);
 
             // HybridCache uses async API, we need to block here since IRoutineCache is synchronous
             var task = _cache.GetOrCreateAsync<string?>(
@@ -62,7 +65,7 @@ public class HybridCacheWrapper : IRoutineCache
     {
         try
         {
-            var effectiveKey = GetEffectiveKey(key);
+            var effectiveKey = GetSafeKey(key);
             var stringValue = value?.ToString();
             var expiry = overrideExpiration ?? endpoint.CacheExpiresIn;
 
@@ -93,7 +96,7 @@ public class HybridCacheWrapper : IRoutineCache
         // share ONE factory invocation (its built-in stampede protection). Values are stored as the
         // serialized string form, matching AddOrUpdate above (binary payloads are not supported by the
         // Hybrid backend, same as before). The factory's exceptions propagate without being cached.
-        var effectiveKey = GetEffectiveKey(key);
+        var effectiveKey = GetSafeKey(key);
         var expiry = overrideExpiration ?? endpoint.CacheExpiresIn;
         var options = expiry.HasValue
             ? new HybridCacheEntryOptions { Expiration = expiry.Value, LocalCacheExpiration = expiry.Value }
@@ -110,7 +113,7 @@ public class HybridCacheWrapper : IRoutineCache
     {
         try
         {
-            var effectiveKey = GetEffectiveKey(key);
+            var effectiveKey = GetSafeKey(key);
             var task = _cache.RemoveAsync(effectiveKey);
             task.AsTask().GetAwaiter().GetResult();
 

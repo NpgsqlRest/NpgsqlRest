@@ -2083,7 +2083,7 @@ public class Builder
             try
             {
                 var hybridCache = app.Services.GetRequiredService<Microsoft.Extensions.Caching.Hybrid.HybridCache>();
-                backendsByType[CacheType.Hybrid] = new HybridCacheWrapper(hybridCache, Logger, options);
+                backendsByType[CacheType.Hybrid] = new HybridCacheWrapper(hybridCache, Logger);
                 var useRedisBackend = _config.GetConfigBool("HybridCacheUseRedisBackend", cacheCfg, false);
                 var redisConfiguration = _config.GetConfigStr("RedisConfiguration", cacheCfg);
                 if (useRedisBackend && !string.IsNullOrEmpty(redisConfiguration))

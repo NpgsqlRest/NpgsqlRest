@@ -96,7 +96,10 @@ public class NpgsqlRestParameter : NpgsqlParameter
     }
 
     private const char CacheKeySeparator = '\x1F'; // Unit Separator - non-printable ASCII character
-    private const string CacheKeyNull = "\x00NULL\x00"; // Distinct marker for null/DBNull values
+    // Null/DBNull marker, delimited by the Unit Separator (the same byte used between params). Avoids
+    // \x00, which is hostile across backends (Redis keys, HybridCache key validation, log collectors).
+    // Collision-free: a real value can never contain \x1F, so it can never produce this marker.
+    private const string CacheKeyNull = "\x1FNULL\x1F";
 
     internal string GetCacheStringValue()
     {
