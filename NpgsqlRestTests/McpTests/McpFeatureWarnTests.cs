@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using NpgsqlRestTests.Setup;
 
 namespace NpgsqlRestTests;
@@ -33,5 +34,26 @@ public class McpFeatureWarnTests(McpFeatureWarnTestFixture test)
             l.Message.Contains("does not apply to MCP tools") && l.Message.Contains("login"));
         warning.Should().NotBeNull("the plugin should warn when `@mcp` is placed on a login routine");
         warning!.Message.Should().Contain("mcp_warn.tool_login");
+    }
+
+    [Fact]
+    public void Mcp_annotation_appears_in_the_endpoint_annotations_summary()
+    {
+        // The per-endpoint "annotations: [...]" Debug summary should list the mcp annotation alongside the
+        // built-in ones, so it is as visible in the console as HTTP/authorize/etc.
+        var summary = test.StartupLogs.FirstOrDefault(l => l.Message.Contains("annotations: ["));
+        summary.Should().NotBeNull("each created endpoint logs an annotations summary");
+        summary!.Message.Should().Contain("Sign in."); // tool_login's `@mcp Sign in.` annotation
+    }
+
+    [Fact]
+    public void The_exposed_tool_catalog_is_logged_at_startup()
+    {
+        // An Information-level summary lists the exposed tools so operators see the catalog without Debug.
+        // This fixture exposes exactly one tool (tool_login).
+        var catalog = test.StartupLogs.FirstOrDefault(l => l.Message.Contains("tool(s) exposed"));
+        catalog.Should().NotBeNull("the plugin should log a one-line MCP tool-catalog summary at startup");
+        catalog!.Level.Should().Be(LogLevel.Information);
+        catalog.Message.Should().Contain("tool_login");
     }
 }

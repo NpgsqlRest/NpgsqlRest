@@ -170,53 +170,47 @@ public class McpToolCatalogTests(McpPluginTestFixture test)
         test.Tools.Should().NotContainKey("tool_modifier_only");  // not created at all
     }
 
+    // The full tool definitions. (tool_basic's plain definition is asserted in McpServerTests' tools/list.)
+    // GET tools carry readOnlyHint:true; outputSchema is derived from the return type.
+
     [Fact]
-    public void Description_derives_from_prose_inline_text_and_falls_back_to_name()
+    public void Description_derives_from_inline_mcp_text()
     {
-        test.Tools["tool_basic"]!["description"]!.GetValue<string>().Should().Be("Fetch basic data for the agent.");
-        test.Tools["tool_inline_desc"]!["description"]!.GetValue<string>().Should().Be("Cancel a booking and release the room.");
-        test.Tools["tool_nodesc"]!["description"]!.GetValue<string>().Should().Be("tool_nodesc"); // fallback
+        test.Tools["tool_inline_desc"]!.ToJsonString().Should().Be(
+            """{"name":"tool_inline_desc","description":"Cancel a booking and release the room.","inputSchema":{"type":"object","properties":{}},"annotations":{"readOnlyHint":true},"outputSchema":{"type":"object","properties":{"value":{"type":["string","null"]}}}}""");
+    }
+
+    [Fact]
+    public void Description_falls_back_to_the_routine_name_when_there_is_no_text()
+    {
+        test.Tools["tool_nodesc"]!.ToJsonString().Should().Be(
+            """{"name":"tool_nodesc","description":"tool_nodesc","inputSchema":{"type":"object","properties":{}},"annotations":{"readOnlyHint":true},"outputSchema":{"type":"object","properties":{"value":{"type":["string","null"]}}}}""");
     }
 
     [Fact]
     public void ToolDescriptionSuffix_is_appended_to_every_tool_description()
     {
-        // A fresh plugin instance with a suffix, fed the same parsed endpoints. Handle() only reads the
+        // A fresh plugin instance with a suffix, fed the same parsed endpoint. Handle() only reads the
         // endpoint and writes to its own catalog, so the fixture's suffix-less Tools are unaffected.
-        var mcp = new Mcp(new McpOptions { Enabled = true, ToolDescriptionSuffix = "(Acme demo — read-only.)" });
-        mcp.Handle(test.Endpoints["tool_basic"]);  // derived-prose description
-        mcp.Handle(test.Endpoints["tool_nodesc"]); // name-fallback description
-
-        mcp.Tools["tool_basic"]!["description"]!.GetValue<string>()
-            .Should().Be("Fetch basic data for the agent. (Acme demo — read-only.)");
-        mcp.Tools["tool_nodesc"]!["description"]!.GetValue<string>()
-            .Should().Be("tool_nodesc (Acme demo — read-only.)");
+        var mcp = new Mcp(new McpOptions { Enabled = true, ToolDescriptionSuffix = "(Acme demo, read-only.)" });
+        mcp.Handle(test.Endpoints["tool_basic"]);
+        mcp.Tools["tool_basic"]!.ToJsonString().Should().Be(
+            """{"name":"tool_basic","description":"Fetch basic data for the agent. (Acme demo, read-only.)","inputSchema":{"type":"object","properties":{}},"annotations":{"readOnlyHint":true},"outputSchema":{"type":"object","properties":{"value":{"type":["string","null"]}}}}""");
     }
 
     [Fact]
     public void InputSchema_lists_params_and_marks_only_non_default_as_required()
     {
-        var schema = test.Tools["tool_params"]!["inputSchema"]!;
-        var props = schema["properties"]!.AsObject();
-        props.ContainsKey("id").Should().BeTrue();
-        props.ContainsKey("label").Should().BeTrue();
-        props["id"]!["type"]!.GetValue<string>().Should().Be("integer");
-
-        var required = schema["required"]!.AsArray().Select(n => n!.GetValue<string>()).ToArray();
-        required.Should().Equal("id"); // `label` has a DEFAULT → optional, not required
+        // tool_params(id int, label text default 'x'): both params listed; only `id` (no DEFAULT) required.
+        test.Tools["tool_params"]!.ToJsonString().Should().Be(
+            """{"name":"tool_params","description":"Fetch by id.","inputSchema":{"type":"object","properties":{"id":{"type":"integer","format":"int32"},"label":{"type":"string"}},"required":["id"]},"annotations":{"readOnlyHint":true},"outputSchema":{"type":"object","properties":{"value":{"type":["string","null"]}}}}""");
     }
 
     [Fact]
     public void Server_resolved_params_are_excluded_from_inputSchema()
     {
-        var props = test.Tools["tool_resolved"]!["inputSchema"]!["properties"]!.AsObject();
-        props.ContainsKey("id").Should().BeTrue();
-        props.ContainsKey("secret").Should().BeFalse(); // resolved server-side → agent must not supply it
-    }
-
-    [Fact]
-    public void Get_tools_carry_read_only_hint()
-    {
-        test.Tools["tool_basic"]!["annotations"]!["readOnlyHint"]!.GetValue<bool>().Should().BeTrue();
+        // tool_resolved(id int, secret text): `secret` is resolved server-side, so it is absent from inputSchema.
+        test.Tools["tool_resolved"]!.ToJsonString().Should().Be(
+            """{"name":"tool_resolved","description":"tool_resolved","inputSchema":{"type":"object","properties":{"id":{"type":"integer","format":"int32"}},"required":["id"]},"annotations":{"readOnlyHint":true},"outputSchema":{"type":"object","properties":{"value":{"type":["string","null"]}}}}""");
     }
 }

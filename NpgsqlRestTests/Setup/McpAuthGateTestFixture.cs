@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Logging;
 using NpgsqlRest.Mcp;
 
 namespace NpgsqlRestTests.Setup;
@@ -17,8 +18,12 @@ public class McpAuthGateTestFixture : IDisposable
 {
     private readonly WebApplication _app;
     private readonly HttpClient _client;
+    private readonly LogCollector _logCollector = new();
 
     public HttpClient Client => _client;
+
+    /// <summary>Logs emitted during build/startup (used to assert the no-auth-scheme warning).</summary>
+    public IReadOnlyList<LogEntry> StartupLogs { get; }
 
     public McpAuthGateTestFixture()
     {
@@ -27,6 +32,9 @@ public class McpAuthGateTestFixture : IDisposable
 
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.Logging.ClearProviders();
+        builder.Logging.SetMinimumLevel(LogLevel.Trace);
+        builder.Logging.AddProvider(new CollectingLoggerProvider(_logCollector));
         _app = builder.Build();
 
         _app.UseNpgsqlRest(new NpgsqlRestOptions(connectionString)
@@ -48,6 +56,7 @@ public class McpAuthGateTestFixture : IDisposable
         });
 
         _app.StartAsync().GetAwaiter().GetResult();
+        StartupLogs = _logCollector.Snapshot();
         _client = new HttpClient { BaseAddress = new Uri(_app.Urls.First()) };
         _client.Timeout = TimeSpan.FromHours(1);
     }

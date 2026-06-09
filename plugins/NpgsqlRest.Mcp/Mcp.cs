@@ -180,13 +180,20 @@ public partial class Mcp(McpOptions options) : IEndpointCreateHandler
             annotations["destructiveHint"] = true;
         }
 
-        return new JsonObject
+        var tool = new JsonObject
         {
             ["name"] = name,
             ["description"] = description,
             ["inputSchema"] = inputSchema,
             ["annotations"] = annotations,
         };
+        // outputSchema describes the structuredContent the tool returns (MCP 2025-11-25 §Output Schema).
+        var outputSchema = BuildOutputSchema(endpoint);
+        if (outputSchema is not null)
+        {
+            tool["outputSchema"] = outputSchema;
+        }
+        return tool;
     }
 
     /// <summary>

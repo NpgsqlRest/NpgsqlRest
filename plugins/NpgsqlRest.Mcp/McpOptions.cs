@@ -32,4 +32,12 @@ public class McpOptions
 
     /// <summary>OAuth 2.1 Resource Server settings: the transport authorization gate and Protected Resource Metadata (RFC 9728).</summary>
     public McpAuthorizationOptions Authorization { get; set; } = new();
+
+    /// <summary>
+    /// Allowed values of the HTTP <c>Origin</c> header (DNS-rebinding protection, required by the
+    /// Streamable HTTP transport). A request whose <c>Origin</c> is present but matches neither this
+    /// list nor the server's own origin is rejected with 403. Requests without an <c>Origin</c> header
+    /// (e.g. server-to-server) are allowed. Empty (default) = only same-origin browser requests pass.
+    /// </summary>
+    public string[] AllowedOrigins { get; set; } = [];
 }

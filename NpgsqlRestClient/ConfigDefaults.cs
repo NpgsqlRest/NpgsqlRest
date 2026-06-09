@@ -980,6 +980,7 @@ public static class ConfigDefaults
             ["ServerVersion"] = "1.0.0",
             ["Instructions"] = null,
             ["ToolDescriptionSuffix"] = null,
+            ["AllowedOrigins"] = new JsonArray(),
             ["Authorization"] = new JsonObject
             {
                 ["RequireAuthorization"] = false,

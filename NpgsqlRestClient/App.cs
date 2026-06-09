@@ -589,6 +589,7 @@ public class App
                 ServerVersion = _config.GetConfigStr("ServerVersion", mcpCfg),
                 Instructions = _config.GetConfigStr("Instructions", mcpCfg),
                 ToolDescriptionSuffix = _config.GetConfigStr("ToolDescriptionSuffix", mcpCfg),
+                AllowedOrigins = [.. _config.GetConfigEnumerable("AllowedOrigins", mcpCfg) ?? []],
                 Authorization = new McpAuthorizationOptions
                 {
                     RequireAuthorization = _config.GetConfigBool("RequireAuthorization", mcpAuthCfg),

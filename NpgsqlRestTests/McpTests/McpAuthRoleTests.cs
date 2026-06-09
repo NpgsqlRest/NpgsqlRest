@@ -18,9 +18,9 @@ public class McpAuthRoleTests(McpAuthRoleTestFixture test)
         using var response = await client.PostAsync("/mcp", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var r = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
-        r["result"]!["isError"]!.GetValue<bool>().Should().BeFalse();
-        r["result"]!["content"]!.AsArray()[0]!["text"]!.GetValue<string>().Should().Be("secret");
+        // tool_authorized returns the scalar text 'secret'.
+        (await response.Content.ReadAsStringAsync()).Should().Be(
+            """{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{\"value\":\"secret\"}"}],"isError":false,"structuredContent":{"value":"secret"}}}""");
     }
 
     [Fact]

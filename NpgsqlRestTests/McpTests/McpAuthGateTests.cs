@@ -27,4 +27,13 @@ public class McpAuthGateTests(McpAuthGateTestFixture test)
         using var response = await test.Client.GetAsync("/.well-known/oauth-protected-resource/mcp");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
+
+    [Fact]
+    public void RequireAuthorization_without_an_auth_scheme_logs_a_startup_warning()
+    {
+        // This fixture enables RequireAuthorization but registers no authentication scheme, so the plugin
+        // should warn at startup that every request will be 401.
+        test.StartupLogs.Should().Contain(l =>
+            l.Message.Contains("RequireAuthorization is enabled but no authentication scheme is registered"));
+    }
 }
