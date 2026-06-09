@@ -93,6 +93,19 @@ HTTP GET
 @mcp Lead description.
 More detail line one.
 More detail line two.';
+
+-- composite-type parameter -> NpgsqlRest flattens it into typed scalar params (pX, pY)
+create type mcp.point as (x int, y int);
+create function mcp.tool_composite_param(p mcp.point) returns text language sql as 'select ''ok''';
+comment on function mcp.tool_composite_param(mcp.point) is '
+HTTP POST
+@mcp Takes a composite point.';
+
+-- array-of-composite parameter -> can't flatten; should render as an array of objects (not a string)
+create function mcp.tool_point_array(pts mcp.point[]) returns text language sql as 'select ''ok''';
+comment on function mcp.tool_point_array(mcp.point[]) is '
+HTTP POST
+@mcp Takes an array of points.';
 ");
     }
 }
@@ -194,6 +207,19 @@ public class McpToolCatalogTests(McpPluginTestFixture test)
         test.Tools["tool_nodesc"]!.ToJsonString().Should().Be(
             """{"name":"tool_nodesc","description":"tool_nodesc","inputSchema":{"type":"object","properties":{}},"annotations":{"readOnlyHint":true},"outputSchema":{"type":"object","properties":{"value":{"type":["string","null"]}}}}""");
     }
+
+    [Fact]
+    public void Composite_type_parameter_is_flattened_into_typed_scalar_fields()
+        => test.Tools["tool_composite_param"]!["inputSchema"]!.ToJsonString().Should().Be(
+            """{"type":"object","properties":{"pX":{"type":"integer","format":"int32"},"pY":{"type":"integer","format":"int32"}},"required":["pX","pY"]}""");
+
+    [Fact]
+    public void Array_of_composite_parameter_renders_as_an_array_of_strings()
+        // Known limitation: parameter TypeDescriptors don't carry composite-element field metadata, so an
+        // array-of-composite argument is described as an array of strings (the value still binds). Scalar
+        // composite params, by contrast, are flattened into typed fields (see the test above).
+        => test.Tools["tool_point_array"]!["inputSchema"]!.ToJsonString().Should().Be(
+            """{"type":"object","properties":{"pts":{"type":"array","items":{"type":"string"}}},"required":["pts"]}""");
 
     [Fact]
     public void Inline_mcp_text_and_comment_prose_combine_into_the_description()
