@@ -525,6 +525,9 @@ internal static partial class DefaultCommentParser
                     if (handled is { } result)
                     {
                         CommentLogger?.LogTrace("Plugin comment annotation '{Label}' for {Description}", result.Label, description);
+                        // Include plugin-claimed annotations (e.g. `mcp`, `openapi …`) in the per-endpoint
+                        // annotations summary, so they're as visible as built-in annotations.
+                        TrackAnnotation(line);
                         if (result.RequestsEndpoint)
                         {
                             anyHandlerRequestedEndpoint = true;
