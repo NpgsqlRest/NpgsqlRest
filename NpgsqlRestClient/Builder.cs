@@ -1860,6 +1860,29 @@ public class Builder
         return result;
     }
 
+    /// <summary>
+    /// Resolves the `NpgsqlRest:AvailableEnvVars` allowlist into name → value pairs for `{name}` annotation
+    /// substitution. Reads the process environment once, here, at startup. Array form lists names (missing
+    /// env var → empty string); object form maps name → default (env var wins → default → empty). Returns
+    /// null when none are configured. Case-insensitive (matches the substitution lookup).
+    /// </summary>
+    public Dictionary<string, string>? GetSubstitutionEnvVars()
+    {
+        var names = _config.GetConfigNameDefaults("AvailableEnvVars", _config.NpgsqlRestCfg);
+        if (names is null || names.Count == 0)
+        {
+            return null;
+        }
+        var result = new Dictionary<string, string>(names.Count, StringComparer.OrdinalIgnoreCase);
+        foreach (var (name, def) in names)
+        {
+            // present env var wins → configured default → empty string. Raw value (not JSON-escaped):
+            // these are injected into headers / URLs / bodies, not into HTML/JS content.
+            result[name] = Environment.GetEnvironmentVariable(name) ?? def ?? string.Empty;
+        }
+        return result;
+    }
+
     public Dictionary<string, StringValues> GetSseResponseHeaders()
     {
         var result = new Dictionary<string, StringValues>();

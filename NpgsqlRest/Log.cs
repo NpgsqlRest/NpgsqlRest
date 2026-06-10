@@ -125,6 +125,9 @@ public static partial class Log
     [LoggerMessage(Level = LogLevel.Warning, Message = "{description} has set CACHED PARAMETER NAME to {param} by the comment annotation, but that parameter doesn't exists on this routine either converted or original. This cache parameter will be ignored.")]
     public static partial void CommentInvalidCacheParam(this ILogger logger, string description, string param);
 
+    [LoggerMessage(Level = LogLevel.Warning, Message = "{description} uses a parameter placeholder '{placeholder}' in an annotation value, but no routine parameter matches it (checked converted and original names). The placeholder will be left as literal text — check for a typo.")]
+    public static partial void CommentUnknownPlaceholder(this ILogger logger, string description, string placeholder);
+
     [LoggerMessage(Level = LogLevel.Trace, Message = "{description} has set CACHED with parameters {cachedParams} by the comment annotation.")]
     public static partial void CommentCached(this ILogger logger, string description, IEnumerable<string> cachedParams);
 

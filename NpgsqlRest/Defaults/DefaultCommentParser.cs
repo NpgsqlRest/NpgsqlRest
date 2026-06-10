@@ -82,6 +82,7 @@ internal static partial class DefaultCommentParser
                     else
                     {
                         HandleCustomParameter(routineEndpoint, customParamName, customParamValue, description);
+                        WarnUnknownPlaceholders(routine, customParamValue, description);
                     }
                     TrackAnnotation(line);
                 }
@@ -91,6 +92,7 @@ internal static partial class DefaultCommentParser
                 else if (haveTag is true && SplitBySeparatorChar(line, Consts.Colon, out var headerName, out var headerValue))
                 {
                     HandleHeader(routineEndpoint, headerName, headerValue, description);
+                    WarnUnknownPlaceholders(routine, headerValue, description);
                     TrackAnnotation(line);
                 }
 

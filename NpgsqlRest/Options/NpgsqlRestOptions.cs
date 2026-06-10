@@ -350,6 +350,18 @@ public class NpgsqlRestOptions
     public Dictionary<string, StringValues> CustomRequestHeaders { get; set; } = [];
 
     /// <summary>
+    /// Resolved environment-variable values (name → value) made available to `{name}` placeholder
+    /// substitution in annotation values (response headers, custom parameters, HTTP custom type calls),
+    /// alongside the routine's parameters. This is an allowlist: only names present here can be referenced;
+    /// any other `{name}` is not resolved from the environment. Names are matched case-insensitively, and a
+    /// routine parameter of the same name takes precedence. Null/empty disables env-var substitution.
+    /// (The standalone client populates this from the `NpgsqlRest:AvailableEnvVars` config, reading the
+    /// process environment once at startup.) Note: a value used in a response header is sent to the client,
+    /// so reserve this for non-secret values (e.g. server/environment name) when used in responses.
+    /// </summary>
+    public Dictionary<string, string>? SubstitutionEnvironmentVariables { get; set; } = null;
+
+    /// <summary>
     /// Endpoint sources list. Includes routine sources (functions, procedures), CRUD sources (tables, views),
     /// and any other sources like SQL file source. Default contains a single RoutineSource.
     /// </summary>

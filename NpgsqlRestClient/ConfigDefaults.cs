@@ -801,6 +801,7 @@ public static class ConfigDefaults
             ),
             ["InstanceIdRequestHeaderName"] = null,
             ["CustomRequestHeaders"] = new JsonObject(),
+            ["AvailableEnvVars"] = new JsonArray(),
             ["ExecutionIdHeaderName"] = "X-NpgsqlRest-ID",
             ["DefaultServerSentEventsEventNoticeLevel"] = "INFO",
             ["ServerSentEventsResponseHeaders"] = new JsonObject(),

@@ -1621,7 +1621,19 @@ public partial class NpgsqlRestEndpoint(
             Dictionary<string, string>.AlternateLookup<ReadOnlySpan<char>>? lookup = null;
             if (endpoint.HeadersNeedParsing is true || endpoint.CustomParamsNeedParsing || HttpClientTypes.NeedsParsing)
             {
-                Dictionary<string, string> replacements = new(command.Parameters.Count * 2);
+                // Case-insensitive so `{name}` placeholders match parameter names regardless of casing,
+                // consistent with the resolved-parameter SQL expression resolver (Formatter.ParameterizeSqlExpression).
+                var envVars = Options.SubstitutionEnvironmentVariables;
+                Dictionary<string, string> replacements = new(command.Parameters.Count * 2 + (envVars?.Count ?? 0), StringComparer.OrdinalIgnoreCase);
+                // Allowlisted env vars first (base); parameter values added below overwrite them on a name
+                // collision, so a routine parameter always wins over an env var of the same name.
+                if (envVars is not null)
+                {
+                    foreach (var (name, value) in envVars)
+                    {
+                        replacements[name] = value;
+                    }
+                }
                 for (var i = 0; i < command.Parameters.Count; i++)
                 {
                     var value = command.Parameters[i].Value == DBNull.Value ? "" : command.Parameters[i].Value?.ToString() ?? "";
