@@ -41,6 +41,14 @@ internal static partial class DefaultCommentParser
             }
             endpoint.CachedParams = result;
         }
+        else
+        {
+            // Bare `cached` (no parameter list) keys on EVERY routine parameter, as documented. Materialize
+            // the full set here: the cache-key builder in NpgsqlRestEndpoint.cs only appends a parameter's
+            // value when CachedParams contains it, so a null set would key on the routine identifier alone
+            // and serve one entry to every call regardless of input.
+            endpoint.CachedParams = [.. routine.OriginalParamsHash];
+        }
 
         CommentLogger?.CommentCached(description, endpoint.CachedParams ?? []);
     }
