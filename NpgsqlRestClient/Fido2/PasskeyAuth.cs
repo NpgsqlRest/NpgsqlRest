@@ -20,6 +20,7 @@ public static class PasskeyAuth
         }
 
         Logger = clientLogger;
+        CborDecoder.Logger = clientLogger;
 
         // Resolve command retry strategy from config
         RetryStrategy? commandRetryStrategy = null;

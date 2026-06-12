@@ -1332,8 +1332,8 @@ public class Builder
             LoginOptionsPath = _config.GetConfigStr("LoginOptionsPath", passkeyCfg) ?? "/api/passkey/login/options",
             LoginPath = _config.GetConfigStr("LoginPath", passkeyCfg) ?? "/api/passkey/login",
             ChallengeTimeoutMinutes = _config.GetConfigInt("ChallengeTimeoutMinutes", passkeyCfg) ?? 5,
-            UserVerificationRequirement = _config.GetConfigStr("UserVerificationRequirement", passkeyCfg) ?? "preferred",
-            ResidentKeyRequirement = _config.GetConfigStr("ResidentKeyRequirement", passkeyCfg) ?? "preferred",
+            UserVerificationRequirement = _config.GetConfigStr("UserVerificationRequirement", passkeyCfg) ?? "required",
+            ResidentKeyRequirement = _config.GetConfigStr("ResidentKeyRequirement", passkeyCfg) ?? "required",
             AttestationConveyance = _config.GetConfigStr("AttestationConveyance", passkeyCfg) ?? "none",
             // GROUP 1: Challenge Commands
             ChallengeAddExistingUserCommand = _config.GetConfigStr("ChallengeAddExistingUserCommand", passkeyCfg) ?? "select * from passkey_challenge_add_existing($1,$2)",
@@ -1371,6 +1371,13 @@ public class Builder
             PasskeyConfig.RelyingPartyOrigins.Length > 0 ? string.Join(", ", PasskeyConfig.RelyingPartyOrigins) : "(any)",
             PasskeyConfig.UserVerificationRequirement,
             PasskeyConfig.ResidentKeyRequirement);
+
+        if (PasskeyConfig.RelyingPartyOrigins.Length == 0)
+        {
+            ClientLogger?.LogWarning(
+                "Passkey Authentication is enabled but RelyingPartyOrigins is empty: WebAuthn origin validation will accept ANY origin. " +
+                "Set Auth:PasskeyAuth:RelyingPartyOrigins to your application origin(s) in production.");
+        }
     }
 
     public bool BuildCors()
@@ -1421,7 +1428,7 @@ public class Builder
                 ClientLogger?.LogDebug("CORS policy allows headers: {allowedHeaders}", allowedHeaders);
             }
 
-            if (_config.GetConfigBool("AllowCredentials", corsCfg, true) is true)
+            if (_config.GetConfigBool("AllowCredentials", corsCfg, false) is true)
             {
                 ClientLogger?.LogDebug("CORS policy allows credentials.");
                 builder.AllowCredentials();
@@ -1761,7 +1768,7 @@ public class Builder
                     string.Join(",", retryOptions.Strategy.ErrorCodes));
             }
         }
-        if (_config.GetConfigBool("TestConnectionStrings", _config.ConnectionSettingsCfg) is true)
+        if (_config.GetConfigBool("TestConnectionStrings", _config.ConnectionSettingsCfg, true) is true)
         {
             using var conn = new NpgsqlConnection(connectionString);
             try

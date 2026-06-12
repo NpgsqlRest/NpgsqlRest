@@ -987,9 +987,11 @@ public partial class NpgsqlRestEndpoint(
             {
                 if (bodyDict is null)
                 {
+                    // Body was present but is not a parseable JSON object - this is a client error,
+                    // not a routing miss (parse failures are logged above via CouldNotParseJson).
                     shouldCommit = false;
                     uploadHandler?.OnError(connection, context, null);
-                    context.Response.StatusCode = StatusCodes.Status404NotFound;
+                    context.Response.StatusCode = StatusCodes.Status400BadRequest;
                     await context.Response.CompleteAsync();
                     return;
                 }

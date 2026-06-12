@@ -205,7 +205,7 @@ public static partial class ConfigSchemaGenerator
         ["Cors:AllowedOrigins"] = "List of allowed origins for CORS requests. Empty array allows no origins.",
         ["Cors:AllowedMethods"] = "List of allowed HTTP methods for CORS requests.",
         ["Cors:AllowedHeaders"] = "List of allowed headers for CORS requests.",
-        ["Cors:AllowCredentials"] = "Allow credentials (cookies, authorization headers) in CORS requests.",
+        ["Cors:AllowCredentials"] = "Allow credentials (cookies, authorization headers) in CORS requests. Disabled by default; enable deliberately and only together with an explicit AllowedOrigins list (never with wildcard origins).",
         ["Cors:PreflightMaxAgeSeconds"] = "Maximum age in seconds for preflight request caching (10 minutes).",
         ["SecurityHeaders"] = "Security Headers: Adds HTTP security headers to all responses to protect against common web vulnerabilities.\nThese headers instruct browsers how to handle your content securely.\nNote: X-Frame-Options is automatically handled by the Antiforgery middleware when enabled (see Antiforgery.SuppressXFrameOptionsHeader).\nReference: https://owasp.org/www-project-secure-headers/",
         ["SecurityHeaders:Enabled"] = "Enable security headers middleware. When enabled, configured headers are added to all HTTP responses.",

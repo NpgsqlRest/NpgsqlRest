@@ -4,6 +4,8 @@ namespace NpgsqlRestClient.Fido2;
 
 public static class CborDecoder
 {
+    internal static ILogger? Logger;
+
     public static AttestationObject? DecodeAttestationObject(byte[] data)
     {
         try
@@ -46,8 +48,12 @@ public static class CborDecoder
                 AttStmt = attStmt
             };
         }
-        catch
+        catch (Exception e)
         {
+            // Never log the payload itself (attacker-controlled); length + exception is enough to diagnose.
+            Logger?.LogWarning(e,
+                "Failed to decode CBOR attestation object ({Length} bytes): {Message}",
+                data?.Length ?? 0, e.Message);
             return null;
         }
     }
@@ -106,8 +112,19 @@ public static class CborDecoder
     private static object?[] ReadArray(CborReader reader)
     {
         var length = reader.ReadStartArray();
-        var result = new object?[length ?? 0];
+        if (length is null)
+        {
+            // Indefinite-length array (legal in lax conformance mode): read until end marker.
+            var items = new List<object?>();
+            while (reader.PeekState() != CborReaderState.EndArray)
+            {
+                items.Add(ReadValue(reader));
+            }
+            reader.ReadEndArray();
+            return [.. items];
+        }
 
+        var result = new object?[length.Value];
         for (int i = 0; i < result.Length; i++)
         {
             result[i] = ReadValue(reader);

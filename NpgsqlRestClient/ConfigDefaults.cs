@@ -73,7 +73,7 @@ public static class ConfigDefaults
             {
                 ["SetApplicationNameInConnection"] = true,
                 ["UseJsonApplicationName"] = false,
-                ["TestConnectionStrings"] = false,
+                ["TestConnectionStrings"] = true,
                 ["RetryOptions"] = new JsonObject
                 {
                     ["Enabled"] = true,
@@ -322,8 +322,8 @@ public static class ConfigDefaults
                 ["LoginOptionsPath"] = "/api/passkey/login/options",
                 ["LoginPath"] = "/api/passkey/login",
                 ["ChallengeTimeoutMinutes"] = 5,
-                ["UserVerificationRequirement"] = "preferred",
-                ["ResidentKeyRequirement"] = "preferred",
+                ["UserVerificationRequirement"] = "required",
+                ["ResidentKeyRequirement"] = "required",
                 ["AttestationConveyance"] = "none",
                 ["ChallengeAddExistingUserCommand"] = "select * from passkey_challenge_add_existing($1,$2)",
                 ["ChallengeRegistrationCommand"] = "select * from passkey_challenge_registration($1)",
@@ -450,7 +450,7 @@ public static class ConfigDefaults
             ["AllowedOrigins"] = new JsonArray(),
             ["AllowedMethods"] = CreateStringArray("*"),
             ["AllowedHeaders"] = CreateStringArray("*"),
-            ["AllowCredentials"] = true,
+            ["AllowCredentials"] = false,
             ["PreflightMaxAgeSeconds"] = 600
         };
     }

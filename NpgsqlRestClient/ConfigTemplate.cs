@@ -1167,8 +1167,10 @@ public static partial class ConfigSchemaGenerator
         ],
         //
         // Allow credentials (cookies, authorization headers) in CORS requests.
+        // Disabled by default: credentials must be enabled deliberately and only together with
+        // an explicit AllowedOrigins list (never with wildcard origins).
         //
-        "AllowCredentials": true,
+        "AllowCredentials": false,
         //
         // Maximum age in seconds for preflight request caching (10 minutes).
         //
