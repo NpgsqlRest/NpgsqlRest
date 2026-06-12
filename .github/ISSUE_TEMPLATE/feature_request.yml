@@ -1,0 +1,20 @@
+name: Feature request
+description: Suggest a new capability or improvement
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the use case, not just the mechanism
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: If you have a shape in mind (annotation, config key, behavior), sketch it
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Workarounds you've considered

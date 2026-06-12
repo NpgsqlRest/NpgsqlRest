@@ -5,7 +5,9 @@ const path = require("path");
 const os = require("os");
 const https = require("https");
 
-const downloadFrom = "https://github.com/NpgsqlRest/NpgsqlRest/releases/download/v3.16.3/";
+// The binary release tag always matches the npm package version (see RELEASING.md).
+const version = require(path.join(__dirname, "package.json")).version;
+const downloadFrom = `https://github.com/NpgsqlRest/NpgsqlRest/releases/download/v${version}/`;
 
 // Download binary next to this script, not to ../.bin/
 const binDir = path.join(__dirname, "bin");

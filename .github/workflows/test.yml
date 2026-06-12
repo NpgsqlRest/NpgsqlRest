@@ -12,11 +12,15 @@ on:
 jobs:
   test:
     runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        postgres-version: [15, 16, 17]
     steps:
     - name: Install PostgreSQL
       uses: vb-consulting/postgresql-action@v1
       with:
-        postgresql version: '17'
+        postgresql version: '${{ matrix.postgres-version }}'
         postgresql user: 'postgres'
         postgresql password: 'postgres'
     - uses: actions/checkout@v4

@@ -7,9 +7,6 @@ on:
     branches: [ master ]
   workflow_dispatch:
 
-env:
-  RELEASE_VERSION: v3.16.3
-
 # Add workflow-level permissions
 permissions:
   contents: write
@@ -58,6 +55,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+    - name: Set release version from version.txt
+      run: echo "RELEASE_VERSION=v$(cat version.txt)" >> "$GITHUB_ENV"
     - name: Extract changelog for this version
       id: changelog
       run: |
@@ -136,6 +135,20 @@ jobs:
     runs-on: ubuntu-22.04
     permissions:
       contents: write
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
     - uses: actions/checkout@v4
     - name: Setup .NET10
@@ -144,6 +157,18 @@ jobs:
         dotnet-version: 10.0.x
     - name: Build Linux AOT
       run: dotnet publish ./NpgsqlRestClient/NpgsqlRestClient.csproj -r linux-x64 -c Release
+    - name: AOT smoke test (config validation + database connection)
+      run: |
+        cat > smoke.appsettings.json <<'SMOKE'
+        {
+          "ConnectionStrings": {
+            "Default": "Host=localhost;Port=5432;Database=postgres;Username=postgres;Password=postgres"
+          }
+        }
+        SMOKE
+        BIN=./NpgsqlRestClient/bin/Release/net10.0/linux-x64/publish/NpgsqlRestClient
+        "$BIN" --version
+        "$BIN" smoke.appsettings.json --validate
     - name: Upload Linux executable
       uses: actions/upload-release-asset@v1
       env:
@@ -219,6 +244,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+    - name: Set release version from version.txt
+      run: echo "RELEASE_VERSION=v$(cat version.txt)" >> "$GITHUB_ENV"
     - name: Download Linux executable artifact
       uses: actions/download-artifact@v4
       with:
@@ -256,6 +283,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+    - name: Set release version from version.txt
+      run: echo "RELEASE_VERSION=v$(cat version.txt)" >> "$GITHUB_ENV"
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
     - name: Login to Docker Hub
@@ -284,6 +313,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+    - name: Set release version from version.txt
+      run: echo "RELEASE_VERSION=v$(cat version.txt)" >> "$GITHUB_ENV"
     - name: Download Linux ARM64 executable artifact
       uses: actions/download-artifact@v4
       with:
@@ -321,6 +352,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+    - name: Set release version from version.txt
+      run: echo "RELEASE_VERSION=v$(cat version.txt)" >> "$GITHUB_ENV"
     - name: Download Linux executable artifact
       uses: actions/download-artifact@v4
       with:
@@ -360,6 +393,8 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '24'
+    - name: Sync npm package version from version.txt
+      run: cd npm && npm version "$(cat ../version.txt)" --no-git-tag-version --allow-same-version
     - name: Publish to npm with OIDC
       uses: JS-DevTools/npm-publish@v4
       with:

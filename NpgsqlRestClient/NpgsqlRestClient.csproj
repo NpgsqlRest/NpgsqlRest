@@ -10,7 +10,7 @@
     <PublishAot>true</PublishAot>
     <PublishTrimmed>true</PublishTrimmed>
     <TrimMode>full</TrimMode>
-    <Version>3.16.3</Version>
+    <Version>$(NpgsqlRestProductVersion)</Version>
   </PropertyGroup>
 
   <ItemGroup>

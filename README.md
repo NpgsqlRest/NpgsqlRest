@@ -146,7 +146,11 @@ NpgsqlRest is built and maintained by [Vedran Bilopavlović](https://www.linkedi
 
 ## Contributing
 
-Contributions are welcome. Open a pull request with a description of your changes.
+Contributions are welcome — see **[CONTRIBUTING.md](CONTRIBUTING.md)** for how to build, run the tests, and what a good PR looks like. Small, well-scoped issues are labeled `good-first-issue`.
+
+## Security
+
+Please report vulnerabilities privately via [GitHub Private Vulnerability Reporting](https://github.com/NpgsqlRest/NpgsqlRest/security/advisories/new) — see **[SECURITY.md](SECURITY.md)**. Do not open public issues for security problems.
 
 ## License
 

@@ -1,0 +1,45 @@
+name: Bug report
+description: Something doesn't work as documented
+labels: ["bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: NpgsqlRest version (binary `--version`, NuGet package, Docker tag, or npm version)
+      placeholder: "3.17.0 (npgsqlrest-linux64)"
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: The SQL (create function + comment annotations, or the .sql file) and the relevant config section
+      placeholder: |
+        ```sql
+        create function my_func(_id int) returns text language sql as $$ select 'x' $$;
+        comment on function my_func is 'HTTP GET';
+        ```
+        ```json
+        { "NpgsqlRest": { ... } }
+        ```
+    validations:
+      required: true
+  - type: textarea
+    id: request
+    attributes:
+      label: Request and actual response
+      description: The HTTP request you made and the full response you got (status + body)
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected response
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      render: text

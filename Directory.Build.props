@@ -1,0 +1,10 @@
+<Project>
+  <!--
+    Single source of truth for the product version (core library + NpgsqlRestClient + npm package + release tag).
+    Edit version.txt in the repo root - everything else derives from it (see RELEASING.md).
+    Plugins under plugins/ version independently and do NOT use this property.
+  -->
+  <PropertyGroup>
+    <NpgsqlRestProductVersion>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)version.txt').Trim())</NpgsqlRestProductVersion>
+  </PropertyGroup>
+</Project>
