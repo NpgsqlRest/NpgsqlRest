@@ -113,8 +113,11 @@ public class NpgsqlRestSseEventSource(RequestDelegate next)
                             words?[0], string.Join(", ", Enum.GetNames<SseEventsScope>()), hint);
                     }
                 }
-                
-                else if (scope == SseEventsScope.Matching)
+
+                // NOTE: deliberately NOT an `else if` - the scope checks below must run regardless of
+                // whether the scope came from the endpoint annotation or was overridden by the RAISE hint.
+                // (Chaining them as `else if` delivered hint-scoped events to EVERY subscriber.)
+                if (scope == SseEventsScope.Matching)
                 {
                     if (context.User?.Identity?.IsAuthenticated is false && 
                         (endpoint?.RequiresAuthorization is true || endpoint?.AuthorizeRoles is not null))
