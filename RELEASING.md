@@ -29,7 +29,12 @@ The complete release procedure. Written so that someone who has never cut a rele
    - builds + pushes Docker images: `vbilopav/npgsqlrest:{v,latest}{,-aot,-jit,-arm,-bun}`,
    - publishes the npm package (version synced from `version.txt`, OIDC trusted publishing).
 6. **After the release**: verify the GitHub release page, `docker pull vbilopav/npgsqlrest:latest`, `npm view npgsqlrest version`, and NuGet listing.
-7. **Docs**: update the docs site (separate repo, `npgsqlrest-docs`) — changelog page + any feature pages.
+7. **Docs**: update the docs site (separate repo, `npgsqlrest-docs`):
+   - create `docs/guide/changelog/v<X.Y.Z>.md` from this repo's `changelog/v<X.Y.Z>.md`,
+   - add it to the sidebar in `docs/.vitepress/config.ts` and move the "(Latest)" marker,
+   - update `docs/guide/changelog/index.md` ("Version X.Y (Latest)" heading),
+   - regenerate `docs/config/latest.md` from the released `NpgsqlRestClient/appsettings.json` (update its version references and download links),
+   - update any feature pages affected by the release.
 
 ## Required repository secrets
 
