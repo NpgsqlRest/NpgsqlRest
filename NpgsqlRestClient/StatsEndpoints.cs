@@ -69,7 +69,9 @@ public static class StatsEndpoints
             indisunique as is_unique,
             indisprimary as is_primary,
             idx_scan AS scans,
-            last_idx_scan as last_scan,
+            -- last_idx_scan exists only on PostgreSQL 16+. Reading it via a row->jsonb key lookup
+            -- yields NULL (instead of a column-does-not-exist error) on 15, keeping one portable query.
+            (to_jsonb(s) ->> 'last_idx_scan')::timestamptz as last_scan,
             idx_tup_fetch AS tuples_fetched,
             pg_get_indexdef(indexrelid) as definition
         from pg_stat_user_indexes s
