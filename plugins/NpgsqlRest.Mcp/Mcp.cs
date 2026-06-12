@@ -24,9 +24,11 @@ namespace NpgsqlRest.Mcp;
 /// an explicit description suppresses the comment-prose fallback, so unrelated comment lines never leak in:
 /// mcp_description &gt; inline mcp &lt;text&gt; &gt; comment prose &gt; routine name.
 ///
-/// MCP-only (tool exposed, no public HTTP route) is composed with the core `internal` annotation:
-/// `mcp` + `internal`. (With <see cref="CommentsMode.OnlyAnnotated"/>, `mcp` alone creates the
-/// endpoint even without an HTTP tag.)
+/// Exposure model: the HTTP tag controls the REST route, `mcp` controls the tool — independently.
+/// Under <see cref="CommentsMode.OnlyAnnotated"/> (or its alias OnlyWithHttpTag), a bare `mcp` with
+/// no HTTP tag is MCP-ONLY: core creates the endpoint because the plugin requested it and defaults it
+/// to internal-only, so opting into MCP never silently opens a public HTTP route. An explicit HTTP tag
+/// gives dual exposure; `internal` remains the explicit way to hide a declared HTTP route.
 /// </summary>
 public partial class Mcp(McpOptions options) : IEndpointCreateHandler
 {
@@ -46,6 +48,13 @@ public partial class Mcp(McpOptions options) : IEndpointCreateHandler
     /// (name, description, inputSchema, annotations).
     /// </summary>
     public IReadOnlyDictionary<string, JsonObject> Tools => _tools;
+
+    /// <summary>
+    /// All <c>mcp*</c> annotations opt the routine in as a tool, i.e. they request endpoint creation.
+    /// Lets sources with a textual pre-gate (SqlFileSource) recognize an MCP-only file (bare <c>mcp</c>,
+    /// no HTTP tag) as an endpoint candidate instead of skipping it as a non-endpoint script.
+    /// </summary>
+    public string[] EndpointRequestingAnnotations => ["mcp", "mcp_name", "mcp_description", "mcp_desc"];
 
     public CommentLineResult? HandleCommentLine(RoutineEndpoint endpoint, string line, string[] words, string[] wordsLower)
     {

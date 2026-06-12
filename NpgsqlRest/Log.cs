@@ -128,6 +128,9 @@ public static partial class Log
     [LoggerMessage(Level = LogLevel.Warning, Message = "{description} uses a parameter placeholder '{placeholder}' in an annotation value, but no routine parameter matches it (checked converted and original names). The placeholder will be left as literal text — check for a typo.")]
     public static partial void CommentUnknownPlaceholder(this ILogger logger, string description, string placeholder);
 
+    [LoggerMessage(Level = LogLevel.Debug, Message = "{description} was created by a plugin annotation without an HTTP tag — defaulting to internal-only (no public HTTP route). Add an HTTP tag (e.g. HTTP GET) to also expose it as an HTTP endpoint.")]
+    public static partial void PluginRequestedEndpointInternalOnly(this ILogger logger, string description);
+
     [LoggerMessage(Level = LogLevel.Trace, Message = "{description} has set CACHED with parameters {cachedParams} by the comment annotation.")]
     public static partial void CommentCached(this ILogger logger, string description, IEnumerable<string> cachedParams);
 

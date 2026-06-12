@@ -45,6 +45,20 @@ public class McpSqlFileTestFixture : IDisposable
             select 2 as b;
             """);
 
+        // MCP-ONLY: bare @mcp, NO HTTP tag. The file must pass the SqlFileSource pre-gate (the `mcp`
+        // annotation is endpoint-requesting), become a tool, and default to internal-only (no REST route).
+        File.WriteAllText(Path.Combine(_sqlDir, "mcp_sql_mcp_only.sql"), """
+            -- @mcp MCP-only SQL file tool.
+            select 7 as lucky;
+            """);
+
+        // No HTTP tag, no endpoint-requesting annotation: a utility script matching the glob. Must be
+        // skipped by the pre-gate — no endpoint, no tool.
+        File.WriteAllText(Path.Combine(_sqlDir, "not_an_endpoint.sql"), """
+            -- just a utility script, not an endpoint
+            select 'should never be exposed';
+            """);
+
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseUrls("http://127.0.0.1:0");
         _app = builder.Build();

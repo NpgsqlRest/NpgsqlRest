@@ -34,6 +34,19 @@ namespace NpgsqlRest
         CommentLineResult? HandleCommentLine(RoutineEndpoint endpoint, string line, string[] words, string[] wordsLower) => null;
 
         /// <summary>
+        /// Annotation keywords (first word of a comment line, lower-case, without the optional <c>@</c>
+        /// prefix) for which this handler's <see cref="HandleCommentLine"/> returns
+        /// <see cref="CommentLineResult.RequestsEndpoint"/> = true (e.g. <c>mcp</c>, <c>mcp_name</c>).
+        /// <para>
+        /// Used by endpoint sources that need a cheap, textual pre-check for exposure intent before the
+        /// comment parser runs — e.g. the SQL file source skips files with no HTTP tag, but a file whose
+        /// comment carries one of these keywords is an endpoint candidate (an MCP-only tool) and must
+        /// not be skipped. Default: empty (this handler never requests endpoints).
+        /// </para>
+        /// </summary>
+        string[] EndpointRequestingAnnotations => [];
+
+        /// <summary>
         /// After successful endpoint creation.
         /// </summary>
         void Handle(RoutineEndpoint endpoint) { }

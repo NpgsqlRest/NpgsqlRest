@@ -33,13 +33,14 @@ HTTP GET
 @mcp
 @mcp_name cancel_booking';
 
--- MCP-only: @mcp + @internal, NO HTTP tag -> created (mcp requests endpoint) + InternalOnly
+-- @mcp + @internal, NO HTTP tag -> created (mcp requests endpoint) + InternalOnly (explicit)
 create function mcp.tool_mcp_only() returns text language sql as 'select ''o''';
 comment on function mcp.tool_mcp_only() is '
 @mcp
 @internal';
 
--- @mcp alone, no HTTP tag, no @internal -> created (mcp requests endpoint), HTTP route kept
+-- bare @mcp, no HTTP tag -> MCP-ONLY: created (mcp requests endpoint) and InternalOnly by default.
+-- A plugin-requested endpoint with no HTTP tag must not silently open a public HTTP route.
 create function mcp.tool_mcp_no_http() returns text language sql as 'select ''nh''';
 comment on function mcp.tool_mcp_no_http() is '
 @mcp';
@@ -162,11 +163,14 @@ public class McpPluginAnnotationTests(McpPluginTestFixture test)
     }
 
     [Fact]
-    public void Mcp_alone_creates_endpoint_and_keeps_http()
+    public void Mcp_alone_without_http_tag_is_mcp_only()
     {
-        var e = test.Endpoints["tool_mcp_no_http"]; // created despite no HTTP tag (mcp requests it)
+        // Bare @mcp, no HTTP tag: the endpoint exists only because the plugin requested it, so it
+        // defaults to internal-only — opting into MCP must not silently open a public HTTP route.
+        // (`HTTP GET` + @mcp = dual exposure; tool_basic covers that.)
+        var e = test.Endpoints["tool_mcp_no_http"];
         Info(e)!.Enabled.Should().BeTrue();
-        e.InternalOnly.Should().BeFalse();          // HTTP+MCP (no @internal)
+        e.InternalOnly.Should().BeTrue();
     }
 
     [Fact]

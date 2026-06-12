@@ -96,12 +96,13 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
 
         // When CommentsMode gates endpoint creation (OnlyAnnotated, or its back-compat alias
         // OnlyWithHttpTag), skip files without an HTTP tag BEFORE attempting to describe — avoids
-        // errors on non-endpoint SQL files (migrations, utility scripts, etc.).
-        // NOTE: this pre-filter is HTTP-tag-only, so a SQL file exposed solely via a non-HTTP plugin
-        // annotation (e.g. `mcp` with no HTTP tag) is currently skipped here. Revisit if/when SQL-file
-        // routines need to be MCP-only.
+        // errors on non-endpoint SQL files (migrations, utility scripts, etc.). A file whose comment
+        // carries a plugin endpoint-requesting annotation (e.g. a bare `mcp` — an MCP-only tool) is an
+        // endpoint candidate too, so it passes the gate; the check stays textual and cheap, so scripts
+        // with neither are never described.
         if (options.CommentsMode is NpgsqlRest.CommentsMode.OnlyWithHttpTag or NpgsqlRest.CommentsMode.OnlyAnnotated
-            && !HasHttpTag(parseResult.Comment))
+            && !HasHttpTag(parseResult.Comment)
+            && !HasEndpointRequestingAnnotation(parseResult.Comment))
         {
             return null;
         }
@@ -731,6 +732,56 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
                 (trimmed.Length == 4 || trimmed[4] == ' ' || trimmed[4] == '\t'))
             {
                 return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Check whether the parsed comment contains a plugin endpoint-requesting annotation — a line whose
+    /// first word (optional <c>@</c> prefix stripped) matches a keyword any registered
+    /// <see cref="IEndpointCreateHandler"/> advertises via
+    /// <see cref="IEndpointCreateHandler.EndpointRequestingAnnotations"/> (e.g. a bare <c>mcp</c>).
+    /// Such a file is an endpoint candidate (an MCP-only tool) even without an HTTP tag.
+    /// </summary>
+    private static bool HasEndpointRequestingAnnotation(string comment)
+    {
+        if (string.IsNullOrEmpty(comment))
+        {
+            return false;
+        }
+        var handlers = NpgsqlRestOptions.Options?.EndpointCreateHandlers;
+        if (handlers is null)
+        {
+            return false;
+        }
+        foreach (var line in comment.Split('\n'))
+        {
+            var trimmed = line.Trim();
+            if (trimmed.Length == 0)
+            {
+                continue;
+            }
+            var span = trimmed.AsSpan();
+            if (span[0] == '@')
+            {
+                span = span[1..];
+            }
+            var wordEnd = span.IndexOfAny(' ', '\t');
+            var word = wordEnd < 0 ? span : span[..wordEnd];
+            if (word.Length == 0)
+            {
+                continue;
+            }
+            foreach (var handler in handlers)
+            {
+                foreach (var key in handler.EndpointRequestingAnnotations)
+                {
+                    if (word.Equals(key, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
             }
         }
         return false;

@@ -554,6 +554,16 @@ internal static partial class DefaultCommentParser
             {
                 return null;
             }
+            // An endpoint that exists ONLY because a plugin requested it (no HTTP tag under a gating
+            // mode) gets no public HTTP route: the plugin asked for a projection (e.g. an MCP tool),
+            // not a route — `mcp` alone must not silently widen the HTTP surface. An explicit HTTP tag
+            // opts into dual exposure; `internal` remains the explicit override when an HTTP tag exists.
+            if (Options.CommentsMode is CommentsMode.OnlyWithHttpTag or CommentsMode.OnlyAnnotated
+                && !hasHttpTag && anyHandlerRequestedEndpoint && routineEndpoint.InternalOnly is false)
+            {
+                routineEndpoint.InternalOnly = true;
+                Logger?.PluginRequestedEndpointInternalOnly(description);
+            }
 
             // Detect proxy response parameters after all annotations are processed.
             // This must run after param renames so that renamed parameters (e.g., $1 → _proxy_body)

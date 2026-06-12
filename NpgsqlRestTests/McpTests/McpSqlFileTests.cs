@@ -20,7 +20,29 @@ public class McpSqlFileTests(McpSqlFileTestFixture test)
     }
 
     [Fact]
-    public void SqlFile_tools_are_in_the_catalog() => string.Join(",", test.Tools.Keys.OrderBy(k => k)).Should().Be("mcp_sql_multi,mcp_sql_single");
+    public void SqlFile_tools_are_in_the_catalog()
+        // mcp_sql_mcp_only is the bare-@mcp file (no HTTP tag); not_an_endpoint (no annotations) is absent.
+        => string.Join(",", test.Tools.Keys.OrderBy(k => k)).Should().Be("mcp_sql_mcp_only,mcp_sql_multi,mcp_sql_single");
+
+    [Fact]
+    public async Task Bare_mcp_sql_file_without_http_tag_is_an_mcp_only_tool()
+    {
+        // Callable over MCP...
+        (await CallAsync("mcp_sql_mcp_only")).Should().Be(
+            """{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{\"items\":[7]}"}],"isError":false,"structuredContent":{"items":[7]}}}""");
+
+        // ...but with NO public REST route (internal-only by default — no HTTP tag was declared).
+        using var rest = await test.Client.GetAsync("/api/mcp-sql-mcp-only");
+        rest.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Sql_file_without_any_annotation_is_not_exposed_anywhere()
+    {
+        // Not a tool (asserted in the catalog test) and not a REST endpoint.
+        using var rest = await test.Client.GetAsync("/api/not-an-endpoint");
+        rest.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
 
     [Fact]
     public async Task Single_command_sql_file_tool_executes()
