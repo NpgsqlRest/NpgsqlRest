@@ -310,6 +310,8 @@ public partial class NpgsqlRestEndpoint(
             // start query string parameters
             if (endpoint.RequestParamType == RequestParamType.QueryString)
             {
+                // Early-return guard: queryCollection is non-null for the rest of this block (later
+                // dereferences use `!` where the compiler's flow analysis loses the narrowing).
                 if (queryCollection is null)
                 {
                     shouldCommit = false;
@@ -391,7 +393,7 @@ public partial class NpgsqlRestEndpoint(
 
                     if (parameter.HashOf is not null)
                     {
-                        var hashValueQueryCollection = queryCollection.TryGetValue(parameter.HashOf.ConvertedName, out var hashQsValue) ? hashQsValue.ToString() : null;
+                        var hashValueQueryCollection = queryCollection!.TryGetValue(parameter.HashOf.ConvertedName, out var hashQsValue) ? hashQsValue.ToString() : null;
                         if (string.IsNullOrEmpty(hashValueQueryCollection) is true)
                         {
                             parameter.Value = DBNull.Value;
@@ -620,7 +622,7 @@ public partial class NpgsqlRestEndpoint(
                         )
                     )
                     {
-                        if (queryCollection.ContainsKey(parameter.ConvertedName) is false)
+                        if (queryCollection!.ContainsKey(parameter.ConvertedName) is false)
                         {
                             if (headers is null)
                             {
@@ -801,7 +803,7 @@ public partial class NpgsqlRestEndpoint(
                         }
                     }
 
-                    if (queryCollection.TryGetValue(parameter.ConvertedName, out var qsValue) is false)
+                    if (queryCollection!.TryGetValue(parameter.ConvertedName, out var qsValue) is false)
                     {
                         if (parameter.Value is null)
                         {
@@ -969,7 +971,7 @@ public partial class NpgsqlRestEndpoint(
                 // Skip query string validation for passthrough proxy endpoints - query will be forwarded as-is
                 if (!(endpoint.IsProxy && Options.ProxyOptions.Enabled && !endpoint.HasProxyResponseParameters))
                 {
-                    foreach (var queryKey in queryCollection.Keys)
+                    foreach (var queryKey in queryCollection!.Keys)
                     {
                         if (routine.ParamsHash.Contains(queryKey) is false)
                         {
@@ -985,6 +987,8 @@ public partial class NpgsqlRestEndpoint(
             // start json body parameters
             else if (endpoint.RequestParamType == RequestParamType.BodyJson)
             {
+                // Early-return guard: bodyDict is non-null for the rest of this block (later
+                // dereferences use `!` where the compiler's flow analysis loses the narrowing).
                 if (bodyDict is null)
                 {
                     // Body was present but is not a parseable JSON object - this is a client error,
@@ -1069,7 +1073,7 @@ public partial class NpgsqlRestEndpoint(
 
                     if (parameter.HashOf is not null)
                     {
-                        var hashValueBodyDict = bodyDict.GetValueOrDefault(parameter.HashOf.ConvertedName)?.ToString();
+                        var hashValueBodyDict = bodyDict!.GetValueOrDefault(parameter.HashOf.ConvertedName)?.ToString();
                         if (string.IsNullOrEmpty(hashValueBodyDict) is true)
                         {
                             parameter.Value = DBNull.Value;
@@ -1123,7 +1127,7 @@ public partial class NpgsqlRestEndpoint(
                         )
                     )
                     {
-                        if (bodyDict.ContainsKey(parameter.ConvertedName) is false)
+                        if (bodyDict!.ContainsKey(parameter.ConvertedName) is false)
                         {
                             if (headers is null)
                             {
@@ -1304,7 +1308,7 @@ public partial class NpgsqlRestEndpoint(
                         }
                     }
 
-                    if (bodyDict.TryGetValue(parameter.ConvertedName, out var value) is false)
+                    if (bodyDict!.TryGetValue(parameter.ConvertedName, out var value) is false)
                     {
                         if (parameter.Value is null)
                         {
@@ -1471,7 +1475,7 @@ public partial class NpgsqlRestEndpoint(
                 // Skip body validation for passthrough proxy endpoints - body will be forwarded as-is
                 if (!(endpoint.IsProxy && Options.ProxyOptions.Enabled && !endpoint.HasProxyResponseParameters))
                 {
-                    foreach (var bodyKey in bodyDict.Keys)
+                    foreach (var bodyKey in bodyDict!.Keys)
                     {
                         if (routine.ParamsHash.Contains(bodyKey) is false)
                         {

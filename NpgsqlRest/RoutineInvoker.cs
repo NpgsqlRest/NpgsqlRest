@@ -15,7 +15,7 @@ public readonly record struct RoutineInvokeResult(int StatusCode, string? Body, 
 /// access to core internals.
 /// <para>
 /// Available only after <c>UseNpgsqlRest</c> has built the endpoints (see <see cref="IsAvailable"/>).
-/// Pass <paramref name="user"/> to run as a specific principal — execution-level authorization
+/// Pass the <c>user</c> argument to run as a specific principal — execution-level authorization
 /// (`authorize`) and claims-to-parameter binding then apply as for a real authenticated request.
 /// </para>
 /// </summary>
