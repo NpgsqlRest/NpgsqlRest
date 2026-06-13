@@ -3,8 +3,6 @@ name: Build, Test, Publish and Release
 on:
   push:
     branches: [ master ]
-  pull_request:
-    branches: [ master ]
   workflow_dispatch:
 
 # Add workflow-level permissions
@@ -14,6 +12,9 @@ permissions:
 
 jobs:
   build-test-publish:
+    # TEMP (jit-only republish of v3.17.0): disabled so the whole release chain is skipped — 3.17.0 is
+    # already published, we only need the missing -jit Docker image. RESTORE: delete this `if: false`.
+    if: false
     runs-on: ubuntu-22.04
     services:
       postgres:
@@ -275,7 +276,8 @@ jobs:
           vbilopav/npgsqlrest:latest-aot
 
   build-docker-jit:
-    needs: create-release
+    # TEMP (jit-only republish): `needs: create-release` removed so this runs standalone while the rest of
+    # the chain is disabled. It reads the version from version.txt itself. RESTORE: re-add `needs: create-release`.
     runs-on: ubuntu-22.04
     permissions:
       contents: read

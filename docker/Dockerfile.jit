@@ -21,6 +21,9 @@ RUN dotnet restore NpgsqlRestClient/NpgsqlRestClient.csproj
 COPY LICENSE LICENSE
 COPY README.md README.MD
 COPY NpgsqlRest/ NpgsqlRest/
+# Shared source compiled into NpgsqlRest.csproj (<Compile Include="..\NpgsqlRest.Common\*.cs"/> + global
+# usings). Without this the JIT build fails: NpgsqlRest.GlobalUsings.g.cs -> CS0234 'NpgsqlRest.Common'.
+COPY NpgsqlRest.Common/ NpgsqlRest.Common/
 COPY NpgsqlRestClient/*.cs NpgsqlRestClient/
 COPY NpgsqlRestClient/*.csproj NpgsqlRestClient/
 COPY NpgsqlRestClient/appsettings.json NpgsqlRestClient/
