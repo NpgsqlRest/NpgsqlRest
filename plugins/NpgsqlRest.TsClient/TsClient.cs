@@ -117,6 +117,8 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
         StringBuilder interfaces = new();
         StringBuilder compositeInterfaces = new();
         bool needsStatusTypes = false;
+        // Plain `interface` (module-private inline / ambient in .d.ts) vs exported `export interface` (importable module).
+        var interfaceDecl = options.ExportTypes ? "export interface" : "interface";
 
         foreach (var import in options.CustomImports)
         {
@@ -298,7 +300,18 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
         {
             if (!options.SkipTypes)
             {
-                var typeFile = fileName.Replace(".ts", "Types.d.ts");
+                // ExportTypes turns the separate file into an importable module (`{name}Types.ts` with `export interface`);
+                // otherwise it stays an ambient global declaration file (`{name}Types.d.ts`) referenced without an import.
+                var typeFile = fileName.Replace(".ts", options.ExportTypes ? "Types.ts" : "Types.d.ts");
+                if (options.ExportTypes)
+                {
+                    var typeNames = ExtractExportedTypeNames(interfaces.ToString());
+                    if (typeNames.Count > 0)
+                    {
+                        var moduleName = Path.GetFileNameWithoutExtension(typeFile);
+                        contentHeader.Insert(0, $"import type {{ {string.Join(", ", typeNames)} }} from \"./{moduleName}\";{Environment.NewLine}");
+                    }
+                }
                 AddHeader(interfaces);
                 File.WriteAllText(typeFile, interfaces.ToString());
                 Logger?.LogTrace("Created Typescript type file: {typeFile}", typeFile);
@@ -497,7 +510,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                         {
                             modelsDict.Add(req.ToString(), requestName);
                         }
-                        req.Insert(0, $"interface {requestName} {{{Environment.NewLine}");
+                        req.Insert(0, $"{interfaceDecl} {requestName} {{{Environment.NewLine}");
                         req.AppendLine("}");
                         req.AppendLine();
                         interfaces.Append(req);
@@ -547,7 +560,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 responseName = $"I{pascal}Response";
                 StringBuilder mcResp = new();
 
-                mcResp.AppendLine($"interface {responseName} {{");
+                mcResp.AppendLine($"{interfaceDecl} {responseName} {{");
                 foreach (var cmdInfo in routine.MultiCommandInfo)
                 {
                     if (cmdInfo.IsSkipped) continue;
@@ -600,7 +613,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                     responseName = $"I{pascal}Response";
                     StringBuilder resp = new();
 
-                    resp.AppendLine($"interface {responseName} {{");
+                    resp.AppendLine($"{interfaceDecl} {responseName} {{");
                     resp.AppendLine("    type: string;");
                     resp.AppendLine("    fileName: string;");
                     resp.AppendLine("    contentType: string;");
@@ -823,7 +836,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                                 {
                                     modelsDict.Add(resp.ToString(), responseName);
                                 }
-                                resp.Insert(0, $"interface {responseName} {{{Environment.NewLine}");
+                                resp.Insert(0, $"{interfaceDecl} {responseName} {{{Environment.NewLine}");
                                 resp.AppendLine("}");
                                 resp.AppendLine();
                                 interfaces.Append(resp);
@@ -1913,7 +1926,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
 
         // Build the interface
         StringBuilder interfaceBuilder = new();
-        interfaceBuilder.AppendLine($"interface {interfaceName} {{");
+        interfaceBuilder.AppendLine($"{(options.ExportTypes ? "export interface" : "interface")} {interfaceName} {{");
 
         for (var i = 0; i < fieldNames.Length; i++)
         {
@@ -1959,5 +1972,32 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
         compositeInterfaces.Append(interfaceBuilder);
 
         return interfaceName;
+    }
+
+    /// <summary>
+    /// Extracts the names of `export interface {name} {` declarations from generated type-file content,
+    /// so the client file can import them. Top-level declarations only — indented field lines and inline
+    /// object types never start with the keyword, so they are not matched.
+    /// </summary>
+    private static List<string> ExtractExportedTypeNames(string typeFileContent)
+    {
+        const string prefix = "export interface ";
+        var names = new List<string>();
+        foreach (var rawLine in typeFileContent.Split('\n'))
+        {
+            var line = rawLine.TrimStart();
+            if (!line.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                continue;
+            }
+            var rest = line.Substring(prefix.Length);
+            var brace = rest.IndexOf('{');
+            var name = (brace >= 0 ? rest.Substring(0, brace) : rest).Trim();
+            if (name.Length > 0 && !names.Contains(name))
+            {
+                names.Add(name);
+            }
+        }
+        return names;
     }
 }

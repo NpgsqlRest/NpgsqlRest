@@ -463,6 +463,7 @@ public static partial class ConfigSchemaGenerator
         ["NpgsqlRest:ClientCodeGen:BySchema"] = "Create files by PostgreSQL schema. File name will use formatted FilePath where {0} is the schema name in pascal case.",
         ["NpgsqlRest:ClientCodeGen:IncludeStatusCode"] = "Set to true to include status code in response: {status: response.status, response: model}",
         ["NpgsqlRest:ClientCodeGen:CreateSeparateTypeFile"] = "Create separate file with global types {name}Types.d.ts",
+        ["NpgsqlRest:ClientCodeGen:ExportTypes"] = "Emit interfaces with the `export` keyword so they can be imported by other modules. When true and CreateSeparateTypeFile is true, the separate type file becomes an importable module ({name}Types.ts) instead of an ambient {name}Types.d.ts, and the client file imports the named types from it. No effect when SkipTypes is true.",
         ["NpgsqlRest:ClientCodeGen:ImportBaseUrlFrom"] = "Module name to import \"baseUrl\" constant, instead of defining it in a module.",
         ["NpgsqlRest:ClientCodeGen:ImportParseQueryFrom"] = "Module name to import \"parseQuery\" function, instead of defining it in a module.",
         ["NpgsqlRest:ClientCodeGen:IncludeParseUrlParam"] = "Include optional parameter `parseUrl: (url: string) => string = url=>url` that will parse the constructed URL.",

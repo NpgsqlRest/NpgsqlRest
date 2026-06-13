@@ -2679,6 +2679,10 @@ public static partial class ConfigSchemaGenerator
           //
           "CreateSeparateTypeFile": true,
           //
+          // Emit interfaces with the `export` keyword so they can be imported by other modules. When true and CreateSeparateTypeFile is true, the separate type file becomes an importable module ({name}Types.ts) instead of an ambient {name}Types.d.ts, and the client file imports the named types from it. No effect when SkipTypes is true.
+          //
+          "ExportTypes": false,
+          //
           // Module name to import "baseUrl" constant, instead of defining it in a module.
           //
           "ImportBaseUrlFrom": null,

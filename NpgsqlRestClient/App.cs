@@ -515,6 +515,7 @@ public class App
                 BySchema = _config.GetConfigBool("BySchema", tsClientCfg, true),
                 IncludeStatusCode = _config.GetConfigBool("IncludeStatusCode", tsClientCfg, true),
                 CreateSeparateTypeFile = _config.GetConfigBool("CreateSeparateTypeFile", tsClientCfg, true),
+                ExportTypes = _config.GetConfigBool("ExportTypes", tsClientCfg),
                 ImportBaseUrlFrom = _config.GetConfigStr("ImportBaseUrlFrom", tsClientCfg),
                 ImportParseQueryFrom = _config.GetConfigStr("ImportParseQueryFrom", tsClientCfg),
                 IncludeParseUrlParam = _config.GetConfigBool("IncludeParseUrlParam", tsClientCfg),

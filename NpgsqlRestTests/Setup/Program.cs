@@ -34,6 +34,11 @@ public class Program
     public static string TsClientJsOutputPath { get; } = Path.Combine(Path.GetTempPath(), "NpgsqlRestTests", "TsClientJs");
 
     /// <summary>
+    /// Output path for TsClient generated files with ExportTypes=true + separate type file (used by tests)
+    /// </summary>
+    public static string TsClientExportOutputPath { get; } = Path.Combine(Path.GetTempPath(), "NpgsqlRestTests", "TsClientExport");
+
+    /// <summary>
     /// Output path for HttpFiles generated files (used by tests)
     /// </summary>
     public static string HttpFilesOutputPath { get; } = Path.Combine(Path.GetTempPath(), "NpgsqlRestTests", "HttpFiles");
@@ -229,6 +234,20 @@ public class Program
                     SkipSchemas = ["public", "custom_param_schema", "my_schema", "custom_table_param_schema", ""],
                     IncludeStatusCode = false,
                     SkipTypes = true
+                }),
+                // TsClient configuration for ExportTypes testing - exported interfaces in a separate importable module
+                new TsClient(new TsClientOptions
+                {
+                    FilePath = Path.Combine(TsClientExportOutputPath, "{0}.ts"),
+                    FileOverwrite = true,
+                    BySchema = true,
+                    IncludeHost = false,
+                    CreateSeparateTypeFile = true,
+                    ExportTypes = true,
+                    CommentHeader = CommentHeader.None,
+                    HeaderLines = [],
+                    SkipSchemas = ["public", "custom_param_schema", "my_schema", "custom_table_param_schema", ""],
+                    IncludeStatusCode = false
                 }),
                 // HttpFiles configuration for testing path parameters
                 new HttpFile(new HttpFileOptions

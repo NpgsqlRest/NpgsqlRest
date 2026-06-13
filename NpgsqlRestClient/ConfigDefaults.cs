@@ -1009,6 +1009,7 @@ public static class ConfigDefaults
             ["BySchema"] = true,
             ["IncludeStatusCode"] = true,
             ["CreateSeparateTypeFile"] = true,
+            ["ExportTypes"] = false,
             ["ImportBaseUrlFrom"] = null,
             ["ImportParseQueryFrom"] = null,
             ["IncludeParseUrlParam"] = false,
