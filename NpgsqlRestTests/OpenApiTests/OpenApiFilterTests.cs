@@ -75,6 +75,7 @@ public class OpenApiFilterTests
         string path,
         bool requiresAuthorization = false,
         bool openApiHide = false,
+        bool internalOnly = false,
         string[]? openApiTags = null)
     {
         var routine = MakeRoutine(schema, name);
@@ -91,6 +92,8 @@ public class OpenApiFilterTests
             bodyParameterName: null,
             textResponseNullHandling: TextResponseNullHandling.EmptyString,
             queryStringNullHandling: QueryStringNullHandling.EmptyString);
+        // An endpoint with no public HTTP route (proxy / HTTP-type-callable / bare-@mcp MCP-only).
+        endpoint.InternalOnly = internalOnly;
         // openapi hide/tags are parsed by the plugin's HandleCommentLine hook (which core invokes
         // during its single parse pass) and stashed in endpoint.Items. Drive that hook directly so
         // the test exercises the real parse path rather than pre-seeding Items.
@@ -155,6 +158,24 @@ public class OpenApiFilterTests
 
         DocHasPath(doc, "/api/visible").Should().BeTrue("non-hidden endpoint must appear");
         DocHasPath(doc, "/api/hidden").Should().BeFalse("OpenApiHide=true must exclude the endpoint");
+    }
+
+    // ------------------------------------------------------------------------
+    // InternalOnly (no public HTTP route — proxy / HTTP-type-callable / bare-@mcp MCP-only)
+    // ------------------------------------------------------------------------
+
+    [Fact]
+    public void InternalOnly_endpoint_is_not_documented()
+    {
+        // An internal-only endpoint has no public HTTP route, so documenting it would advertise a
+        // path that 404s — the same leak fixed for the TS client and .http file generators.
+        var doc = RunHandler(new OpenApiOptions(),
+            MakeEndpoint("public", "visible_fn", "/api/visible"),
+            MakeEndpoint("public", "mcp_only_fn", "/api/mcp-only", internalOnly: true));
+
+        DocHasPath(doc, "/api/visible").Should().BeTrue("a public-route endpoint must be documented");
+        DocHasPath(doc, "/api/mcp-only").Should().BeFalse(
+            "an internal-only endpoint has no public route, so it must not appear in the OpenAPI document");
     }
 
     // ------------------------------------------------------------------------

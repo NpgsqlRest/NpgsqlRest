@@ -124,6 +124,12 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
         // Filter gate — applied in order of decreasing specificity. First match short-circuits.
         // The endpoint itself remains registered with NpgsqlRest; only its documentation is skipped.
 
+        // Internal-only endpoints have no public HTTP route (proxy/HTTP-type-callable, or a bare-@mcp
+        // MCP-only routine), so documenting them would advertise a path that 404s.
+        if (endpoint.InternalOnly)
+        {
+            return;
+        }
         // Per-endpoint opt-out from comment annotation (`openapi hide`).
         if (openApiHide)
         {

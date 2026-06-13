@@ -103,7 +103,9 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             return;
         }
 
-        RoutineEndpoint[] filtered = [.. endpoints.Where(e => e.CustomParameters.ParameterEnabled(Enabled) is not false)];
+        // Internal-only endpoints have no public HTTP route (404), so a generated client function for one
+        // would be dead — e.g. a bare-`@mcp` MCP-only routine. Exclude them from the REST client.
+        RoutineEndpoint[] filtered = [.. endpoints.Where(e => e.InternalOnly is false && e.CustomParameters.ParameterEnabled(Enabled) is not false)];
 
         Dictionary<string, string> modelsDict = [];
         Dictionary<string, int> names = [];

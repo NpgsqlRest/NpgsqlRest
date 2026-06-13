@@ -27,6 +27,12 @@ public class HttpFile(HttpFileOptions httpFileOptions) : IEndpointCreateHandler
         {
             return;
         }
+        // Internal-only endpoints have no public HTTP route (a request would 404), so an .http request
+        // line for one would be dead — e.g. a bare-`@mcp` MCP-only routine. Skip them.
+        if (endpoint.InternalOnly)
+        {
+            return;
+        }
 
         _endpoint = httpFileOptions.Option is HttpFileOption.Endpoint or HttpFileOption.Both;
         _file = httpFileOptions.Option is HttpFileOption.File or HttpFileOption.Both;
