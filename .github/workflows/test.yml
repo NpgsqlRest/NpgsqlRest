@@ -23,7 +23,7 @@ jobs:
         postgresql version: '${{ matrix.postgres-version }}'
         postgresql user: 'postgres'
         postgresql password: 'postgres'
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - name: Setup .NET10
       uses: actions/setup-dotnet@v4
       with:
