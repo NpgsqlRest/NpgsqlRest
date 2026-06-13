@@ -18,6 +18,11 @@ public class McpAuthGateTests(McpAuthGateTestFixture test)
         // RFC 9728 §5.1: point the client at the Protected Resource Metadata document for this resource.
         challenge.Should().Contain("resource_metadata=");
         challenge.Should().Contain("/.well-known/oauth-protected-resource/mcp");
+        // Supplementary RFC 6750-shaped body so clients that surface the response body (and humans with
+        // curl) get an actionable message instead of an empty 401 — the formal challenge stays in the header.
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+        (await response.Content.ReadAsStringAsync()).Should().Be(
+            """{"error":"invalid_token","error_description":"This tool requires authentication. Provide a valid bearer token."}""");
     }
 
     [Fact]

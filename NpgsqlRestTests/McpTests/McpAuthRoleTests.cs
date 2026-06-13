@@ -37,6 +37,10 @@ public class McpAuthRoleTests(McpAuthRoleTestFixture test)
         challenge.Should().Contain("error=\"insufficient_scope\"");
         challenge.Should().Contain("scope=\"mcp.read\"");
         challenge.Should().Contain("resource_metadata=");
+        // Supplementary RFC 6750-shaped body (the formal challenge stays in the WWW-Authenticate header).
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+        (await response.Content.ReadAsStringAsync()).Should().Be(
+            """{"error":"insufficient_scope","error_description":"This tool requires a role your token does not have."}""");
     }
 
     // ---- tools/list role filtering (FilterToolsByRole = true) -------------

@@ -177,20 +177,35 @@ public partial class Mcp
     /// <summary>
     /// 401: authentication is required or the token is invalid (RFC 9728 §5.1 challenge).
     /// </summary>
-    private void WriteUnauthorized(HttpContext context)
+    private Task WriteUnauthorized(HttpContext context)
     {
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
         context.Response.Headers.Append("WWW-Authenticate", BearerChallenge(context, error: null));
+        return WriteChallengeBodyAsync(context, "invalid_token", "This tool requires authentication. Provide a valid bearer token.");
     }
 
     /// <summary>
     /// 403: the principal is authenticated but lacks the permission the tool's <c>authorize</c> requires
     /// (RFC 6750 §3.1 <c>error="insufficient_scope"</c>).
     /// </summary>
-    private void WriteForbidden(HttpContext context)
+    private Task WriteForbidden(HttpContext context)
     {
         context.Response.StatusCode = StatusCodes.Status403Forbidden;
         context.Response.Headers.Append("WWW-Authenticate", BearerChallenge(context, error: "insufficient_scope"));
+        return WriteChallengeBodyAsync(context, "insufficient_scope", "This tool requires a role your token does not have.");
+    }
+
+    /// <summary>
+    /// Writes a small RFC 6750-shaped JSON body (<c>error</c> + <c>error_description</c>) for a 401/403.
+    /// The formal OAuth challenge is the status code plus the <c>WWW-Authenticate</c> header (set by the
+    /// caller, unchanged); this body is supplementary so clients that surface the response body — and
+    /// humans debugging with curl — get an actionable message instead of an empty response.
+    /// </summary>
+    private static Task WriteChallengeBodyAsync(HttpContext context, string error, string description)
+    {
+        context.Response.ContentType = "application/json";
+        var body = new JsonObject { ["error"] = error, ["error_description"] = description };
+        return context.Response.WriteAsync(body.ToJsonString(JsonOutput), context.RequestAborted);
     }
 
     /// <summary>
@@ -263,7 +278,7 @@ public partial class Mcp
         // point the client at the Protected Resource Metadata (RFC 9728) so it can discover the AS.
         if (_options.Authorization.RequireAuthorization && context.User?.Identity?.IsAuthenticated != true)
         {
-            WriteUnauthorized(context);
+            await WriteUnauthorized(context);
             return;
         }
 
@@ -276,7 +291,7 @@ public partial class Mcp
                 string.Equals(c.Type, "aud", StringComparison.Ordinal) &&
                 string.Equals(c.Value, _options.Authorization.Audience, StringComparison.Ordinal)))
         {
-            WriteUnauthorized(context);
+            await WriteUnauthorized(context);
             return;
         }
 
@@ -373,12 +388,12 @@ public partial class Mcp
         // needs authentication; 403 = authenticated but insufficient permission (RFC 9728/6750).
         if (invoke.StatusCode == StatusCodes.Status401Unauthorized)
         {
-            WriteUnauthorized(context);
+            await WriteUnauthorized(context);
             return;
         }
         if (invoke.StatusCode == StatusCodes.Status403Forbidden)
         {
-            WriteForbidden(context);
+            await WriteForbidden(context);
             return;
         }
 
