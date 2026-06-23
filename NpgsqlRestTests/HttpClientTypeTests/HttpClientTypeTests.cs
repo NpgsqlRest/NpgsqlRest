@@ -2,6 +2,9 @@ using WireMock.Server;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
 using WireMock.Settings;
+using WireMock;
+using WireMock.Types;
+using WireMock.Util;
 
 namespace NpgsqlRestTests;
 
@@ -878,5 +881,74 @@ public class HttpClientTypeTests : IClassFixture<WireMockFixture>
         response?.StatusCode.Should().Be(HttpStatusCode.OK);
         content.Should().Contain("\"users_status\" : 200");
         content.Should().Contain("\"products_status\" : 500");
+    }
+
+    // Regression: a DB-function composite parameter is expanded into one parameter per field,
+    // each carrying the same HTTP CustomType. Before the InvokeAllAsync dedup guard, the request
+    // fired once per field (6 outbound calls for the 6-field all-fields type). It must fire exactly
+    // once per distinct HTTP type. Counter-based to count actual outbound calls (same pattern as
+    // the retry tests).
+    [Fact]
+    public async Task Test_multi_field_type_fires_exactly_one_outbound_call()
+    {
+        int calls = 0;
+        _server
+            .Given(Request.Create().WithPath("/api/all-fields").UsingGet())
+            .RespondWith(Response.Create().WithCallback(req =>
+            {
+                Interlocked.Increment(ref calls);
+                return new ResponseMessage
+                {
+                    StatusCode = 200,
+                    BodyData = new BodyData { BodyAsString = "response body", DetectedBodyType = BodyType.String }
+                };
+            }));
+
+        using var response = await _test.Client.GetAsync("/api/get-http-api-all-fields/");
+        var content = await response.Content.ReadAsStringAsync();
+
+        response?.StatusCode.Should().Be(HttpStatusCode.OK);
+        content.Should().Contain("\"body\" : \"response body\"");
+        calls.Should().Be(1);
+    }
+
+    // Regression: two distinct HTTP types referenced by a single function must each fire exactly
+    // once - one outbound call per distinct type, not per expanded field.
+    [Fact]
+    public async Task Test_multi_types_each_fire_exactly_one_outbound_call()
+    {
+        int usersCalls = 0;
+        int productsCalls = 0;
+        _server
+            .Given(Request.Create().WithPath("/api/users").UsingGet())
+            .RespondWith(Response.Create().WithCallback(req =>
+            {
+                Interlocked.Increment(ref usersCalls);
+                return new ResponseMessage
+                {
+                    StatusCode = 200,
+                    BodyData = new BodyData { BodyAsString = "[{\"id\": 1}]", DetectedBodyType = BodyType.String }
+                };
+            }));
+        _server
+            .Given(Request.Create().WithPath("/api/products").UsingGet())
+            .RespondWith(Response.Create().WithCallback(req =>
+            {
+                Interlocked.Increment(ref productsCalls);
+                return new ResponseMessage
+                {
+                    StatusCode = 200,
+                    BodyData = new BodyData { BodyAsString = "[{\"id\": 101}]", DetectedBodyType = BodyType.String }
+                };
+            }));
+
+        using var response = await _test.Client.GetAsync("/api/get-http-api-multi-types/");
+        var content = await response.Content.ReadAsStringAsync();
+
+        response?.StatusCode.Should().Be(HttpStatusCode.OK);
+        content.Should().Contain("\"users_status\" : 200");
+        content.Should().Contain("\"products_status\" : 200");
+        usersCalls.Should().Be(1);
+        productsCalls.Should().Be(1);
     }
 }

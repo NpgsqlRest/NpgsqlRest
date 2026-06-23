@@ -284,6 +284,14 @@ public class HttpClientTypeHandler(HttpTypeDefinition definition, Dictionary<str
 
         foreach (var typeName in typeNames)
         {
+            // A DB-function composite parameter is expanded into one parameter per field,
+            // each carrying the same CustomType, so typeNames can contain the same type
+            // multiple times. Fire exactly one outbound call per distinct HTTP type - the
+            // fill loop below resolves handlers by distinct type name as well.
+            if (handlers.ContainsKey(typeName))
+            {
+                continue;
+            }
             if (HttpClientTypes.Definitions.TryGetValue(typeName, out var definition))
             {
                 var handler = new HttpClientTypeHandler(definition, replacements);
