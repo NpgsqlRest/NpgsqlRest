@@ -2806,7 +2806,10 @@ public class Builder
             ResponseHeadersField = _config.GetConfigStr("ResponseHeadersField", cfg) ?? "headers",
             ResponseContentTypeField = _config.GetConfigStr("ResponseContentTypeField", cfg) ?? "content_type",
             ResponseSuccessField = _config.GetConfigStr("ResponseSuccessField", cfg) ?? "success",
-            ResponseErrorMessageField = _config.GetConfigStr("ResponseErrorMessageField", cfg) ?? "error_message"
+            ResponseErrorMessageField = _config.GetConfigStr("ResponseErrorMessageField", cfg) ?? "error_message",
+            CacheEnabled = _config.GetConfigBool("CacheEnabled", cfg, true),
+            MaxCacheEntries = _config.GetConfigInt("MaxCacheEntries", cfg) ?? 10_000,
+            CachePruneIntervalSeconds = _config.GetConfigInt("CachePruneIntervalSeconds", cfg) ?? 60
         };
 
         if (options.Enabled)

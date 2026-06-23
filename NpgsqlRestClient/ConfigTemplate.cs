@@ -2803,7 +2803,22 @@ public static partial class ConfigSchemaGenerator
           //
           // Default name for the response error message field within annotated types.
           //
-          "ResponseErrorMessageField": "error_message"
+          "ResponseErrorMessageField": "error_message",
+          //
+          // Global kill switch for HTTP type response caching. When false, the '@cache' directive on
+          // individual types is ignored and every request fires a fresh outbound call. Caching is opt-in
+          // per type via the '@cache <interval>' type-comment directive.
+          //
+          "CacheEnabled": true,
+          //
+          // Maximum number of distinct cached HTTP responses held in memory. Once full, new responses are
+          // not cached (existing entries are still served and expire normally).
+          //
+          "MaxCacheEntries": 10000,
+          //
+          // Interval in seconds at which expired cached HTTP responses are pruned from memory.
+          //
+          "CachePruneIntervalSeconds": 60
         },
     
         //

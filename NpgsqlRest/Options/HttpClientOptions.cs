@@ -44,4 +44,24 @@ public class HttpClientOptions
     /// Example: "http://localhost:5000"
     /// </summary>
     public string? SelfBaseUrl { get; set; }
+
+    /// <summary>
+    /// Global kill switch for HTTP type response caching. When false, the <c>@cache</c> directive on
+    /// individual types is ignored and every request fires a fresh outbound call. Default is true,
+    /// so caching is opt-in per type via <c>@cache</c> and globally disable-able here.
+    /// </summary>
+    public bool CacheEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Maximum number of distinct cached HTTP responses held in memory. Once the cache is full, new
+    /// responses are not cached (existing entries are still served and expire normally). Bounds memory
+    /// for types whose URL/body/headers contain per-request placeholders. Default is 10000.
+    /// </summary>
+    public int MaxCacheEntries { get; set; } = 10_000;
+
+    /// <summary>
+    /// Interval in seconds at which expired cached HTTP responses are pruned from memory.
+    /// Default is 60 seconds.
+    /// </summary>
+    public int CachePruneIntervalSeconds { get; set; } = 60;
 }

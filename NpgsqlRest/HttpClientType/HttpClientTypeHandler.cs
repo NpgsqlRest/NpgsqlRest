@@ -160,6 +160,76 @@ public class HttpClientTypeHandler(HttpTypeDefinition definition, Dictionary<str
         }
     }
 
+    /// <summary>
+    /// Runs the outbound call, routing it through <see cref="HttpResponseCache"/> when the type opts in
+    /// via <c>@cache</c> and caching is enabled globally. On a cache hit (or a coalesced concurrent call)
+    /// the cached response is applied to this handler so the fill loop reads it exactly as a live response.
+    /// </summary>
+    public async Task InvokeWithCacheAsync(CancellationToken cancellationToken = default)
+    {
+        if (!Options.HttpClientOptions.CacheEnabled || !definition.CacheEnabled)
+        {
+            await InvokeAsync(cancellationToken);
+            return;
+        }
+
+        var key = ComputeCacheKey();
+        var cached = await HttpResponseCache.GetOrCreateAsync(
+            key,
+            definition.CacheDuration,
+            async ct =>
+            {
+                await InvokeAsync(ct);
+                return SnapshotResponse();
+            },
+            cancellationToken);
+
+        ApplyResponse(cached);
+    }
+
+    /// <summary>
+    /// Cache key for this request: method + resolved URL + resolved content-type + resolved headers
+    /// (sorted) + resolved body. Placeholders are resolved so per-request values vary the key; a type
+    /// with no placeholders produces a constant key (one shared cached response).
+    /// </summary>
+    private string ComputeCacheKey()
+    {
+        var sb = new StringBuilder();
+        sb.Append(definition.Method).Append('\n');
+        sb.Append(ResolveValue(definition.Url)).Append('\n');
+        if (definition.ContentType is not null)
+        {
+            sb.Append(ResolveValue(definition.ContentType));
+        }
+        sb.Append('\n');
+        if (definition.Headers is { Count: > 0 })
+        {
+            foreach (var header in definition.Headers.OrderBy(h => h.Key, StringComparer.Ordinal))
+            {
+                sb.Append(header.Key).Append(':').Append(ResolveValue(header.Value)).Append('\n');
+            }
+        }
+        sb.Append('\n');
+        if (definition.Body is not null)
+        {
+            sb.Append(ResolveValue(definition.Body));
+        }
+        return sb.ToString();
+    }
+
+    private CachedHttpResponse SnapshotResponse() =>
+        new(StatusCode, Body, ResponseHeaders, ContentType, IsSuccess, ErrorMessage);
+
+    private void ApplyResponse(CachedHttpResponse r)
+    {
+        StatusCode = r.StatusCode;
+        Body = r.Body;
+        ResponseHeaders = r.ResponseHeaders;
+        ContentType = r.ContentType;
+        IsSuccess = r.IsSuccess;
+        ErrorMessage = r.ErrorMessage;
+    }
+
     private bool ShouldRetry(int statusCode)
     {
         if (definition.RetryOnStatusCodes is null)
@@ -296,7 +366,7 @@ public class HttpClientTypeHandler(HttpTypeDefinition definition, Dictionary<str
             {
                 var handler = new HttpClientTypeHandler(definition, replacements);
                 handlers[typeName] = handler;
-                tasks.Add((typeName, handler, handler.InvokeAsync(cancellationToken)));
+                tasks.Add((typeName, handler, handler.InvokeWithCacheAsync(cancellationToken)));
             }
         }
 

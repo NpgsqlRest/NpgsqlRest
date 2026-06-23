@@ -58,6 +58,15 @@ public static class NpgsqlRestBuilder
         if (Options.HttpClientOptions.Enabled is true)
         {
             new HttpClientTypes(builder, defaultStrategy);
+
+            if (Options.HttpClientOptions.CacheEnabled)
+            {
+                HttpClientType.HttpResponseCache.Start(Options);
+                if (builder is WebApplication httpCacheApp)
+                {
+                    httpCacheApp.Lifetime.ApplicationStopping.Register(HttpClientType.HttpResponseCache.Shutdown);
+                }
+            }
         }
 
         var (

@@ -1016,4 +1016,148 @@ public class ParseHttpTypeDefinitionTests
         result.Should().NotBeNull();
         result!.NeedsParsing.Should().BeTrue();
     }
+
+    // No @cache directive: caching is off and duration is null.
+    [Fact]
+    public void Cache_disabled_by_default()
+    {
+        var result = _parser.ParseHttpTypeDefinition("GET https://api.example.com/data");
+
+        result.Should().NotBeNull();
+        result!.CacheEnabled.Should().BeFalse();
+        result.CacheDuration.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("cache 60s")]
+    [InlineData("cache=60s")]
+    [InlineData("cache: 60s")]
+    [InlineData("@cache 60s")]
+    public void Parses_cache_directive_with_interval(string directive)
+    {
+        var input = $"{directive}\nGET https://api.example.com/data";
+
+        var result = _parser.ParseHttpTypeDefinition(input);
+
+        result.Should().NotBeNull();
+        result!.CacheEnabled.Should().BeTrue();
+        result.CacheDuration.Should().Be(TimeSpan.FromSeconds(60));
+    }
+
+    [Fact]
+    public void Parses_cache_directive_with_timespan_format()
+    {
+        var input = """
+            @cache 00:05:00
+            GET https://api.example.com/data
+            """;
+
+        var result = _parser.ParseHttpTypeDefinition(input);
+
+        result.Should().NotBeNull();
+        result!.CacheEnabled.Should().BeTrue();
+        result.CacheDuration.Should().Be(TimeSpan.FromMinutes(5));
+    }
+
+    // Bare @cache (no interval): enabled, no expiration.
+    [Fact]
+    public void Parses_bare_cache_directive_as_enabled_no_expiry()
+    {
+        var input = """
+            @cache
+            GET https://api.example.com/data
+            """;
+
+        var result = _parser.ParseHttpTypeDefinition(input);
+
+        result.Should().NotBeNull();
+        result!.CacheEnabled.Should().BeTrue();
+        result.CacheDuration.Should().BeNull();
+    }
+
+    // @cache on a non-GET method is ignored (only GET is cacheable).
+    [Theory]
+    [InlineData("POST")]
+    [InlineData("PUT")]
+    [InlineData("PATCH")]
+    [InlineData("DELETE")]
+    public void Cache_directive_ignored_for_non_get(string method)
+    {
+        var input = $"@cache 60s\n{method} https://api.example.com/data";
+
+        var result = _parser.ParseHttpTypeDefinition(input);
+
+        result.Should().NotBeNull();
+        result!.CacheEnabled.Should().BeFalse();
+        result.CacheDuration.Should().BeNull();
+    }
+
+    // Directives may appear AFTER the request line and headers, not only before it. The docs show
+    // them in this position; the parser recognizes them in the header section too.
+    [Fact]
+    public void Parses_timeout_directive_after_headers()
+    {
+        var input = """
+            GET https://api.example.com/data
+            Accept: application/json
+            @timeout 30s
+            """;
+
+        var result = _parser.ParseHttpTypeDefinition(input);
+
+        result.Should().NotBeNull();
+        result!.Timeout.Should().Be(TimeSpan.FromSeconds(30));
+        result.Headers.Should().ContainKey("Accept");
+    }
+
+    [Fact]
+    public void Parses_retry_directive_after_headers()
+    {
+        var input = """
+            GET https://api.example.com/data
+            Accept: application/json
+            @retry_delay 1s, 2s on 429, 503
+            """;
+
+        var result = _parser.ParseHttpTypeDefinition(input);
+
+        result.Should().NotBeNull();
+        result!.RetryDelays.Should().Equal(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2));
+        result.RetryOnStatusCodes.Should().BeEquivalentTo(new[] { 429, 503 });
+        result.Headers.Should().ContainKey("Accept");
+    }
+
+    [Fact]
+    public void Parses_cache_directive_after_headers()
+    {
+        var input = """
+            GET https://api.example.com/data
+            Accept: application/json
+            @cache 5m
+            """;
+
+        var result = _parser.ParseHttpTypeDefinition(input);
+
+        result.Should().NotBeNull();
+        result!.CacheEnabled.Should().BeTrue();
+        result.CacheDuration.Should().Be(TimeSpan.FromMinutes(5));
+        result.Headers.Should().ContainKey("Accept");
+    }
+
+    // A real header whose name merely starts with a directive keyword but isn't one (e.g.
+    // "Cache-Control") is still treated as a header, not a directive.
+    [Fact]
+    public void Cache_control_header_is_not_treated_as_cache_directive()
+    {
+        var input = """
+            GET https://api.example.com/data
+            Cache-Control: no-cache
+            """;
+
+        var result = _parser.ParseHttpTypeDefinition(input);
+
+        result.Should().NotBeNull();
+        result!.CacheEnabled.Should().BeFalse();
+        result.Headers.Should().ContainKey("Cache-Control");
+    }
 }

@@ -91,6 +91,8 @@ group by n.nspname, t.typname, des.description";
         TimeSpan? timeout = null;
         TimeSpan[]? retryDelays = null;
         HashSet<int>? retryOnStatusCodes = null;
+        bool cacheEnabled = false;
+        TimeSpan? cacheDuration = null;
 
         // Parse directives before the request line
         while (pos < span.Length)
@@ -123,6 +125,17 @@ group by n.nspname, t.typname, des.description";
             {
                 retryDelays = parsedDelays;
                 retryOnStatusCodes = parsedRetryCodes;
+                pos += lineEnd == -1 ? line.Length : lineEnd;
+                if (pos < span.Length && span[pos] == '\r') pos++;
+                if (pos < span.Length && span[pos] == '\n') pos++;
+                continue;
+            }
+
+            // Check for cache directive
+            if (TryParseCacheDirective(trimmedLine, typeName, out var parsedCacheDuration))
+            {
+                cacheEnabled = true;
+                cacheDuration = parsedCacheDuration;
                 pos += lineEnd == -1 ? line.Length : lineEnd;
                 if (pos < span.Length && span[pos] == '\r') pos++;
                 if (pos < span.Length && span[pos] == '\n') pos++;
@@ -198,12 +211,15 @@ group by n.nspname, t.typname, des.description";
             Url = new string(urlSpan),
             Timeout = timeout,
             RetryDelays = retryDelays,
-            RetryOnStatusCodes = retryOnStatusCodes
+            RetryOnStatusCodes = retryOnStatusCodes,
+            CacheEnabled = cacheEnabled,
+            CacheDuration = cacheDuration
         };
 
         // Move past first line
         if (firstLineEnd == -1)
         {
+            NormalizeCacheDirective(result, typeName);
             result.NeedsParsing = needsParsing;
             return result;
         }
@@ -231,6 +247,36 @@ group by n.nspname, t.typname, des.description";
                 if (pos < span.Length && span[pos] == '\n') pos++;
                 bodyStart = pos;
                 break;
+            }
+
+            // Directives may also appear in the header section (after the request line), not only
+            // before it. Check for them before treating the line as an HTTP header. A directive's
+            // separator/value shape means real headers (which carry a 'Name-Word: value') don't match.
+            if (TryParseTimeoutDirective(line, typeName, out var hdrTimeout))
+            {
+                result.Timeout = hdrTimeout;
+                pos += lineEnd == -1 ? line.Length : lineEnd;
+                if (pos < span.Length && span[pos] == '\r') pos++;
+                if (pos < span.Length && span[pos] == '\n') pos++;
+                continue;
+            }
+            if (TryParseRetryDirective(line, typeName, out var hdrDelays, out var hdrCodes))
+            {
+                result.RetryDelays = hdrDelays;
+                result.RetryOnStatusCodes = hdrCodes;
+                pos += lineEnd == -1 ? line.Length : lineEnd;
+                if (pos < span.Length && span[pos] == '\r') pos++;
+                if (pos < span.Length && span[pos] == '\n') pos++;
+                continue;
+            }
+            if (TryParseCacheDirective(line, typeName, out var hdrCacheDuration))
+            {
+                result.CacheEnabled = true;
+                result.CacheDuration = hdrCacheDuration;
+                pos += lineEnd == -1 ? line.Length : lineEnd;
+                if (pos < span.Length && span[pos] == '\r') pos++;
+                if (pos < span.Length && span[pos] == '\n') pos++;
+                continue;
             }
 
             int colonIndex = line.IndexOf(':');
@@ -285,8 +331,31 @@ group by n.nspname, t.typname, des.description";
             }
         }
 
+        NormalizeCacheDirective(result, typeName);
         result.NeedsParsing = needsParsing;
         return result;
+    }
+
+    // Caching is only safe for GET (idempotent reads). A @cache directive on any other method is
+    // almost always a mistake; warn and ignore it rather than caching a mutating call. Applied after
+    // the whole comment is parsed so it sees @cache whether it appeared before the request line or
+    // among the headers, and after the method is known.
+    private static void NormalizeCacheDirective(HttpTypeDefinition result, string? typeName)
+    {
+        if (!result.CacheEnabled)
+        {
+            return;
+        }
+        if (!string.Equals(result.Method, "GET", StringComparison.Ordinal))
+        {
+            Logger?.LogWarning("Type '{TypeName}': @cache is only supported for GET requests; ignoring it for '{Method}'", typeName, result.Method);
+            result.CacheEnabled = false;
+            result.CacheDuration = null;
+        }
+        else if (result.CacheDuration is null)
+        {
+            Logger?.LogWarning("Type '{TypeName}': @cache has no expiration interval; responses will be cached until the process restarts", typeName);
+        }
     }
 
     private static ReadOnlySpan<char> TrimSpan(ReadOnlySpan<char> span)
@@ -546,6 +615,61 @@ group by n.nspname, t.typname, des.description";
             }
         }
 
+        return true;
+    }
+
+    private static bool TryParseCacheDirective(ReadOnlySpan<char> line, string? typeName, out TimeSpan? duration)
+    {
+        duration = null;
+        var trimmed = TrimSpan(line);
+
+        // Remove leading # if present
+        if (!trimmed.IsEmpty && trimmed[0] == '#')
+        {
+            trimmed = TrimSpan(trimmed[1..]);
+        }
+
+        // Remove leading @ if present
+        if (!trimmed.IsEmpty && trimmed[0] == '@')
+        {
+            trimmed = TrimSpan(trimmed[1..]);
+        }
+
+        // Check for "cache" keyword (case-insensitive). Must be the whole token, so "cache_profile"
+        // or other future "cache*" directives are not swallowed here.
+        if (!trimmed.StartsWith("cache", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var afterKeyword = trimmed[5..]; // Skip "cache"
+
+        // Bare "@cache" (no value) → enabled with no expiration.
+        if (afterKeyword.IsEmpty)
+        {
+            return true;
+        }
+
+        // The next char must be a separator (space, '=', ':'); otherwise this is a different keyword.
+        char sep = afterKeyword[0];
+        if (sep != ' ' && sep != '\t' && sep != '=' && sep != ':')
+        {
+            return false;
+        }
+
+        if (sep == '=' || sep == ':')
+        {
+            afterKeyword = afterKeyword[1..];
+        }
+        afterKeyword = TrimSpan(afterKeyword);
+
+        // "@cache" followed only by separator → enabled with no expiration.
+        if (afterKeyword.IsEmpty)
+        {
+            return true;
+        }
+
+        duration = ParseTimeoutValue(afterKeyword, typeName);
         return true;
     }
 }

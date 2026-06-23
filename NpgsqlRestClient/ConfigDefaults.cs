@@ -1044,7 +1044,10 @@ public static class ConfigDefaults
             ["ResponseHeadersField"] = "headers",
             ["ResponseContentTypeField"] = "content_type",
             ["ResponseSuccessField"] = "success",
-            ["ResponseErrorMessageField"] = "error_message"
+            ["ResponseErrorMessageField"] = "error_message",
+            ["CacheEnabled"] = true,
+            ["MaxCacheEntries"] = 10000,
+            ["CachePruneIntervalSeconds"] = 60
         };
     }
 
