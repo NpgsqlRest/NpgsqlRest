@@ -28,7 +28,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-    - uses: actions/checkout@v4  # Updated from v2
+    - uses: actions/checkout@v6  # Updated from v2
     - name: Setup .NET10
       uses: actions/setup-dotnet@v4
       with:
@@ -52,7 +52,7 @@ jobs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
     - name: Set release version from version.txt
       run: echo "RELEASE_VERSION=v$(cat version.txt)" >> "$GITHUB_ENV"
     - name: Extract changelog for this version
@@ -93,7 +93,7 @@ jobs:
       contents: write
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4  # Updated from v2
+      uses: actions/checkout@v6  # Updated from v2
 
     - name: Upload appsettings.json to release
       uses: actions/upload-release-asset@v1
@@ -111,7 +111,7 @@ jobs:
     permissions:
       contents: write
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - name: Setup .NET10
       uses: actions/setup-dotnet@v4
       with:
@@ -148,7 +148,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - name: Setup .NET10
       uses: actions/setup-dotnet@v4
       with:
@@ -188,7 +188,7 @@ jobs:
     permissions:
       contents: write
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - name: Setup .NET10
       uses: actions/setup-dotnet@v4
       with:
@@ -216,7 +216,7 @@ jobs:
     permissions:
       contents: write
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - name: Setup .NET10
       uses: actions/setup-dotnet@v4
       with:
@@ -241,7 +241,7 @@ jobs:
       packages: write
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
     - name: Set release version from version.txt
       run: echo "RELEASE_VERSION=v$(cat version.txt)" >> "$GITHUB_ENV"
     - name: Download Linux executable artifact
@@ -280,7 +280,7 @@ jobs:
       packages: write
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
     - name: Set release version from version.txt
       run: echo "RELEASE_VERSION=v$(cat version.txt)" >> "$GITHUB_ENV"
     - name: Set up Docker Buildx
@@ -310,7 +310,7 @@ jobs:
       packages: write
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
     - name: Set release version from version.txt
       run: echo "RELEASE_VERSION=v$(cat version.txt)" >> "$GITHUB_ENV"
     - name: Download Linux ARM64 executable artifact
@@ -349,7 +349,7 @@ jobs:
       packages: write
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
     - name: Set release version from version.txt
       run: echo "RELEASE_VERSION=v$(cat version.txt)" >> "$GITHUB_ENV"
     - name: Download Linux executable artifact
@@ -386,7 +386,7 @@ jobs:
       id-token: write  # Required for NPM OIDC trusted publishing
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
