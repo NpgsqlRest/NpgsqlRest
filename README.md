@@ -140,6 +140,22 @@ Same pattern for PostgreSQL functions via `comment on function ... is '...'`. No
 
 **[npgsqlrest.github.io](https://npgsqlrest.github.io/)** — getting started, configuration, annotations, examples.
 
+## Claude Code skill
+
+A [Claude Code](https://claude.com/claude-code) skill that teaches the agent how to build with NpgsqlRest — both endpoint sources (database functions/procedures/tables/views and `.sql` files), the full annotation set, configuration, HTTP custom types, proxy, caching, auth, SSE, and MCP. It lives in [`.claude/skills/npgsqlrest/`](.claude/skills/npgsqlrest/) and bundles a complete annotation reference and a full annotated `appsettings.json`.
+
+Install it for your own NpgsqlRest projects — per-user (available everywhere):
+
+```bash
+mkdir -p "$HOME/.claude/skills/npgsqlrest"
+for f in SKILL.md annotations-reference.md configuration-reference.jsonc; do
+  curl -fsSL "https://raw.githubusercontent.com/NpgsqlRest/NpgsqlRest/master/.claude/skills/npgsqlrest/$f" \
+    -o "$HOME/.claude/skills/npgsqlrest/$f"
+done
+```
+
+…or scope it to a single project by copying those three files into `<your-project>/.claude/skills/npgsqlrest/`. The agent then loads it automatically when you work on NpgsqlRest SQL, annotations, or config. The two reference files are generated from `npgsqlrest --annotations` and `npgsqlrest --config`; regenerate them with those commands if your installed version differs.
+
 ## About
 
 NpgsqlRest is built and maintained by [Vedran Bilopavlović](https://www.linkedin.com/in/vb-software/). The C# library, parser, codegen, and runtime are hand-written, covered by 1,800+ integration tests, and battle-tested in production.

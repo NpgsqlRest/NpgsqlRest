@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using System.Text.Json.Nodes;
 using Npgsql;
 using NpgsqlRest.HttpClientType;
 
@@ -69,11 +70,48 @@ public static class ProxyRequestHandler
 
         // Build the target URL with user claim parameters
         var targetUrl = isSelfCall && _selfClient is not null
-            ? BuildSelfTargetUrl(host, context.Request, parameters)
-            : BuildTargetUrl(host, context.Request, parameters);
+            ? BuildSelfTargetUrl(host)
+            : BuildTargetUrl(host, context.Request);
 
         // Determine HTTP method
         var method = endpoint.ProxyMethod?.ToString().ToUpperInvariant() ?? context.Request.Method;
+
+        // Forward server-filled HTTP Custom Type field params to the upstream the same way the
+        // endpoint takes its own parameters. Placement mirrors the endpoint, NOT the HTTP verb:
+        //  - a param designated as the body parameter (@body_parameter_name) carries the raw body;
+        //  - otherwise RequestParamType decides: BodyJson -> merged JSON body (when the proxy method
+        //    can physically carry a JSON body), QueryString -> query string.
+        // Additive — the verbatim incoming request is still forwarded; this only adds filled values.
+        string? effectiveBody = requestBody;
+        var forwardParams = GetForwardableParams(endpoint, parameters);
+        if (forwardParams is not null)
+        {
+            var bodyParam = FindForwardableBodyParam(endpoint, forwardParams);
+            if (bodyParam is not null)
+            {
+                if (bodyParam.Value is not null && bodyParam.Value != DBNull.Value)
+                {
+                    effectiveBody = bodyParam.Value.ToString();
+                }
+                forwardParams.Remove(bodyParam);
+            }
+
+            if (forwardParams.Count > 0)
+            {
+                bool mergeIntoBody = bodyParam is null
+                    && endpoint.RequestParamType == RequestParamType.BodyJson
+                    && HasRequestBody(method)
+                    && IsJsonContentType(context.Request.ContentType);
+                if (mergeIntoBody)
+                {
+                    effectiveBody = MergeParamsIntoJsonBody(effectiveBody, forwardParams);
+                }
+                else
+                {
+                    targetUrl = AppendParamsToQuery(targetUrl, forwardParams);
+                }
+            }
+        }
 
         Logger?.LogDebug("Proxy starting {Method} request to '{Url}'", method, targetUrl);
 
@@ -108,7 +146,7 @@ public static class ProxyRequestHandler
                     method,
                     targetUrl,
                     proxyHeaders,
-                    requestBody,
+                    effectiveBody,
                     context.Request.ContentType,
                     cancellationToken);
 
@@ -127,7 +165,7 @@ public static class ProxyRequestHandler
                 };
             }
 
-            using var request = await CreateRequestAsync(context, method, targetUrl, requestBody, proxyOptions, userContextHeaders);
+            using var request = await CreateRequestAsync(context, method, targetUrl, effectiveBody, proxyOptions, userContextHeaders);
             using var cts = CreateTimeoutCancellationTokenSource(proxyOptions.DefaultTimeout, cancellationToken);
 
             var client = isSelfCall && _selfClient is not null ? _selfClient : SharedClient;
@@ -171,56 +209,178 @@ public static class ProxyRequestHandler
     /// <summary>
     /// Build target URL for self-referencing proxy calls. Uses the host as the full path (no appending of request path).
     /// </summary>
-    private static string BuildSelfTargetUrl(string host, HttpRequest request, NpgsqlParameterCollection? parameters)
+    private static string BuildSelfTargetUrl(string host)
     {
         // For self-calls, host IS the full relative path (e.g., /api/hello-world)
         // Don't append the incoming request path
         return host;
     }
 
-    private static string BuildTargetUrl(string host, HttpRequest request, NpgsqlParameterCollection? parameters)
+    private static string BuildTargetUrl(string host, HttpRequest request)
     {
         // Ensure host doesn't end with /
         host = host.TrimEnd('/');
 
-        // Get the path and query string
+        // Get the path and query string. Automatic (server-filled) parameters — user claims, IP,
+        // HTTP Custom Type fields, resolved-parameter expressions — are appended consistently by the
+        // unified forwarding step in InvokeAsync (query string or JSON body, per the endpoint shape).
         var path = request.Path.Value ?? "";
         var queryString = request.QueryString.Value ?? "";
 
-        // Append user claim and IP address parameters to query string
-        if (parameters is not null)
-        {
-            var additionalParams = new StringBuilder();
-            foreach (NpgsqlParameter param in parameters)
-            {
-                if (param is NpgsqlRestParameter restParam &&
-                    (restParam.IsFromUserClaims || restParam.IsIpAddress) &&
-                    restParam.Value is not null && restParam.Value != DBNull.Value)
-                {
-                    if (additionalParams.Length > 0)
-                    {
-                        additionalParams.Append('&');
-                    }
-                    additionalParams.Append(Uri.EscapeDataString(restParam.ConvertedName));
-                    additionalParams.Append('=');
-                    additionalParams.Append(Uri.EscapeDataString(restParam.Value.ToString() ?? ""));
-                }
-            }
+        return $"{host}{path}{queryString}";
+    }
 
-            if (additionalParams.Length > 0)
+    private static bool IsJsonContentType(string? contentType) =>
+        contentType is not null && contentType.Contains("json", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// True when a parameter is filled by the server (not supplied by the client) and so should be
+    /// forwarded to the proxy upstream the same way the endpoint receives it. All automatic parameter
+    /// sources are treated consistently: user claims, IP address, HTTP Custom Type fields (the expanded
+    /// per-field params on DB functions), and resolved-parameter expressions. Single-composite HTTP
+    /// params (SQL-file shape, CustomTypeName null) are not forwarded.
+    /// </summary>
+    private static bool IsAutomaticParam(RoutineEndpoint endpoint, NpgsqlRestParameter p)
+    {
+        if (p.IsFromUserClaims || p.IsIpAddress)
+        {
+            return true;
+        }
+        if (p.TypeDescriptor.CustomType is not null
+            && p.TypeDescriptor.CustomTypeName is not null
+            && HttpClientTypes.Definitions.ContainsKey(p.TypeDescriptor.CustomType))
+        {
+            return true;
+        }
+        if (endpoint.ResolvedParameterExpressions is not null
+            && (endpoint.ResolvedParameterExpressions.ContainsKey(p.ActualName)
+                || endpoint.ResolvedParameterExpressions.ContainsKey(p.ConvertedName)))
+        {
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// The forwardable parameter (if any) designated as the request body parameter
+    /// (<c>@body_parameter_name</c>) — it carries the raw request body rather than a query/JSON field.
+    /// </summary>
+    private static NpgsqlRestParameter? FindForwardableBodyParam(RoutineEndpoint endpoint, List<NpgsqlRestParameter> parameters)
+    {
+        if (!endpoint.HasBodyParameter)
+        {
+            return null;
+        }
+        foreach (var p in parameters)
+        {
+            if (string.Equals(endpoint.BodyParameterName, p.ConvertedName, StringComparison.Ordinal)
+                || string.Equals(endpoint.BodyParameterName, p.ActualName, StringComparison.Ordinal))
             {
-                if (string.IsNullOrEmpty(queryString))
-                {
-                    queryString = "?" + additionalParams.ToString();
-                }
-                else
-                {
-                    queryString = queryString + "&" + additionalParams.ToString();
-                }
+                return p;
             }
         }
+        return null;
+    }
 
-        return $"{host}{path}{queryString}";
+    /// <summary>
+    /// Collects all server-filled (automatic) parameters to forward to the proxy upstream.
+    /// </summary>
+    private static List<NpgsqlRestParameter>? GetForwardableParams(RoutineEndpoint endpoint, NpgsqlParameterCollection? parameters)
+    {
+        if (parameters is null)
+        {
+            return null;
+        }
+        List<NpgsqlRestParameter>? result = null;
+        for (var i = 0; i < parameters.Count; i++)
+        {
+            if (parameters[i] is NpgsqlRestParameter rp && IsAutomaticParam(endpoint, rp))
+            {
+                (result ??= []).Add(rp);
+            }
+        }
+        return result;
+    }
+
+    private static string AppendParamsToQuery(string url, List<NpgsqlRestParameter> parameters)
+    {
+        var sb = new StringBuilder();
+        foreach (var p in parameters)
+        {
+            if (p.Value is null || p.Value == DBNull.Value)
+            {
+                continue;
+            }
+            if (sb.Length > 0)
+            {
+                sb.Append('&');
+            }
+            sb.Append(Uri.EscapeDataString(p.ConvertedName));
+            sb.Append('=');
+            sb.Append(Uri.EscapeDataString(p.Value.ToString() ?? ""));
+        }
+        if (sb.Length == 0)
+        {
+            return url;
+        }
+        return url.Contains('?') ? $"{url}&{sb}" : $"{url}?{sb}";
+    }
+
+    private static string MergeParamsIntoJsonBody(string? body, List<NpgsqlRestParameter> parameters)
+    {
+        JsonObject obj;
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            obj = [];
+        }
+        else
+        {
+            try
+            {
+                obj = JsonNode.Parse(body) as JsonObject ?? [];
+            }
+            catch
+            {
+                obj = [];
+            }
+        }
+        foreach (var p in parameters)
+        {
+            obj[p.ConvertedName] = ToJsonNode(p);
+        }
+        return obj.ToJsonString();
+    }
+
+    // Typed JSON value for a server-filled HTTP-type field, following the field's declared type:
+    // numeric/boolean fields become JSON numbers/bools, json fields are embedded as JSON, the rest
+    // become JSON strings. The value was already typed by the HTTP-type fill (asText vs native).
+    private static JsonNode? ToJsonNode(NpgsqlRestParameter p)
+    {
+        var v = p.Value;
+        if (v is null || v == DBNull.Value)
+        {
+            return null;
+        }
+        if (p.TypeDescriptor.IsJson)
+        {
+            var s = v.ToString();
+            if (string.IsNullOrEmpty(s))
+            {
+                return null;
+            }
+            try { return JsonNode.Parse(s); }
+            catch { return JsonValue.Create(s); }
+        }
+        return v switch
+        {
+            bool b => JsonValue.Create(b),
+            int i => JsonValue.Create(i),
+            long l => JsonValue.Create(l),
+            short sh => JsonValue.Create((int)sh),
+            decimal dec => JsonValue.Create(dec),
+            double d => JsonValue.Create(d),
+            _ => JsonValue.Create(v.ToString())
+        };
     }
 
     private static async Task<HttpRequestMessage> CreateRequestAsync(
