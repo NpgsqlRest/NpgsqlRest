@@ -440,13 +440,7 @@ public partial class NpgsqlRestEndpoint(
                     }
 
                     // body parameter
-                    if (parameter.Value is null && endpoint.HasBodyParameter &&
-                        (
-                        string.Equals(endpoint.BodyParameterName, parameter.ConvertedName, StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(endpoint.BodyParameterName, parameter.ActualName, StringComparison.OrdinalIgnoreCase) ||
-                        (parameter.ExpandedName is not null && string.Equals(endpoint.BodyParameterName, parameter.ExpandedName, StringComparison.OrdinalIgnoreCase))
-                        )
-                    )
+                    if (parameter.Value is null && endpoint.IsBodyParameter(parameter))
                     {
                         if (body is null)
                         {

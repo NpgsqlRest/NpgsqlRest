@@ -273,9 +273,7 @@ public static class ProxyRequestHandler
         }
         foreach (var p in parameters)
         {
-            if (string.Equals(endpoint.BodyParameterName, p.ConvertedName, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(endpoint.BodyParameterName, p.ActualName, StringComparison.OrdinalIgnoreCase)
-                || (p.ExpandedName is not null && string.Equals(endpoint.BodyParameterName, p.ExpandedName, StringComparison.OrdinalIgnoreCase)))
+            if (endpoint.IsBodyParameter(p))
             {
                 return p;
             }

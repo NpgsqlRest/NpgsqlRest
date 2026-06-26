@@ -256,9 +256,7 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
                     }
 
                     // Skip body parameter if it exists
-                    if (endpoint.BodyParameterName is not null &&
-                        (string.Equals(param.ConvertedName, endpoint.BodyParameterName, StringComparison.Ordinal) ||
-                         string.Equals(param.ActualName, endpoint.BodyParameterName, StringComparison.Ordinal)))
+                    if (endpoint.IsBodyParameter(param))
                     {
                         continue;
                     }
@@ -371,9 +369,7 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
         if (endpoint.BodyParameterName is not null && endpoint.RequestParamType == RequestParamType.QueryString)
         {
             var bodyParam = endpoint.Routine.Parameters
-                .FirstOrDefault(p =>
-                    string.Equals(p.ConvertedName, endpoint.BodyParameterName, StringComparison.Ordinal) ||
-                    string.Equals(p.ActualName, endpoint.BodyParameterName, StringComparison.Ordinal));
+                .FirstOrDefault(endpoint.IsBodyParameter);
 
             // A server-filled body parameter (e.g. an HTTP Custom Type field) is not part of the client contract.
             if (bodyParam is not null && openApiOptions.OmitAutomaticParameters && endpoint.OmitParameterFromGeneratedRequest(bodyParam))

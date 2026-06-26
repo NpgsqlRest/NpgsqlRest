@@ -482,13 +482,8 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 requestParamCount++;
                 var nameSuffix = (descriptor.HasDefault || descriptor.CustomType is not null) ? "?" : "";
                 paramNames[i] = QuoteJavaScriptVariableName($"{parameter.ConvertedName}{nameSuffix}");
-                if (string.Equals(endpoint.BodyParameterName, parameter.ConvertedName, StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(endpoint.BodyParameterName, parameter.ActualName, StringComparison.OrdinalIgnoreCase) ||
-                    (parameter.ExpandedName is not null && string.Equals(endpoint.BodyParameterName, parameter.ExpandedName, StringComparison.OrdinalIgnoreCase)))
+                if (endpoint.IsBodyParameter(parameter))
                 {
-                    // Match the same three names the server-side body-parameter resolution accepts:
-                    // converted (responseBody), actual (the shared composite base, _response), and the
-                    // expanded per-field signature name (_response_body, via ExpandedName).
                     // Use the bare converted name for emission — NOT paramNames[i], which carries the TS
                     // optional "?" suffix (e.g. "responseBody?"). That suffix is only for the interface
                     // property declaration; it must not leak into the runtime property name used for the

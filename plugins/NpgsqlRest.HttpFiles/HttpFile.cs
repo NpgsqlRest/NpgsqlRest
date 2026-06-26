@@ -101,13 +101,9 @@ public class HttpFile(HttpFileOptions httpFileOptions) : IEndpointCreateHandler
                         }
 
                         // Skip body parameter
-                        if (endpoint.BodyParameterName is not null)
+                        if (endpoint.IsBodyParameter(p))
                         {
-                            if (string.Equals(p.ConvertedName, endpoint.BodyParameterName, StringComparison.Ordinal) ||
-                                string.Equals(p.ActualName, endpoint.BodyParameterName, StringComparison.Ordinal))
-                            {
-                                return false;
-                            }
+                            return false;
                         }
 
                         // Skip path parameters - they are already in the URL path
@@ -142,8 +138,7 @@ public class HttpFile(HttpFileOptions httpFileOptions) : IEndpointCreateHandler
             {
                 for(int i = 0; i < endpoint.Routine.Parameters.Length; i++)
                 {
-                    if (string.Equals(endpoint.Routine.Parameters[i].ConvertedName, endpoint.BodyParameterName, StringComparison.Ordinal) ||
-                        string.Equals(endpoint.Routine.Parameters[i].ActualName, endpoint.BodyParameterName, StringComparison.Ordinal))
+                    if (endpoint.IsBodyParameter(endpoint.Routine.Parameters[i]))
                     {
                         // A server-filled body parameter (e.g. an HTTP Custom Type field) is not sent by the client.
                         if (httpFileOptions.OmitAutomaticParameters && endpoint.OmitParameterFromGeneratedRequest(endpoint.Routine.Parameters[i]))

@@ -435,4 +435,23 @@ public class RoutineEndpoint(
     public bool OmitParameterFromGeneratedRequest(NpgsqlRestParameter parameter) =>
         IsAutomaticParameter(parameter)
         && (parameter.TypeDescriptor.HasDefault || parameter.TypeDescriptor.CustomType is not null);
+
+    /// <summary>
+    /// True when this parameter is the one designated by <c>@body_parameter_name</c> — it carries the
+    /// raw request body rather than a query/JSON field. The configured name is matched
+    /// case-insensitively against the parameter's converted (API) name, its actual (database) name, or
+    /// its expanded per-field name (for an HTTP Custom Type field expanded from a composite, e.g.
+    /// <c>responseBody</c> / <c>_response</c> / <c>_response_body</c>). Single source of truth for body-
+    /// parameter resolution across request handling and all code generators.
+    /// </summary>
+    public bool IsBodyParameter(NpgsqlRestParameter parameter)
+    {
+        if (!HasBodyParameter)
+        {
+            return false;
+        }
+        return string.Equals(BodyParameterName, parameter.ConvertedName, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(BodyParameterName, parameter.ActualName, StringComparison.OrdinalIgnoreCase)
+            || (parameter.ExpandedName is not null && string.Equals(BodyParameterName, parameter.ExpandedName, StringComparison.OrdinalIgnoreCase));
+    }
 }
