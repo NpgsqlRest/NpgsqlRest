@@ -473,9 +473,17 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 var nameSuffix = (descriptor.HasDefault || descriptor.CustomType is not null) ? "?" : "";
                 paramNames[i] = QuoteJavaScriptVariableName($"{parameter.ConvertedName}{nameSuffix}");
                 if (string.Equals(endpoint.BodyParameterName, parameter.ConvertedName, StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(endpoint.BodyParameterName, parameter.ActualName, StringComparison.OrdinalIgnoreCase))
+                    string.Equals(endpoint.BodyParameterName, parameter.ActualName, StringComparison.OrdinalIgnoreCase) ||
+                    (parameter.ExpandedName is not null && string.Equals(endpoint.BodyParameterName, parameter.ExpandedName, StringComparison.OrdinalIgnoreCase)))
                 {
-                    bodyParameterName = paramNames[i];
+                    // Match the same three names the server-side body-parameter resolution accepts:
+                    // converted (responseBody), actual (the shared composite base, _response), and the
+                    // expanded per-field signature name (_response_body, via ExpandedName).
+                    // Use the bare converted name for emission — NOT paramNames[i], which carries the TS
+                    // optional "?" suffix (e.g. "responseBody?"). That suffix is only for the interface
+                    // property declaration; it must not leak into the runtime property name used for the
+                    // body expression (request.responseBody) or the query-exclusion key (["responseBody"]).
+                    bodyParameterName = parameter.ConvertedName;
                 }
             }
             string requestDesc = "";
@@ -1137,7 +1145,11 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 lastContentHeaderWasUrl = false;
             }
 
-            if (body is null && bodyParameterName is not null)
+            // Emit the request body for a designated body parameter only when the method can carry one.
+            // fetch() forbids a body on GET, so a GET endpoint with @body_parameter_name still excludes
+            // that parameter from the query string (above) but does not send it as a body — e.g. when it
+            // is server-filled (an HTTP Custom Type field) and forwarded by a proxy POST upstream.
+            if (body is null && bodyParameterName is not null && endpoint.Method != Method.GET)
             {
                 body = $"body: request.{bodyParameterName}";
             }
