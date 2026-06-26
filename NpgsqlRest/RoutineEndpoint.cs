@@ -388,4 +388,51 @@ public class RoutineEndpoint(
     /// Configured via the "void" comment annotation.
     /// </summary>
     public bool Void { get; set; } = false;
+
+    /// <summary>
+    /// True when this parameter is filled by the server for this endpoint rather than supplied by the
+    /// client, so a client-provided value would be ignored (overridden). Covers, unconditionally,
+    /// HTTP Custom Type fields, resolved-parameter expressions, and upload-metadata parameters; and,
+    /// only when <see cref="UseUserParameters"/> is enabled for this endpoint, IP-address and
+    /// user-claim parameters. Whether claim/IP parameters are automatic is therefore endpoint-specific.
+    /// </summary>
+    public bool IsAutomaticParameter(NpgsqlRestParameter parameter)
+    {
+        // HTTP Custom Type expanded field — filled by the outbound HTTP call before the routine runs.
+        if (parameter.TypeDescriptor.CustomType is not null
+            && parameter.TypeDescriptor.CustomTypeName is not null
+            && HttpClientType.HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
+        {
+            return true;
+        }
+        // Resolved-parameter expression — computed server-side via SQL at request time.
+        if (ResolvedParameterExpressions is not null
+            && (ResolvedParameterExpressions.ContainsKey(parameter.ActualName)
+                || ResolvedParameterExpressions.ContainsKey(parameter.ConvertedName)))
+        {
+            return true;
+        }
+        // Upload metadata — set by the upload handler.
+        if (parameter.IsUploadMetadata)
+        {
+            return true;
+        }
+        // IP address / user claims — only automatic when this endpoint binds user parameters.
+        if (UseUserParameters && (parameter.IsIpAddress || parameter.IsFromUserClaims))
+        {
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// True when a parameter should be omitted from generated client request shapes (TypeScript
+    /// modules, HTTP files, OpenAPI specs). A parameter is omitted when it is
+    /// <see cref="IsAutomaticParameter"/> (the client value would be overridden) AND optional — it has
+    /// a default or is a composite / HTTP Custom Type field. The optional guard ensures omission can
+    /// never make a required argument un-sendable; an automatic-but-required parameter is kept.
+    /// </summary>
+    public bool OmitParameterFromGeneratedRequest(NpgsqlRestParameter parameter) =>
+        IsAutomaticParameter(parameter)
+        && (parameter.TypeDescriptor.HasDefault || parameter.TypeDescriptor.CustomType is not null);
 }

@@ -249,6 +249,12 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
             {
                 foreach (var param in endpoint.Routine.Parameters)
                 {
+                    // Skip server-filled parameters the client cannot set (when enabled)
+                    if (openApiOptions.OmitAutomaticParameters && endpoint.OmitParameterFromGeneratedRequest(param))
+                    {
+                        continue;
+                    }
+
                     // Skip body parameter if it exists
                     if (endpoint.BodyParameterName is not null &&
                         (string.Equals(param.ConvertedName, endpoint.BodyParameterName, StringComparison.Ordinal) ||
@@ -301,6 +307,12 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
 
                 foreach (var param in endpoint.Routine.Parameters)
                 {
+                    // Skip server-filled parameters the client cannot set (when enabled)
+                    if (openApiOptions.OmitAutomaticParameters && endpoint.OmitParameterFromGeneratedRequest(param))
+                    {
+                        continue;
+                    }
+
                     // Skip path parameters - they should not be in the request body
                     if (endpoint.HasPathParameters)
                     {
@@ -362,6 +374,12 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
                 .FirstOrDefault(p =>
                     string.Equals(p.ConvertedName, endpoint.BodyParameterName, StringComparison.Ordinal) ||
                     string.Equals(p.ActualName, endpoint.BodyParameterName, StringComparison.Ordinal));
+
+            // A server-filled body parameter (e.g. an HTTP Custom Type field) is not part of the client contract.
+            if (bodyParam is not null && openApiOptions.OmitAutomaticParameters && endpoint.OmitParameterFromGeneratedRequest(bodyParam))
+            {
+                bodyParam = null;
+            }
 
             if (bodyParam is not null)
             {

@@ -43,6 +43,17 @@ comment on function tsclient_test.bodyparam_expanded(tsclient_test.tsc_http_prob
 HTTP POST
 tsclient_module=bodyparam_expanded
 body_parameter_name _response_body';
+
+-- Mixed: a normal client parameter (_keyword) alongside an HTTP Custom Type. With
+-- OmitAutomaticParameters enabled, the four HTTP-type fields are dropped but _keyword stays in the
+-- request and on the query string.
+create function tsclient_test.bodyparam_mixed(_keyword text, _response tsclient_test.tsc_http_probe default null)
+returns text
+language plpgsql
+as $$ begin return _keyword; end; $$;
+comment on function tsclient_test.bodyparam_mixed(text, tsclient_test.tsc_http_probe) is '
+HTTP GET
+tsclient_module=bodyparam_mixed';
 """);
         }
     }

@@ -945,7 +945,8 @@ public static class ConfigDefaults
             ["CommentHeader"] = "Simple",
             ["CommentHeaderIncludeComments"] = true,
             ["FileMode"] = "Schema",
-            ["FileOverwrite"] = true
+            ["FileOverwrite"] = true,
+            ["OmitAutomaticParameters"] = false
         };
     }
 
@@ -967,7 +968,8 @@ public static class ConfigDefaults
             ["ExcludeSchemas"] = new JsonArray(),
             ["NameSimilarTo"] = null,
             ["NameNotSimilarTo"] = null,
-            ["RequiresAuthorizationOnly"] = false
+            ["RequiresAuthorizationOnly"] = false,
+            ["OmitAutomaticParameters"] = false
         };
     }
 
@@ -1030,7 +1032,8 @@ public static class ConfigDefaults
             ["CustomHeaders"] = new JsonObject(),
             ["IncludeSchemaInNames"] = true,
             ["ErrorExpression"] = "await response.json()",
-            ["ErrorType"] = "{status: number; title: string; detail?: string | null} | undefined"
+            ["ErrorType"] = "{status: number; title: string; detail?: string | null} | undefined",
+            ["OmitAutomaticParameters"] = false
         };
     }
 

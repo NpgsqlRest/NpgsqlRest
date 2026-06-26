@@ -105,6 +105,14 @@ public class OpenApiOptions
     /// internal anonymous surface should not be advertised.
     /// </summary>
     public bool RequiresAuthorizationOnly { get; set; } = false;
+
+    /// <summary>
+    /// When true, parameters that are filled by the server and cannot be set by the client are omitted
+    /// from the documented query parameters and request body. Covers optional automatic parameters:
+    /// HTTP Custom Type fields, resolved-parameter expressions, upload metadata, and — on endpoints that
+    /// use user parameters — IP-address and user-claim parameters. Default is false.
+    /// </summary>
+    public bool OmitAutomaticParameters { get; set; } = false;
 }
 
 /// <summary>

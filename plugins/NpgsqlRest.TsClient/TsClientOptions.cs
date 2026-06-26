@@ -180,4 +180,14 @@ public class TsClientOptions
     /// Default is "ApiResult".
     /// </summary>
     public string ResultTypeName { get; set; } = "ApiResult";
+
+    /// <summary>
+    /// When true, parameters that are filled by the server and cannot be set by the client are omitted
+    /// from the generated request interface, query string, and body. This covers automatic parameters
+    /// that are also optional: HTTP Custom Type fields, resolved-parameter expressions, upload metadata,
+    /// and — on endpoints that use user parameters — IP-address and user-claim parameters. A client value
+    /// for these would be overridden server-side, so emitting them is misleading. Default is false
+    /// (all parameters are emitted, preserving existing generated output).
+    /// </summary>
+    public bool OmitAutomaticParameters { get; set; } = false;
 }

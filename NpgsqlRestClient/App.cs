@@ -328,6 +328,7 @@ public class App
             NameSimilarTo = _config.GetConfigStr("NameSimilarTo", openApiCfg),
             NameNotSimilarTo = _config.GetConfigStr("NameNotSimilarTo", openApiCfg),
             RequiresAuthorizationOnly = _config.GetConfigBool("RequiresAuthorizationOnly", openApiCfg, false),
+            OmitAutomaticParameters = _config.GetConfigBool("OmitAutomaticParameters", openApiCfg, false),
         };
 
         if (openApi.UrlPath is null && openApi.FileName is null)
@@ -478,7 +479,8 @@ public class App
                 CommentHeaderIncludeComments = _config.GetConfigBool("CommentHeaderIncludeComments", httpFilecfg, true),
                 FileMode = _config.GetConfigEnum<HttpFileMode?>("FileMode", httpFilecfg) ?? HttpFileMode.Schema,
                 FileOverwrite = _config.GetConfigBool("FileOverwrite", httpFilecfg, true),
-                ConnectionString = connectionString
+                ConnectionString = connectionString,
+                OmitAutomaticParameters = _config.GetConfigBool("OmitAutomaticParameters", httpFilecfg)
             }));
             _builder.ClientLogger?.LogDebug("HTTP file generation enabled. Name={Name}",
                 _config.GetConfigStr("Name", httpFilecfg) ?? "generated from connection string");
@@ -531,6 +533,7 @@ public class App
                 IncludeSchemaInNames = _config.GetConfigBool("IncludeSchemaInNames", tsClientCfg, true),
                 ErrorExpression = _config.GetConfigStr("ErrorExpression", tsClientCfg) ?? "await response.json()",
                 ErrorType = _config.GetConfigStr("ErrorType", tsClientCfg) ?? "{status: number; title: string; detail?: string | null} | undefined",
+                OmitAutomaticParameters = _config.GetConfigBool("OmitAutomaticParameters", tsClientCfg),
             };
 
             Dictionary<string, string> customHeaders = [];

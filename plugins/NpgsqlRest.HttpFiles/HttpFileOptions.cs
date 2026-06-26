@@ -8,7 +8,8 @@ public class HttpFileOptions(
     HttpFileMode fileMode = HttpFileMode.Database,
     bool fileOverwrite = false,
     string? connectionString = null,
-    string? name = null)
+    string? name = null,
+    bool omitAutomaticParameters = false)
 {
     public static HttpFileOptions CreateBoth() => new(option: HttpFileOption.Both);
     public static HttpFileOptions CreateFile() => new(option: HttpFileOption.File);
@@ -61,4 +62,12 @@ public class HttpFileOptions(
     /// If neither ConnectionString nor Name is set, the file name will be "npgsqlrest".
     /// </summary>
     public string? Name { get; set; } = name;
+
+    /// <summary>
+    /// When true, parameters that are filled by the server and cannot be set by the client are omitted
+    /// from the generated HTTP file's query string and request body. Covers optional automatic
+    /// parameters: HTTP Custom Type fields, resolved-parameter expressions, upload metadata, and — on
+    /// endpoints that use user parameters — IP-address and user-claim parameters. Default is false.
+    /// </summary>
+    public bool OmitAutomaticParameters { get; set; } = omitAutomaticParameters;
 }

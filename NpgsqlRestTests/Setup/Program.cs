@@ -39,14 +39,29 @@ public class Program
     public static string TsClientExportOutputPath { get; } = Path.Combine(Path.GetTempPath(), "NpgsqlRestTests", "TsClientExport");
 
     /// <summary>
+    /// Output path for TsClient generated files with OmitAutomaticParameters=true (used by tests)
+    /// </summary>
+    public static string TsClientOmitOutputPath { get; } = Path.Combine(Path.GetTempPath(), "NpgsqlRestTests", "TsClientOmit");
+
+    /// <summary>
     /// Output path for HttpFiles generated files (used by tests)
     /// </summary>
     public static string HttpFilesOutputPath { get; } = Path.Combine(Path.GetTempPath(), "NpgsqlRestTests", "HttpFiles");
 
     /// <summary>
+    /// Output path for HttpFiles generated files with OmitAutomaticParameters=true (used by tests)
+    /// </summary>
+    public static string HttpFilesOmitOutputPath { get; } = Path.Combine(Path.GetTempPath(), "NpgsqlRestTests", "HttpFilesOmit");
+
+    /// <summary>
     /// Output path for OpenApi generated files (used by tests)
     /// </summary>
     public static string OpenApiOutputPath { get; } = Path.Combine(Path.GetTempPath(), "NpgsqlRestTests", "OpenApi");
+
+    /// <summary>
+    /// Output path for OpenApi generated files with OmitAutomaticParameters=true (used by tests)
+    /// </summary>
+    public static string OpenApiOmitOutputPath { get; } = Path.Combine(Path.GetTempPath(), "NpgsqlRestTests", "OpenApiOmit");
 
     static async Task ValidateAsync(ParameterValidationValues p)
     {
@@ -249,6 +264,20 @@ public class Program
                     SkipSchemas = ["public", "custom_param_schema", "my_schema", "custom_table_param_schema", ""],
                     IncludeStatusCode = false
                 }),
+                // TsClient configuration for OmitAutomaticParameters testing - server-filled params omitted
+                new TsClient(new TsClientOptions
+                {
+                    FilePath = Path.Combine(TsClientOmitOutputPath, "{0}.ts"),
+                    FileOverwrite = true,
+                    BySchema = true,
+                    IncludeHost = false,
+                    CreateSeparateTypeFile = false,
+                    CommentHeader = CommentHeader.Simple,
+                    HeaderLines = [],
+                    SkipSchemas = ["public", "custom_param_schema", "my_schema", "custom_table_param_schema", ""],
+                    IncludeStatusCode = false,
+                    OmitAutomaticParameters = true
+                }),
                 // HttpFiles configuration for testing path parameters
                 new HttpFile(new HttpFileOptions
                 {
@@ -257,6 +286,15 @@ public class Program
                     FileOverwrite = true,
                     CommentHeader = CommentHeader.None
                 }),
+                // HttpFiles configuration for OmitAutomaticParameters testing
+                new HttpFile(new HttpFileOptions
+                {
+                    Option = HttpFileOption.File,
+                    NamePattern = Path.Combine(HttpFilesOmitOutputPath, "{0}"),
+                    FileOverwrite = true,
+                    CommentHeader = CommentHeader.None,
+                    OmitAutomaticParameters = true
+                }),
                 // OpenApi configuration for testing path parameters
                 new OpenApi(new OpenApiOptions
                 {
@@ -264,6 +302,15 @@ public class Program
                     FileOverwrite = true,
                     DocumentTitle = "NpgsqlRest Test API",
                     AddCurrentServer = false
+                }),
+                // OpenApi configuration for OmitAutomaticParameters testing
+                new OpenApi(new OpenApiOptions
+                {
+                    FileName = Path.Combine(OpenApiOmitOutputPath, "openapi.json"),
+                    FileOverwrite = true,
+                    DocumentTitle = "NpgsqlRest Test API",
+                    AddCurrentServer = false,
+                    OmitAutomaticParameters = true
                 }),
             ],
             CommentsMode = CommentsMode.ParseAll,

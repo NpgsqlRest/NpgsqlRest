@@ -465,11 +465,21 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
 
             string? requestName = null;
             string[] paramNames = new string[paramCount];
+            // Parameters that are filled server-side and cannot be set by the client are omitted from the
+            // generated request shape when OmitAutomaticParameters is enabled (interface, query, body).
+            bool[] omitParam = new bool[paramCount];
+            int requestParamCount = 0;
             string? bodyParameterName = null;
             for (var i = 0; i < paramCount; i++)
             {
                 var parameter = routine.Parameters[i];
                 var descriptor = parameter.TypeDescriptor;//paramTypeDescriptors[i];
+                if (options.OmitAutomaticParameters && endpoint.OmitParameterFromGeneratedRequest(parameter))
+                {
+                    omitParam[i] = true;
+                    continue;
+                }
+                requestParamCount++;
                 var nameSuffix = (descriptor.HasDefault || descriptor.CustomType is not null) ? "?" : "";
                 paramNames[i] = QuoteJavaScriptVariableName($"{parameter.ConvertedName}{nameSuffix}");
                 if (string.Equals(endpoint.BodyParameterName, parameter.ConvertedName, StringComparison.OrdinalIgnoreCase) ||
@@ -487,7 +497,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 }
             }
             string requestDesc = "";
-            if (paramCount > 0)
+            if (requestParamCount > 0)
             {
                 StringBuilder req = new();
                 requestName = $"I{pascal}Request";
@@ -495,6 +505,11 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 var seenParamNames = new HashSet<string>(StringComparer.Ordinal);
                 for (var i = 0; i < paramCount; i++)
                 {
+                    // Skip omitted (server-filled) parameters — their name was not assigned.
+                    if (omitParam[i])
+                    {
+                        continue;
+                    }
                     // Skip duplicate parameter names (e.g., when multiple HTTP custom types share field names)
                     if (!seenParamNames.Add(paramNames[i]))
                     {
@@ -917,7 +932,9 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             var hasPathParams = endpoint.HasPathParameters;
             var pathParamCount = endpoint.PathParameters?.Length ?? 0;
             var bodyParamCount = bodyParameterName is not null ? 1 : 0;
-            var queryParamCount = paramCount - pathParamCount - bodyParamCount;
+            // requestParamCount already excludes omitted (server-filled) parameters; path parameters are
+            // never omitted, so subtracting them and the body parameter yields the query parameter count.
+            var queryParamCount = requestParamCount - pathParamCount - bodyParamCount;
 
             string qs;
             if (endpoint.RequestParamType == RequestParamType.QueryString && requestName is not null && queryParamCount > 0)

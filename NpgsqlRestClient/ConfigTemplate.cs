@@ -2466,7 +2466,11 @@ public static partial class ConfigSchemaGenerator
           //
           // Set to true to overwrite existing files.
           //
-          "FileOverwrite": true
+          "FileOverwrite": true,
+          //
+          // When true, parameters filled by the server and not settable by the client are omitted from the generated HTTP file's query string and request body. Covers optional automatic parameters: HTTP Custom Type fields, resolved-parameter expressions, upload metadata, and (on endpoints using user parameters) IP-address and user-claim parameters. Default is false.
+          //
+          "OmitAutomaticParameters": false
         },
     
         //
@@ -2568,7 +2572,11 @@ public static partial class ConfigSchemaGenerator
           // documented. Anonymous endpoints — typically health, login, probes — are omitted. Useful
           // for partner-facing documents. Default false = document everything.
           //
-          "RequiresAuthorizationOnly": false
+          "RequiresAuthorizationOnly": false,
+          //
+          // When true, parameters filled by the server and not settable by the client are omitted from documented query parameters and request bodies. Covers optional automatic parameters: HTTP Custom Type fields, resolved-parameter expressions, upload metadata, and (on endpoints using user parameters) IP-address and user-claim parameters. Default is false.
+          //
+          "OmitAutomaticParameters": false
         },
         //
         // Enable or disable the MCP (Model Context Protocol) server endpoint. Disabled by default. Tools are NEVER auto-exposed: only routines explicitly opted in with the `mcp` comment annotation become MCP tools. Implements MCP specification 2025-11-25.
@@ -2768,7 +2776,11 @@ public static partial class ConfigSchemaGenerator
           //
           // TypeScript type for error response. Only used when IncludeStatusCode is true.
           //
-          "ErrorType": "{status: number; title: string; detail?: string | null} | undefined"
+          "ErrorType": "{status: number; title: string; detail?: string | null} | undefined",
+          //
+          // When true, parameters filled by the server and not settable by the client are omitted from the generated request interface, query string, and body. Covers optional automatic parameters: HTTP Custom Type fields, resolved-parameter expressions, upload metadata, and (on endpoints using user parameters) IP-address and user-claim parameters. Default is false.
+          //
+          "OmitAutomaticParameters": false
         },
     
         //

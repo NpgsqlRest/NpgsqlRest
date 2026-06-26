@@ -94,6 +94,12 @@ public class HttpFile(HttpFileOptions httpFileOptions) : IEndpointCreateHandler
                     .Parameters
                     .Where((p, i) =>
                     {
+                        // Skip server-filled parameters the client cannot set (when enabled)
+                        if (httpFileOptions.OmitAutomaticParameters && endpoint.OmitParameterFromGeneratedRequest(p))
+                        {
+                            return false;
+                        }
+
                         // Skip body parameter
                         if (endpoint.BodyParameterName is not null)
                         {
@@ -139,6 +145,11 @@ public class HttpFile(HttpFileOptions httpFileOptions) : IEndpointCreateHandler
                     if (string.Equals(endpoint.Routine.Parameters[i].ConvertedName, endpoint.BodyParameterName, StringComparison.Ordinal) ||
                         string.Equals(endpoint.Routine.Parameters[i].ActualName, endpoint.BodyParameterName, StringComparison.Ordinal))
                     {
+                        // A server-filled body parameter (e.g. an HTTP Custom Type field) is not sent by the client.
+                        if (httpFileOptions.OmitAutomaticParameters && endpoint.OmitParameterFromGeneratedRequest(endpoint.Routine.Parameters[i]))
+                        {
+                            break;
+                        }
                         sb.AppendLine();
                         sb.AppendLine(SampleValueUnquoted(i, endpoint.Routine.Parameters[i].TypeDescriptor));
                         break;
@@ -154,6 +165,11 @@ public class HttpFile(HttpFileOptions httpFileOptions) : IEndpointCreateHandler
                 .Select((p, i) => (param: p, index: i))
                 .Where(x =>
                 {
+                    // Skip server-filled parameters the client cannot set (when enabled)
+                    if (httpFileOptions.OmitAutomaticParameters && endpoint.OmitParameterFromGeneratedRequest(x.param))
+                    {
+                        return false;
+                    }
                     if (endpoint.HasPathParameters)
                     {
                         foreach (var pathParam in endpoint.PathParameters!)
