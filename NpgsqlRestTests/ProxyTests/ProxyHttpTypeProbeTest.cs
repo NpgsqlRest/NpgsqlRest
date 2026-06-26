@@ -40,6 +40,45 @@ public static partial class Database
 allow_anonymous
 proxy';
 
+        -- GET endpoint, but @proxy POST + @body_parameter_name redirects ONE expanded HTTP-type field
+        -- (targeted by its converted/API name 'responseBody') into the upstream POST BODY, while the
+        -- remaining small fields still go to the proxy QUERY STRING. Proves case-insensitive matching
+        -- of the body-param name against the converted name of a custom-type-expanded field.
+        create function proxy_bodyparam_with_httptype(
+            _response proxy_httptype_probe default null
+        )
+        returns void
+        language plpgsql
+        as
+        $$
+        begin
+            raise exception 'passthrough proxy must NOT execute the function';
+        end;
+        $$;
+        comment on function proxy_bodyparam_with_httptype(proxy_httptype_probe) is 'HTTP GET
+allow_anonymous
+proxy POST
+body_parameter_name responseBody';
+
+        -- Same as above, but the body param is targeted by the per-field name shown in the generated
+        -- signature / .http file ('_response_body'). That name is the composite base + field, and is
+        -- matched via the ExpandedName alias (ActualName stays the shared base '_response').
+        create function proxy_bodyparam_expanded_with_httptype(
+            _response proxy_httptype_probe default null
+        )
+        returns void
+        language plpgsql
+        as
+        $$
+        begin
+            raise exception 'passthrough proxy must NOT execute the function';
+        end;
+        $$;
+        comment on function proxy_bodyparam_expanded_with_httptype(proxy_httptype_probe) is 'HTTP GET
+allow_anonymous
+proxy POST
+body_parameter_name _response_body';
+
         -- POST endpoint: server-filled HTTP-type fields are merged into the proxy JSON BODY,
         -- alongside the client's original body fields.
         create function proxy_post_with_httptype(
@@ -268,5 +307,124 @@ public class ProxyHttpTypeProbeTest : IClassFixture<WireMockFixture>, IClassFixt
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         content.Should().Contain("name=alice");             // client query forwarded verbatim
         content.Should().Contain("token=TOKEN-ALICE-123");  // resolved (automatic) param forwarded
+    }
+
+    // @body_parameter_name targets an expanded HTTP-type field by its converted (API) name. The match
+    // is case-insensitive, so "responseBody" resolves to the body field even though its database
+    // (actual) name is the shared composite base "_response". The field becomes the upstream POST body
+    // (not the query), while the remaining small fields are still forwarded on the query string.
+    [Fact]
+    public async Task BodyParam_redirects_httptype_field_to_proxy_body_by_converted_name()
+    {
+        int httpTypeCalls = 0;
+        _httpTypeServer
+            .Given(Request.Create().WithPath("/httptype-source").UsingGet())
+            .RespondWith(Response.Create().WithCallback(req =>
+            {
+                Interlocked.Increment(ref httpTypeCalls);
+                return new ResponseMessage
+                {
+                    StatusCode = 200,
+                    BodyData = new BodyData { BodyAsString = "FETCHED-FROM-HTTPTYPE", DetectedBodyType = BodyType.String }
+                };
+            }));
+
+        // @proxy POST: the upstream call is POST even though the client called GET. Echo URL + body.
+        _proxyServer
+            .Given(Request.Create().WithPath("/api/proxy-bodyparam-with-httptype/").UsingPost())
+            .RespondWith(Response.Create().WithCallback(req =>
+                new ResponseMessage
+                {
+                    StatusCode = 200,
+                    BodyData = new BodyData { BodyAsString = $"URL:[{req.Url}] BODY:[{req.Body}]", DetectedBodyType = BodyType.String }
+                }));
+
+        using var response = await _test.Client.GetAsync("/api/proxy-bodyparam-with-httptype/");
+        var content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        httpTypeCalls.Should().Be(1);
+
+        // The body field is the raw POST body …
+        content.Should().Contain("BODY:[FETCHED-FROM-HTTPTYPE]");
+        // … and is NOT in the query string (it was redirected to the body).
+        content.Should().NotContain("responseBody=");
+        // The remaining small fields still go to the query.
+        content.Should().Contain("responseStatusCode=200");
+    }
+
+    // Same redirect, but the body param targets the per-field name from the generated signature
+    // ('_response_body'). ActualName is the shared composite base '_response'; this resolves via the
+    // ExpandedName alias, and is unique per field (so it targets the body field unambiguously).
+    [Fact]
+    public async Task BodyParam_redirects_httptype_field_to_proxy_body_by_expanded_name()
+    {
+        int httpTypeCalls = 0;
+        _httpTypeServer
+            .Given(Request.Create().WithPath("/httptype-source").UsingGet())
+            .RespondWith(Response.Create().WithCallback(req =>
+            {
+                Interlocked.Increment(ref httpTypeCalls);
+                return new ResponseMessage
+                {
+                    StatusCode = 200,
+                    BodyData = new BodyData { BodyAsString = "FETCHED-FROM-HTTPTYPE", DetectedBodyType = BodyType.String }
+                };
+            }));
+
+        _proxyServer
+            .Given(Request.Create().WithPath("/api/proxy-bodyparam-expanded-with-httptype/").UsingPost())
+            .RespondWith(Response.Create().WithCallback(req =>
+                new ResponseMessage
+                {
+                    StatusCode = 200,
+                    BodyData = new BodyData { BodyAsString = $"URL:[{req.Url}] BODY:[{req.Body}]", DetectedBodyType = BodyType.String }
+                }));
+
+        using var response = await _test.Client.GetAsync("/api/proxy-bodyparam-expanded-with-httptype/");
+        var content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        httpTypeCalls.Should().Be(1);
+
+        // The body field (targeted by its expanded signature name) is the raw POST body, not the query.
+        content.Should().Contain("BODY:[FETCHED-FROM-HTTPTYPE]");
+        content.Should().NotContain("responseBody=");
+        content.Should().Contain("responseStatusCode=200");
+    }
+
+    // Guard: an oversized automatic value (here the HTTP-type body field) cannot be carried in a query
+    // string. It is skipped (with a warning) instead of producing an unusable request line, while the
+    // small fields are still forwarded. Default ProxyOptions.MaxForwardedQueryParamLength is 2048.
+    [Fact]
+    public async Task Oversized_httptype_field_is_skipped_from_proxy_query()
+    {
+        var largeBody = new string('X', 3000); // exceeds the default MaxForwardedQueryParamLength (2048)
+        _httpTypeServer
+            .Given(Request.Create().WithPath("/httptype-source").UsingGet())
+            .RespondWith(Response.Create().WithCallback(req =>
+                new ResponseMessage
+                {
+                    StatusCode = 200,
+                    BodyData = new BodyData { BodyAsString = largeBody, DetectedBodyType = BodyType.String }
+                }));
+
+        _proxyServer
+            .Given(Request.Create().WithPath("/api/proxy-with-httptype/").UsingGet())
+            .RespondWith(Response.Create().WithCallback(req =>
+                new ResponseMessage
+                {
+                    StatusCode = 200,
+                    BodyData = new BodyData { BodyAsString = $"PROXY-URL:[{req.Url}]", DetectedBodyType = BodyType.String }
+                }));
+
+        using var response = await _test.Client.GetAsync("/api/proxy-with-httptype/");
+        var content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        // The oversized body field is skipped from the query (guard) …
+        content.Should().NotContain("responseBody=");
+        // … while the small fields are still forwarded.
+        content.Should().Contain("responseStatusCode=200");
     }
 }

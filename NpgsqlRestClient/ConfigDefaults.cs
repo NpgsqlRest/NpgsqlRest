@@ -1068,7 +1068,8 @@ public static class ConfigDefaults
             ["ResponseContentTypeParameter"] = "_proxy_content_type",
             ["ResponseSuccessParameter"] = "_proxy_success",
             ["ResponseErrorMessageParameter"] = "_proxy_error_message",
-            ["ForwardUploadContent"] = false
+            ["ForwardUploadContent"] = false,
+            ["MaxForwardedQueryParamLength"] = 2048
         };
     }
 

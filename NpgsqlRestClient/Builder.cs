@@ -2842,7 +2842,8 @@ public class Builder
             ResponseContentTypeParameter = _config.GetConfigStr("ResponseContentTypeParameter", cfg) ?? "_proxy_content_type",
             ResponseSuccessParameter = _config.GetConfigStr("ResponseSuccessParameter", cfg) ?? "_proxy_success",
             ResponseErrorMessageParameter = _config.GetConfigStr("ResponseErrorMessageParameter", cfg) ?? "_proxy_error_message",
-            ForwardUploadContent = _config.GetConfigBool("ForwardUploadContent", cfg)
+            ForwardUploadContent = _config.GetConfigBool("ForwardUploadContent", cfg),
+            MaxForwardedQueryParamLength = _config.GetConfigInt("MaxForwardedQueryParamLength", cfg) ?? 2048
         };
 
         // Parse ExcludeHeaders from array config

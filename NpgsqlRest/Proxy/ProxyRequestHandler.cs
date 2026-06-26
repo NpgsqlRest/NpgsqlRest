@@ -273,8 +273,9 @@ public static class ProxyRequestHandler
         }
         foreach (var p in parameters)
         {
-            if (string.Equals(endpoint.BodyParameterName, p.ConvertedName, StringComparison.Ordinal)
-                || string.Equals(endpoint.BodyParameterName, p.ActualName, StringComparison.Ordinal))
+            if (string.Equals(endpoint.BodyParameterName, p.ConvertedName, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(endpoint.BodyParameterName, p.ActualName, StringComparison.OrdinalIgnoreCase)
+                || (p.ExpandedName is not null && string.Equals(endpoint.BodyParameterName, p.ExpandedName, StringComparison.OrdinalIgnoreCase)))
             {
                 return p;
             }
@@ -304,11 +305,25 @@ public static class ProxyRequestHandler
 
     private static string AppendParamsToQuery(string url, List<NpgsqlRestParameter> parameters)
     {
+        var maxLen = Options.ProxyOptions.MaxForwardedQueryParamLength;
         var sb = new StringBuilder();
         foreach (var p in parameters)
         {
             if (p.Value is null || p.Value == DBNull.Value)
             {
+                continue;
+            }
+            var value = p.Value.ToString() ?? "";
+            // Guard: a large value (typically an HTTP Custom Type body/text field) cannot be carried
+            // in a query string — percent-encoding it produces an unusable request line that the
+            // upstream rejects (HTTP 414/431) or resets. Skip it and warn rather than build a doomed URL.
+            // To forward such a value, use a body-carrying proxy method (POST/PUT/PATCH).
+            if (maxLen > 0 && value.Length > maxLen)
+            {
+                Logger?.LogWarning(
+                    "Proxy: skipping forwarded query parameter '{Name}' — value length {Length} exceeds ProxyOptions.MaxForwardedQueryParamLength ({Max}). " +
+                    "Large values cannot be carried in a query string; use a body-carrying proxy method (POST/PUT/PATCH) to forward them in the request body.",
+                    p.ConvertedName, value.Length, maxLen);
                 continue;
             }
             if (sb.Length > 0)
@@ -317,7 +332,7 @@ public static class ProxyRequestHandler
             }
             sb.Append(Uri.EscapeDataString(p.ConvertedName));
             sb.Append('=');
-            sb.Append(Uri.EscapeDataString(p.Value.ToString() ?? ""));
+            sb.Append(Uri.EscapeDataString(value));
         }
         if (sb.Length == 0)
         {

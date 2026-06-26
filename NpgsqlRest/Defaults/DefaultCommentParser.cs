@@ -194,7 +194,7 @@ internal static partial class DefaultCommentParser
                 // body_param_name name
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], BodyParameterNameKey))
                 {
-                    HandleBodyParameterName(routineEndpoint, wordsLower, len, description);
+                    HandleBodyParameterName(routineEndpoint, words, len, description);
                     TrackAnnotation(line);
                 }
 

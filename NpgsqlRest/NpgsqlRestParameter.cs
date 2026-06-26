@@ -28,6 +28,16 @@ public class NpgsqlRestParameter : NpgsqlParameter
     /// </summary>
     public string[]? CompositeFieldNames { get; set; }
 
+    /// <summary>
+    /// For an HTTP Custom Type field expanded out of a composite parameter, the per-field name as it
+    /// appears in the generated signature / .http file (base parameter name + separator + field name,
+    /// e.g. "_response_body"). Unlike <see cref="ActualName"/> — which stays the shared composite base
+    /// (e.g. "_response") so the fields reassemble into the single SQL argument — this is unique per
+    /// field. Used only as an additional alias when matching annotations such as @body_parameter_name,
+    /// so the name a user sees in the signature also resolves. Null for non-expanded parameters.
+    /// </summary>
+    public string? ExpandedName { get; set; }
+
     public ParamType ParamType { get; set; } = default!;
     public StringValues? QueryStringValues { get; set; } = null;
     public JsonNode? JsonBodyNode { get; set; } = null;

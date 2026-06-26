@@ -433,6 +433,14 @@ public class RoutineSource(
                             convertedName: convertedName,
                             actualName: originalParameterName,
                             typeDescriptor: descriptor);
+                        // For an expanded composite field, ActualName stays the shared base
+                        // (originalParameterName, e.g. "_response"); record the unique per-field name
+                        // (paramName, e.g. "_response_body") as an alias so annotations that reference
+                        // the name shown in the signature (e.g. @body_parameter_name) still resolve.
+                        if (customTypeName != null)
+                        {
+                            parameters[i].ExpandedName = paramName;
+                        }
                     }
                     simpleDefinition.AppendLine(")");
                 }

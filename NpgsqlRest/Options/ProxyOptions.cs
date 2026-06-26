@@ -108,4 +108,15 @@ public class ProxyOptions
     /// Example: "http://localhost:5000"
     /// </summary>
     public string? SelfBaseUrl { get; set; }
+
+    /// <summary>
+    /// Maximum length (in characters) of a single automatic parameter value that may be appended
+    /// to the proxy upstream query string. Server-filled parameters (user claims, IP address, HTTP
+    /// Custom Type fields, resolved-parameter expressions) whose value exceeds this length are
+    /// skipped (and a warning is logged) instead of being percent-encoded into the URL, which would
+    /// produce an unusable request line (HTTP 414/431, or a connection reset). A value of 0 or less
+    /// disables the guard (no limit). To forward a large value to the upstream, use a body-carrying
+    /// proxy method (POST/PUT/PATCH) so it goes into the request body instead of the query string.
+    /// </summary>
+    public int MaxForwardedQueryParamLength { get; set; } = 2048;
 }
