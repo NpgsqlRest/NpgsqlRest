@@ -24,7 +24,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
             yield break;
         }
 
-        var files = FindMatchingFiles(options.FilePattern).ToArray();
+        var files = FindMatchingFiles(options.FilePattern, options.SkipPattern).ToArray();
         if (files.Length == 0)
         {
             NpgsqlRestOptions.Logger?.LogWarning("SqlFileSource: No SQL files found matching pattern \"{FilePattern}\"", options.FilePattern);
@@ -619,7 +619,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
     /// Find files matching the glob pattern. Splits the pattern into a base directory
     /// and a file pattern, then lazily enumerates matching files.
     /// </summary>
-    internal static IEnumerable<string> FindMatchingFiles(string filePattern)
+    internal static IEnumerable<string> FindMatchingFiles(string filePattern, string? skipPattern = null)
     {
         // Find the base directory (everything before the first wildcard)
         int firstWildcard = filePattern.IndexOfAny(['*', '?']);
@@ -658,10 +658,12 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
         bool isRecursive = filePattern.Contains("**");
         var searchOption = isRecursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
 
+        bool hasSkip = !string.IsNullOrEmpty(skipPattern);
         foreach (var file in Directory.EnumerateFiles(baseDir, "*", searchOption))
         {
             var normalizedFile = file.Replace('\\', '/');
-            if (Parser.IsPatternMatch(normalizedFile, pattern))
+            if (Parser.IsPatternMatch(normalizedFile, pattern)
+                && !(hasSkip && Parser.IsPatternMatch(normalizedFile, skipPattern!)))
             {
                 yield return file;
             }

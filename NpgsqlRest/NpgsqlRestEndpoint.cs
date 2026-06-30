@@ -71,6 +71,9 @@ public partial class NpgsqlRestEndpoint(
         string? commandText = null;
         bool shouldDispose = true;
         bool shouldCommit = true;
+        // Per-request connection notice handler; detached in the finally so it never accumulates on a
+        // reused connection (e.g. ServiceProviderMode=NpgsqlConnection / the SQL test runner's ambient connection).
+        NoticeEventHandler? noticeHandler = null;
         // Held (when non-null) for the streaming records/sets cache path; released in the outer finally.
         SemaphoreSlim? recordCacheGate = null;
         IUploadHandler? uploadHandler = null;
@@ -102,7 +105,14 @@ public partial class NpgsqlRestEndpoint(
             : PipeWriter.Create(context.Response.Body);
         try
         {
-            if (endpoint.ConnectionName is not null)
+            if (Options.AmbientConnectionAccessor?.Invoke() is { } ambientConnection)
+            {
+                // Ambient connection override (SQL test runner): run on the caller's already-open
+                // connection/transaction and never dispose it. The caller owns the connection lifecycle.
+                connection = ambientConnection;
+                shouldDispose = false;
+            }
+            else if (endpoint.ConnectionName is not null)
             {
                 // First check if there's a data source for this connection name (for multi-host support)
                 if (Options.DataSources?.TryGetValue(endpoint.ConnectionName, out var namedDataSource) is true)
@@ -171,7 +181,7 @@ public partial class NpgsqlRestEndpoint(
                 || noticeWarnEnabled)
             {
                 var currentEndpointCaptured = endpoint;
-                connection.Notice += (sender, args) =>
+                noticeHandler = (sender, args) =>
                 {
                     if (Options.LogConnectionNoticeEvents && Logger != null)
                     {
@@ -192,6 +202,7 @@ public partial class NpgsqlRestEndpoint(
                         Logger!.UnboundSseRaise(args.Notice.Severity, currentEndpointCaptured.Path);
                     }
                 };
+                connection.Notice += noticeHandler;
             }
             
             if (Options.AuthenticationOptions.BasicAuth.Enabled is true || endpoint.BasicAuth?.Enabled is true)
@@ -3336,6 +3347,12 @@ public partial class NpgsqlRestEndpoint(
                         await transaction.CommitAsync(cancellationToken);
                     }
                 }
+            }
+            // Detach the per-request notice handler so it can't accumulate (and re-log) on a reused
+            // connection that this request did not dispose.
+            if (connection is not null && noticeHandler is not null)
+            {
+                connection.Notice -= noticeHandler;
             }
             if (connection is not null && shouldDispose is true)
             {

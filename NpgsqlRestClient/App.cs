@@ -463,8 +463,10 @@ public class App
     public List<IEndpointCreateHandler> CreateCodeGenHandlers(string connectionString, string[] args)
     {
         List<IEndpointCreateHandler> handlers = new(3);
-        if (args.Any(a => string.Equals(a, "--endpoints", StringComparison.OrdinalIgnoreCase)))
+        if (args.Any(a => string.Equals(a, "--endpoints", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(a, "--test", StringComparison.OrdinalIgnoreCase)))
         {
+            // --test also captures endpoints so the runner can pre-check kinds (SSE/upload/outbound).
             handlers.Add(new EndpointCapture());
         }
         var httpFilecfg = _config.NpgsqlRestCfg.GetSection("HttpFileOptions");
@@ -661,6 +663,12 @@ public class App
                     UnnamedSingleColumnSet = _config.GetConfigBool("UnnamedSingleColumnSet", sqlFileSourceCfg, true),
                     SkipNonQueryCommands = _config.GetConfigBool("SkipNonQueryCommands", sqlFileSourceCfg, true),
                 };
+                // Absent => default "*.test.sql"; explicit empty string disables the exclusion.
+                var skipPattern = _config.GetConfigStr("SkipPattern", sqlFileSourceCfg);
+                if (sqlFileSourceCfg.GetSection("SkipPattern").Exists())
+                {
+                    opts.SkipPattern = skipPattern ?? "";
+                }
                 if (_config.GetConfigStr("CommentsMode", sqlFileSourceCfg) is not null)
                 {
                     opts.CommentsMode = _config.GetConfigEnum<CommentsMode>("CommentsMode", sqlFileSourceCfg);

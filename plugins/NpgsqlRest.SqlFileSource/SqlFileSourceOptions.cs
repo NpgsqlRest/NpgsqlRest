@@ -35,6 +35,13 @@ public class SqlFileSourceOptions
     public string FilePattern { get; set; } = "";
 
     /// <summary>
+    /// Glob (same semantics as <see cref="FilePattern"/>) for files to EXCLUDE from endpoint discovery.
+    /// Default "*.test.sql" so co-located SQL test files (run by the test runner) are never exposed as
+    /// endpoints. Empty disables the exclusion. Matched against the full path; "*.ext" matches by suffix.
+    /// </summary>
+    public string SkipPattern { get; set; } = "*.test.sql";
+
+    /// <summary>
     /// How comment annotations are processed for this source.
     /// Default is OnlyWithHttpTag — SQL files must contain an explicit HTTP annotation
     /// (e.g., "-- HTTP GET") to become endpoints. This prevents accidental exposure of

@@ -46,6 +46,23 @@ public class Out
         }
     }
 
+    /// <summary>
+    /// Write a line wrapped in a raw ANSI SGR sequence (e.g. "\x1b[38;5;196m" for a 256-color foreground),
+    /// used when a specific color is needed that the 16-color <see cref="ConsoleColor"/> API can't express.
+    /// Emits plain text (no escapes) when output is redirected, so piped/CI logs stay clean.
+    /// </summary>
+    public void LineAnsi(string line, string ansiSgr)
+    {
+        if (Console.IsOutputRedirected)
+        {
+            Console.WriteLine(line);
+            return;
+        }
+        Console.Write(ansiSgr);
+        Console.Write(line);
+        Console.WriteLine("\x1b[0m");
+    }
+
     public void JsonHighlight(string json)
     {
         if (Console.IsOutputRedirected)

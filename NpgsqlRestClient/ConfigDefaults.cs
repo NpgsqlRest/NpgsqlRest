@@ -173,6 +173,7 @@ public static class ConfigDefaults
             ["ForwardedHeaders"] = GetForwardedHeadersDefaults(),
             ["HealthChecks"] = GetHealthChecksDefaults(),
             ["Stats"] = GetStatsDefaults(),
+            ["TestRunner"] = GetTestRunnerDefaults(),
             ["CommandRetryOptions"] = GetCommandRetryOptionsDefaults(),
             ["CacheOptions"] = GetCacheOptionsDefaults(),
             ["ValidationOptions"] = GetValidationOptionsDefaults(),
@@ -359,6 +360,7 @@ public static class ConfigDefaults
             {
                 ["NpgsqlRest"] = "Information",
                 ["NpgsqlRestClient"] = "Information",
+                ["NpgsqlRestTest"] = "Information",
                 ["System"] = "Warning",
                 ["Microsoft"] = "Warning"
             },
@@ -1082,6 +1084,7 @@ public static class ConfigDefaults
         {
             ["Enabled"] = false,
             ["FilePattern"] = "",
+            ["SkipPattern"] = "*.test.sql",
             ["CommentsMode"] = "OnlyAnnotated",
             ["CommentScope"] = "All",
             ["ErrorMode"] = "Exit",
@@ -1090,6 +1093,37 @@ public static class ConfigDefaults
             ["NestedJsonForCompositeTypes"] = false,
             ["SkipNonQueryCommands"] = true,
             ["LogCommandText"] = false
+        };
+    }
+
+    private static JsonObject GetTestRunnerDefaults()
+    {
+        return new JsonObject
+        {
+            ["FilePattern"] = "",
+            ["MaxParallelism"] = 0,
+            ["FailFast"] = false,
+            ["PerTestTimeout"] = "30s",
+            ["JUnitOutput"] = null,
+            ["Keep"] = false,
+            ["Verbose"] = false,
+            ["AllowEmpty"] = false,
+            ["LoggerName"] = "NpgsqlRestTest",
+            ["ResponseTempTable"] = new JsonObject
+            {
+                ["Name"] = "_response",
+                ["MultiNamePattern"] = "_response_{n}",
+                ["Columns"] = new JsonObject
+                {
+                    ["Status"] = "status",
+                    ["Body"] = "body",
+                    ["ContentType"] = "content_type",
+                    ["Headers"] = "headers",
+                    ["IsSuccess"] = "is_success"
+                }
+            },
+            ["Setup"] = new JsonArray(),
+            ["Teardown"] = new JsonArray()
         };
     }
 

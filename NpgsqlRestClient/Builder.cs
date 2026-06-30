@@ -15,9 +15,11 @@ using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Primitives;
 using Microsoft.Net.Http.Headers;
+using Microsoft.Extensions.Configuration;
 using Npgsql;
 using NpgsqlRest;
 using NpgsqlRestClient.Fido2;
+using NpgsqlRestClient.Testing;
 using Serilog;
 using Serilog.Extensions.Logging;
 using Serilog.Sinks.OpenTelemetry;
@@ -39,6 +41,8 @@ public class Builder
     
     public Microsoft.Extensions.Logging.ILogger? Logger { get; private set; } = null;
     public Microsoft.Extensions.Logging.ILogger? ClientLogger { get; private set; } = null;
+    /// <summary>Independent log channel for the SQL test runner (<c>--test</c>); name from TestRunner:LoggerName (default "NpgsqlRestTest").</summary>
+    public Microsoft.Extensions.Logging.ILogger? TestLogger { get; private set; } = null;
     public bool UseHttpsRedirection { get; private set; } = false;
     public bool UseHsts { get; private set; } = false;
     public BearerTokenConfig? BearerTokenConfig { get; private set; } = null;
@@ -156,11 +160,28 @@ public class Builder
             var appName = _config.GetConfigStr("ApplicationName", _config.Cfg);
             var envName = _config.GetConfigStr("EnvironmentName", _config.Cfg) ?? "Production";
             string clientLoggerName = string.IsNullOrEmpty(appName) ? "NpgsqlRestClient" : appName;
+            // SQL test runner's own log channel (see TestRunner:LoggerName). A non-dotted sibling name so it's
+            // controlled independently of "NpgsqlRest" via its own MinimalLevels entry.
+            string testLoggerName = _config.GetConfigStr("LoggerName", _config.Cfg.GetSection("TestRunner")) ?? "NpgsqlRestTest";
+            bool testLoggerAdded = false;
 
             foreach (var level in logCfg?.GetSection("MinimalLevels")?.GetChildren() ?? [])
             {
                 var key = level.Key;
-                var value = _config.GetEnum<Serilog.Events.LogEventLevel?>(level.Value);
+                Serilog.Events.LogEventLevel? value;
+                if (string.IsNullOrWhiteSpace(level.Value) is false &&
+                    (string.Equals(level.Value, "Off", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(level.Value, "None", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(level.Value, "Silent", StringComparison.OrdinalIgnoreCase)))
+                {
+                    // Mute the source entirely: a minimum above Fatal means no event (max level Fatal) passes.
+                    // null/unrecognized still falls through to GetEnum => null => the source keeps its default.
+                    value = (Serilog.Events.LogEventLevel)((int)Serilog.Events.LogEventLevel.Fatal + 1);
+                }
+                else
+                {
+                    value = _config.GetEnum<Serilog.Events.LogEventLevel?>(level.Value);
+                }
                 if (value is not null && key is not null)
                 {
                     if (string.Equals(key, "NpgsqlRest", StringComparison.OrdinalIgnoreCase))
@@ -183,6 +204,11 @@ public class Builder
                         loggerConfig.MinimumLevel.Override(key, value.Value);
                         microsoftAdded = true;
                     }
+                    else if (string.Equals(key, testLoggerName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        loggerConfig.MinimumLevel.Override(testLoggerName, value.Value);
+                        testLoggerAdded = true;
+                    }
                     else
                     {
                         loggerConfig.MinimumLevel.Override(key, value.Value);
@@ -204,6 +230,16 @@ public class Builder
             if (microsoftAdded is false)
             {
                 loggerConfig.MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning);
+            }
+            // Default the test-runner channel to Information when not in MinimalLevels (skip if its name
+            // collides with a reserved logger, which already has its own default above).
+            if (testLoggerAdded is false &&
+                string.Equals(testLoggerName, "NpgsqlRest", StringComparison.OrdinalIgnoreCase) is false &&
+                string.Equals(testLoggerName, clientLoggerName, StringComparison.OrdinalIgnoreCase) is false &&
+                string.Equals(testLoggerName, "System", StringComparison.OrdinalIgnoreCase) is false &&
+                string.Equals(testLoggerName, "Microsoft", StringComparison.OrdinalIgnoreCase) is false)
+            {
+                loggerConfig.MinimumLevel.Override(testLoggerName, Serilog.Events.LogEventLevel.Information);
             }
 
             string outputTemplate = _config.GetConfigStr("OutputTemplate", logCfg) ?? 
@@ -286,6 +322,9 @@ public class Builder
             Logger = serilogFactory.CreateLogger("NpgsqlRest");
             // Client application logger - uses ApplicationName or "NpgsqlRestClient"
             ClientLogger = serilogFactory.CreateLogger(clientLoggerName);
+            // Test runner logger - independent channel so `--test` activity (queries=Verbose, parsing=Debug,
+            // notices=by severity) is leveled separately from the app via Log:MinimalLevels.
+            TestLogger = serilogFactory.CreateLogger(testLoggerName);
 
             Instance.Host.UseSerilog(serilog);
 
@@ -2961,6 +3000,92 @@ public class Builder
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Builds the SQL test-runner options from the top-level "TestRunner" config section.
+    /// </summary>
+    public TestRunnerOptions BuildTestRunnerOptions()
+    {
+        var opt = new TestRunnerOptions();
+        var section = _config.Cfg.GetSection("TestRunner");
+        if (section.Exists() is false) return opt;
+
+        opt.FilePattern = _config.GetConfigStr("FilePattern", section) ?? "";
+        opt.MaxParallelism = _config.GetConfigInt("MaxParallelism", section) ?? 0;
+        opt.FailFast = _config.GetConfigBool("FailFast", section, false);
+        opt.PerTestTimeout = ParseTestTimeout(_config.GetConfigStr("PerTestTimeout", section), TimeSpan.FromSeconds(30));
+        opt.JUnitOutput = _config.GetConfigStr("JUnitOutput", section);
+        opt.Keep = _config.GetConfigBool("Keep", section, false);
+        opt.Verbose = _config.GetConfigBool("Verbose", section, false);
+        opt.AllowEmpty = _config.GetConfigBool("AllowEmpty", section, false);
+
+        var rt = section.GetSection("ResponseTempTable");
+        if (rt.Exists())
+        {
+            opt.ResponseTempTable.Name = _config.GetConfigStr("Name", rt) ?? opt.ResponseTempTable.Name;
+            opt.ResponseTempTable.MultiNamePattern = _config.GetConfigStr("MultiNamePattern", rt) ?? opt.ResponseTempTable.MultiNamePattern;
+            var cols = rt.GetSection("Columns");
+            if (cols.Exists())
+            {
+                var c = opt.ResponseTempTable.Columns;
+                c.Status = ReadColumnName(cols, "Status", c.Status);
+                c.Body = ReadColumnName(cols, "Body", c.Body);
+                c.ContentType = ReadColumnName(cols, "ContentType", c.ContentType);
+                c.Headers = ReadColumnName(cols, "Headers", c.Headers);
+                c.IsSuccess = ReadColumnName(cols, "IsSuccess", c.IsSuccess);
+            }
+        }
+
+        opt.Setup = ReadTestSteps(section.GetSection("Setup"));
+        opt.Teardown = ReadTestSteps(section.GetSection("Teardown"));
+        return opt;
+
+        // Absent key => keep default name; explicit empty string => omit the column.
+        string? ReadColumnName(IConfigurationSection cols, string key, string? def)
+        {
+            var s = cols.GetSection(key);
+            if (s.Exists() is false) return def;
+            return string.IsNullOrWhiteSpace(s.Value) ? null : s.Value;
+        }
+
+        List<TestSetupStep> ReadTestSteps(IConfigurationSection stepsSection)
+        {
+            var list = new List<TestSetupStep>();
+            if (stepsSection.Exists() is false) return list;
+            foreach (var child in stepsSection.GetChildren())
+            {
+                var step = new TestSetupStep
+                {
+                    Sql = _config.GetConfigStr("Sql", child),
+                    SqlFile = _config.GetConfigStr("SqlFile", child),
+                    Command = _config.GetConfigStr("Command", child),
+                    WorkingDirectory = _config.GetConfigStr("WorkingDirectory", child),
+                };
+                if (step.Sql is not null || step.SqlFile is not null || step.Command is not null)
+                {
+                    list.Add(step);
+                }
+            }
+            return list;
+        }
+    }
+
+    private static TimeSpan ParseTestTimeout(string? raw, TimeSpan def)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return def;
+        raw = raw.Trim();
+        if (int.TryParse(raw, out var secs)) return TimeSpan.FromSeconds(secs);
+        if (raw.Length > 1 && int.TryParse(raw[..^1], out var n))
+        {
+            switch (char.ToLowerInvariant(raw[^1]))
+            {
+                case 's': return TimeSpan.FromSeconds(n);
+                case 'm': return TimeSpan.FromMinutes(n);
+                case 'h': return TimeSpan.FromHours(n);
+            }
+        }
+        return TimeSpan.TryParse(raw, out var ts) ? ts : def;
     }
 
     /// <summary>

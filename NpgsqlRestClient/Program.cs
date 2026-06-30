@@ -38,6 +38,7 @@ if (args.Length >= 1 && (string.Equals(args[0], "-h", StringComparison.CurrentCu
         ("npgsqlrest --config-schema", "Output JSON Schema for appsettings.json. Syntax highlighted in terminal, plain JSON when piped."),
         ("npgsqlrest --annotations", "Output all supported comment annotations as JSON. Syntax highlighted in terminal, plain JSON when piped."),
         ("npgsqlrest [files...] --endpoints", "Connect to database, discover endpoints, output as JSON, then exit. Syntax highlighted in terminal, plain JSON when piped."),
+        ("npgsqlrest [files...] --test", "Run SQL test files (TestRunner config), then exit. Exit codes: 0 pass, 1 failures, 2 errors, 3 config error, 4 no tests."),
         (" ", " "),
         ("npgsqlrest --hash [value]", "Hash value with default hasher and print to console."),
         ("npgsqlrest --basic_auth [username] [password]", "Print out basic basic auth header value in format 'Authorization: Basic base64(username:password)'."),
@@ -268,6 +269,7 @@ if (cmdRetryOpts.Enabled && string.IsNullOrEmpty(cmdRetryOpts.DefaultStrategy))
 }
 
 bool endpointsMode = args.Any(a => string.Equals(a, "--endpoints", StringComparison.OrdinalIgnoreCase));
+bool testMode = args.Any(a => string.Equals(a, "--test", StringComparison.OrdinalIgnoreCase));
 
 builder.BuildInstance();
 builder.Instance.Services.AddRouting();
@@ -482,6 +484,30 @@ NpgsqlRestOptions options = new()
     TableFormatHandlers = appInstance.CreateTableFormatHandlers(),
 };
 
+// SQL test runner: run Setup (Commands then SqlFile/Sql) BEFORE discovery so migrations can build the
+// schema that UseNpgsqlRest then discovers. The runner sets options.AmbientConnectionAccessor in its ctor.
+NpgsqlRestClient.Testing.TestRunner? testRunner = null;
+if (testMode)
+{
+    // Test-mode invariants: the endpoint must never begin/commit on the test's connection, and caching
+    // must be off so a test never gets another test's cached response.
+    options.WrapInTransaction = false;
+    options.CacheOptions.DefaultRoutineCache = null;
+    options.CacheOptions.Profiles = null;
+    // Make the runner the single source of connection-notice logging, so notices from the endpoint
+    // pipeline and from the test's own SQL are logged identically (and once). Capture the user's setting,
+    // then disable the per-endpoint notice logging to avoid double-logging on the shared test connection.
+    var logTestNotices = options.LogConnectionNoticeEvents;
+    options.LogConnectionNoticeEvents = false;
+
+    testRunner = new NpgsqlRestClient.Testing.TestRunner(options, builder.BuildTestRunnerOptions(), connectionString, builder.TestLogger, logTestNotices);
+    if (await testRunner.SetupAsync() is false)
+    {
+        Environment.ExitCode = NpgsqlRestClient.Testing.TestRunner.ExitConfig;
+        return;
+    }
+}
+
 app.UseNpgsqlRest(options);
 
 if (endpointsMode)
@@ -492,6 +518,13 @@ if (endpointsMode)
         EndpointCapture.WriteEndpointsJson(writer);
     }
     new Out().JsonHighlight(System.Text.Encoding.UTF8.GetString(ms.ToArray()));
+    return;
+}
+
+if (testMode)
+{
+    // Endpoints are now built; run the test files (then Teardown), and exit.
+    Environment.ExitCode = await testRunner!.RunAsync(EndpointCapture.Endpoints);
     return;
 }
 

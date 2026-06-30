@@ -6,7 +6,7 @@ namespace NpgsqlRest;
 /// <summary>
 /// Result of a programmatic routine invocation via <see cref="RoutineInvoker"/>.
 /// </summary>
-public readonly record struct RoutineInvokeResult(int StatusCode, string? Body, string? ContentType, bool IsSuccess);
+public readonly record struct RoutineInvokeResult(int StatusCode, string? Body, string? ContentType, string? Headers, bool IsSuccess);
 
 /// <summary>
 /// Public entry point for invoking an NpgsqlRest endpoint in-process (no network hop), running the
@@ -43,6 +43,6 @@ public static class RoutineInvoker
         var response = await InternalRequestHandler.ExecuteAsync(
             method, path, headerDict, body, contentType, cancellationToken, user);
 
-        return new RoutineInvokeResult(response.StatusCode, response.Body, response.ContentType, response.IsSuccess);
+        return new RoutineInvokeResult(response.StatusCode, response.Body, response.ContentType, response.Headers, response.IsSuccess);
     }
 }

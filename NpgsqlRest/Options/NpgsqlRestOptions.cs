@@ -151,6 +151,14 @@ public class NpgsqlRestOptions
     public ServiceProviderObject ServiceProviderMode { get; set; } = ServiceProviderObject.None;
 
     /// <summary>
+    /// When set and the accessor returns a non-null connection, the endpoint executes on that ambient
+    /// connection (and does not dispose it) instead of opening its own. Null by default — zero behavioral
+    /// change for normal operation. Used by the SQL test runner to run an endpoint on the test's own
+    /// open connection/transaction (connection affinity).
+    /// </summary>
+    public Func<Npgsql.NpgsqlConnection?>? AmbientConnectionAccessor { get; set; } = null;
+
+    /// <summary>
     /// Callback function that is executed just after the new endpoint is created. Set the RoutineEndpoint to null to disable endpoint.
     /// </summary>
     public Action<RoutineEndpoint?>? EndpointCreated { get; set; } = null;
