@@ -124,7 +124,17 @@ SELECT id, status FROM orders WHERE id = $1;
 
 ## Parameters
 
-SQL files use PostgreSQL positional parameters (`$1`, `$2`, ...). Parameters are passed via query string (GET) or JSON body (POST/PUT/DELETE):
+SQL files use PostgreSQL positional parameters (`$1`, `$2`, ...) or **named parameters** (`:name`) — one style per file (mixing is rejected).
+
+**Named parameters** carry their API name in the placeholder itself (converted with the configured `NameConverter`, camelCase by default), so no `@param` naming annotations are needed:
+
+```sql
+SELECT * FROM users WHERE name = :user_name AND age > :age;
+```
+
+Gives: `GET /api/my-query?userName=hello&age=42`. The same name used repeatedly — including across statements in a multi-command file — is ONE parameter. The SQL is rewritten to native `$N` before describe/execution, so type inference and runtime behavior are identical to positional files. Strings, comments, and dollar-quoted bodies are untouched; `::` casts, `:=` calls, and numeric slice bounds (`a[1:3]`) never match (write a variable slice bound with a space: `a[1 : n]`). Annotations match named parameters by name: `@param user_name default null`, `@param :user_name citext` (type hint), or `@param user_name type is citext` (retype without rename).
+
+**Positional parameters** are passed via query string (GET) or JSON body (POST/PUT/DELETE):
 
 ```
 GET /api/my-query?$1=hello&$2=42

@@ -127,23 +127,42 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
             return null;
         }
 
+        // Named-parameter (:name) rewrite: placeholders become native $N before Describe/execution
+        // (PostgreSQL never sees the :name form); the names flow into parameter ActualName, so the API
+        // name — and claim mappings — come from the placeholder itself. Same name = same parameter,
+        // file-wide. Mixing $N and :name in one file is ambiguous and rejected.
+        var namedParams = SqlFileParser.RewriteNamedParameters(parseResult.Statements);
+        if (namedParams.HasNamed && namedParams.HasPositional)
+        {
+            NpgsqlRestOptions.Logger?.LogError(
+                "SqlFileSource: {FilePath}: mixing positional ($N) and named (:name) parameters in the same file is not supported — use one style.",
+                filePath);
+            if (options.ErrorMode == ParseErrorMode.Exit)
+            {
+                NpgsqlRestOptions.Logger?.LogCritical("SqlFileSource: Exiting due to SQL file error. Set ErrorMode to Skip to continue past errors.");
+                Environment.Exit(1);
+            }
+            return null;
+        }
+        IReadOnlyList<string>? namedList = namedParams.HasNamed ? namedParams.Names : null;
+
         bool isMultiCommand = parseResult.Statements.Count > 1;
 
         // Check @param annotations for HTTP client type parameters (single composite, no SQL rewriting)
         Dictionary<int, (string TypeName, string ParamName, string[] FieldNames, string[] FieldTypes)>? httpTypeParams = null;
         if (NpgsqlRestOptions.Options.HttpClientOptions.Enabled && HttpClientTypes.Definitions.Count > 0)
         {
-            httpTypeParams = DetectHttpTypeParams(parseResult.Comment, connection);
+            httpTypeParams = DetectHttpTypeParams(parseResult.Comment, connection, namedList);
         }
 
         // Check @param annotations for non-HTTP composite type parameters (single composite, no SQL rewriting)
-        var compositeTypeParams = DetectCompositeTypeParams(parseResult.Comment, connection, httpTypeParams);
+        var compositeTypeParams = DetectCompositeTypeParams(parseResult.Comment, connection, httpTypeParams, namedList);
 
         // Describe each statement individually and merge parameters
         int mergedMaxParam = 0;
         var paramTypesByIndex = new Dictionary<int, string>(); // $N index → type name
         var commandDescribes = new List<DescribeResult>();
-        var paramTypeHints = SqlFileParser.ExtractParamTypeHints(parseResult.Comment);
+        var paramTypeHints = SqlFileParser.ExtractParamTypeHints(parseResult.Comment, namedList);
 
         for (int stmtIndex = 0; stmtIndex < parseResult.Statements.Count; stmtIndex++)
         {
@@ -249,6 +268,8 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
         for (int i = 0; i < mergedMaxParam; i++)
         {
             var typeName = paramTypesByIndex.GetValueOrDefault(i, "unknown");
+            // Named (:name) placeholder for this ordinal, when the file uses them.
+            string? placeholderName = namedList is not null && i < namedList.Count ? namedList[i] : null;
 
             string? customType = null;
             string? customTypeName = null;
@@ -273,7 +294,11 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
             }
             else
             {
-                convertedName = $"${i + 1}";
+                // Named placeholders get their API name from the placeholder itself, through the same
+                // NameConverter routine parameters use (:user_id → userId); positional stay "$N".
+                convertedName = placeholderName is not null
+                    ? nameConverter(placeholderName) ?? placeholderName
+                    : $"${i + 1}";
             }
 
             var typeDescriptor = new TypeDescriptor(
@@ -283,7 +308,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
                 customTypePosition: customTypePosition,
                 originalParameterName: originalParameterName,
                 customTypeName: customTypeName);
-            var positionalName = $"${i + 1}";
+            var positionalName = placeholderName ?? $"${i + 1}";
 
             var param = new NpgsqlRestParameter(
                 ordinal: i,
@@ -489,21 +514,46 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
     }
 
     /// <summary>
+    /// Collect typed @param annotations as (0-based index, API param name, type name) tuples.
+    /// Positional form: @param $N name type. Named form (only for files using :name placeholders):
+    /// @param :name type — the API name comes from the placeholder itself, through the NameConverter.
+    /// </summary>
+    private static List<(int ParamIndex, string ParamName, string TypeName)> CollectTypedParamAnnotations(
+        string comment, IReadOnlyList<string>? namedParams)
+    {
+        List<(int, string, string)> annotations = [];
+        foreach (Match match in Regex.Matches(comment, @"@param\s+\$(\d+)\s+(\w+)\s+(\S+)", RegexOptions.IgnoreCase))
+        {
+            annotations.Add((int.Parse(match.Groups[1].Value) - 1, match.Groups[2].Value, match.Groups[3].Value));
+        }
+        if (namedParams is not null)
+        {
+            foreach (Match match in Regex.Matches(comment, @"@param\s+:(\w+)\s+(\S+)", RegexOptions.IgnoreCase))
+            {
+                var name = match.Groups[1].Value;
+                var paramIndex = SqlFileParser.IndexOfName(namedParams, name);
+                if (paramIndex < 0)
+                {
+                    continue;
+                }
+                var paramName = NpgsqlRestOptions.Options.NameConverter(name) ?? name;
+                annotations.Add((paramIndex, paramName, match.Groups[2].Value));
+            }
+        }
+        return annotations;
+    }
+
+    /// <summary>
     /// Scan @param annotations in the comment for HTTP client type parameters.
     /// Returns null if no HTTP types found, otherwise a dictionary keyed by 0-based param index.
     /// </summary>
     private static Dictionary<int, (string TypeName, string ParamName, string[] FieldNames, string[] FieldTypes)>?
-        DetectHttpTypeParams(string comment, NpgsqlConnection connection)
+        DetectHttpTypeParams(string comment, NpgsqlConnection connection, IReadOnlyList<string>? namedParams)
     {
         Dictionary<int, (string TypeName, string ParamName, string[] FieldNames, string[] FieldTypes)>? result = null;
 
-        // Match @param $N name type patterns
-        foreach (Match match in Regex.Matches(comment, @"@param\s+\$(\d+)\s+(\w+)\s+(\S+)", RegexOptions.IgnoreCase))
+        foreach (var (paramIndex, paramName, typeName) in CollectTypedParamAnnotations(comment, namedParams))
         {
-            var paramIndex = int.Parse(match.Groups[1].Value) - 1; // 0-based
-            var paramName = match.Groups[2].Value;
-            var typeName = match.Groups[3].Value;
-
             // Check if this type is an HTTP client type (try with and without public. prefix)
             string? resolvedTypeName = null;
             if (HttpClientTypes.Definitions.ContainsKey(typeName))
@@ -579,16 +629,13 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
         DetectCompositeTypeParams(
             string comment,
             NpgsqlConnection connection,
-            Dictionary<int, (string TypeName, string ParamName, string[] FieldNames, string[] FieldTypes)>? httpTypeParams)
+            Dictionary<int, (string TypeName, string ParamName, string[] FieldNames, string[] FieldTypes)>? httpTypeParams,
+            IReadOnlyList<string>? namedParams)
     {
         Dictionary<int, (string TypeName, string ParamName, string[] FieldNames, string[] FieldTypes)>? result = null;
 
-        foreach (Match match in Regex.Matches(comment, @"@param\s+\$(\d+)\s+(\w+)\s+(\S+)", RegexOptions.IgnoreCase))
+        foreach (var (paramIndex, paramName, typeName) in CollectTypedParamAnnotations(comment, namedParams))
         {
-            var paramIndex = int.Parse(match.Groups[1].Value) - 1; // 0-based
-            var paramName = match.Groups[2].Value;
-            var typeName = match.Groups[3].Value;
-
             // Skip if already detected as HTTP type
             if (httpTypeParams is not null && httpTypeParams.ContainsKey(paramIndex))
             {

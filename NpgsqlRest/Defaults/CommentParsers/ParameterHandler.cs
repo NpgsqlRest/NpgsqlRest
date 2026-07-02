@@ -36,6 +36,14 @@ internal static partial class DefaultCommentParser
         int len,
         string description)
     {
+        // Tolerate the :name placeholder spelling from named-parameter SQL files: "@param :email ..."
+        // targets the parameter whose ActualName is "email".
+        if (len >= 2 && words[1].Length > 1 && words[1][0] == ':')
+        {
+            words[1] = words[1][1..];
+            wordsLower[1] = wordsLower[1][1..];
+        }
+
         // param param_name1 is hash of param_name2
         if (len >= 6 && StrEquals(wordsLower[2], "is") && StrEquals(wordsLower[3], "hash") && StrEquals(wordsLower[4], "of"))
         {
@@ -125,6 +133,20 @@ internal static partial class DefaultCommentParser
         if (len >= 3 && IsDefault(wordsLower[2]))
         {
             HandleParameterDefault(routine, wordsLower, words, len, description);
+            return;
+        }
+
+        // param [name] type is [type] [default ...] — retype (and optionally default) WITHOUT rename.
+        // Useful for named-placeholder (:name) SQL file parameters, where the name comes from the
+        // placeholder and only the type needs overriding. Delegated to the rename path as a
+        // rename-to-same-name: [param, X, type, is, Y, ...] → [param, X, is, X, Y, ...].
+        if (len >= 5 && StrEquals(wordsLower[2], "type") && StrEquals(wordsLower[3], "is"))
+        {
+            var w = (string[])words.Clone();
+            var wl = (string[])wordsLower.Clone();
+            w[2] = "is"; wl[2] = "is";
+            w[3] = words[1]; wl[3] = wordsLower[1];
+            HandleParameterRename(routine, wl, w, len, description);
             return;
         }
 

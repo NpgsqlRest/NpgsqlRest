@@ -1,3 +1,4 @@
+using System.Text;
 using NpgsqlRest.Common;
 
 namespace NpgsqlRest.SqlFileSource;
@@ -82,6 +83,24 @@ public class SqlFileParseResult
             return Method.GET;
         }
     }
+}
+
+/// <summary>
+/// Result of the named-parameter (:name) rewrite pass (<see cref="SqlFileParser.RewriteNamedParameters"/>).
+/// </summary>
+public sealed class NamedParamRewriteResult
+{
+    /// <summary>
+    /// Placeholder names in first-appearance order; index i corresponds to $(i+1) in the rewritten SQL.
+    /// The same name (case-insensitive) always maps to the same ordinal, file-wide.
+    /// </summary>
+    public List<string> Names { get; } = [];
+
+    /// <summary>The file uses :name placeholders.</summary>
+    public bool HasNamed => Names.Count > 0;
+
+    /// <summary>A native positional ($N) placeholder was found outside strings/comments/dollar-quotes.</summary>
+    public bool HasPositional { get; set; }
 }
 
 /// <summary>
@@ -552,11 +571,12 @@ public static class SqlFileParser
 
     /// <summary>
     /// Extract parameter type hints from @param annotations.
-    /// Looks for patterns like: @param $1 name type, @param $1 is name type
-    /// Only extracts when a positional $N and an explicit type are present.
-    /// Returns null if no type hints found.
+    /// Positional patterns: @param $1 name type, @param $1 is name type.
+    /// Named patterns (when <paramref name="namedParams"/> is supplied — the file uses :name placeholders):
+    /// @param :name type, @param name type is type.
+    /// Only extracts when an explicit type is present. Returns null if no type hints found.
     /// </summary>
-    public static Dictionary<int, string>? ExtractParamTypeHints(string? comment)
+    public static Dictionary<int, string>? ExtractParamTypeHints(string? comment, IReadOnlyList<string>? namedParams = null)
     {
         if (string.IsNullOrEmpty(comment)) return null;
 
@@ -576,37 +596,68 @@ public static class SqlFileParser
 
             var parts = s.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
 
-            if (parts.Length < 2 || parts[1][0] != '$')
+            if (parts.Length < 2)
             {
                 continue;
             }
 
-            if (!int.TryParse(parts[1].AsSpan(1), out int paramIndex) || paramIndex < 1)
-            {
-                continue;
-            }
-
-            // @param $1 name type ... → parts[3] is type candidate
-            // @param $1 is name type ... → parts[4] is type candidate
+            int paramIndex;
             string? typeName = null;
-            if (parts.Length >= 4 && parts[2].Equals("is", StringComparison.OrdinalIgnoreCase))
+
+            if (parts[1][0] == '$')
             {
-                if (parts.Length >= 5)
+                if (!int.TryParse(parts[1].AsSpan(1), out paramIndex) || paramIndex < 1)
                 {
-                    var candidate = parts[4].TrimEnd(';').ToLowerInvariant();
-                    if (candidate != "default" && candidate != "=")
+                    continue;
+                }
+
+                // @param $1 name type ... → parts[3] is type candidate
+                // @param $1 is name type ... → parts[4] is type candidate
+                if (parts.Length >= 4 && parts[2].Equals("is", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (parts.Length >= 5)
                     {
-                        typeName = candidate;
+                        typeName = TypeCandidate(parts[4]);
                     }
                 }
-            }
-            else if (parts.Length >= 4)
-            {
-                var candidate = parts[3].TrimEnd(';').ToLowerInvariant();
-                if (candidate != "default" && candidate != "=")
+                else if (parts.Length >= 4)
                 {
-                    typeName = candidate;
+                    typeName = TypeCandidate(parts[3]);
                 }
+            }
+            else if (namedParams is not null)
+            {
+                // @param :name type ...           → parts[2] is type candidate
+                // @param name type is type ...    → parts[4] is type candidate
+                string name;
+                int typeIdx;
+                if (parts[1][0] == ':' && parts[1].Length > 1)
+                {
+                    name = parts[1][1..];
+                    typeIdx = 2;
+                }
+                else if (parts.Length >= 5 &&
+                    parts[2].Equals("type", StringComparison.OrdinalIgnoreCase) &&
+                    parts[3].Equals("is", StringComparison.OrdinalIgnoreCase))
+                {
+                    name = parts[1];
+                    typeIdx = 4;
+                }
+                else
+                {
+                    continue;
+                }
+
+                paramIndex = IndexOfName(namedParams, name) + 1;
+                if (paramIndex < 1 || parts.Length <= typeIdx)
+                {
+                    continue;
+                }
+                typeName = TypeCandidate(parts[typeIdx]);
+            }
+            else
+            {
+                continue;
             }
 
             if (typeName is not null)
@@ -621,6 +672,181 @@ public static class SqlFileParser
         }
 
         return hints;
+
+        static string? TypeCandidate(string part)
+        {
+            var candidate = part.TrimEnd(';').ToLowerInvariant();
+            return candidate is "default" or "=" ? null : candidate;
+        }
+    }
+
+    /// <summary>0-based index of a named parameter (case-insensitive), or -1.</summary>
+    public static int IndexOfName(IReadOnlyList<string> namedParams, string name)
+    {
+        for (int i = 0; i < namedParams.Count; i++)
+        {
+            if (string.Equals(namedParams[i], name, StringComparison.OrdinalIgnoreCase))
+            {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /// <summary>
+    /// Rewrite named (:name) placeholders in the parsed statements to native positional ($N) placeholders.
+    /// Names are assigned ordinals in first-appearance order across the whole file (case-insensitive), so
+    /// the same name used repeatedly — including across statements — maps to the SAME parameter. The
+    /// rewritten SQL is what gets described and executed; PostgreSQL never sees the :name form.
+    ///
+    /// Token-aware: strings ('', ""), comments (-- and nested /* */), and dollar-quoted bodies are left
+    /// untouched. `::` casts, `:=` assignments, and numeric slice bounds (a[1:3]) never match because a
+    /// placeholder requires an identifier-start character immediately after the colon (a slice with a
+    /// variable bound, a[1:n], must be written with a space: a[1 : n]).
+    ///
+    /// Also detects native $N placeholders so the caller can reject files mixing both styles.
+    /// </summary>
+    public static NamedParamRewriteResult RewriteNamedParameters(List<string> statements)
+    {
+        var result = new NamedParamRewriteResult();
+
+        for (int s = 0; s < statements.Count; s++)
+        {
+            var sql = statements[s];
+            StringBuilder? sb = null; // created lazily on the first replacement
+            var state = State.Normal;
+            int blockDepth = 0;
+            string dollarTag = "";
+            char quote = '\0';
+
+            for (int i = 0; i < sql.Length; i++)
+            {
+                char c = sql[i];
+                char next = i + 1 < sql.Length ? sql[i + 1] : '\0';
+
+                switch (state)
+                {
+                    case State.Normal:
+                        if (c == '-' && next == '-')
+                        {
+                            state = State.LineComment;
+                        }
+                        else if (c == '/' && next == '*')
+                        {
+                            state = State.BlockComment;
+                            blockDepth = 1;
+                            sb?.Append(c); sb?.Append(next); i++;
+                            continue;
+                        }
+                        else if (c == '\'' || c == '"')
+                        {
+                            state = State.SingleQuote;
+                            quote = c;
+                        }
+                        else if (c == '$')
+                        {
+                            // Dollar-quote open ($$ / $tag$) vs positional param ($1). A dollar-quote tag
+                            // must start with a letter/underscore, so $ followed by a digit is always $N.
+                            if (next == '$' || char.IsAsciiLetter(next) || next == '_')
+                            {
+                                int t = i + 1;
+                                while (t < sql.Length && (char.IsAsciiLetterOrDigit(sql[t]) || sql[t] == '_')) t++;
+                                if (t < sql.Length && sql[t] == '$')
+                                {
+                                    dollarTag = sql[i..(t + 1)];
+                                    state = State.DollarQuote;
+                                    sb?.Append(dollarTag);
+                                    i = t;
+                                    continue;
+                                }
+                            }
+                            else if (char.IsAsciiDigit(next))
+                            {
+                                result.HasPositional = true;
+                            }
+                        }
+                        else if (c == ':')
+                        {
+                            if (next == ':')
+                            {
+                                // `::` cast — copy both, never a placeholder
+                                sb?.Append("::");
+                                i++;
+                                continue;
+                            }
+                            if (char.IsAsciiLetter(next) || next == '_')
+                            {
+                                int e = i + 1;
+                                while (e < sql.Length && (char.IsAsciiLetterOrDigit(sql[e]) || sql[e] == '_')) e++;
+                                var name = sql[(i + 1)..e];
+                                int idx = IndexOfName(result.Names, name);
+                                if (idx < 0)
+                                {
+                                    result.Names.Add(name);
+                                    idx = result.Names.Count - 1;
+                                }
+                                sb ??= new StringBuilder(sql[..i], sql.Length);
+                                sb.Append('$').Append(idx + 1);
+                                i = e - 1;
+                                continue;
+                            }
+                        }
+                        break;
+
+                    case State.LineComment:
+                        if (c == '\n') state = State.Normal;
+                        break;
+
+                    case State.BlockComment:
+                        if (c == '*' && next == '/')
+                        {
+                            if (--blockDepth == 0) state = State.Normal;
+                            sb?.Append(c); sb?.Append(next); i++;
+                            continue;
+                        }
+                        if (c == '/' && next == '*')
+                        {
+                            blockDepth++;
+                            sb?.Append(c); sb?.Append(next); i++;
+                            continue;
+                        }
+                        break;
+
+                    case State.SingleQuote:
+                        if (c == quote)
+                        {
+                            if (next == quote)
+                            {
+                                // '' / "" escape — stay in the string
+                                sb?.Append(c); sb?.Append(next); i++;
+                                continue;
+                            }
+                            state = State.Normal;
+                        }
+                        break;
+
+                    case State.DollarQuote:
+                        if (c == '$' && i + dollarTag.Length <= sql.Length
+                            && sql.AsSpan(i, dollarTag.Length).SequenceEqual(dollarTag))
+                        {
+                            sb?.Append(dollarTag);
+                            i += dollarTag.Length - 1;
+                            state = State.Normal;
+                            continue;
+                        }
+                        break;
+                }
+
+                sb?.Append(c);
+            }
+
+            if (sb is not null)
+            {
+                statements[s] = sb.ToString();
+            }
+        }
+
+        return result;
     }
 
     private static void DetectMutation(ReadOnlySpan<char> word, SqlFileParseResult result)
