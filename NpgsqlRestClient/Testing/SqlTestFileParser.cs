@@ -3,15 +3,45 @@ using System.Text;
 namespace NpgsqlRestClient.Testing;
 
 /// <summary>
-/// Splits a .test.sql file into an ordered list of steps (SQL statements and embedded HTTP requests),
-/// preserving interleaving. A char-by-char state machine handles ';' statement splitting, line/block
-/// comments, single quotes (with '' escapes), and dollar-quoted strings / DO blocks (so semicolons inside
-/// them don't split). A block comment whose first line is a request line becomes an <see cref="HttpStep"/>;
-/// any other comment is ignored.
+/// Splits a .test.sql file into an ordered list of steps (SQL statements, embedded HTTP requests, and
+/// include lines), preserving interleaving. A char-by-char state machine handles ';' statement splitting,
+/// line/block comments, single quotes (with '' escapes), and dollar-quoted strings / DO blocks (so
+/// semicolons inside them don't split). A block comment whose first line is a request line becomes an
+/// <see cref="HttpStep"/>; any other comment is ignored. A line starting with <c>\i</c>/<c>\ir</c> between
+/// statements becomes an <see cref="IncludeStep"/> (expanded by <see cref="TestFileLoader"/>).
 /// </summary>
 public static class SqlTestFileParser
 {
     private enum State { Normal, BlockComment, SingleQuote, DollarQuote }
+
+    /// <summary>
+    /// Parses one line as an include: <c>\i path</c> (cwd-relative) or <c>\ir path</c> (relative to the
+    /// including file). The path may be single-quoted; a trailing ';' is forgiven. Returns false for any
+    /// other line (including other backslash commands).
+    /// </summary>
+    internal static bool TryParseIncludeLine(string line, out string path, out bool relativeToFile)
+    {
+        path = "";
+        relativeToFile = false;
+        var t = line.Trim();
+        bool relative = t.StartsWith("\\ir", StringComparison.OrdinalIgnoreCase)
+            && (t.Length == 3 || char.IsWhiteSpace(t[3]));
+        bool plain = !relative && t.StartsWith("\\i", StringComparison.OrdinalIgnoreCase)
+            && (t.Length == 2 || char.IsWhiteSpace(t[2]));
+        if (!relative && !plain) return false;
+
+        var p = t[(relative ? 3 : 2)..].Trim();
+        if (p.EndsWith(';')) p = p[..^1].TrimEnd();          // forgive a trailing ;
+        if (p.Length > 1 && p[0] == '\'' && p[^1] == '\'')
+        {
+            p = p[1..^1];                                     // psql-style quoted path
+        }
+        if (p.Length == 0) return false;
+
+        path = p;
+        relativeToFile = relative;
+        return true;
+    }
 
     public static List<TestStep> Parse(string content)
     {
@@ -63,6 +93,29 @@ public static class SqlTestFileParser
             switch (state)
             {
                 case State.Normal:
+                    // include: \i <path> (cwd-relative) or \ir <path> (relative to the including file) —
+                    // psql semantics. Recognized only between statements (pending statement is blank), so a
+                    // backslash inside SQL text/strings/dollar-quotes is never misread. Consumes the line.
+                    if (c == '\\' && !stmtHasContent)
+                    {
+                        int lineEnd = i;
+                        while (lineEnd < len && content[lineEnd] != '\n') lineEnd++;
+                        var includeLine = content[i..lineEnd].TrimEnd('\r').TrimEnd();
+                        if (TryParseIncludeLine(includeLine, out var path, out var relative))
+                        {
+                            steps.Add(new IncludeStep(path, relative, currentLine));
+                            i = lineEnd; // consume the include line; the newline is handled by the main loop
+                            continue;
+                        }
+                        // Not \i/\ir: keep just the backslash as SQL text and let normal parsing continue
+                        // (';' still splits; PostgreSQL will report the stray backslash clearly).
+                        stmt.Append(c);
+                        MarkContent();
+                        lastToken = "";
+                        lastTokenIsWord = false;
+                        i++;
+                        continue;
+                    }
                     // line comment: -- (skip to end of line, never an HTTP step)
                     if (c == '-' && i + 1 < len && content[i + 1] == '-')
                     {

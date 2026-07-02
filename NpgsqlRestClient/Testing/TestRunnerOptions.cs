@@ -50,10 +50,16 @@ public class TestRunnerOptions
 
     public ResponseTempTableOptions ResponseTempTable { get; set; } = new();
 
-    /// <summary>Run-once setup, before endpoint discovery. Commands run first, then SqlFile/Sql (declared order within each group).</summary>
+    /// <summary>
+    /// Named, reusable steps (name → step). Referenced by name from <see cref="Setup"/>/<see cref="Teardown"/>
+    /// or from an individual test file header (<c>-- @setup Name</c> / <c>-- @teardown Name</c>).
+    /// </summary>
+    public Dictionary<string, TestSetupStep> Steps { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Run-once setup, before endpoint discovery, in the exact order written.</summary>
     public List<TestSetupStep> Setup { get; set; } = [];
 
-    /// <summary>Run-once teardown, always (best-effort). Reverse: SqlFile/Sql first, then Commands.</summary>
+    /// <summary>Run-once teardown, always (best-effort), in the exact order written.</summary>
     public List<TestSetupStep> Teardown { get; set; } = [];
 }
 
@@ -81,6 +87,9 @@ public class ResponseColumnOptions
 /// <summary>One Setup/Teardown step — exactly one of Sql / SqlFile / Command.</summary>
 public class TestSetupStep
 {
+    /// <summary>Registry name when the step is defined under <c>Steps</c>; null for inline steps. Used in logs.</summary>
+    public string? Name { get; set; }
+
     /// <summary>Inline SQL executed as a single batch.</summary>
     public string? Sql { get; set; }
 

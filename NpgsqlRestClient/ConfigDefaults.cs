@@ -1123,6 +1123,7 @@ public static class ConfigDefaults
                     ["IsSuccess"] = "is_success"
                 }
             },
+            ["Steps"] = new JsonObject(),
             ["Setup"] = new JsonArray(),
             ["Teardown"] = new JsonArray()
         };

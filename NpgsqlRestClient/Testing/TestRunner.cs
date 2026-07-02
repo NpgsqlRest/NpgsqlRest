@@ -55,6 +55,8 @@ public sealed class TestRunner
         public Outcome Outcome { get; init; }
         public string? Message { get; init; }
         public string? Sql { get; init; }
+        /// <summary>Full path of the included file this assertion came from (via \i/\ir); null = the test file.</summary>
+        public string? SourceFile { get; init; }
     }
 
     // A test file groups its assertions; the file's outcome is the worst of them (Error > Fail > Pass).
@@ -104,7 +106,7 @@ public sealed class TestRunner
             // (ConnectionName, else the test connection); Command steps run via the OS shell.
             foreach (var step in _opt.Setup)
             {
-                await RunStepAsync(step, ct);
+                await RunStepAsync(step, "setup", ct);
             }
             return true;
         }
@@ -118,17 +120,18 @@ public sealed class TestRunner
     }
 
     // Runs one Setup/Teardown step: a shell Command, or a Sql/SqlFile batch on its resolved connection.
-    private async Task RunStepAsync(TestSetupStep step, CancellationToken ct)
+    // `phase` ("setup" | "teardown") is only used to label the step's log lines.
+    private async Task RunStepAsync(TestSetupStep step, string phase, CancellationToken ct)
     {
         if (step.IsCommand)
         {
-            await RunCommandAsync(step, ct);
+            await RunCommandAsync(step, phase, ct);
             return;
         }
         var connStr = ResolveStepConnection(step);
         await using var conn = new NpgsqlConnection(connStr);
         await conn.OpenAsync(ct);
-        await RunSqlStepAsync(conn, step, ct);
+        await RunSqlStepAsync(conn, step, phase, ct);
     }
 
     // A step's connection: its explicit ConnectionName (a ConnectionStrings entry), else the test connection.
@@ -209,9 +212,76 @@ public sealed class TestRunner
         var ct = perTestCts.Token;
         int timeoutSecs = _opt.PerTestTimeout > TimeSpan.Zero ? (int)Math.Ceiling(_opt.PerTestTimeout.TotalSeconds) : 0;
 
+        // Header annotations (leading -- comments): per-file setup/teardown step names + connection override.
+        string content;
+        TestFileHeader header;
         try
         {
-            conn = new NpgsqlConnection(_connString);
+            content = await File.ReadAllTextAsync(file, ct);
+            header = TestFileHeader.Parse(content, file);
+        }
+        catch (Exception ex)
+        {
+            result.Assertions.Add(new AssertionResult { Name = "file read error", Outcome = Outcome.Error, Message = ex.Message });
+            result.ElapsedMs = sw.ElapsedMilliseconds;
+            return result;
+        }
+
+        // `-- @connection Name` runs this file (and its in-process endpoint calls) on a named connection —
+        // e.g. a per-test database that a `-- @setup` step below creates from a template.
+        string connString = _connString;
+        if (header.ConnectionName is not null)
+        {
+            if (_named.TryGetValue(header.ConnectionName, out var cs))
+            {
+                connString = cs;
+            }
+            else
+            {
+                result.Assertions.Add(new AssertionResult
+                {
+                    Name = $"-- @connection {header.ConnectionName}",
+                    Outcome = Outcome.Error,
+                    Message = $"'{header.ConnectionName}' has no matching entry under 'ConnectionStrings'",
+                });
+                result.ElapsedMs = sw.ElapsedMilliseconds;
+                return result;
+            }
+        }
+
+        // Per-file setup steps — BEFORE the file's connection opens (a step may create the very database
+        // the connection targets). Each runs like a global step: own connection, committed work.
+        bool setupOk = true;
+        foreach (var name in header.Setup)
+        {
+            if (!_opt.Steps.TryGetValue(name, out var st))
+            {
+                result.Assertions.Add(new AssertionResult
+                {
+                    Name = $"-- @setup {name}",
+                    Outcome = Outcome.Error,
+                    Message = $"unknown step '{name}' — define it under TestRunner:Steps",
+                });
+                setupOk = false;
+                break;
+            }
+            try
+            {
+                _log?.LogDebug("{File}: @setup {Step}", contextName, name);
+                await RunStepAsync(st, "setup", ct);
+            }
+            catch (Exception ex)
+            {
+                result.Assertions.Add(new AssertionResult { Name = $"-- @setup {name}", Outcome = Outcome.Error, Message = ex.Message });
+                setupOk = false;
+                break;
+            }
+        }
+
+        if (setupOk)
+        try
+        {
+            conn = new NpgsqlConnection(connString);
             conn.Notice += (_, e) =>
             {
                 // Route notices through the test runner's own log channel, tagged with this test file. The
@@ -224,7 +294,10 @@ public sealed class TestRunner
             await conn.OpenAsync(ct);
             Ambient.Value = conn;
 
-            var steps = SqlTestFileParser.Parse(await File.ReadAllTextAsync(file, ct));
+            // Parse + expand \i/\ir includes — paste semantics: included statements AND HTTP blocks execute
+            // in place (HTTP blocks participate in _response_{n} numbering exactly as if pasted); included
+            // steps carry SourceFile so failures are attributed to the included file and line.
+            var steps = TestFileLoader.LoadSteps(content, file);
 
             int httpTotal = steps.Count(s => s is HttpStep);
             int httpOrdinal = 0;
@@ -267,6 +340,7 @@ public sealed class TestRunner
                         Outcome = sr.Outcome,
                         Message = sr.Message,
                         Sql = step is SqlStep s ? s.Text : null,
+                        SourceFile = step.SourceFile,
                     });
                 }
                 // Fail-fast within a file: a failed/errored step (a failing DO-block assert aborts the PG
@@ -295,6 +369,27 @@ public sealed class TestRunner
             // back or never opened a transaction.
             Ambient.Value = null;
             if (conn is not null) await conn.DisposeAsync();
+        }
+
+        // Per-file teardown — ALWAYS (best-effort), even when setup or the body failed, and AFTER the
+        // file's connection is closed (so e.g. `drop database ... with (force)` succeeds). Uses the run
+        // token, not the per-test one, so a timed-out test still gets its teardown.
+        foreach (var name in header.Teardown)
+        {
+            if (!_opt.Steps.TryGetValue(name, out var st))
+            {
+                _log?.LogWarning("{File}: @teardown references unknown step '{Step}' — define it under TestRunner:Steps", contextName, name);
+                continue;
+            }
+            try
+            {
+                _log?.LogDebug("{File}: @teardown {Step}", contextName, name);
+                await RunStepAsync(st, "teardown", runCt);
+            }
+            catch (Exception ex)
+            {
+                _log?.LogWarning(ex, "{File}: @teardown step '{Step}' failed", contextName, name);
+            }
         }
 
         result.ElapsedMs = sw.ElapsedMilliseconds;
@@ -471,7 +566,7 @@ public sealed class TestRunner
 
     // -------- Setup/Teardown step execution --------
 
-    private async Task RunCommandAsync(TestSetupStep step, CancellationToken ct)
+    private async Task RunCommandAsync(TestSetupStep step, string phase, CancellationToken ct)
     {
         var psi = new ProcessStartInfo
         {
@@ -486,7 +581,14 @@ public sealed class TestRunner
         psi.ArgumentList.Add(OperatingSystem.IsWindows() ? "/c" : "-c");
         psi.ArgumentList.Add(step.Command!);
 
-        _log?.LogDebug("setup/teardown command: {Command}", step.Command);
+        if (step.Name is not null)
+        {
+            _log?.LogDebug("{Phase} command step {Step}: {Command}", phase, step.Name, step.Command);
+        }
+        else
+        {
+            _log?.LogDebug("{Phase} command: {Command}", phase, step.Command);
+        }
         using var proc = new Process { StartInfo = psi };
         proc.Start();
         var stdout = await proc.StandardOutput.ReadToEndAsync(ct);
@@ -500,22 +602,34 @@ public sealed class TestRunner
         }
     }
 
-    private async Task RunSqlStepAsync(NpgsqlConnection conn, TestSetupStep step, CancellationToken ct)
+    private async Task RunSqlStepAsync(NpgsqlConnection conn, TestSetupStep step, string phase, CancellationToken ct)
     {
         string sql;
+        string? sourceFile = null;
         if (!string.IsNullOrWhiteSpace(step.SqlFile))
         {
-            sql = await File.ReadAllTextAsync(Path.GetFullPath(step.SqlFile), ct);
+            sourceFile = Path.GetFullPath(step.SqlFile);
+            sql = await File.ReadAllTextAsync(sourceFile, ct);
         }
         else
         {
             sql = step.Sql ?? "";
         }
         if (string.IsNullOrWhiteSpace(sql)) return;
-        _log?.LogDebug("setup/teardown sql: {Source}", step.SqlFile ?? "(inline)");
-        // Split into individual statements (SQL-rewriting is disabled → one statement per command).
-        // Reuses the test-file parser; DO blocks / dollar-quoted bodies stay whole.
-        foreach (var parsed in SqlTestFileParser.Parse(sql))
+        // Announce phase + name + what it does: the file path for SqlFile steps (their statements log at
+        // Verbose), or the (placeholder-resolved) SQL itself for inline steps, capped to its first line.
+        var code = !string.IsNullOrWhiteSpace(step.SqlFile) ? step.SqlFile : FirstLine(sql);
+        if (step.Name is not null)
+        {
+            _log?.LogDebug("{Phase} step {Step}: {Code}", phase, step.Name, code);
+        }
+        else
+        {
+            _log?.LogDebug("{Phase} sql step: {Code}", phase, code);
+        }
+        // Split into individual statements (SQL-rewriting is disabled → one statement per command) with
+        // \i/\ir includes expanded. Reuses the test-file parser; DO blocks / dollar-quoted bodies stay whole.
+        foreach (var parsed in TestFileLoader.LoadSteps(sql, sourceFile))
         {
             if (parsed is SqlStep s)
             {
@@ -533,7 +647,7 @@ public sealed class TestRunner
         // Strict declared order, best-effort: a failing step is logged and the rest still run.
         foreach (var step in _opt.Teardown)
         {
-            try { await RunStepAsync(step, ct); }
+            try { await RunStepAsync(step, "teardown", ct); }
             catch (Exception ex) { _log?.LogWarning(ex, "teardown step failed"); }
         }
     }
@@ -631,7 +745,8 @@ public sealed class TestRunner
                         if (_opt.DetailedReport) _out.Line($"        ✓ {a.Name}", ConsoleColor.DarkGray);
                         continue;
                     }
-                    var loc = a.Line is null ? "" : $"  [{rel}:{a.Line}]";
+                    var locFile = a.SourceFile is null ? rel : Path.GetRelativePath(Environment.CurrentDirectory, a.SourceFile);
+                    var loc = a.Line is null ? "" : $"  [{locFile}:{a.Line}]";
                     _out.LineAnsi($"        ✗ {a.Name}{loc}", AnsiFail);
                     if (!string.IsNullOrWhiteSpace(a.Message) && a.Message != a.Name) _out.LineAnsi($"          {a.Message}", AnsiFail);
                     WriteFailingSql(a.Sql);
@@ -689,9 +804,9 @@ public sealed class TestRunner
                     new XAttribute("classname", fr.File),
                     new XAttribute("time", caseTimeStr));
                 if (a.Outcome == Outcome.Fail)
-                    tc.Add(new XElement("failure", new XAttribute("message", a.Message ?? "assertion failed"), $"{fr.File}{(a.Line is null ? "" : $":{a.Line}")}"));
+                    tc.Add(new XElement("failure", new XAttribute("message", a.Message ?? "assertion failed"), $"{a.SourceFile ?? fr.File}{(a.Line is null ? "" : $":{a.Line}")}"));
                 else if (a.Outcome == Outcome.Error)
-                    tc.Add(new XElement("error", new XAttribute("message", a.Message ?? "error"), $"{fr.File}{(a.Line is null ? "" : $":{a.Line}")}"));
+                    tc.Add(new XElement("error", new XAttribute("message", a.Message ?? "error"), $"{a.SourceFile ?? fr.File}{(a.Line is null ? "" : $":{a.Line}")}"));
                 if (a.Outcome != Outcome.Pass && fr.Notices.Count > 0)
                     tc.Add(new XElement("system-out", string.Join('\n', fr.Notices)));
                 suite.Add(tc);

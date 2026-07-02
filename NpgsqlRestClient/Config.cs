@@ -109,9 +109,16 @@ public class Config
             // process and stable across the whole config — usable wherever {ENV} placeholders are
             // (connection strings, TestRunner Setup/Teardown). E.g. a test DB named per run:
             //   "ConnectionStrings:Test": "...;Database=app_test_{rnd6};..."  +  "create database app_test_{rnd6}".
+            // When several DISTINCT tokens of the same length are needed, indexed instances {rndN_1}..{rndN_9}
+            // are each independent (e.g. {rnd3}, {rnd3_1} and {rnd3_2} are three different 3-char tokens).
             for (int n = 1; n <= 10; n++)
             {
-                EnvDict[string.Concat("rnd", n.ToString(System.Globalization.CultureInfo.InvariantCulture))] = RandomToken(n);
+                var nStr = n.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                EnvDict[string.Concat("rnd", nStr)] = RandomToken(n);
+                for (int m = 1; m <= 9; m++)
+                {
+                    EnvDict[string.Concat("rnd", nStr, "_", m.ToString(System.Globalization.CultureInfo.InvariantCulture))] = RandomToken(n);
+                }
             }
         }
 

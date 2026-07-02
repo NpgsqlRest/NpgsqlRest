@@ -3094,6 +3094,18 @@ public class Builder
             }
         }
 
+        // Named step registry (name → step), referenced by name from Setup/Teardown and test file headers.
+        foreach (var child in section.GetSection("Steps").GetChildren())
+        {
+            if (string.IsNullOrWhiteSpace(child.Key)) continue;
+            var step = ReadStep(child);
+            if (step is not null)
+            {
+                step.Name = child.Key;
+                opt.Steps[child.Key] = step;
+            }
+        }
+
         opt.Setup = ReadTestSteps(section.GetSection("Setup"));
         opt.Teardown = ReadTestSteps(section.GetSection("Teardown"));
         return opt;
@@ -3106,21 +3118,43 @@ public class Builder
             return string.IsNullOrWhiteSpace(s.Value) ? null : s.Value;
         }
 
+        TestSetupStep? ReadStep(IConfigurationSection child)
+        {
+            var step = new TestSetupStep
+            {
+                Sql = _config.GetConfigStr("Sql", child),
+                SqlFile = _config.GetConfigStr("SqlFile", child),
+                Command = _config.GetConfigStr("Command", child),
+                WorkingDirectory = _config.GetConfigStr("WorkingDirectory", child),
+                ConnectionName = _config.GetConfigStr("ConnectionName", child),
+            };
+            return step.Sql is not null || step.SqlFile is not null || step.Command is not null ? step : null;
+        }
+
         List<TestSetupStep> ReadTestSteps(IConfigurationSection stepsSection)
         {
             var list = new List<TestSetupStep>();
             if (stepsSection.Exists() is false) return list;
             foreach (var child in stepsSection.GetChildren())
             {
-                var step = new TestSetupStep
+                // A string element is a reference to a named step from the Steps registry; an object element
+                // is an inline step. Both can be mixed in the same array.
+                if (string.IsNullOrWhiteSpace(child.Value) is false)
                 {
-                    Sql = _config.GetConfigStr("Sql", child),
-                    SqlFile = _config.GetConfigStr("SqlFile", child),
-                    Command = _config.GetConfigStr("Command", child),
-                    WorkingDirectory = _config.GetConfigStr("WorkingDirectory", child),
-                    ConnectionName = _config.GetConfigStr("ConnectionName", child),
-                };
-                if (step.Sql is not null || step.SqlFile is not null || step.Command is not null)
+                    var name = child.Value.Trim();
+                    if (opt.Steps.TryGetValue(name, out var named))
+                    {
+                        list.Add(named);
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException(
+                            $"TestRunner Setup/Teardown references unknown step '{name}' — define it under TestRunner:Steps.");
+                    }
+                    continue;
+                }
+                var step = ReadStep(child);
+                if (step is not null)
                 {
                     list.Add(step);
                 }

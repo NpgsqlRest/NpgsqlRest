@@ -500,7 +500,18 @@ if (testMode)
     var logTestNotices = options.LogConnectionNoticeEvents;
     options.LogConnectionNoticeEvents = false;
 
-    testRunner = new NpgsqlRestClient.Testing.TestRunner(options, builder.BuildTestRunnerOptions(), connectionString, builder.TestLogger, logTestNotices, builder.BuildTestRunnerConnectionStrings());
+    try
+    {
+        testRunner = new NpgsqlRestClient.Testing.TestRunner(options, builder.BuildTestRunnerOptions(), connectionString, builder.TestLogger, logTestNotices, builder.BuildTestRunnerConnectionStrings());
+    }
+    catch (Exception ex)
+    {
+        // Configuration error (e.g. a Setup/Teardown entry referencing an unknown named step).
+        new Out().Line($"Test runner configuration error: {ex.Message}", ConsoleColor.Red);
+        builder.TestLogger?.LogError(ex, "Test runner configuration error");
+        Environment.ExitCode = NpgsqlRestClient.Testing.TestRunner.ExitConfig;
+        return;
+    }
     if (await testRunner.SetupAsync() is false)
     {
         Environment.ExitCode = NpgsqlRestClient.Testing.TestRunner.ExitConfig;

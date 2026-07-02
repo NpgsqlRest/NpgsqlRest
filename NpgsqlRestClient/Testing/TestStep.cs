@@ -7,6 +7,8 @@ public enum TestStepKind
     Sql,
     /// <summary>An embedded HTTP request (a /* ... */ block whose first line is a request line).</summary>
     Http,
+    /// <summary>An include line (<c>\i file</c> or <c>\ir file</c>) — expanded into the included file's steps.</summary>
+    Include,
 }
 
 /// <summary>One ordered step in a parsed .test.sql file.</summary>
@@ -15,11 +17,34 @@ public abstract class TestStep
     public TestStepKind Kind { get; }
     /// <summary>1-based line in the source file where this step starts (for error reporting).</summary>
     public int LineNumber { get; }
+    /// <summary>
+    /// Full path of the file this step came from when it was spliced in via <c>\i</c>/<c>\ir</c>;
+    /// null when the step belongs to the file being executed itself.
+    /// </summary>
+    public string? SourceFile { get; set; }
 
     protected TestStep(TestStepKind kind, int lineNumber)
     {
         Kind = kind;
         LineNumber = lineNumber;
+    }
+}
+
+/// <summary>
+/// An include line: <c>\i path</c> (path relative to the current working directory, like every other
+/// configured path) or <c>\ir path</c> (relative to the file containing the include) — psql semantics.
+/// Expanded by <see cref="TestFileLoader"/> into the included file's steps, as if the content were pasted.
+/// </summary>
+public sealed class IncludeStep : TestStep
+{
+    public string Path { get; }
+    /// <summary>True for <c>\ir</c> (relative to the including file), false for <c>\i</c> (cwd-relative).</summary>
+    public bool RelativeToFile { get; }
+
+    public IncludeStep(string path, bool relativeToFile, int lineNumber) : base(TestStepKind.Include, lineNumber)
+    {
+        Path = path;
+        RelativeToFile = relativeToFile;
     }
 }
 
