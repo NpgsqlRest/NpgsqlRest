@@ -271,6 +271,10 @@ if (cmdRetryOpts.Enabled && string.IsNullOrEmpty(cmdRetryOpts.DefaultStrategy))
 
 bool endpointsMode = args.Any(a => string.Equals(a, "--endpoints", StringComparison.OrdinalIgnoreCase));
 bool testMode = args.Any(a => string.Equals(a, "--test", StringComparison.OrdinalIgnoreCase));
+// Watch mode (interactive re-run loop). Needed this early because it relaxes SqlFileSource error handling
+// (a broken endpoint file must not kill the watch session — see CreateEndpointSources).
+bool watchMode = testMode && (args.Any(a => string.Equals(a, "--watch", StringComparison.OrdinalIgnoreCase))
+    || config.GetConfigBool("Watch", config.Cfg.GetSection("TestRunner")));
 
 builder.BuildInstance();
 builder.Instance.Services.AddRouting();
@@ -474,7 +478,7 @@ NpgsqlRestOptions options = new()
     SseResponseHeaders = builder.GetSseResponseHeaders(),
     WarnUnboundSseNotices = config.GetConfigBool("WarnUnboundServerSentEventsNotices", config.NpgsqlRestCfg, true),
 
-    EndpointSources = appInstance.CreateEndpointSources(),
+    EndpointSources = appInstance.CreateEndpointSources(relaxSqlFileErrors: watchMode),
     UploadOptions = appInstance.CreateUploadOptions(),
     
     CacheOptions = builder.BuildCacheOptions(app, cacheType),
@@ -510,7 +514,7 @@ if (testMode)
     catch (Exception ex)
     {
         // Configuration error (e.g. a Setup/Teardown entry referencing an unknown named step).
-        new Out().Line($"Test runner configuration error: {ex.Message}", ConsoleColor.Red);
+        new Out().LineAnsi($"Test runner configuration error: {ex.Message}", NpgsqlRestClient.Testing.TestRunner.AnsiFail);
         builder.TestLogger?.LogError(ex, "Test runner configuration error");
         Environment.ExitCode = NpgsqlRestClient.Testing.TestRunner.ExitConfig;
         return;
@@ -538,12 +542,31 @@ if (endpointsMode)
 if (testMode)
 {
     // Endpoints are now built; run the test files (then Teardown), and exit. `--watch` (or
-    // TestRunner:Watch) keeps the process alive and re-runs on file changes until Ctrl+C.
-    bool watchMode = args.Any(a => string.Equals(a, "--watch", StringComparison.OrdinalIgnoreCase))
-        || testRunnerOptions!.Watch;
-    Environment.ExitCode = watchMode
-        ? await testRunner!.RunWatchAsync(EndpointCapture.Endpoints)
-        : await testRunner!.RunAsync(EndpointCapture.Endpoints);
+    // TestRunner:Watch) keeps the process alive and re-runs on file changes until Ctrl+C. When the SQL
+    // file source is enabled, watch mode also watches its tree: a changed endpoint file triggers an
+    // in-process endpoint rebuild (UseNpgsqlRest re-reads + re-describes and atomically swaps the
+    // endpoint registry) followed by a full test rerun.
+    if (watchMode)
+    {
+        string? endpointPattern = null;
+        var sqlFileCfg = config.NpgsqlRestCfg.GetSection("SqlFileSource");
+        if (sqlFileCfg.Exists() && config.GetConfigBool("Enabled", sqlFileCfg, true))
+        {
+            endpointPattern = config.GetConfigStr("FilePattern", sqlFileCfg);
+        }
+        Environment.ExitCode = await testRunner!.RunWatchAsync(
+            EndpointCapture.Endpoints,
+            endpointPattern,
+            () =>
+            {
+                app.UseNpgsqlRest(options);
+                return EndpointCapture.Endpoints;
+            });
+    }
+    else
+    {
+        Environment.ExitCode = await testRunner!.RunAsync(EndpointCapture.Endpoints);
+    }
     return;
 }
 

@@ -16,9 +16,16 @@ namespace NpgsqlRestClient.Testing;
 /// </summary>
 public sealed class TestRunner
 {
-    // Failure/error color: ANSI 256-color 196 — the same red Serilog's Code theme uses (truer than the
-    // 16-color ConsoleColor.Red, which renders orange in some themes). Emitted only to a real terminal.
-    private const string AnsiFail = "\x1b[38;5;196m";
+    // Report styling, matched to Serilog's Code theme: the FAIL/ERROR label renders as the byte-identical
+    // CHIP the Code theme uses for its ERR/FTL level — red-197 text on a dark-grey-238 background (NOT the
+    // white-on-red-196 chip, which is the Literate theme's). PASS uses the same chip grammar with green-47,
+    // the exact color-cube mirror of red-197 (#ff005f ↔ #00ff5f). ALL failure text uses the red-197
+    // foreground (never 16-color ConsoleColor.Red, which renders orange in some themes). Escapes are
+    // emitted only on a real terminal (see Out).
+    private const string AnsiFailChip = "\x1b[38;5;197m\x1b[48;5;238m";
+    private const string AnsiPassChip = "\x1b[38;5;47m\x1b[48;5;238m";
+    public const string AnsiFail = "\x1b[38;5;197m";
+    private const string AnsiOk = "\x1b[38;5;47m";
 
     public const int ExitPass = 0;
     public const int ExitFailures = 1;
@@ -40,6 +47,19 @@ public sealed class TestRunner
     private volatile bool _failFast;
     // Endpoints actually invoked during the run (canonical "METHOD path" keys) — the coverage numerator.
     private readonly ConcurrentDictionary<string, byte> _invoked = new(StringComparer.OrdinalIgnoreCase);
+
+    // Lifetime cleanup: from Setup onward, SIGINT/SIGTERM and process exit all funnel into a run-once
+    // Teardown, executed SYNCHRONOUSLY in the signal handler — not after the run loop unwinds. A parent
+    // process (bun/npm run, a shell) that kills its children right after forwarding Ctrl+C would otherwise
+    // win the race and leak the test database. ProcessExit additionally covers hard exits such as
+    // SqlFileSource ErrorMode=Exit calling Environment.Exit(1). (A parent that SIGKILLs instantly is not
+    // survivable — this shrinks the window to the teardown itself.)
+    private readonly CancellationTokenSource _stop = new();
+    private readonly object _teardownLock = new();
+    private Task? _teardownTask;
+    private int _signalCount;
+    private System.Runtime.InteropServices.PosixSignalRegistration? _sigInt;
+    private System.Runtime.InteropServices.PosixSignalRegistration? _sigTerm;
 
     private enum Outcome { Pass, Fail, Error }
 
@@ -93,9 +113,48 @@ public sealed class TestRunner
         _rest.AmbientConnectionAccessor = () => Ambient.Value;
     }
 
+    // Registers the run-once cleanup triggers. First SIGINT/SIGTERM: cancel everything, then run Teardown
+    // right here on the signal thread (ctx.Cancel keeps the process alive for it); a second signal force-
+    // quits. ProcessExit is the safety net for Environment.Exit paths and no-ops after a normal teardown.
+    private void RegisterLifetimeCleanup()
+    {
+        void OnSignal(System.Runtime.InteropServices.PosixSignalContext ctx)
+        {
+            if (Interlocked.Increment(ref _signalCount) > 1)
+            {
+                return; // second signal: leave ctx.Cancel=false → default handling kills the process
+            }
+            ctx.Cancel = true;
+            _stop.Cancel();
+            try { TeardownOnceAsync().GetAwaiter().GetResult(); } catch { /* best-effort */ }
+        }
+        _sigInt = System.Runtime.InteropServices.PosixSignalRegistration.Create(
+            System.Runtime.InteropServices.PosixSignal.SIGINT, OnSignal);
+        _sigTerm = System.Runtime.InteropServices.PosixSignalRegistration.Create(
+            System.Runtime.InteropServices.PosixSignal.SIGTERM, OnSignal);
+        AppDomain.CurrentDomain.ProcessExit += (s, e) =>
+        {
+            try { TeardownOnceAsync().GetAwaiter().GetResult(); } catch { /* best-effort */ }
+        };
+    }
+
+    // All teardown paths (signal, process exit, RunAsync/RunWatchAsync finally, Setup failure) funnel here.
+    // The first caller starts it; every caller gets the SAME task — so a concurrent caller (e.g. the run
+    // loop's finally racing the signal thread) awaits the in-flight teardown instead of letting the process
+    // exit while databases are still being dropped.
+    private Task TeardownOnceAsync()
+    {
+        lock (_teardownLock)
+        {
+            _teardownTask ??= TeardownAsync(CancellationToken.None);
+            return _teardownTask;
+        }
+    }
+
     /// <summary>Runs before endpoint discovery: collision check + Setup steps. Returns false on failure (logged, teardown attempted).</summary>
     public async Task<bool> SetupAsync(CancellationToken ct = default)
     {
+        RegisterLifetimeCleanup();
         try
         {
             // Response-table names are validated and created per HTTP block (no pre-run permanent-table
@@ -114,9 +173,9 @@ public sealed class TestRunner
         }
         catch (Exception ex)
         {
-            _out.Line($"Test runner setup failed: {ex.Message}", ConsoleColor.Red);
+            _out.LineAnsi($"Test runner setup failed: {ex.Message}", AnsiFail);
             _log?.LogError(ex, "Test runner setup failed");
-            await TeardownAsync(ct);
+            await TeardownOnceAsync();
             return false;
         }
     }
@@ -154,13 +213,19 @@ public sealed class TestRunner
     /// <summary>Runs after endpoint discovery: executes the test files and (always) Teardown. Returns the process exit code.</summary>
     public async Task<int> RunAsync(RoutineEndpoint[] endpoints, CancellationToken ct = default)
     {
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token, ct);
         try
         {
-            return await ExecuteDiscoveredFilesAsync(endpoints, BuildEndpointLookup(endpoints), only: null, ct);
+            return await ExecuteDiscoveredFilesAsync(endpoints, BuildEndpointLookup(endpoints), only: null, linked.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Interrupted (Ctrl+C/SIGTERM) — the signal handler has already run Teardown synchronously.
+            return ExitErrors;
         }
         finally
         {
-            await TeardownAsync(ct);
+            await TeardownOnceAsync();
         }
     }
 
@@ -325,81 +390,123 @@ public sealed class TestRunner
 
     /// <summary>
     /// Watch mode (interactive/dev-only): runs everything once, then re-runs on file changes until
-    /// Ctrl+C. A changed TEST file re-runs just that file; any other changed .sql under the watched tree
-    /// (e.g. a \ir fixture — its dependents are unknown) re-runs everything. Endpoint sources are NOT
-    /// watched (endpoints are built once at startup — restart to rebuild). Teardown runs once, on exit;
-    /// the exit code is always 0 on a graceful stop (watch is not for CI gating).
+    /// Ctrl+C. A changed TEST file re-runs just that file; a changed ENDPOINT file (matching
+    /// <paramref name="endpointPattern"/>, when the SQL file source is enabled) triggers an in-process
+    /// endpoint REBUILD via <paramref name="rebuildEndpoints"/> followed by a full rerun; any other
+    /// changed .sql under the test tree (e.g. a \ir fixture — its dependents are unknown) re-runs
+    /// everything. Teardown runs once, on exit; the exit code is always 0 on a graceful stop (watch is
+    /// not for CI gating).
     /// </summary>
-    public async Task<int> RunWatchAsync(RoutineEndpoint[] endpoints, CancellationToken ct = default)
+    public async Task<int> RunWatchAsync(
+        RoutineEndpoint[] endpoints,
+        string? endpointPattern = null,
+        Func<RoutineEndpoint[]>? rebuildEndpoints = null,
+        CancellationToken ct = default)
     {
         var lookup = BuildEndpointLookup(endpoints);
-        using var stop = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        // PosixSignalRegistration (not Console.CancelKeyPress, which is unreliable without a TTY):
-        // intercept both Ctrl+C (SIGINT) and e.g. `docker stop` (SIGTERM), cancel the default kill so the
-        // loop can end gracefully and Teardown can run.
-        void OnSignal(System.Runtime.InteropServices.PosixSignalContext ctx)
-        {
-            ctx.Cancel = true;
-            stop.Cancel();
-        }
-        using var sigInt = System.Runtime.InteropServices.PosixSignalRegistration.Create(
-            System.Runtime.InteropServices.PosixSignal.SIGINT, OnSignal);
-        using var sigTerm = System.Runtime.InteropServices.PosixSignalRegistration.Create(
-            System.Runtime.InteropServices.PosixSignal.SIGTERM, OnSignal);
+        // SIGINT/SIGTERM handling is registered runner-wide (see RegisterLifetimeCleanup): the FIRST signal
+        // cancels this token and runs Teardown synchronously on the signal thread — so cleanup wins even
+        // when a parent process (bun/npm run) kills its children right after forwarding Ctrl+C.
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token, ct);
 
         try
         {
             await ExecuteDiscoveredFilesAsync(endpoints, lookup, only: null, stop.Token);
 
-            var baseDir = GetWatchBaseDir(_opt.FilePattern);
-            if (baseDir is null)
+            var testBase = GetWatchBaseDir(_opt.FilePattern);
+            if (testBase is null)
             {
                 _out.Line("Test runner: cannot watch — FilePattern has no existing base directory.", ConsoleColor.Yellow);
                 return ExitConfig;
             }
+            var testBaseFull = Path.GetFullPath(testBase);
+            var endpointBaseFull = rebuildEndpoints is not null && !string.IsNullOrWhiteSpace(endpointPattern)
+                ? GetWatchBaseDir(endpointPattern!) is { } eb ? Path.GetFullPath(eb) : null
+                : null;
 
             var changes = System.Threading.Channels.Channel.CreateUnbounded<string>();
-            using var watcher = new FileSystemWatcher(Path.GetFullPath(baseDir), "*.sql")
-            {
-                IncludeSubdirectories = true,
-                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size,
-            };
             void OnFsEvent(object s, FileSystemEventArgs e) => changes.Writer.TryWrite(e.FullPath);
-            watcher.Changed += OnFsEvent;
-            watcher.Created += OnFsEvent;
-            watcher.Renamed += (s, e) => changes.Writer.TryWrite(e.FullPath);
-            watcher.EnableRaisingEvents = true;
+            FileSystemWatcher NewWatcher(string dir)
+            {
+                var w = new FileSystemWatcher(dir, "*.sql")
+                {
+                    IncludeSubdirectories = true,
+                    NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size,
+                };
+                w.Changed += OnFsEvent;
+                w.Created += OnFsEvent;
+                w.Renamed += (s, e) => changes.Writer.TryWrite(e.FullPath);
+                w.EnableRaisingEvents = true;
+                return w;
+            }
+            using var watcher = NewWatcher(testBaseFull);
+            // Watch the endpoint source tree too (unless it is the same/contained directory — the
+            // co-located layout — where the first watcher already covers it).
+            bool separateEndpointTree = endpointBaseFull is not null
+                && !testBaseFull.StartsWith(endpointBaseFull, StringComparison.Ordinal)
+                && !endpointBaseFull.StartsWith(testBaseFull, StringComparison.Ordinal);
+            using var endpointWatcher = separateEndpointTree ? NewWatcher(endpointBaseFull!) : null;
 
-            _out.Line($"\nwatching {Path.GetRelativePath(Environment.CurrentDirectory, baseDir)} for changes — Ctrl+C to stop", ConsoleColor.Cyan);
+            var watching = Path.GetRelativePath(Environment.CurrentDirectory, testBaseFull)
+                + (endpointBaseFull is not null && endpointBaseFull != testBaseFull
+                    ? $" + {Path.GetRelativePath(Environment.CurrentDirectory, endpointBaseFull)} (endpoints)"
+                    : "");
+            _out.Line($"\nwatching {watching} for changes — Ctrl+C to stop", ConsoleColor.Cyan);
 
             while (!stop.IsCancellationRequested)
             {
-                var changed = await NextChangeBatchAsync(changes.Reader, stop.Token);
+                var changed = (await NextChangeBatchAsync(changes.Reader, stop.Token))?.Distinct().ToList();
                 if (changed is null) break; // cancelled
 
-                // Debounced batch: changed test files rerun individually; any other .sql (fixture/profile
-                // include) forces a full rerun since its dependents are unknown.
+                // Debounced batch, classified per file: test file → rerun it alone; endpoint source →
+                // rebuild endpoints + full rerun; anything else under the test tree (fixture/profile
+                // include — dependents unknown) → full rerun; anything else → ignore.
                 var testFiles = new List<string>();
                 bool runAll = false;
+                bool rebuild = false;
                 foreach (var path in changed)
                 {
-                    // Watcher paths are absolute; FilePattern is cwd-relative — compare in relative form.
                     var rel = Path.GetRelativePath(Environment.CurrentDirectory, path).Replace('\\', '/');
-                    var pattern = _opt.FilePattern.Replace('\\', '/');
-                    if (pattern.StartsWith("./")) pattern = pattern[2..];
-                    if (Parser.IsPatternMatch(rel, pattern))
+                    if (MatchesCwdRelativePattern(rel, _opt.FilePattern))
                     {
                         if (File.Exists(path)) testFiles.Add(Path.GetFullPath(path));
                     }
-                    else
+                    else if (endpointPattern is not null && rebuildEndpoints is not null
+                        && MatchesCwdRelativePattern(rel, endpointPattern))
+                    {
+                        rebuild = true;
+                    }
+                    else if (Path.GetFullPath(path).StartsWith(testBaseFull, StringComparison.Ordinal))
                     {
                         runAll = true;
                     }
                 }
-                if (!runAll && testFiles.Count == 0) continue; // e.g. only deletions of test files
+                if (!rebuild && !runAll && testFiles.Count == 0) continue; // e.g. only deletions
 
                 var trigger = Path.GetRelativePath(Environment.CurrentDirectory, changed[0]);
                 _out.Line($"\n— {DateTime.Now:HH:mm:ss} change detected ({trigger}{(changed.Count > 1 ? $" +{changed.Count - 1}" : "")}) —", ConsoleColor.Cyan);
+
+                if (rebuild)
+                {
+                    // In-process endpoint rebuild: UseNpgsqlRest re-reads the sources, re-describes against
+                    // the test database, and atomically swaps the endpoint registry. On failure the old
+                    // endpoints stay live. The delta report makes a dropped endpoint (= a broken SQL file,
+                    // skipped by ErrorMode=Skip) visible even when the NpgsqlRest log channel is muted.
+                    try
+                    {
+                        var fresh = rebuildEndpoints!();
+                        ReportEndpointDelta(endpoints, fresh);
+                        endpoints = fresh;
+                        lookup = BuildEndpointLookup(fresh);
+                    }
+                    catch (Exception ex)
+                    {
+                        _out.LineAnsi($"endpoint rebuild failed: {ex.Message} — keeping the previous endpoints", AnsiFail);
+                        _log?.LogError(ex, "endpoint rebuild failed");
+                    }
+                    runAll = true;
+                }
+
                 await ExecuteDiscoveredFilesAsync(endpoints, lookup, only: runAll ? null : testFiles.Distinct().ToList(), stop.Token);
                 _out.Line($"\nwatching — Ctrl+C to stop", ConsoleColor.Cyan);
             }
@@ -411,9 +518,42 @@ public sealed class TestRunner
         }
         finally
         {
-            // Teardown must survive the SIGINT/SIGTERM that ended the loop → uncancellable token.
-            await TeardownAsync(CancellationToken.None);
+            // Normally a no-op: the signal handler already ran Teardown; covers non-signal exits.
+            await TeardownOnceAsync();
         }
+    }
+
+    // A cwd-relative path against a cwd-relative glob (leading "./" tolerated on the pattern).
+    private static bool MatchesCwdRelativePattern(string relativePath, string pattern)
+    {
+        pattern = pattern.Replace('\\', '/');
+        if (pattern.StartsWith("./")) pattern = pattern[2..];
+        return Parser.IsPatternMatch(relativePath, pattern);
+    }
+
+    // Rebuild delta: how many endpoints now, plus every added/removed "METHOD path" — a removed endpoint
+    // usually means its SQL file failed to parse/describe and was skipped.
+    private void ReportEndpointDelta(RoutineEndpoint[] before, RoutineEndpoint[] after)
+    {
+        static HashSet<string> Keys(RoutineEndpoint[] eps) =>
+            new(eps.Select(e => $"{e.Method} {e.Path}"), StringComparer.OrdinalIgnoreCase);
+        var beforeKeys = Keys(before);
+        var afterKeys = Keys(after);
+        var added = afterKeys.Except(beforeKeys).OrderBy(k => k, StringComparer.Ordinal).ToList();
+        var removed = beforeKeys.Except(afterKeys).OrderBy(k => k, StringComparer.Ordinal).ToList();
+
+        _out.Line($"endpoints rebuilt: {after.Length} (was {before.Length})",
+            removed.Count > 0 ? ConsoleColor.Yellow : ConsoleColor.Cyan);
+        foreach (var k in added)
+        {
+            _out.Line($"        + {k}", ConsoleColor.Green);
+        }
+        foreach (var k in removed)
+        {
+            _out.Line($"        - {k}  (endpoint dropped — check its SQL file for errors)", ConsoleColor.Yellow);
+        }
+        _log?.LogDebug("endpoints rebuilt: {After} (was {Before}); +{Added} -{Removed}",
+            after.Length, before.Length, added.Count, removed.Count);
     }
 
     // First change (blocking), then a quiet period so editor write bursts coalesce into one rerun.
@@ -988,18 +1128,20 @@ public sealed class TestRunner
             if (fr.Assertions.Count == 0)
             {
                 // The file ran but contained no recognizable assertion — surface it rather than count a pass.
-                _out.Line($"PASS  {rel}  (no assertions, {fr.ElapsedMs}ms)", ConsoleColor.Yellow);
+                _out.LineChip("PASS", AnsiPassChip, $"  {rel}  (no assertions, {fr.ElapsedMs}ms)", "\x1b[38;5;229m");
             }
             else if (fr.Outcome == Outcome.Pass)
             {
-                _out.Line($"PASS  {rel}  ({aPass} assertion{(aPass == 1 ? "" : "s")}, {fr.ElapsedMs}ms)", ConsoleColor.Green);
+                _out.LineChip("PASS", AnsiPassChip, $"  {rel}  ({aPass} assertion{(aPass == 1 ? "" : "s")}, {fr.ElapsedMs}ms)");
                 if (_opt.DetailedReport)
                     foreach (var a in fr.Assertions) _out.Line($"        ✓ {a.Name}", ConsoleColor.DarkGray);
             }
             else
             {
-                var label = fr.Outcome == Outcome.Error ? "ERROR" : "FAIL ";
-                _out.LineAnsi($"{label} {rel}  ({fr.ElapsedMs}ms)", AnsiFail);
+                // The label renders as Serilog's error chip (white on red); the rest of the line stays in
+                // the terminal's normal text color — same visual grammar as a `[... ERR]` log line.
+                var label = fr.Outcome == Outcome.Error ? "ERROR" : "FAIL";
+                _out.LineChip(label, AnsiFailChip, $"{(fr.Outcome == Outcome.Error ? " " : "  ")}{rel}  ({fr.ElapsedMs}ms)");
                 foreach (var a in fr.Assertions)
                 {
                     if (a.Outcome == Outcome.Pass)
@@ -1020,7 +1162,7 @@ public sealed class TestRunner
         }
 
         var summary = $"\n{passed} passed, {failed} failed, {errored} error(s)  —  {totalAssertions} assertion{(totalAssertions == 1 ? "" : "s")} in {results.Count} file{(results.Count == 1 ? "" : "s")}";
-        if (failed + errored == 0) _out.Line(summary, ConsoleColor.Green);
+        if (failed + errored == 0) _out.LineAnsi(summary, AnsiOk);
         else _out.LineAnsi(summary, AnsiFail);
     }
 

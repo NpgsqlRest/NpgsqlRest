@@ -73,9 +73,10 @@ public class TestRunnerOptions
 
     /// <summary>
     /// Watch mode (interactive/dev-only; CLI: <c>--watch</c>): run everything once, then re-run on file
-    /// changes until Ctrl+C. A changed test file re-runs alone; any other changed .sql under the watched
-    /// tree re-runs everything (an included fixture's dependents are unknown). Endpoint sources are not
-    /// watched — restart to rebuild endpoints. Teardown runs once, on exit; graceful exit code is 0.
+    /// changes until Ctrl+C. A changed test file re-runs alone; a changed ENDPOINT file (SqlFileSource
+    /// FilePattern) rebuilds the endpoints in-process (delta reported) and re-runs everything; any other
+    /// changed .sql under the test tree re-runs everything (an included fixture's dependents are unknown).
+    /// Teardown runs once, on exit; graceful exit code is 0.
     /// </summary>
     public bool Watch { get; set; } = false;
 

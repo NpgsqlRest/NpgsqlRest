@@ -621,7 +621,7 @@ public class App
         return handlers;
     }
 
-    public List<IEndpointSource> CreateEndpointSources()
+    public List<IEndpointSource> CreateEndpointSources(bool relaxSqlFileErrors = false)
     {
         var sources = new List<IEndpointSource>(2);
 
@@ -683,6 +683,14 @@ public class App
                 if (_config.GetConfigStr("ErrorMode", sqlFileSourceCfg) is not null)
                 {
                     opts.ErrorMode = _config.GetConfigEnum<ParseErrorMode>("ErrorMode", sqlFileSourceCfg);
+                }
+                if (relaxSqlFileErrors && opts.ErrorMode == ParseErrorMode.Exit)
+                {
+                    // Watch mode rebuilds endpoints on the fly; ErrorMode=Exit would kill the whole watch
+                    // session (Environment.Exit) on a broken SQL file — Skip drops the file instead, and
+                    // the runner reports the endpoint delta after each rebuild.
+                    opts.ErrorMode = ParseErrorMode.Skip;
+                    _builder.TestLogger?.LogDebug("watch mode: SqlFileSource ErrorMode forced from Exit to Skip");
                 }
                 var resultPrefix = _config.GetConfigStr("ResultPrefix", sqlFileSourceCfg);
                 if (resultPrefix is not null)
