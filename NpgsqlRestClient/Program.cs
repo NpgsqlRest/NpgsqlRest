@@ -301,7 +301,7 @@ if (configWarnings.Count > 0)
 var errorHandlingOptions = builder.BuildErrorHandlingOptions();
 var (rateLimiterDefaultPolicy, rateLimiterEnabled) = builder.BuildRateLimiter();
 
-var (connectionString, retryOpts) = builder.BuildConnectionString();
+var (connectionString, retryOpts) = builder.BuildConnectionString(testMode);
 if (connectionString is null)
 {
     return;
@@ -500,7 +500,7 @@ if (testMode)
     var logTestNotices = options.LogConnectionNoticeEvents;
     options.LogConnectionNoticeEvents = false;
 
-    testRunner = new NpgsqlRestClient.Testing.TestRunner(options, builder.BuildTestRunnerOptions(), connectionString, builder.TestLogger, logTestNotices);
+    testRunner = new NpgsqlRestClient.Testing.TestRunner(options, builder.BuildTestRunnerOptions(), connectionString, builder.TestLogger, logTestNotices, builder.BuildTestRunnerConnectionStrings());
     if (await testRunner.SetupAsync() is false)
     {
         Environment.ExitCode = NpgsqlRestClient.Testing.TestRunner.ExitConfig;

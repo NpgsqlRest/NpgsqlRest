@@ -463,10 +463,17 @@ public class App
     public List<IEndpointCreateHandler> CreateCodeGenHandlers(string connectionString, string[] args)
     {
         List<IEndpointCreateHandler> handlers = new(3);
-        if (args.Any(a => string.Equals(a, "--endpoints", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(a, "--test", StringComparison.OrdinalIgnoreCase)))
+        if (args.Any(a => string.Equals(a, "--test", StringComparison.OrdinalIgnoreCase)))
         {
-            // --test also captures endpoints so the runner can pre-check kinds (SSE/upload/outbound).
+            // Test mode: only capture endpoints for the runner (kind pre-checks: SSE/upload/login/outbound).
+            // Code generation (HTTP files, TS client, OpenAPI) is deliberately skipped so a test run never
+            // rewrites generated artifacts as a side effect.
+            handlers.Add(new EndpointCapture());
+            _builder.TestLogger?.LogDebug("code generation handlers skipped in test mode");
+            return handlers;
+        }
+        if (args.Any(a => string.Equals(a, "--endpoints", StringComparison.OrdinalIgnoreCase)))
+        {
             handlers.Add(new EndpointCapture());
         }
         var httpFilecfg = _config.NpgsqlRestCfg.GetSection("HttpFileOptions");

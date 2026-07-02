@@ -49,8 +49,6 @@ public sealed class HttpStep : TestStep
     public IReadOnlyList<(string Name, string Value)> Claims { get; }
     /// <summary>Request body (verbatim), or null when none.</summary>
     public string? Body { get; }
-    /// <summary>Expected status from <c># @expect-status NNN</c>, or null.</summary>
-    public int? ExpectStatus { get; }
     /// <summary>Response temp-table name override from <c># @response name</c>, or null (use the configured default).</summary>
     public string? ResponseTable { get; }
 
@@ -60,7 +58,6 @@ public sealed class HttpStep : TestStep
         IReadOnlyList<(string Name, string Value)> headers,
         IReadOnlyList<(string Name, string Value)> claims,
         string? body,
-        int? expectStatus,
         string? responseTable,
         int lineNumber) : base(TestStepKind.Http, lineNumber)
     {
@@ -69,7 +66,6 @@ public sealed class HttpStep : TestStep
         Headers = headers;
         Claims = claims;
         Body = body;
-        ExpectStatus = expectStatus;
         ResponseTable = responseTable;
     }
 }

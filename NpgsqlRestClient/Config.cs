@@ -105,6 +105,14 @@ public class Config
             {
                 EnvDict.Add(key.ToString()!, envVars[key.ToString()!]?.ToString()!);
             }
+            // {rnd1}..{rnd10}: random lowercase tokens (length = the trailing digit) generated once per
+            // process and stable across the whole config — usable wherever {ENV} placeholders are
+            // (connection strings, TestRunner Setup/Teardown). E.g. a test DB named per run:
+            //   "ConnectionStrings:Test": "...;Database=app_test_{rnd6};..."  +  "create database app_test_{rnd6}".
+            for (int n = 1; n <= 10; n++)
+            {
+                EnvDict[string.Concat("rnd", n.ToString(System.Globalization.CultureInfo.InvariantCulture))] = RandomToken(n);
+            }
         }
 
         UseJsonApplicationName = GetConfigBool("UseJsonApplicationName", ConnectionSettingsCfg);
@@ -149,6 +157,19 @@ public class Config
             "false" or "no" or "0" => false,
             _ => throw new InvalidOperationException($"Invalid boolean value '{value}' for configuration key '{key}'. Valid values are: true, false, yes, no, 1, 0")
         };
+    }
+
+    // A random lowercase-letter token of the given length, used for the {rnd1}..{rnd10} config placeholders.
+    private static string RandomToken(int length)
+    {
+        const string chars = "abcdefghijklmnopqrstuvwxyz";
+        return string.Create(length, chars, static (span, c) =>
+        {
+            for (int i = 0; i < span.Length; i++)
+            {
+                span[i] = c[Random.Shared.Next(c.Length)];
+            }
+        });
     }
 
     // True when the value still contains a {TOKEN} placeholder, i.e. an environment variable that was

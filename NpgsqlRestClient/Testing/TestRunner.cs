@@ -33,6 +33,7 @@ public sealed class TestRunner
     private readonly NpgsqlRestOptions _rest;
     private readonly TestRunnerOptions _opt;
     private readonly string _connString;
+    private readonly IReadOnlyDictionary<string, string> _named;
     private readonly ILogger? _log;
     private readonly bool _logNotices;
     private readonly Out _out = new();
@@ -44,9 +45,9 @@ public sealed class TestRunner
     // only becomes a result when it errors). Name/Message describe the assertion when Emit=true.
     private readonly record struct StepResult(bool Emit, Outcome Outcome, string? Message, string? Name);
 
-    // One reported test = one assertion: a boolean-returning SELECT, a DO block (passes unless it raises,
-    // e.g. via ASSERT), or an HTTP step with `# @expect-status`. Errors from any step are also recorded
-    // here so they surface and count.
+    // One reported test = one assertion: a boolean-returning SELECT, or a DO block (passes unless it
+    // raises, e.g. via ASSERT). Errors from any step (SQL or HTTP) are also recorded here so they surface
+    // and count.
     private sealed class AssertionResult
     {
         public required string Name { get; init; }
@@ -71,12 +72,17 @@ public sealed class TestRunner
             Outcome.Pass;
     }
 
-    public TestRunner(NpgsqlRestOptions rest, TestRunnerOptions opt, string baseConnectionString, ILogger? logger, bool logConnectionNotices = false)
+    public TestRunner(NpgsqlRestOptions rest, TestRunnerOptions opt, string baseConnectionString, ILogger? logger,
+        bool logConnectionNotices = false, IReadOnlyDictionary<string, string>? namedConnections = null)
     {
         _rest = rest;
         _opt = opt;
         // Always non-pooled: a fresh physical session per test (no temp-table / GUC / prepared-statement carryover).
+        // In test mode baseConnectionString is already the test connection (TestRunner.ConnectionName, when set).
         _connString = new NpgsqlConnectionStringBuilder(baseConnectionString) { Pooling = false }.ConnectionString;
+        // Named ConnectionStrings entries for Setup/Teardown steps that target another connection (e.g. an
+        // "Admin" maintenance connection that runs create/drop database).
+        _named = namedConnections ?? new Dictionary<string, string>();
         _log = logger;
         _logNotices = logConnectionNotices;
         // Wire the ambient accessor once; null when no test flow is active → zero effect on discovery/normal ops.
@@ -91,21 +97,14 @@ public sealed class TestRunner
             // Response-table names are validated and created per HTTP block (no pre-run permanent-table
             // collision check needed: writes are pg_temp-qualified and CREATE TEMP TABLE (no IF NOT EXISTS)
             // fails loudly on a real duplicate).
-            _log?.LogDebug("setup: {Commands} command(s), {Sql} sql step(s)",
-                _opt.Setup.Count(s => s.IsCommand), _opt.Setup.Count(s => !s.IsCommand));
+            _log?.LogDebug("setup: {Count} step(s)", _opt.Setup.Count);
 
-            // Commands first (provision infra), then SqlFile/Sql (migrations/seed), in declared order within each group.
-            foreach (var step in _opt.Setup.Where(s => s.IsCommand))
+            // Strict declared order: each step runs in the order it is written (no Command-first grouping).
+            // To run something first, write it first. Each Sql/SqlFile step runs on its own connection
+            // (ConnectionName, else the test connection); Command steps run via the OS shell.
+            foreach (var step in _opt.Setup)
             {
-                await RunCommandAsync(step, ct);
-            }
-            await using (var conn = new NpgsqlConnection(_connString))
-            {
-                await conn.OpenAsync(ct);
-                foreach (var step in _opt.Setup.Where(s => !s.IsCommand))
-                {
-                    await RunSqlStepAsync(conn, step, ct);
-                }
+                await RunStepAsync(step, ct);
             }
             return true;
         }
@@ -116,6 +115,35 @@ public sealed class TestRunner
             await TeardownAsync(ct);
             return false;
         }
+    }
+
+    // Runs one Setup/Teardown step: a shell Command, or a Sql/SqlFile batch on its resolved connection.
+    private async Task RunStepAsync(TestSetupStep step, CancellationToken ct)
+    {
+        if (step.IsCommand)
+        {
+            await RunCommandAsync(step, ct);
+            return;
+        }
+        var connStr = ResolveStepConnection(step);
+        await using var conn = new NpgsqlConnection(connStr);
+        await conn.OpenAsync(ct);
+        await RunSqlStepAsync(conn, step, ct);
+    }
+
+    // A step's connection: its explicit ConnectionName (a ConnectionStrings entry), else the test connection.
+    private string ResolveStepConnection(TestSetupStep step)
+    {
+        if (string.IsNullOrWhiteSpace(step.ConnectionName))
+        {
+            return _connString;
+        }
+        if (_named.TryGetValue(step.ConnectionName, out var cs))
+        {
+            return cs;
+        }
+        throw new InvalidOperationException(
+            $"TestRunner Setup/Teardown step references ConnectionName '{step.ConnectionName}', which has no matching entry under 'ConnectionStrings'.");
     }
 
     /// <summary>Runs after endpoint discovery: executes the test files and (always) Teardown. Returns the process exit code.</summary>
@@ -204,18 +232,30 @@ public sealed class TestRunner
             foreach (var step in steps)
             {
                 StepResult sr;
-                if (step is SqlStep sql)
+                try
                 {
-                    sr = await ExecuteSqlStepAsync(conn, sql, timeoutSecs, ct);
+                    if (step is SqlStep sql)
+                    {
+                        sr = await ExecuteSqlStepAsync(conn, sql, timeoutSecs, ct);
+                    }
+                    else if (step is HttpStep http)
+                    {
+                        httpOrdinal++;
+                        sr = await InvokeHttpStepAsync(conn, http, ResolveResponseTable(http, httpOrdinal, httpTotal), lookup, ct);
+                    }
+                    else
+                    {
+                        continue;
+                    }
                 }
-                else if (step is HttpStep http)
+                catch (OperationCanceledException) { throw; }                          // timeout — outer handler
+                catch (PostgresException pg) when (pg.SqlState == "57014") { throw; }  // timeout — outer handler
+                catch (Exception ex)
                 {
-                    httpOrdinal++;
-                    sr = await InvokeHttpStepAsync(conn, http, ResolveResponseTable(http, httpOrdinal, httpTotal), lookup, ct);
-                }
-                else
-                {
-                    continue;
+                    // Attribute the failure to THIS step (line number, name) instead of a file-level
+                    // "execution error" — e.g. a duplicate `# @response` table (42P07) or an invalid name.
+                    sr = new StepResult(true, Outcome.Error,
+                        ex is PostgresException pgEx ? $"{pgEx.SqlState}: {pgEx.MessageText}" : ex.Message, null);
                 }
 
                 if (sr.Emit)
@@ -321,12 +361,21 @@ public sealed class TestRunner
                 return new StepResult(true, Outcome.Error, $"SSE endpoints are not supported in test mode: {httpName}", httpName);
             if (ep.Upload)
                 return new StepResult(true, Outcome.Error, $"upload endpoints are not supported in test mode: {httpName}", httpName);
+            if (ep.Login || ep.Logout)
+                return new StepResult(true, Outcome.Error, $"login/logout endpoints are not supported in test mode (inject the principal with `# @claim` instead): {httpName}", httpName);
             if (ep.IsProxy)
             {
                 var host = ep.ProxyHost ?? _rest.ProxyOptions?.Host;
                 if (host is not null && !host.StartsWith('/'))
                     return new StepResult(true, Outcome.Error, $"outbound proxy/HTTP-type endpoints are disallowed in test mode: {httpName}", httpName);
             }
+        }
+        else
+        {
+            // Not fatal — the request still runs (a test may assert the 404 deliberately) — but the most
+            // common cause is a path typo or a missing UrlPathPrefix (default "/api"), so surface a warning.
+            _log?.LogWarning("no endpoint matches {Method} {Path} — the response will be a 404; check the path (including UrlPathPrefix, default \"/api\")",
+                step.Method, pathOnly);
         }
 
         var user = BuildPrincipal(step.Claims);
@@ -351,15 +400,9 @@ public sealed class TestRunner
 
         await WriteResponseAsync(conn, responseTable, response, ct);
 
-        // An HTTP block is a reported assertion only when it carries `# @expect-status`; otherwise it is an
-        // act step (capture the response into the temp table) and produces no test of its own.
-        if (step.ExpectStatus.HasValue)
-        {
-            var name = $"{httpName} (expect {step.ExpectStatus.Value})";
-            return response.StatusCode == step.ExpectStatus.Value
-                ? new StepResult(true, Outcome.Pass, null, name)
-                : new StepResult(true, Outcome.Fail, $"expected status {step.ExpectStatus.Value} but got {response.StatusCode} for {httpName}", name);
-        }
+        // An HTTP block is an act step: it captures the response into the temp table and produces no test
+        // of its own — the assertions are the boolean SELECTs that follow it. It only surfaces as a result
+        // when it errors (unsupported endpoint kind above, or an exception attributed by the step loop).
         return new StepResult(false, Outcome.Pass, null, null);
     }
 
@@ -487,22 +530,11 @@ public sealed class TestRunner
     {
         if (_opt.Keep || _opt.Teardown.Count == 0) return;
         _log?.LogDebug("teardown: {Steps} step(s)", _opt.Teardown.Count);
-        try
+        // Strict declared order, best-effort: a failing step is logged and the rest still run.
+        foreach (var step in _opt.Teardown)
         {
-            await using var conn = new NpgsqlConnection(_connString);
-            await conn.OpenAsync(ct);
-            foreach (var step in _opt.Teardown.Where(s => !s.IsCommand)) // SQL first
-            {
-                try { await RunSqlStepAsync(conn, step, ct); }
-                catch (Exception ex) { _log?.LogWarning(ex, "teardown SQL step failed"); }
-            }
-        }
-        catch (Exception ex) { _log?.LogWarning(ex, "teardown connection failed"); }
-
-        foreach (var step in _opt.Teardown.Where(s => s.IsCommand)) // commands last (e.g. docker down)
-        {
-            try { await RunCommandAsync(step, ct); }
-            catch (Exception ex) { _log?.LogWarning(ex, "teardown command failed"); }
+            try { await RunStepAsync(step, ct); }
+            catch (Exception ex) { _log?.LogWarning(ex, "teardown step failed"); }
         }
     }
 
@@ -545,12 +577,12 @@ public sealed class TestRunner
         return d;
     }
 
-    // Print the failing statement under the message (dimmed). Capped to its first line unless --verbose.
+    // Print the failing statement under the message (dimmed). Capped to its first line unless DetailedReport.
     private void WriteFailingSql(string? sql)
     {
         if (string.IsNullOrWhiteSpace(sql)) return;
         var text = sql.Trim();
-        if (_opt.Verbose)
+        if (_opt.DetailedReport)
         {
             _out.Line("        " + text.Replace("\n", "\n        "), ConsoleColor.DarkGray);
             return;
@@ -564,9 +596,9 @@ public sealed class TestRunner
 
     private void ReportConsole(List<FileResult> results)
     {
-        // Counts are at assertion granularity (each boolean SELECT / DO block / `# @expect-status` HTTP
-        // step is one test); files are the grouping unit. A file is fail-fast, so on failure the assertions
-        // listed are those that ran up to and including the first failure.
+        // Counts are at assertion granularity (each boolean SELECT / DO block is one test); files are the
+        // grouping unit. A file is fail-fast, so on failure the assertions listed are those that ran up to
+        // and including the first failure.
         int passed = 0, failed = 0, errored = 0, totalAssertions = 0;
         foreach (var fr in results)
         {
@@ -585,7 +617,7 @@ public sealed class TestRunner
             else if (fr.Outcome == Outcome.Pass)
             {
                 _out.Line($"PASS  {rel}  ({aPass} assertion{(aPass == 1 ? "" : "s")}, {fr.ElapsedMs}ms)", ConsoleColor.Green);
-                if (_opt.Verbose)
+                if (_opt.DetailedReport)
                     foreach (var a in fr.Assertions) _out.Line($"        ✓ {a.Name}", ConsoleColor.DarkGray);
             }
             else
@@ -596,7 +628,7 @@ public sealed class TestRunner
                 {
                     if (a.Outcome == Outcome.Pass)
                     {
-                        if (_opt.Verbose) _out.Line($"        ✓ {a.Name}", ConsoleColor.DarkGray);
+                        if (_opt.DetailedReport) _out.Line($"        ✓ {a.Name}", ConsoleColor.DarkGray);
                         continue;
                     }
                     var loc = a.Line is null ? "" : $"  [{rel}:{a.Line}]";
@@ -606,7 +638,7 @@ public sealed class TestRunner
                 }
             }
 
-            if (fr.Notices.Count > 0 && (_opt.Verbose || fr.Outcome != Outcome.Pass))
+            if (fr.Notices.Count > 0 && (_opt.DetailedReport || fr.Outcome != Outcome.Pass))
                 foreach (var n in fr.Notices) _out.Line($"        notice: {n}", ConsoleColor.DarkGray);
         }
 
@@ -685,7 +717,7 @@ public sealed class TestRunner
     }
 
     // Fallback display name when a step has no inherent label (a boolean SELECT without a description column,
-    // a DO block, or a non-`# @expect-status` HTTP step that errored).
+    // a DO block, or an HTTP step that errored).
     private static string DefaultAssertionName(TestStep step) => step switch
     {
         SqlStep { IsDoBlock: true } => $"assert block (line {step.LineNumber})",

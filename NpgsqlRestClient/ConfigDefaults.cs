@@ -1101,12 +1101,13 @@ public static class ConfigDefaults
         return new JsonObject
         {
             ["FilePattern"] = "",
+            ["ConnectionName"] = "",
             ["MaxParallelism"] = 0,
             ["FailFast"] = false,
             ["PerTestTimeout"] = "30s",
             ["JUnitOutput"] = null,
             ["Keep"] = false,
-            ["Verbose"] = false,
+            ["DetailedReport"] = false,
             ["AllowEmpty"] = false,
             ["LoggerName"] = "NpgsqlRestTest",
             ["ResponseTempTable"] = new JsonObject

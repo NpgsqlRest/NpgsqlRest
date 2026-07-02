@@ -2,7 +2,7 @@ namespace NpgsqlRestClient.Testing;
 
 /// <summary>
 /// Parses a single HTTP request out of a block-comment body, using a single-request subset of the
-/// Microsoft .http syntax plus the test directives <c># @claim</c>, <c># @expect-status</c>, <c># @response</c>.
+/// Microsoft .http syntax plus the test directives <c># @claim</c> and <c># @response</c>.
 /// Returns null when the block is not an HTTP request (ordinary SQL comment).
 /// </summary>
 public static class HttpFileRequestParser
@@ -36,7 +36,6 @@ public static class HttpFileRequestParser
 
         var headers = new List<(string, string)>();
         var claims = new List<(string, string)>();
-        int? expectStatus = null;
         string? responseTable = null;
         int bodyStart = -1;
 
@@ -57,7 +56,7 @@ public static class HttpFileRequestParser
             {
                 if (directive.StartsWith('@'))
                 {
-                    ParseDirective(directive[1..].Trim(), claims, ref expectStatus, ref responseTable);
+                    ParseDirective(directive[1..].Trim(), claims, ref responseTable);
                 }
                 // plain comment line → ignore
                 continue;
@@ -79,7 +78,7 @@ public static class HttpFileRequestParser
             if (bodyText.Length > 0) body = bodyText;
         }
 
-        return new HttpStep(method, path, headers, claims, body, expectStatus, responseTable, lineNumber);
+        return new HttpStep(method, path, headers, claims, body, responseTable, lineNumber);
     }
 
     // [HTTP] METHOD /path [HTTP/x]. Method required (GET|PUT|POST|DELETE); path must start with '/';
@@ -123,7 +122,6 @@ public static class HttpFileRequestParser
     private static void ParseDirective(
         string directive,
         List<(string, string)> claims,
-        ref int? expectStatus,
         ref string? responseTable)
     {
         int sp = directive.IndexOfAny([' ', '\t']);
@@ -137,10 +135,6 @@ public static class HttpFileRequestParser
             {
                 claims.Add((rest[..eq].Trim(), rest[(eq + 1)..].Trim()));
             }
-        }
-        else if (string.Equals(keyword, "expect-status", StringComparison.OrdinalIgnoreCase))
-        {
-            if (int.TryParse(rest, out var code)) expectStatus = code;
         }
         else if (string.Equals(keyword, "response", StringComparison.OrdinalIgnoreCase))
         {

@@ -1724,10 +1724,11 @@ public class Builder
     }
 
     private (string?, ConnectionRetryOptions) BuildConnection(
-        string? connectionName, 
-        string connectionString, 
+        string? connectionName,
+        string connectionString,
         bool isMain,
-        bool skipRetryOpts)
+        bool skipRetryOpts,
+        bool skipValidation = false)
     {
         if (_config.EnvDict is not null)
         {
@@ -1807,7 +1808,7 @@ public class Builder
                     string.Join(",", retryOptions.Strategy.ErrorCodes));
             }
         }
-        if (_config.GetConfigBool("TestConnectionStrings", _config.ConnectionSettingsCfg, true) is true)
+        if (skipValidation is false && _config.GetConfigBool("TestConnectionStrings", _config.ConnectionSettingsCfg, true) is true)
         {
             using var conn = new NpgsqlConnection(connectionString);
             try
@@ -1823,10 +1824,37 @@ public class Builder
         return (connectionString, retryOptions);
     }
 
-    public (string?, ConnectionRetryOptions) BuildConnectionString()
+    public (string?, ConnectionRetryOptions) BuildConnectionString(bool testMode = false)
     {
         string? connectionString;
-        string? connectionName = _config.GetConfigStr("ConnectionName", _config.NpgsqlRestCfg);
+        string? connectionName = null;
+        bool skipValidation = false;
+
+        // In test mode a dedicated TestRunner.ConnectionName (when set) becomes the app's main connection,
+        // so endpoint Describe + execution run against the TEST database. That database may not exist until
+        // TestRunner.Setup creates it (which runs after this), so it is NOT opened/validated here — it is
+        // first touched by Setup / Describe, by which point Setup has created it.
+        if (testMode)
+        {
+            connectionName = _config.GetConfigStr("ConnectionName", _config.Cfg.GetSection("TestRunner"));
+            if (connectionName is not null)
+            {
+                connectionString = _config.Cfg.GetConnectionString(connectionName);
+                skipValidation = true;
+                if (connectionString is null)
+                {
+                    throw new InvalidOperationException(
+                        $"TestRunner.ConnectionName is '{connectionName}', but there is no matching entry under 'ConnectionStrings'.");
+                }
+                var (testResult, testRetryOpts) = BuildConnection(connectionName, connectionString, isMain: true, skipRetryOpts: false, skipValidation: true);
+                AppContext.SetSwitch("Npgsql.EnableSqlRewriting", false);
+                ConnectionString = testResult;
+                ConnectionName = connectionName;
+                return (testResult, testRetryOpts);
+            }
+        }
+
+        connectionName = _config.GetConfigStr("ConnectionName", _config.NpgsqlRestCfg);
         if (connectionName is not null)
         {
             connectionString = _config.Cfg.GetConnectionString(connectionName);
@@ -1846,7 +1874,7 @@ public class Builder
                 "or set the PGHOST, PGDATABASE, PGUSER, and PGPASSWORD environment variables with 'Config.AddEnvironmentVariables: true'.");
         }
 
-        var (result, retryOpts) = BuildConnection(connectionName, connectionString!, isMain: true, skipRetryOpts: false);
+        var (result, retryOpts) = BuildConnection(connectionName, connectionString!, isMain: true, skipRetryOpts: false, skipValidation: skipValidation);
 
         // disable SQL rewriting to ensure that NpgsqlRest works with this option OFF.
         AppContext.SetSwitch("Npgsql.EnableSqlRewriting", false);
@@ -1877,6 +1905,34 @@ public class Builder
             }
         }
         return result.ToFrozenDictionary();
+    }
+
+    /// <summary>
+    /// Resolves every <c>ConnectionStrings</c> entry (env/{rnd} placeholders substituted, pooling disabled)
+    /// into a name→connection-string map for the SQL test runner's Setup/Teardown <c>ConnectionName</c>
+    /// steps. Unlike <see cref="BuildConnectionStringDict"/> this does NOT open/validate the connections —
+    /// a test database referenced here may not exist until a Setup step creates it.
+    /// </summary>
+    public Dictionary<string, string> BuildTestRunnerConnectionStrings()
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var section in _config.Cfg.GetSection("ConnectionStrings").GetChildren())
+        {
+            if (string.IsNullOrEmpty(section?.Key) || string.IsNullOrEmpty(section.Value))
+            {
+                continue;
+            }
+            var cs = section.Value;
+            if (_config.EnvDict is not null)
+            {
+                cs = Formatter.FormatString(cs.AsSpan(), _config.EnvDict).ToString();
+            }
+            // Non-pooled: maintenance/test sessions are short-lived and must not linger (a pooled session
+            // would block DROP DATABASE in a Teardown step).
+            var b = new NpgsqlConnectionStringBuilder(cs) { Pooling = false, Enlist = false };
+            result[section.Key] = b.ConnectionString;
+        }
+        return result;
     }
 
     private string? _instanceId = null;
@@ -3012,12 +3068,13 @@ public class Builder
         if (section.Exists() is false) return opt;
 
         opt.FilePattern = _config.GetConfigStr("FilePattern", section) ?? "";
+        opt.ConnectionName = _config.GetConfigStr("ConnectionName", section);
         opt.MaxParallelism = _config.GetConfigInt("MaxParallelism", section) ?? 0;
         opt.FailFast = _config.GetConfigBool("FailFast", section, false);
         opt.PerTestTimeout = ParseTestTimeout(_config.GetConfigStr("PerTestTimeout", section), TimeSpan.FromSeconds(30));
         opt.JUnitOutput = _config.GetConfigStr("JUnitOutput", section);
         opt.Keep = _config.GetConfigBool("Keep", section, false);
-        opt.Verbose = _config.GetConfigBool("Verbose", section, false);
+        opt.DetailedReport = _config.GetConfigBool("DetailedReport", section, false);
         opt.AllowEmpty = _config.GetConfigBool("AllowEmpty", section, false);
 
         var rt = section.GetSection("ResponseTempTable");
@@ -3061,6 +3118,7 @@ public class Builder
                     SqlFile = _config.GetConfigStr("SqlFile", child),
                     Command = _config.GetConfigStr("Command", child),
                     WorkingDirectory = _config.GetConfigStr("WorkingDirectory", child),
+                    ConnectionName = _config.GetConfigStr("ConnectionName", child),
                 };
                 if (step.Sql is not null || step.SqlFile is not null || step.Command is not null)
                 {

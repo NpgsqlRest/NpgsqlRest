@@ -6,6 +6,15 @@ public class TestRunnerOptions
     /// <summary>Glob (same engine as SqlFileSource) selecting *.test.sql files. Empty disables the runner.</summary>
     public string FilePattern { get; set; } = "";
 
+    /// <summary>
+    /// Name of a <c>ConnectionStrings</c> entry to run the tests against, instead of the app's main connection.
+    /// In test mode it becomes the connection used for endpoint type-checking (Describe) and execution, so it
+    /// can point at a dedicated test database. The database need not exist at startup — a <c>Setup</c> step
+    /// (e.g. <c>create database …</c> on a maintenance connection) can create it first. Null/empty = use the
+    /// app's main connection (the Phase-1 behavior).
+    /// </summary>
+    public string? ConnectionName { get; set; } = null;
+
     /// <summary>Max concurrent test files. 0 => Environment.ProcessorCount.</summary>
     public int MaxParallelism { get; set; } = 0;
 
@@ -21,8 +30,13 @@ public class TestRunnerOptions
     /// <summary>Skip Teardown so a failed run's state can be inspected.</summary>
     public bool Keep { get; set; } = false;
 
-    /// <summary>Show captured `raise notice` output for all tests, not just failed/errored ones.</summary>
-    public bool Verbose { get; set; } = false;
+    /// <summary>
+    /// Detailed console REPORT: list passed assertions (✓), print the full failing SQL statement, and show
+    /// captured `raise notice` output for passing tests too. This shapes the report only — for diagnostic
+    /// logging of every executed query/HTTP call, raise the log channel instead (Log:MinimalLevels, see
+    /// <see cref="LoggerName"/>).
+    /// </summary>
+    public bool DetailedReport { get; set; } = false;
 
     /// <summary>Zero tests discovered => exit 0 instead of 4.</summary>
     public bool AllowEmpty { get; set; } = false;
@@ -78,6 +92,14 @@ public class TestSetupStep
 
     /// <summary>Working directory for <see cref="Command"/> (cwd-relative); null => current directory.</summary>
     public string? WorkingDirectory { get; set; }
+
+    /// <summary>
+    /// For a <see cref="Sql"/>/<see cref="SqlFile"/> step: name of the <c>ConnectionStrings</c> entry to run it
+    /// on. Use this to run maintenance statements (e.g. <c>create database</c> / <c>drop database</c>) on an
+    /// admin connection pointed at a maintenance database. Null = run on the test connection
+    /// (<see cref="TestRunnerOptions.ConnectionName"/>, or the app's main connection). Ignored for Command steps.
+    /// </summary>
+    public string? ConnectionName { get; set; }
 
     public bool IsCommand => !string.IsNullOrWhiteSpace(Command);
 }

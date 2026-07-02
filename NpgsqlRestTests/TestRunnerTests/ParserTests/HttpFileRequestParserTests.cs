@@ -89,10 +89,11 @@ public class HttpFileRequestParserTests
     }
 
     [Fact]
-    public void Expect_Status_And_Response_Directives_Are_Parsed()
+    public void Response_Directive_Is_Parsed_And_Unknown_Directives_Are_Ignored()
     {
+        // `@expect-status` was removed (assert on the response temp table's status column instead);
+        // an unknown directive is silently ignored rather than breaking the block.
         var s = Parse("GET /x\n# @expect-status 404\n# @response listing");
-        s.ExpectStatus.Should().Be(404);
         s.ResponseTable.Should().Be("listing");
     }
 
