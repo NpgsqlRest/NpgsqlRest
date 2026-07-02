@@ -16,16 +16,17 @@ namespace NpgsqlRestClient.Testing;
 /// </summary>
 public sealed class TestRunner
 {
-    // Report styling, matched to Serilog's Code theme: the FAIL/ERROR label renders as the byte-identical
-    // CHIP the Code theme uses for its ERR/FTL level — red-197 text on a dark-grey-238 background (NOT the
-    // white-on-red-196 chip, which is the Literate theme's). PASS uses the same chip grammar with green-47,
-    // the exact color-cube mirror of red-197 (#ff005f ↔ #00ff5f). ALL failure text uses the red-197
-    // foreground (never 16-color ConsoleColor.Red, which renders orange in some themes). Escapes are
-    // emitted only on a real terminal (see Out).
-    private const string AnsiFailChip = "\x1b[38;5;197m\x1b[48;5;238m";
-    private const string AnsiPassChip = "\x1b[38;5;47m\x1b[48;5;238m";
-    public const string AnsiFail = "\x1b[38;5;197m";
-    private const string AnsiOk = "\x1b[38;5;47m";
+    // Report styling, matched to Serilog's Code theme. There is exactly ONE red style and ONE green style:
+    // AnsiFail is byte-identical to the chip the Code theme uses for its ERR/FTL level — red-197 text on a
+    // dark-grey-238 background (NOT white-on-red-196, which is the Literate theme's chip) — and it is used
+    // for the FAIL/ERROR labels AND all failure text, so they can never look different. AnsiOk is the same
+    // grammar with green-47, the exact color-cube mirror of red-197 (#ff005f ↔ #00ff5f), used for the PASS
+    // label and the all-green summary. Never 16-color ConsoleColor.Red (renders orange in some themes).
+    // Indentation is written OUTSIDE the style so the grey block starts at the text. Escapes are emitted
+    // only on a real terminal (see Out).
+    public const string AnsiFail = "\x1b[38;5;197m\x1b[48;5;238m";
+    private const string AnsiOk = "\x1b[38;5;47m\x1b[48;5;238m";
+    private const string AnsiPlain = "\x1b[0m";
 
     public const int ExitPass = 0;
     public const int ExitFailures = 1;
@@ -349,7 +350,7 @@ public sealed class TestRunner
 
         var line = $"\nendpoint coverage: {covered}/{testable.Count} ({pct}%)"
             + (untestable > 0 ? $"  —  {untestable} endpoint(s) excluded (not testable in test mode)" : "");
-        if (gateFailed) _out.LineAnsi(line, AnsiFail);
+        if (gateFailed) { _out.NL(); _out.LineAnsi(line.TrimStart('\n'), AnsiFail); }
         else _out.Line(line, untested.Count == 0 ? ConsoleColor.Green : ConsoleColor.Yellow);
 
         foreach (var ep in untested)
@@ -360,7 +361,7 @@ public sealed class TestRunner
 
         if (gateFailed)
         {
-            _out.LineAnsi($"        coverage {pct}% is below the CoverageThreshold ({_opt.CoverageThreshold}%)", AnsiFail);
+            _out.LineChip("        ", AnsiPlain, $"coverage {pct}% is below the CoverageThreshold ({_opt.CoverageThreshold}%)", AnsiFail);
             if (exit == ExitPass) exit = ExitErrors;
         }
         return exit;
@@ -1128,11 +1129,11 @@ public sealed class TestRunner
             if (fr.Assertions.Count == 0)
             {
                 // The file ran but contained no recognizable assertion — surface it rather than count a pass.
-                _out.LineChip("PASS", AnsiPassChip, $"  {rel}  (no assertions, {fr.ElapsedMs}ms)", "\x1b[38;5;229m");
+                _out.LineChip("PASS", AnsiOk, $"  {rel}  (no assertions, {fr.ElapsedMs}ms)", "\x1b[38;5;229m");
             }
             else if (fr.Outcome == Outcome.Pass)
             {
-                _out.LineChip("PASS", AnsiPassChip, $"  {rel}  ({aPass} assertion{(aPass == 1 ? "" : "s")}, {fr.ElapsedMs}ms)");
+                _out.LineChip("PASS", AnsiOk, $"  {rel}  ({aPass} assertion{(aPass == 1 ? "" : "s")}, {fr.ElapsedMs}ms)");
                 if (_opt.DetailedReport)
                     foreach (var a in fr.Assertions) _out.Line($"        ✓ {a.Name}", ConsoleColor.DarkGray);
             }
@@ -1141,7 +1142,7 @@ public sealed class TestRunner
                 // The label renders as Serilog's error chip (white on red); the rest of the line stays in
                 // the terminal's normal text color — same visual grammar as a `[... ERR]` log line.
                 var label = fr.Outcome == Outcome.Error ? "ERROR" : "FAIL";
-                _out.LineChip(label, AnsiFailChip, $"{(fr.Outcome == Outcome.Error ? " " : "  ")}{rel}  ({fr.ElapsedMs}ms)");
+                _out.LineChip(label, AnsiFail, $"{(fr.Outcome == Outcome.Error ? " " : "  ")}{rel}  ({fr.ElapsedMs}ms)");
                 foreach (var a in fr.Assertions)
                 {
                     if (a.Outcome == Outcome.Pass)
@@ -1151,8 +1152,8 @@ public sealed class TestRunner
                     }
                     var locFile = a.SourceFile is null ? rel : Path.GetRelativePath(Environment.CurrentDirectory, a.SourceFile);
                     var loc = a.Line is null ? "" : $"  [{locFile}:{a.Line}]";
-                    _out.LineAnsi($"        ✗ {a.Name}{loc}", AnsiFail);
-                    if (!string.IsNullOrWhiteSpace(a.Message) && a.Message != a.Name) _out.LineAnsi($"          {a.Message}", AnsiFail);
+                    _out.LineChip("        ", AnsiPlain, $"✗ {a.Name}{loc}", AnsiFail);
+                    if (!string.IsNullOrWhiteSpace(a.Message) && a.Message != a.Name) _out.LineChip("          ", AnsiPlain, a.Message, AnsiFail);
                     WriteFailingSql(a.Sql);
                 }
             }
@@ -1161,9 +1162,9 @@ public sealed class TestRunner
                 foreach (var n in fr.Notices) _out.Line($"        notice: {n}", ConsoleColor.DarkGray);
         }
 
-        var summary = $"\n{passed} passed, {failed} failed, {errored} error(s)  —  {totalAssertions} assertion{(totalAssertions == 1 ? "" : "s")} in {results.Count} file{(results.Count == 1 ? "" : "s")}";
-        if (failed + errored == 0) _out.LineAnsi(summary, AnsiOk);
-        else _out.LineAnsi(summary, AnsiFail);
+        var summary = $"{passed} passed, {failed} failed, {errored} error(s)  —  {totalAssertions} assertion{(totalAssertions == 1 ? "" : "s")} in {results.Count} file{(results.Count == 1 ? "" : "s")}";
+        _out.NL();
+        _out.LineAnsi(summary, failed + errored == 0 ? AnsiOk : AnsiFail);
     }
 
     private static void WriteJUnit(List<FileResult> results, string path)
