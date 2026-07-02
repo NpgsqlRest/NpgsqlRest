@@ -24,11 +24,14 @@ public class TestRunnerOptions
     public List<string> ExcludeTags { get; set; } = [];
 
     /// <summary>
-    /// Emit an endpoint-coverage summary after the run: exercised N of M testable endpoints plus the list
-    /// of untested ones. Endpoint kinds the runner rejects (SSE, upload, login/logout, outbound proxy) are
-    /// excluded from the ratio and reported separately.
+    /// Endpoint-coverage summary after the run: exercised N of M testable endpoints plus the list of
+    /// untested ones. Endpoint kinds the runner rejects (SSE, upload, login/logout, outbound proxy) are
+    /// excluded from the ratio and reported separately. Tri-state: null (default) = report after FULL runs
+    /// but stay quiet when the run is narrowed by <see cref="Filter"/>/<see cref="Tags"/> (a deliberately
+    /// partial run would just nag); true = always report; false = never. A set
+    /// <see cref="CoverageThreshold"/> always reports and gates.
     /// </summary>
-    public bool Coverage { get; set; } = false;
+    public bool? Coverage { get; set; } = null;
 
     /// <summary>
     /// Fail an otherwise-passing run (exit 2) when endpoint coverage is below this percentage (0-100), for

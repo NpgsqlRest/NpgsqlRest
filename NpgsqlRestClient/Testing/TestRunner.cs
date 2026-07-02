@@ -318,7 +318,14 @@ public sealed class TestRunner
         int exit = ordered.Any(r => r.Outcome == Outcome.Error) ? ExitErrors
             : ordered.Any(r => r.Outcome == Outcome.Fail) ? ExitFailures
             : ExitPass;
-        if (_opt.Coverage && only is null)
+        // Coverage reports on complete runs (never on watch partial reruns). Default (Coverage=null):
+        // report unless the run was narrowed by Filter/Tag — a deliberately partial run would just nag
+        // about endpoints its subset never touches. Coverage=true always reports, false never; a set
+        // CoverageThreshold always reports (and gates) — that's an explicit ask for enforcement.
+        bool narrowed = !string.IsNullOrWhiteSpace(_opt.Filter) || _opt.Tags.Count > 0 || _opt.ExcludeTags.Count > 0;
+        bool showCoverage = only is null
+            && (_opt.CoverageThreshold is not null || _opt.Coverage == true || (_opt.Coverage is null && !narrowed));
+        if (showCoverage)
         {
             exit = ReportCoverage(endpoints, exit);
         }

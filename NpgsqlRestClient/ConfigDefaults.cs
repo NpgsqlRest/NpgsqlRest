@@ -1113,7 +1113,7 @@ public static class ConfigDefaults
             ["DetailedReport"] = false,
             ["AllowEmpty"] = false,
             ["Watch"] = false,
-            ["Coverage"] = false,
+            ["Coverage"] = null,
             ["CoverageThreshold"] = null,
             ["LoggerName"] = "NpgsqlRestTest",
             ["ResponseTempTable"] = new JsonObject

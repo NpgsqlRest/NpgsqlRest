@@ -3081,7 +3081,11 @@ public class Builder
         opt.AllowEmpty = _config.GetConfigBool("AllowEmpty", section, false);
         opt.Watch = _config.GetConfigBool("Watch", section, false);
         opt.CoverageThreshold = _config.GetConfigInt("CoverageThreshold", section);
-        opt.Coverage = _config.GetConfigBool("Coverage", section, false) || opt.CoverageThreshold is not null;
+        // Tri-state: absent/empty => null (report after full runs only); explicit true/false honored.
+        if (string.IsNullOrEmpty(section.GetSection("Coverage").Value) is false)
+        {
+            opt.Coverage = _config.GetConfigBool("Coverage", section, false);
+        }
 
         var rt = section.GetSection("ResponseTempTable");
         if (rt.Exists())
