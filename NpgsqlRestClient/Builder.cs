@@ -3068,6 +3068,9 @@ public class Builder
         if (section.Exists() is false) return opt;
 
         opt.FilePattern = _config.GetConfigStr("FilePattern", section) ?? "";
+        opt.Filter = _config.GetConfigStr("Filter", section);
+        opt.Tags = SplitNames(_config.GetConfigStr("Tag", section));
+        opt.ExcludeTags = SplitNames(_config.GetConfigStr("ExcludeTag", section));
         opt.ConnectionName = _config.GetConfigStr("ConnectionName", section);
         opt.MaxParallelism = _config.GetConfigInt("MaxParallelism", section) ?? 0;
         opt.FailFast = _config.GetConfigBool("FailFast", section, false);
@@ -3076,6 +3079,9 @@ public class Builder
         opt.Keep = _config.GetConfigBool("Keep", section, false);
         opt.DetailedReport = _config.GetConfigBool("DetailedReport", section, false);
         opt.AllowEmpty = _config.GetConfigBool("AllowEmpty", section, false);
+        opt.Watch = _config.GetConfigBool("Watch", section, false);
+        opt.CoverageThreshold = _config.GetConfigInt("CoverageThreshold", section);
+        opt.Coverage = _config.GetConfigBool("Coverage", section, false) || opt.CoverageThreshold is not null;
 
         var rt = section.GetSection("ResponseTempTable");
         if (rt.Exists())
@@ -3109,6 +3115,12 @@ public class Builder
         opt.Setup = ReadTestSteps(section.GetSection("Setup"));
         opt.Teardown = ReadTestSteps(section.GetSection("Teardown"));
         return opt;
+
+        // "a, b" or "a b" → ["a","b"] (same separators as the header annotations).
+        static List<string> SplitNames(string? value) =>
+            string.IsNullOrWhiteSpace(value)
+                ? []
+                : [.. value.Split([',', ' ', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
 
         // Absent key => keep default name; explicit empty string => omit the column.
         string? ReadColumnName(IConfigurationSection cols, string key, string? def)

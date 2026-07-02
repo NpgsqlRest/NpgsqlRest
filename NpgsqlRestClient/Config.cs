@@ -1145,7 +1145,7 @@ public class Config
                 {
                     commandLineArgs.Add(arg);
                 }
-                else if (lower is "--json" or "--validate" or "--endpoints" or "--test")
+                else if (lower is "--json" or "--validate" or "--endpoints" or "--test" or "--watch")
                 {
                     // Known flags handled by Program.cs, skip silently
                 }

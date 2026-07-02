@@ -39,6 +39,7 @@ if (args.Length >= 1 && (string.Equals(args[0], "-h", StringComparison.CurrentCu
         ("npgsqlrest --annotations", "Output all supported comment annotations as JSON. Syntax highlighted in terminal, plain JSON when piped."),
         ("npgsqlrest [files...] --endpoints", "Connect to database, discover endpoints, output as JSON, then exit. Syntax highlighted in terminal, plain JSON when piped."),
         ("npgsqlrest [files...] --test", "Run SQL test files (TestRunner config), then exit. Exit codes: 0 pass, 1 failures, 2 errors, 3 config error, 4 no tests."),
+        ("npgsqlrest [files...] --test --watch", "Watch mode: run the tests, then re-run on file changes until Ctrl+C (interactive/dev-only; teardown runs on exit)."),
         (" ", " "),
         ("npgsqlrest --hash [value]", "Hash value with default hasher and print to console."),
         ("npgsqlrest --basic_auth [username] [password]", "Print out basic basic auth header value in format 'Authorization: Basic base64(username:password)'."),
@@ -487,6 +488,7 @@ NpgsqlRestOptions options = new()
 // SQL test runner: run Setup (Commands then SqlFile/Sql) BEFORE discovery so migrations can build the
 // schema that UseNpgsqlRest then discovers. The runner sets options.AmbientConnectionAccessor in its ctor.
 NpgsqlRestClient.Testing.TestRunner? testRunner = null;
+NpgsqlRestClient.Testing.TestRunnerOptions? testRunnerOptions = null;
 if (testMode)
 {
     // Test-mode invariants: the endpoint must never begin/commit on the test's connection, and caching
@@ -502,7 +504,8 @@ if (testMode)
 
     try
     {
-        testRunner = new NpgsqlRestClient.Testing.TestRunner(options, builder.BuildTestRunnerOptions(), connectionString, builder.TestLogger, logTestNotices, builder.BuildTestRunnerConnectionStrings());
+        testRunnerOptions = builder.BuildTestRunnerOptions();
+        testRunner = new NpgsqlRestClient.Testing.TestRunner(options, testRunnerOptions, connectionString, builder.TestLogger, logTestNotices, builder.BuildTestRunnerConnectionStrings());
     }
     catch (Exception ex)
     {
@@ -534,8 +537,13 @@ if (endpointsMode)
 
 if (testMode)
 {
-    // Endpoints are now built; run the test files (then Teardown), and exit.
-    Environment.ExitCode = await testRunner!.RunAsync(EndpointCapture.Endpoints);
+    // Endpoints are now built; run the test files (then Teardown), and exit. `--watch` (or
+    // TestRunner:Watch) keeps the process alive and re-runs on file changes until Ctrl+C.
+    bool watchMode = args.Any(a => string.Equals(a, "--watch", StringComparison.OrdinalIgnoreCase))
+        || testRunnerOptions!.Watch;
+    Environment.ExitCode = watchMode
+        ? await testRunner!.RunWatchAsync(EndpointCapture.Endpoints)
+        : await testRunner!.RunAsync(EndpointCapture.Endpoints);
     return;
 }
 

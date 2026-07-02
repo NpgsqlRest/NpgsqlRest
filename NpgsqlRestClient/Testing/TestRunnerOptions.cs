@@ -7,6 +7,36 @@ public class TestRunnerOptions
     public string FilePattern { get; set; } = "";
 
     /// <summary>
+    /// Optional filter narrowing the discovered set — the fast path for iterating on one test:
+    /// <c>npgsqlrest ... --test --testrunner:filter=login</c>. Matched against each file's cwd-relative
+    /// path: a value without wildcards is a substring match; with wildcards it is the same glob engine
+    /// as <see cref="FilePattern"/>. Empty = run everything discovered.
+    /// </summary>
+    public string? Filter { get; set; } = null;
+
+    /// <summary>
+    /// Run only files carrying at least one of these tags (from a <c>-- @tag name [name ...]</c> header
+    /// annotation). Empty = no tag requirement. Composes with <see cref="ExcludeTags"/> and <see cref="Filter"/>.
+    /// </summary>
+    public List<string> Tags { get; set; } = [];
+
+    /// <summary>Skip files carrying any of these tags (e.g. exclude "slow" locally). Empty = skip nothing.</summary>
+    public List<string> ExcludeTags { get; set; } = [];
+
+    /// <summary>
+    /// Emit an endpoint-coverage summary after the run: exercised N of M testable endpoints plus the list
+    /// of untested ones. Endpoint kinds the runner rejects (SSE, upload, login/logout, outbound proxy) are
+    /// excluded from the ratio and reported separately.
+    /// </summary>
+    public bool Coverage { get; set; } = false;
+
+    /// <summary>
+    /// Fail an otherwise-passing run (exit 2) when endpoint coverage is below this percentage (0-100), for
+    /// CI gating. Setting it implies <see cref="Coverage"/>. Null = no gate.
+    /// </summary>
+    public int? CoverageThreshold { get; set; } = null;
+
+    /// <summary>
     /// Name of a <c>ConnectionStrings</c> entry to run the tests against, instead of the app's main connection.
     /// In test mode it becomes the connection used for endpoint type-checking (Describe) and execution, so it
     /// can point at a dedicated test database. The database need not exist at startup — a <c>Setup</c> step
@@ -40,6 +70,14 @@ public class TestRunnerOptions
 
     /// <summary>Zero tests discovered => exit 0 instead of 4.</summary>
     public bool AllowEmpty { get; set; } = false;
+
+    /// <summary>
+    /// Watch mode (interactive/dev-only; CLI: <c>--watch</c>): run everything once, then re-run on file
+    /// changes until Ctrl+C. A changed test file re-runs alone; any other changed .sql under the watched
+    /// tree re-runs everything (an included fixture's dependents are unknown). Endpoint sources are not
+    /// watched — restart to rebuild endpoints. Teardown runs once, on exit; graceful exit code is 0.
+    /// </summary>
+    public bool Watch { get; set; } = false;
 
     /// <summary>
     /// SourceContext name for the runner's own log channel — discovery/parsing at Debug, each query and HTTP

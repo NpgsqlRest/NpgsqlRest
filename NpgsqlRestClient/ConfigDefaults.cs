@@ -1101,6 +1101,9 @@ public static class ConfigDefaults
         return new JsonObject
         {
             ["FilePattern"] = "",
+            ["Filter"] = "",
+            ["Tag"] = "",
+            ["ExcludeTag"] = "",
             ["ConnectionName"] = "",
             ["MaxParallelism"] = 0,
             ["FailFast"] = false,
@@ -1109,6 +1112,9 @@ public static class ConfigDefaults
             ["Keep"] = false,
             ["DetailedReport"] = false,
             ["AllowEmpty"] = false,
+            ["Watch"] = false,
+            ["Coverage"] = false,
+            ["CoverageThreshold"] = null,
             ["LoggerName"] = "NpgsqlRestTest",
             ["ResponseTempTable"] = new JsonObject
             {

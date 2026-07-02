@@ -38,6 +38,8 @@ public sealed class TestRunner
     private readonly bool _logNotices;
     private readonly Out _out = new();
     private volatile bool _failFast;
+    // Endpoints actually invoked during the run (canonical "METHOD path" keys) — the coverage numerator.
+    private readonly ConcurrentDictionary<string, byte> _invoked = new(StringComparer.OrdinalIgnoreCase);
 
     private enum Outcome { Pass, Fail, Error }
 
@@ -154,49 +156,305 @@ public sealed class TestRunner
     {
         try
         {
-            var files = DiscoverFiles();
-            _log?.LogDebug("discovered {Count} test file(s) matching {Pattern}", files.Count, _opt.FilePattern);
-            if (files.Count == 0)
-            {
-                _out.Line("Test runner: no test files matched FilePattern.", ConsoleColor.Yellow);
-                return _opt.AllowEmpty ? ExitPass : ExitNoTests;
-            }
-
-            var lookup = BuildEndpointLookup(endpoints);
-            var results = new ConcurrentBag<FileResult>();
-            int dop = _opt.MaxParallelism > 0 ? _opt.MaxParallelism : Environment.ProcessorCount;
-
-            // Console header stays a clean human report (just the file count, like other test runners). The
-            // parallelism is a diagnostic → log channel at Debug, not the always-on console line.
-            _out.Line($"NpgsqlRest test runner — {files.Count} file(s)", ConsoleColor.Cyan);
-            _log?.LogDebug("running {Count} test file(s) at degree of parallelism {Parallelism}", files.Count, dop);
-
-            await Parallel.ForEachAsync(
-                files,
-                new ParallelOptions { MaxDegreeOfParallelism = dop, CancellationToken = ct },
-                async (file, _) =>
-                {
-                    if (_failFast) return; // stop scheduling new work after the first failure (in-flight finish)
-                    var r = await RunFileAsync(file, lookup, ct);
-                    results.Add(r);
-                    if (_opt.FailFast && r.Outcome != Outcome.Pass) _failFast = true;
-                });
-
-            var ordered = results.OrderBy(r => r.File, StringComparer.Ordinal).ToList();
-            ReportConsole(ordered);
-            if (!string.IsNullOrWhiteSpace(_opt.JUnitOutput))
-            {
-                WriteJUnit(ordered, _opt.JUnitOutput!);
-            }
-
-            if (ordered.Any(r => r.Outcome == Outcome.Error)) return ExitErrors;
-            if (ordered.Any(r => r.Outcome == Outcome.Fail)) return ExitFailures;
-            return ExitPass;
+            return await ExecuteDiscoveredFilesAsync(endpoints, BuildEndpointLookup(endpoints), only: null, ct);
         }
         finally
         {
             await TeardownAsync(ct);
         }
+    }
+
+    // Discovers (or takes `only`), filters, runs, reports; returns the exit code. NO teardown — the caller
+    // owns that (RunAsync tears down in finally; watch mode tears down once, on exit).
+    private async Task<int> ExecuteDiscoveredFilesAsync(RoutineEndpoint[] endpoints, IReadOnlyDictionary<string, RoutineEndpoint> lookup, List<string>? only, CancellationToken ct)
+    {
+        _failFast = false; // reset per run (watch mode reuses the runner across iterations)
+        if (only is null) _invoked.Clear(); // coverage counts per full run (partial watch reruns don't report)
+
+        var files = only ?? DiscoverFiles();
+        if (only is null)
+        {
+            _log?.LogDebug("discovered {Count} test file(s) matching {Pattern}", files.Count, _opt.FilePattern);
+        }
+        if (!string.IsNullOrWhiteSpace(_opt.Filter))
+        {
+            int discovered = files.Count;
+            files = files.Where(f => MatchesFilter(Path.GetRelativePath(Environment.CurrentDirectory, f), _opt.Filter!)).ToList();
+            _log?.LogDebug("filter {Filter} matched {Count} of {Discovered} discovered file(s)", _opt.Filter, files.Count, discovered);
+            if (files.Count == 0)
+            {
+                _out.Line($"Test runner: filter '{_opt.Filter}' matched none of the {discovered} discovered test file(s).", ConsoleColor.Yellow);
+                return _opt.AllowEmpty ? ExitPass : ExitNoTests;
+            }
+        }
+        if (_opt.Tags.Count > 0 || _opt.ExcludeTags.Count > 0)
+        {
+            int before = files.Count;
+            var include = new HashSet<string>(_opt.Tags, StringComparer.OrdinalIgnoreCase);
+            var exclude = new HashSet<string>(_opt.ExcludeTags, StringComparer.OrdinalIgnoreCase);
+            var selected = new List<string>(files.Count);
+            foreach (var f in files)
+            {
+                List<string> tags;
+                try
+                {
+                    tags = TestFileHeader.Parse(await File.ReadAllTextAsync(f, ct), f).Tags;
+                }
+                catch
+                {
+                    // Unreadable header (e.g. a broken include) — keep the file so the run surfaces the error.
+                    selected.Add(f);
+                    continue;
+                }
+                if (MatchesTags(tags, include, exclude)) selected.Add(f);
+            }
+            files = selected;
+            _log?.LogDebug("tag filter (tag: {Tags}; exclude: {Exclude}) matched {Count} of {Before} file(s)",
+                string.Join(',', _opt.Tags), string.Join(',', _opt.ExcludeTags), files.Count, before);
+            if (files.Count == 0)
+            {
+                _out.Line($"Test runner: tag filter matched none of the {before} test file(s).", ConsoleColor.Yellow);
+                return _opt.AllowEmpty ? ExitPass : ExitNoTests;
+            }
+        }
+        if (files.Count == 0)
+        {
+            _out.Line("Test runner: no test files matched FilePattern.", ConsoleColor.Yellow);
+            return _opt.AllowEmpty ? ExitPass : ExitNoTests;
+        }
+
+        var results = new ConcurrentBag<FileResult>();
+        int dop = _opt.MaxParallelism > 0 ? _opt.MaxParallelism : Environment.ProcessorCount;
+
+        // Console header stays a clean human report (just the file count, like other test runners). The
+        // parallelism is a diagnostic → log channel at Debug, not the always-on console line.
+        _out.Line($"NpgsqlRest test runner — {files.Count} file(s)", ConsoleColor.Cyan);
+        _log?.LogDebug("running {Count} test file(s) at degree of parallelism {Parallelism}", files.Count, dop);
+
+        await Parallel.ForEachAsync(
+            files,
+            new ParallelOptions { MaxDegreeOfParallelism = dop, CancellationToken = ct },
+            async (file, _) =>
+            {
+                if (_failFast) return; // stop scheduling new work after the first failure (in-flight finish)
+                var r = await RunFileAsync(file, lookup, ct);
+                results.Add(r);
+                if (_opt.FailFast && r.Outcome != Outcome.Pass) _failFast = true;
+            });
+
+        var ordered = results.OrderBy(r => r.File, StringComparer.Ordinal).ToList();
+        ReportConsole(ordered);
+        if (!string.IsNullOrWhiteSpace(_opt.JUnitOutput))
+        {
+            WriteJUnit(ordered, _opt.JUnitOutput!);
+        }
+
+        int exit = ordered.Any(r => r.Outcome == Outcome.Error) ? ExitErrors
+            : ordered.Any(r => r.Outcome == Outcome.Fail) ? ExitFailures
+            : ExitPass;
+        if (_opt.Coverage && only is null)
+        {
+            exit = ReportCoverage(endpoints, exit);
+        }
+        return exit;
+    }
+
+    // Endpoint-coverage summary: exercised N of M TESTABLE endpoints + the untested list. Kinds the runner
+    // rejects (SSE, upload, login/logout, outbound proxy) are excluded from the ratio and counted apart.
+    // When CoverageThreshold is set and coverage falls below it, an otherwise-passing run fails with exit 2.
+    private int ReportCoverage(RoutineEndpoint[] endpoints, int exit)
+    {
+        var testable = new List<RoutineEndpoint>(endpoints.Length);
+        int untestable = 0;
+        foreach (var ep in endpoints)
+        {
+            bool outboundProxy = ep.IsProxy && (ep.ProxyHost ?? _rest.ProxyOptions?.Host) is { } host && !host.StartsWith('/');
+            if (ep.SseEventsPath is not null || ep.SsePublishEnabled || ep.Upload || ep.Login || ep.Logout || outboundProxy)
+            {
+                untestable++;
+                continue;
+            }
+            testable.Add(ep);
+        }
+
+        var untested = testable.Where(ep => !_invoked.ContainsKey($"{ep.Method} {ep.Path}")).ToList();
+        int covered = testable.Count - untested.Count;
+        int pct = testable.Count == 0 ? 100 : covered * 100 / testable.Count;
+        bool gateFailed = _opt.CoverageThreshold is int threshold && pct < threshold;
+
+        var line = $"\nendpoint coverage: {covered}/{testable.Count} ({pct}%)"
+            + (untestable > 0 ? $"  —  {untestable} endpoint(s) excluded (not testable in test mode)" : "");
+        if (gateFailed) _out.LineAnsi(line, AnsiFail);
+        else _out.Line(line, untested.Count == 0 ? ConsoleColor.Green : ConsoleColor.Yellow);
+
+        foreach (var ep in untested)
+        {
+            _out.Line($"        untested: {ep.Method} {ep.Path}", ConsoleColor.Yellow);
+        }
+        _log?.LogDebug("endpoint coverage {Covered}/{Testable} ({Pct}%), {Untestable} excluded", covered, testable.Count, pct, untestable);
+
+        if (gateFailed)
+        {
+            _out.LineAnsi($"        coverage {pct}% is below the CoverageThreshold ({_opt.CoverageThreshold}%)", AnsiFail);
+            if (exit == ExitPass) exit = ExitErrors;
+        }
+        return exit;
+    }
+
+    /// <summary>
+    /// Tag filter: with include tags set, the file must carry at least one of them; a file carrying any
+    /// exclude tag is skipped (exclude wins). Sets must be case-insensitive (built once per run, so each
+    /// file is a single pass with O(1) membership checks).
+    /// </summary>
+    public static bool MatchesTags(IReadOnlyList<string> fileTags, IReadOnlySet<string> include, IReadOnlySet<string> exclude)
+    {
+        bool included = include.Count == 0;
+        foreach (var tag in fileTags)
+        {
+            if (exclude.Count > 0 && exclude.Contains(tag))
+            {
+                return false;
+            }
+            if (!included && include.Contains(tag))
+            {
+                included = true;
+            }
+        }
+        return included;
+    }
+
+    /// <summary>
+    /// Watch mode (interactive/dev-only): runs everything once, then re-runs on file changes until
+    /// Ctrl+C. A changed TEST file re-runs just that file; any other changed .sql under the watched tree
+    /// (e.g. a \ir fixture — its dependents are unknown) re-runs everything. Endpoint sources are NOT
+    /// watched (endpoints are built once at startup — restart to rebuild). Teardown runs once, on exit;
+    /// the exit code is always 0 on a graceful stop (watch is not for CI gating).
+    /// </summary>
+    public async Task<int> RunWatchAsync(RoutineEndpoint[] endpoints, CancellationToken ct = default)
+    {
+        var lookup = BuildEndpointLookup(endpoints);
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        // PosixSignalRegistration (not Console.CancelKeyPress, which is unreliable without a TTY):
+        // intercept both Ctrl+C (SIGINT) and e.g. `docker stop` (SIGTERM), cancel the default kill so the
+        // loop can end gracefully and Teardown can run.
+        void OnSignal(System.Runtime.InteropServices.PosixSignalContext ctx)
+        {
+            ctx.Cancel = true;
+            stop.Cancel();
+        }
+        using var sigInt = System.Runtime.InteropServices.PosixSignalRegistration.Create(
+            System.Runtime.InteropServices.PosixSignal.SIGINT, OnSignal);
+        using var sigTerm = System.Runtime.InteropServices.PosixSignalRegistration.Create(
+            System.Runtime.InteropServices.PosixSignal.SIGTERM, OnSignal);
+
+        try
+        {
+            await ExecuteDiscoveredFilesAsync(endpoints, lookup, only: null, stop.Token);
+
+            var baseDir = GetWatchBaseDir(_opt.FilePattern);
+            if (baseDir is null)
+            {
+                _out.Line("Test runner: cannot watch — FilePattern has no existing base directory.", ConsoleColor.Yellow);
+                return ExitConfig;
+            }
+
+            var changes = System.Threading.Channels.Channel.CreateUnbounded<string>();
+            using var watcher = new FileSystemWatcher(Path.GetFullPath(baseDir), "*.sql")
+            {
+                IncludeSubdirectories = true,
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size,
+            };
+            void OnFsEvent(object s, FileSystemEventArgs e) => changes.Writer.TryWrite(e.FullPath);
+            watcher.Changed += OnFsEvent;
+            watcher.Created += OnFsEvent;
+            watcher.Renamed += (s, e) => changes.Writer.TryWrite(e.FullPath);
+            watcher.EnableRaisingEvents = true;
+
+            _out.Line($"\nwatching {Path.GetRelativePath(Environment.CurrentDirectory, baseDir)} for changes — Ctrl+C to stop", ConsoleColor.Cyan);
+
+            while (!stop.IsCancellationRequested)
+            {
+                var changed = await NextChangeBatchAsync(changes.Reader, stop.Token);
+                if (changed is null) break; // cancelled
+
+                // Debounced batch: changed test files rerun individually; any other .sql (fixture/profile
+                // include) forces a full rerun since its dependents are unknown.
+                var testFiles = new List<string>();
+                bool runAll = false;
+                foreach (var path in changed)
+                {
+                    // Watcher paths are absolute; FilePattern is cwd-relative — compare in relative form.
+                    var rel = Path.GetRelativePath(Environment.CurrentDirectory, path).Replace('\\', '/');
+                    var pattern = _opt.FilePattern.Replace('\\', '/');
+                    if (pattern.StartsWith("./")) pattern = pattern[2..];
+                    if (Parser.IsPatternMatch(rel, pattern))
+                    {
+                        if (File.Exists(path)) testFiles.Add(Path.GetFullPath(path));
+                    }
+                    else
+                    {
+                        runAll = true;
+                    }
+                }
+                if (!runAll && testFiles.Count == 0) continue; // e.g. only deletions of test files
+
+                var trigger = Path.GetRelativePath(Environment.CurrentDirectory, changed[0]);
+                _out.Line($"\n— {DateTime.Now:HH:mm:ss} change detected ({trigger}{(changed.Count > 1 ? $" +{changed.Count - 1}" : "")}) —", ConsoleColor.Cyan);
+                await ExecuteDiscoveredFilesAsync(endpoints, lookup, only: runAll ? null : testFiles.Distinct().ToList(), stop.Token);
+                _out.Line($"\nwatching — Ctrl+C to stop", ConsoleColor.Cyan);
+            }
+            return ExitPass;
+        }
+        catch (OperationCanceledException)
+        {
+            return ExitPass;
+        }
+        finally
+        {
+            // Teardown must survive the SIGINT/SIGTERM that ended the loop → uncancellable token.
+            await TeardownAsync(CancellationToken.None);
+        }
+    }
+
+    // First change (blocking), then a quiet period so editor write bursts coalesce into one rerun.
+    private static async Task<List<string>?> NextChangeBatchAsync(System.Threading.Channels.ChannelReader<string> reader, CancellationToken ct)
+    {
+        string first;
+        try
+        {
+            first = await reader.ReadAsync(ct);
+        }
+        catch (OperationCanceledException)
+        {
+            return null;
+        }
+        var batch = new List<string> { first };
+        while (true)
+        {
+            try { await Task.Delay(300, ct); } catch (OperationCanceledException) { return null; }
+            bool any = false;
+            while (reader.TryRead(out var more))
+            {
+                batch.Add(more);
+                any = true;
+            }
+            if (!any) return batch;
+        }
+    }
+
+    // The deepest fixed (wildcard-free) directory of the FilePattern — same logic DiscoverFiles uses.
+    private static string? GetWatchBaseDir(string pattern)
+    {
+        if (string.IsNullOrWhiteSpace(pattern)) return null;
+        int firstWildcard = pattern.IndexOfAny(['*', '?']);
+        if (firstWildcard < 0)
+        {
+            var dir = Path.GetDirectoryName(pattern);
+            return string.IsNullOrEmpty(dir) ? "." : dir;
+        }
+        int lastSlash = pattern.LastIndexOf('/', firstWildcard);
+        var baseDir = lastSlash >= 0 ? pattern[..lastSlash] : ".";
+        return Directory.Exists(baseDir) ? baseDir : null;
     }
 
     private async Task<FileResult> RunFileAsync(string file, IReadOnlyDictionary<string, RoutineEndpoint> lookup, CancellationToken runCt)
@@ -490,6 +748,10 @@ public sealed class TestRunner
         Ambient.Value = conn; // ensure this file's connection is used by the endpoint pipeline
         _log?.LogTrace("http {Method} {Path} (line {Line})", step.Method, step.Path, step.LineNumber);
         var response = await RoutineInvoker.InvokeAsync(step.Method, step.Path, headers, step.Body, contentType, user, ct);
+        if (ep is not null)
+        {
+            _invoked[$"{ep.Method} {ep.Path}"] = 1; // endpoint-coverage numerator (canonical key)
+        }
         _log?.LogTrace("http {Method} {Path} → {Status}, captured into temp table \"{Table}\"",
             step.Method, step.Path, response.StatusCode, responseTable);
 
@@ -816,6 +1078,22 @@ public sealed class TestRunner
         var dir = Path.GetDirectoryName(Path.GetFullPath(path));
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
         new XDocument(new XDeclaration("1.0", "utf-8", null), suite).Save(path);
+    }
+
+    /// <summary>
+    /// Filter match for <c>TestRunner.Filter</c> against a cwd-relative file path: a value without
+    /// wildcards is a case-insensitive substring match (`login` == `*login*`); with wildcards it uses
+    /// the same glob engine as FilePattern. Path separators are normalized to '/'.
+    /// </summary>
+    public static bool MatchesFilter(string relativePath, string filter)
+    {
+        var path = relativePath.Replace('\\', '/');
+        filter = filter.Trim().Replace('\\', '/');
+        if (filter.IndexOfAny(['*', '?']) < 0)
+        {
+            return path.Contains(filter, StringComparison.OrdinalIgnoreCase);
+        }
+        return Parser.IsPatternMatch(path, filter);
     }
 
     private static string StripQuery(string path)

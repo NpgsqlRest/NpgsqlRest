@@ -7,6 +7,7 @@ namespace NpgsqlRestClient.Testing;
 /// -- @setup StepName [StepName ...]      (run before this file; names from TestRunner:Steps)
 /// -- @teardown StepName [StepName ...]   (run after this file, always, best-effort)
 /// -- @connection Name                    (run this file on a named ConnectionStrings entry)
+/// -- @tag Name [Name ...]                (file tags; filtered with TestRunner Tag/ExcludeTag)
 /// </code>
 /// Annotations are repeatable and names accumulate in written order; multiple names on one line may be
 /// separated by whitespace or commas (`@setup A B` == `@setup A, B` — the NpgsqlRest annotation idiom).
@@ -19,6 +20,8 @@ public sealed class TestFileHeader
 {
     public List<string> Setup { get; } = [];
     public List<string> Teardown { get; } = [];
+    /// <summary>File tags from <c>-- @tag name [name ...]</c> — filtered with TestRunner Tag/ExcludeTag.</summary>
+    public List<string> Tags { get; } = [];
     public string? ConnectionName { get; private set; }
 
     public static TestFileHeader Parse(string content, string? sourceFile = null)
@@ -62,6 +65,10 @@ public sealed class TestFileHeader
                 else if (string.Equals(tokens[0], "connection", StringComparison.OrdinalIgnoreCase))
                 {
                     header.ConnectionName = tokens[1];
+                }
+                else if (string.Equals(tokens[0], "tag", StringComparison.OrdinalIgnoreCase))
+                {
+                    header.Tags.AddRange(tokens[1..]);
                 }
                 // any other @word is an ordinary comment — ignored
                 continue;

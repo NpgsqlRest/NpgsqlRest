@@ -50,6 +50,46 @@ public class TestFileHeaderTests
         h.Teardown.Should().BeEmpty();
         h.ConnectionName.Should().BeNull();
     }
+
+    [Fact]
+    public void Tags_Are_Parsed_With_Whitespace_Or_Commas()
+    {
+        var h = TestFileHeader.Parse("-- @tag smoke, regression\n-- @tag slow\nselect 1;");
+        h.Tags.Should().Equal("smoke", "regression", "slow");
+    }
+}
+
+public class TagFilterTests
+{
+    [Theory]
+    [InlineData(new[] { "smoke" }, new string[0], new string[0], true)]                 // no filters => runs
+    [InlineData(new[] { "smoke" }, new[] { "smoke" }, new string[0], true)]             // include hit
+    [InlineData(new[] { "smoke" }, new[] { "SMOKE" }, new string[0], true)]             // case-insensitive
+    [InlineData(new string[0], new[] { "smoke" }, new string[0], false)]                // include set, file untagged
+    [InlineData(new[] { "smoke", "slow" }, new string[0], new[] { "slow" }, false)]     // exclude hit
+    [InlineData(new[] { "smoke", "slow" }, new[] { "smoke" }, new[] { "slow" }, false)] // exclude wins over include
+    public void Tag_Filter_Matches(string[] fileTags, string[] include, string[] exclude, bool expected)
+    {
+        NpgsqlRestClient.Testing.TestRunner.MatchesTags(
+            fileTags,
+            new HashSet<string>(include, StringComparer.OrdinalIgnoreCase),
+            new HashSet<string>(exclude, StringComparer.OrdinalIgnoreCase)).Should().Be(expected);
+    }
+}
+
+public class FilterMatchTests
+{
+    [Theory]
+    [InlineData("tests/login_succeeds.test.sql", "login", true)]                  // no wildcard => substring
+    [InlineData("tests/login_succeeds.test.sql", "LOGIN", true)]                  // substring is case-insensitive
+    [InlineData("tests/get_users.test.sql", "login", false)]
+    [InlineData("tests/login_succeeds.test.sql", "*login*", true)]                // wildcard => glob
+    [InlineData("tests/sub/deep.test.sql", "tests/sub/*", true)]
+    [InlineData("tests\\win\\style.test.sql", "tests/win/*", true)]               // separators normalized
+    public void Filter_Matches_Substring_Or_Glob(string path, string filter, bool expected)
+    {
+        NpgsqlRestClient.Testing.TestRunner.MatchesFilter(path, filter).Should().Be(expected);
+    }
 }
 
 public class IncludeParseTests
