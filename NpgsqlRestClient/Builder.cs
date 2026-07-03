@@ -3140,6 +3140,7 @@ public class Builder
         {
             var step = new TestSetupStep
             {
+                Enabled = _config.GetConfigBool("Enabled", child, true),
                 Sql = _config.GetConfigStr("Sql", child),
                 SqlFile = _config.GetConfigStr("SqlFile", child),
                 Command = _config.GetConfigStr("Command", child),
@@ -3186,6 +3187,10 @@ public class Builder
         if (string.IsNullOrWhiteSpace(raw)) return def;
         raw = raw.Trim();
         if (int.TryParse(raw, out var secs)) return TimeSpan.FromSeconds(secs);
+        if (raw.Length > 2 && raw.EndsWith("ms", StringComparison.OrdinalIgnoreCase) && int.TryParse(raw[..^2], out var ms))
+        {
+            return TimeSpan.FromMilliseconds(ms);
+        }
         if (raw.Length > 1 && int.TryParse(raw[..^1], out var n))
         {
             switch (char.ToLowerInvariant(raw[^1]))

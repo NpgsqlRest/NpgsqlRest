@@ -1443,8 +1443,9 @@ public static partial class ConfigSchemaGenerator
       //
       "TestRunner": {
         //
-        // Glob (same engine as SqlFileSource) selecting test files. Empty disables discovery.
-        // Co-located convention: app.sql (endpoint) next to app.test.sql (test).
+        // Glob (same engine as SqlFileSource) selecting test files. Empty disables discovery. Two layouts:
+        // co-located (app.sql next to app.test.sql — SqlFileSource SkipPattern keeps tests out of the endpoints)
+        // or a separate tests tree (e.g. "./tests/**/*.test.sql").
         //
         "FilePattern": "",
         //
@@ -1521,7 +1522,9 @@ public static partial class ConfigSchemaGenerator
         // (created without IF NOT EXISTS, so a duplicate name fails the test); writes are pg_temp-qualified.
         // A file with ONE HTTP block uses "Name"; a file with 2+ blocks uses "MultiNamePattern" where {n} is
         // the 1-based block ordinal (_response_1, _response_2, ...). Per-block override: `# @response <name>`.
-        // A null/empty column name omits that column.
+        // A null/empty column name omits that column. "DebugTable" (e.g. "_responses_debug"): ALSO mirror every
+        // response into a PERMANENT table for post-run inspection — survives rollbacks, holds the last run, one
+        // row per HTTP block with test_file/block/method/path metadata (debugging aid; do not enable in CI).
         //
         "ResponseTempTable": {
           "Name": "_response",
@@ -1545,7 +1548,19 @@ public static partial class ConfigSchemaGenerator
         // Test files can also reuse SQL scripts in place with psql-style includes: `\i file` (cwd-relative) or
         // `\ir file` (relative to the including file) — executed on the test's connection, inside its transaction.
         //
-        "Steps": {},
+        // The entries below are disabled EXAMPLES showing every step property ("Sql", "SqlFile", "Command",
+        // "WorkingDirectory", "ConnectionName") across the typical scenarios — flip "Enabled" to true (and adjust
+        // names, paths, and connections) instead of typing them from scratch. A step with "Enabled": false is
+        // simply IGNORED wherever it is referenced.
+        //
+        "Steps": {
+          "CreateTestDatabase":  { "Enabled": false, "ConnectionName": "Admin", "Sql": "create database app_test_{rnd5}" },
+          "DropTestDatabase":    { "Enabled": false, "ConnectionName": "Admin", "Sql": "drop database if exists app_test_{rnd5} with (force)" },
+          "ApplySchema":         { "Enabled": false, "SqlFile": "./migrations/schema.sql" },
+          "RunMigrationTool":    { "Enabled": false, "Command": "echo replace with your migration tool command", "WorkingDirectory": "." },
+          "StartDockerPostgres": { "Enabled": false, "Command": "docker run -d --name npgsqlrest-test-pg -e POSTGRES_PASSWORD=postgres -p 54329:5432 postgres" },
+          "StopDockerPostgres":  { "Enabled": false, "Command": "docker rm -f npgsqlrest-test-pg" }
+        },
         //
         // Run-once setup, BEFORE endpoint discovery. Steps run in the EXACT order written. Each entry is a step
         // NAME from "Steps" above, or an inline step object:

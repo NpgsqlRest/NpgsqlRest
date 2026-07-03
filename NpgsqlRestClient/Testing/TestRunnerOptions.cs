@@ -143,6 +143,13 @@ public class TestSetupStep
     /// <summary>Registry name when the step is defined under <c>Steps</c>; null for inline steps. Used in logs.</summary>
     public string? Name { get; set; }
 
+    /// <summary>
+    /// A disabled step is simply IGNORED wherever it is referenced (Setup/Teardown, per-file
+    /// <c>-- @setup</c>/<c>-- @teardown</c> annotations) — skipped with a debug log line, never an error.
+    /// Lets the default configuration ship ready-made example steps that users flip on instead of typing.
+    /// </summary>
+    public bool Enabled { get; set; } = true;
+
     /// <summary>Inline SQL executed as a single batch.</summary>
     public string? Sql { get; set; }
 

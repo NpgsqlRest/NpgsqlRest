@@ -1134,7 +1134,42 @@ public static class ConfigDefaults
                     ["IsSuccess"] = "is_success"
                 }
             },
-            ["Steps"] = new JsonObject(),
+            ["Steps"] = new JsonObject
+            {
+                ["CreateTestDatabase"] = new JsonObject
+                {
+                    ["Enabled"] = false,
+                    ["ConnectionName"] = "Admin",
+                    ["Sql"] = "create database app_test_{rnd5}",
+                },
+                ["DropTestDatabase"] = new JsonObject
+                {
+                    ["Enabled"] = false,
+                    ["ConnectionName"] = "Admin",
+                    ["Sql"] = "drop database if exists app_test_{rnd5} with (force)",
+                },
+                ["ApplySchema"] = new JsonObject
+                {
+                    ["Enabled"] = false,
+                    ["SqlFile"] = "./migrations/schema.sql",
+                },
+                ["RunMigrationTool"] = new JsonObject
+                {
+                    ["Enabled"] = false,
+                    ["Command"] = "echo replace with your migration tool command",
+                    ["WorkingDirectory"] = ".",
+                },
+                ["StartDockerPostgres"] = new JsonObject
+                {
+                    ["Enabled"] = false,
+                    ["Command"] = "docker run -d --name npgsqlrest-test-pg -e POSTGRES_PASSWORD=postgres -p 54329:5432 postgres",
+                },
+                ["StopDockerPostgres"] = new JsonObject
+                {
+                    ["Enabled"] = false,
+                    ["Command"] = "docker rm -f npgsqlrest-test-pg",
+                },
+            },
             ["Setup"] = new JsonArray(),
             ["Teardown"] = new JsonArray()
         };

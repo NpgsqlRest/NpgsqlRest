@@ -193,6 +193,13 @@ public sealed class TestRunner
     // `phase` ("setup" | "teardown") is only used to label the step's log lines.
     private async Task RunStepAsync(TestSetupStep step, string phase, CancellationToken ct)
     {
+        if (step.Enabled is false)
+        {
+            // Disabled steps are ignored wherever referenced — the default config ships example steps
+            // ("Enabled": false) that users flip on instead of typing them from scratch.
+            _log?.LogDebug("{Phase} step {Step}: skipped (Enabled is false)", phase, step.Name ?? step.SqlFile ?? step.Command ?? "(inline)");
+            return;
+        }
         if (step.IsCommand)
         {
             await RunCommandAsync(step, phase, ct);
