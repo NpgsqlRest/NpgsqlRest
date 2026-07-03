@@ -1,6 +1,6 @@
 # NpgsqlRest — Full Annotation Reference
 
-Every comment annotation, generated from `npgsqlrest --annotations` (NpgsqlRest v3.18.1).
+Every comment annotation, generated from `npgsqlrest --annotations` (NpgsqlRest v3.19.0).
 Annotations apply to both endpoint sources (database routines via `comment on`, and `.sql` files via leading `--` comments). The `@` prefix is optional. Regenerate with `npgsqlrest --annotations`.
 
 ## `http`
@@ -188,9 +188,9 @@ Enable file upload for this endpoint, optionally specifying upload handlers.
 ## `param`
 
 - **Aliases:** parameter, param
-- **Syntax:** `param <name> is hash of <other_name> | param <name> is upload metadata | param <original> <new_name> [type] | param <original> is <new_name> [type]`
+- **Syntax:** `param <name> is hash of <other_name> | param <name> is upload metadata | param <original> <new_name> [type] | param <original> is <new_name> [type] | param <name> type is <type> | param <name> default <value>`
 
-Configure parameter behavior: hash computation, upload metadata binding, or rename/retype. Rename forms: 'param $1 user_id', 'param $1 user_id integer', 'param $1 is user_id', 'param _old_name better_name'. Works on all endpoint types.
+Configure parameter behavior: hash computation, upload metadata binding, rename/retype, retype WITHOUT rename ('param user_id type is integer'), or default value ('param user_id default null'). Rename forms: 'param $1 user_id', 'param $1 user_id integer', 'param $1 is user_id', 'param _old_name better_name'. In SQL files with named (:name) placeholders the parameter is addressed by the placeholder's own name (a leading ':' is tolerated). Works on all endpoint types.
 
 ## `sse_path`
 
@@ -352,4 +352,3 @@ Rename a result key in multi-command SQL file responses. N is the 1-based comman
 - **Syntax:** `define_param <name> [type]`
 
 Define a virtual parameter that exists for HTTP matching and claim mapping but is NOT bound to the PostgreSQL command. Useful for SQL file endpoints where you need parameters for comment placeholders or claim mapping without referencing them in SQL. Default type is text. SQL file source only.
-

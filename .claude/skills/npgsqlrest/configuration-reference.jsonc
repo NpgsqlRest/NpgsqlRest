@@ -1,5 +1,5 @@
 // NpgsqlRest — FULL configuration reference (every option, with inline comments).
-// Generated verbatim from: npgsqlrest --config   (NpgsqlRest v3.18.1)
+// Generated verbatim from: npgsqlrest --config   (NpgsqlRest v3.19.0)
 // This is the source of truth for configuration. Regenerate with: npgsqlrest --config
 
 {
@@ -885,11 +885,14 @@
     //
     // See https://github.com/serilog/serilog/wiki/Configuration-Basics#minimum-level
     // Verbose, Debug, Information, Warning, Error, Fatal.
+    // Set a level to "Off" (aliases "None"/"Silent") to mute that logger entirely; use null (or omit it) to fall back to its built-in default.
     // Note: NpgsqlRest logger applies to main application logger, which will, by default have the name defined in the ApplicationName setting.
+    // NpgsqlRestTest is the SQL test runner (--test) channel (see TestRunner:LoggerName): discovery/parsing at Debug, each query and HTTP call at Verbose, notices by severity.
     //
     "MinimalLevels": {
       "NpgsqlRest": "Information",
       "NpgsqlRestClient": "Information",
+      "NpgsqlRestTest": "Information",
       "System": "Warning",
       "Microsoft": "Warning"
     },
@@ -1424,6 +1427,173 @@
     // Security Consideration: Shows currently running queries which may contain sensitive data.
     //
     "ActivityPath": "/stats/activity"
+  },
+
+  //
+  // SQL test runner. Invoked with the `--test` command-line flag (this section is otherwise inert).
+  // Discovers *.test.sql files, runs each in an isolated non-pooled connection, can invoke endpoints
+  // in-process from an embedded `/* GET /path */` block (response captured into a temp table), and
+  // asserts via boolean-returning SELECTs or `do $$ ... assert ... $$;` blocks. Exit codes:
+  // 0 pass, 1 failures, 2 errors, 3 config/runner error, 4 no tests found.
+  //
+  "TestRunner": {
+    //
+    // Glob (same engine as SqlFileSource) selecting test files. Empty disables discovery. Two layouts:
+    // co-located (app.sql next to app.test.sql — SqlFileSource SkipPattern keeps tests out of the endpoints)
+    // or a separate tests tree (e.g. "./tests/**/*.test.sql").
+    //
+    "FilePattern": "",
+    //
+    // Optional filter narrowing the discovered set — the fast path for iterating on one test:
+    //   npgsqlrest ... --test --testrunner:filter=login
+    // Matched against each file's cwd-relative path: a value without wildcards is a substring match;
+    // with wildcards it is the same glob engine as FilePattern. Empty = run everything discovered.
+    //
+    "Filter": "",
+    //
+    // Tag filtering (comma- or whitespace-separated lists; case-insensitive). A test file declares tags
+    // with a `-- @tag name [name ...]` header annotation. "Tag" runs only files carrying at least one of
+    // the listed tags; "ExcludeTag" skips files carrying any of them (exclude wins). Composes with Filter.
+    //   npgsqlrest ... --test --testrunner:tag=smoke --testrunner:excludetag=slow
+    //
+    "Tag": "",
+    "ExcludeTag": "",
+    //
+    // Optional: a ConnectionStrings entry to run the tests against instead of the app's main connection. In
+    // test mode it becomes the connection used for endpoint type-checking (Describe) and execution, so it can
+    // point at a dedicated test database that a Setup step creates first (it need not exist at startup).
+    // Empty = use the main connection. Tip: {rnd1}..{rnd10} are random lowercase tokens (length = the digit),
+    // stable for the whole run, usable in any connection string or Setup/Teardown SQL (e.g. Database=app_test_{rnd6}).
+    // Need several distinct tokens of the same length? Indexed instances {rndN_1}..{rndN_9} are each independent.
+    //
+    "ConnectionName": "",
+    //
+    // Max test files run concurrently. 0 => processor count. Each test uses its own non-pooled connection.
+    //
+    "MaxParallelism": 0,
+    //
+    // Stop scheduling new tests after the first failure/error (in-flight tests still finish).
+    //
+    "FailFast": false,
+    //
+    // Per-test timeout. Accepts "30s", "5m", "1h", a plain number of seconds, or "hh:mm:ss". 0 disables.
+    //
+    "PerTestTimeout": "30s",
+    //
+    // Optional path to also write a JUnit XML report (console output is always printed).
+    //
+    "JUnitOutput": null,
+    //
+    // Skip Teardown so a failed run's state can be inspected.
+    //
+    "Keep": false,
+    //
+    // Detailed console REPORT: list passed assertions, print the full failing SQL statement, and show
+    // captured `raise notice` output for passing tests too. This shapes the report only — for diagnostic
+    // logging of every executed query/HTTP call, raise the log channel instead (Log:MinimalLevels + LoggerName).
+    //
+    "DetailedReport": false,
+    //
+    // Treat "no tests discovered" as success (exit 0) instead of exit 4.
+    //
+    "AllowEmpty": false,
+    //
+    // Endpoint-coverage summary after the run: exercised N of M testable endpoints + the list of untested
+    // ones (endpoint kinds the runner rejects — SSE, upload, login/logout, outbound proxy — are excluded
+    // from the ratio and counted separately). Tri-state: null (default) reports after FULL runs but stays
+    // quiet when the run is narrowed by Filter/Tag (a deliberately partial run would just nag); true always
+    // reports; false never. CoverageThreshold (0-100) always reports and fails an otherwise-passing run
+    // with exit 2 when coverage is below it — CI gating for "every endpoint has a test".
+    //
+    "Coverage": null,
+    "CoverageThreshold": null,
+    //
+    // SourceContext name for the runner's own log channel; set its level independently under Log:MinimalLevels.
+    // Discovery/parsing log at Debug, each query and HTTP invocation at Verbose, `raise notice` by severity.
+    //
+    "LoggerName": "NpgsqlRestTest",
+    //
+    // Per-HTTP-block temp table that captures the response. Each block gets its own fresh temp table
+    // (created without IF NOT EXISTS, so a duplicate name fails the test); writes are pg_temp-qualified.
+    // A file with ONE HTTP block uses "Name"; a file with 2+ blocks uses "MultiNamePattern" where {n} is
+    // the 1-based block ordinal (_response_1, _response_2, ...). Per-block override: `# @response <name>`.
+    // A null/empty column name omits that column. "DebugTable" (e.g. "_responses_debug"): ALSO mirror every
+    // response into a PERMANENT table for post-run inspection — survives rollbacks, holds the last run, one
+    // row per HTTP block with test_file/block/method/path metadata (debugging aid; do not enable in CI).
+    //
+    "ResponseTempTable": {
+      "Name": "_response",
+      "MultiNamePattern": "_response_{n}",
+      "DebugTable": null,
+      "Columns": {
+        "Status": "status",
+        "Body": "body",
+        "ContentType": "content_type",
+        "Headers": "headers",
+        "IsSuccess": "is_success"
+      }
+    },
+    //
+    // Named, reusable steps (name → step; same shape as Setup/Teardown entries). Reference them by name in
+    // Setup/Teardown below, or from an individual test file's leading header comments:
+    //   -- @setup StepName [StepName ...]      runs before that file
+    //   -- @teardown StepName [StepName ...]   runs after that file (always, best-effort)
+    //   -- @connection Name                    runs that file on a named ConnectionStrings entry
+    // Annotations are repeatable; names may be whitespace- or comma-separated and run in the order written.
+    // Test files can also reuse SQL scripts in place with psql-style includes: `\i file` (cwd-relative) or
+    // `\ir file` (relative to the including file) — executed on the test's connection, inside its transaction.
+    //
+    // The entries below are disabled EXAMPLES showing every step property ("Sql", "SqlFile", "Command",
+    // "WorkingDirectory", "ConnectionName") across the typical scenarios — flip "Enabled" to true (and adjust
+    // names, paths, and connections) instead of typing them from scratch. A step with "Enabled": false is
+    // simply IGNORED wherever it is referenced.
+    //
+    "Steps": {
+      "CreateTestDatabase":  { "Enabled": false, "ConnectionName": "Admin", "Sql": "create database app_test_{rnd5}" },
+      "DropTestDatabase":    { "Enabled": false, "ConnectionName": "Admin", "Sql": "drop database if exists app_test_{rnd5} with (force)" },
+      "ApplySchema":         { "Enabled": false, "SqlFile": "./migrations/schema.sql" },
+      "RunMigrationTool":    { "Enabled": false, "Command": "echo replace with your migration tool command", "WorkingDirectory": "." },
+      "StartDockerPostgres": { "Enabled": false, "Command": "docker run -d --name npgsqlrest-test-pg -e POSTGRES_PASSWORD=postgres -p 54329:5432 postgres" },
+      "StopDockerPostgres":  { "Enabled": false, "Command": "docker rm -f npgsqlrest-test-pg" }
+    },
+    //
+    // Run-once setup, BEFORE endpoint discovery. Steps run in the EXACT order written. Each entry is a step
+    // NAME from "Steps" above, or an inline step object:
+    //   { "Command": "...", "WorkingDirectory": "..." }    — runs via the OS shell
+    //   { "Sql": "..." } | { "SqlFile": "..." }            — runs on the test connection; set "ConnectionName"
+    //                                                         to run on another ConnectionStrings entry (e.g.
+    //                                                         an admin connection that runs `create database`).
+    //
+    "Setup": [],
+    //
+    // Run-once teardown, ALWAYS (best-effort), in the EXACT order written. `Keep` skips it. Same entries as Setup.
+    //
+    "Teardown": []
+  },
+
+  //
+  // Watch mode (interactive/dev-only) — one feature, two flavors: with --test it re-runs tests on
+  // changes (a changed test file re-runs alone; a changed endpoint file or database routine rebuilds
+  // endpoints in-process and re-runs everything; teardown runs once, on exit); without --test it
+  // supervises the SERVER and restarts it on SQL file source, configuration, and database routine
+  // changes. In both flavors a broken SQL file cannot kill the session (SqlFileSource ErrorMode is
+  // forced from Exit to Skip while watching).
+  //
+  "Watch": {
+    //
+    // Turn watch mode on. The --watch command line flag is the shorthand for this setting.
+    //
+    "Enabled": false,
+    //
+    // Poll the database for routine changes and restart the server (server watch) or rebuild endpoints and
+    // re-run the tests (test watch). The poll runs the SAME routine discovery query the endpoint source
+    // uses (same configured filters), hashed server-side into one value — so it detects exactly what
+    // changes discovered endpoints: functions/procedures (create/replace/drop/alter, grants), their
+    // COMMENT ON annotations, and the composite types and tables their signatures use; anything the
+    // discovery does not read can never trigger. Accepts "2s", "500ms", "1m", a plain number of seconds,
+    // or "hh:mm:ss"; 0 disables. One query per interval on a dedicated non-pooled connection.
+    //
+    "DatabasePollingInterval": "2s"
   },
 
   //
@@ -2461,7 +2631,11 @@
       //
       // Set to true to overwrite existing files.
       //
-      "FileOverwrite": true
+      "FileOverwrite": true,
+      //
+      // When true, parameters filled by the server and not settable by the client are omitted from the generated HTTP file's query string and request body. Covers optional automatic parameters: HTTP Custom Type fields, resolved-parameter expressions, upload metadata, and (on endpoints using user parameters) IP-address and user-claim parameters. Default is false.
+      //
+      "OmitAutomaticParameters": false
     },
 
     //
@@ -2563,7 +2737,11 @@
       // documented. Anonymous endpoints — typically health, login, probes — are omitted. Useful
       // for partner-facing documents. Default false = document everything.
       //
-      "RequiresAuthorizationOnly": false
+      "RequiresAuthorizationOnly": false,
+      //
+      // When true, parameters filled by the server and not settable by the client are omitted from documented query parameters and request bodies. Covers optional automatic parameters: HTTP Custom Type fields, resolved-parameter expressions, upload metadata, and (on endpoints using user parameters) IP-address and user-claim parameters. Default is false.
+      //
+      "OmitAutomaticParameters": false
     },
     //
     // Enable or disable the MCP (Model Context Protocol) server endpoint. Disabled by default. Tools are NEVER auto-exposed: only routines explicitly opted in with the `mcp` comment annotation become MCP tools. Implements MCP specification 2025-11-25.
@@ -2763,7 +2941,11 @@
       //
       // TypeScript type for error response. Only used when IncludeStatusCode is true.
       //
-      "ErrorType": "{status: number; title: string; detail?: string | null} | undefined"
+      "ErrorType": "{status: number; title: string; detail?: string | null} | undefined",
+      //
+      // When true, parameters filled by the server and not settable by the client are omitted from the generated request interface, query string, and body. Covers optional automatic parameters: HTTP Custom Type fields, resolved-parameter expressions, upload metadata, and (on endpoints using user parameters) IP-address and user-claim parameters. Default is false.
+      //
+      "OmitAutomaticParameters": false
     },
 
     //
@@ -2877,7 +3059,11 @@
       //
       // When true, for upload endpoints marked as proxy, the raw multipart/form-data content is forwarded directly to the upstream proxy instead of being processed locally. This allows the upstream service to handle file uploads. When false (default), upload endpoints with proxy annotation will process uploads locally and upload metadata will not be available to the proxy.
       //
-      "ForwardUploadContent": false
+      "ForwardUploadContent": false,
+      //
+      // Maximum length (characters) of a single automatic parameter value appended to the proxy upstream query string. Server-filled values (claims, IP, HTTP Custom Type fields, resolved-parameter expressions) longer than this are skipped with a warning instead of producing an unusable request line (HTTP 414/431). 0 or less disables the guard. To forward a large value, use a body-carrying proxy method (POST/PUT/PATCH). Default is 2048.
+      //
+      "MaxForwardedQueryParamLength": 2048
     },
 
     //
@@ -2895,6 +3081,12 @@
       // Empty string disables the feature.
       //
       "FilePattern": "",
+      //
+      // Glob (same semantics as FilePattern) for files to EXCLUDE from endpoint discovery.
+      // Default "*.test.sql" so co-located SQL test files (run by the test runner, see "TestRunner")
+      // are never exposed as endpoints. Empty string disables the exclusion.
+      //
+      "SkipPattern": "*.test.sql",
       //
       // How comment annotations are processed for SQL file endpoints.
       // Possible values: Ignore, ParseAll, OnlyAnnotated, OnlyWithHttpTag.
