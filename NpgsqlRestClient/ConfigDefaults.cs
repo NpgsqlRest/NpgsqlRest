@@ -174,6 +174,11 @@ public static class ConfigDefaults
             ["HealthChecks"] = GetHealthChecksDefaults(),
             ["Stats"] = GetStatsDefaults(),
             ["TestRunner"] = GetTestRunnerDefaults(),
+            ["Watch"] = new JsonObject
+            {
+                ["Enabled"] = false,
+                ["DatabasePollingInterval"] = "2s",
+            },
             ["CommandRetryOptions"] = GetCommandRetryOptionsDefaults(),
             ["CacheOptions"] = GetCacheOptionsDefaults(),
             ["ValidationOptions"] = GetValidationOptionsDefaults(),
@@ -1112,7 +1117,6 @@ public static class ConfigDefaults
             ["Keep"] = false,
             ["DetailedReport"] = false,
             ["AllowEmpty"] = false,
-            ["Watch"] = false,
             ["Coverage"] = null,
             ["CoverageThreshold"] = null,
             ["LoggerName"] = "NpgsqlRestTest",

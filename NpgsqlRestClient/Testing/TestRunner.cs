@@ -25,6 +25,9 @@ public sealed class TestRunner
     // Indentation is written OUTSIDE the style so the grey block starts at the text. Escapes are emitted
     // only on a real terminal (see Out).
     public const string AnsiFail = "\x1b[38;5;197m\x1b[48;5;238m";
+
+    // Channel sentinel written by the database poller (not a real path — NUL is invalid in paths).
+    private const string DbChangeSentinel = "\u0000database";
     private const string AnsiOk = "\x1b[38;5;47m\x1b[48;5;238m";
     private const string AnsiPlain = "\x1b[0m";
 
@@ -455,10 +458,23 @@ public sealed class TestRunner
                 && !endpointBaseFull.StartsWith(testBaseFull, StringComparison.Ordinal);
             using var endpointWatcher = separateEndpointTree ? NewWatcher(endpointBaseFull!) : null;
 
+            // Database polling: routine changes (create/replace/drop/comment, signature types) have no
+            // file to watch — a poller on the test connection runs the routine discovery query hashed
+            // server-side and feeds a sentinel into the same channel, triggering a rebuild + full rerun.
+            WatchDbPoller? dbPoller = null;
+            var routineSources = _rest.EndpointSources.OfType<RoutineSource>().ToArray();
+            if (_opt.DatabasePollingInterval > TimeSpan.Zero && routineSources.Length > 0)
+            {
+                dbPoller = new WatchDbPoller(_connString, _opt.DatabasePollingInterval,
+                    onChange: () => changes.Writer.TryWrite(DbChangeSentinel), _log, routineSources);
+                _ = dbPoller.RunAsync(stop.Token);
+            }
+
             var watching = Path.GetRelativePath(Environment.CurrentDirectory, testBaseFull)
                 + (endpointBaseFull is not null && endpointBaseFull != testBaseFull
                     ? $" + {Path.GetRelativePath(Environment.CurrentDirectory, endpointBaseFull)} (endpoints)"
-                    : "");
+                    : "")
+                + (dbPoller is not null ? $" + database (poll {_opt.DatabasePollingInterval.TotalSeconds:0.#}s)" : "");
             _out.Line($"\nwatching {watching} for changes — Ctrl+C to stop", ConsoleColor.Cyan);
 
             while (!stop.IsCancellationRequested)
@@ -474,6 +490,12 @@ public sealed class TestRunner
                 bool rebuild = false;
                 foreach (var path in changed)
                 {
+                    if (string.Equals(path, DbChangeSentinel, StringComparison.Ordinal))
+                    {
+                        // Routines changed in the database: re-describe (rebuild) and re-run everything.
+                        if (rebuildEndpoints is not null) rebuild = true; else runAll = true;
+                        continue;
+                    }
                     var rel = Path.GetRelativePath(Environment.CurrentDirectory, path).Replace('\\', '/');
                     if (MatchesCwdRelativePattern(rel, _opt.FilePattern))
                     {
@@ -491,7 +513,9 @@ public sealed class TestRunner
                 }
                 if (!rebuild && !runAll && testFiles.Count == 0) continue; // e.g. only deletions
 
-                var trigger = Path.GetRelativePath(Environment.CurrentDirectory, changed[0]);
+                var trigger = string.Equals(changed[0], DbChangeSentinel, StringComparison.Ordinal)
+                    ? "database"
+                    : Path.GetRelativePath(Environment.CurrentDirectory, changed[0]);
                 _out.Line($"\n— {DateTime.Now:HH:mm:ss} change detected ({trigger}{(changed.Count > 1 ? $" +{changed.Count - 1}" : "")}) —", ConsoleColor.Cyan);
 
                 if (rebuild)
@@ -516,6 +540,9 @@ public sealed class TestRunner
                 }
 
                 await ExecuteDiscoveredFilesAsync(endpoints, lookup, only: runAll ? null : testFiles.Distinct().ToList(), stop.Token);
+                // The rerun itself may have changed the database (committed fixtures, per-file steps) —
+                // re-baseline so self-inflicted changes never trigger another rerun.
+                dbPoller?.Rebaseline();
                 _out.Line($"\nwatching — Ctrl+C to stop", ConsoleColor.Cyan);
             }
             return ExitPass;

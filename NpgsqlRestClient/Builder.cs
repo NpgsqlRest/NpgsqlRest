@@ -3075,11 +3075,12 @@ public class Builder
         opt.MaxParallelism = _config.GetConfigInt("MaxParallelism", section) ?? 0;
         opt.FailFast = _config.GetConfigBool("FailFast", section, false);
         opt.PerTestTimeout = ParseTestTimeout(_config.GetConfigStr("PerTestTimeout", section), TimeSpan.FromSeconds(30));
+        opt.DatabasePollingInterval = ParseTestTimeout(
+            _config.GetConfigStr("DatabasePollingInterval", _config.Cfg.GetSection("Watch")), TimeSpan.FromSeconds(2));
         opt.JUnitOutput = _config.GetConfigStr("JUnitOutput", section);
         opt.Keep = _config.GetConfigBool("Keep", section, false);
         opt.DetailedReport = _config.GetConfigBool("DetailedReport", section, false);
         opt.AllowEmpty = _config.GetConfigBool("AllowEmpty", section, false);
-        opt.Watch = _config.GetConfigBool("Watch", section, false);
         opt.CoverageThreshold = _config.GetConfigInt("CoverageThreshold", section);
         // Tri-state: absent/empty => null (report after full runs only); explicit true/false honored.
         if (string.IsNullOrEmpty(section.GetSection("Coverage").Value) is false)
@@ -3179,7 +3180,7 @@ public class Builder
         }
     }
 
-    private static TimeSpan ParseTestTimeout(string? raw, TimeSpan def)
+    internal static TimeSpan ParseTestTimeout(string? raw, TimeSpan def)
     {
         if (string.IsNullOrWhiteSpace(raw)) return def;
         raw = raw.Trim();

@@ -272,15 +272,17 @@ if (cmdRetryOpts.Enabled && string.IsNullOrEmpty(cmdRetryOpts.DefaultStrategy))
 
 bool endpointsMode = args.Any(a => string.Equals(a, "--endpoints", StringComparison.OrdinalIgnoreCase));
 bool testMode = args.Any(a => string.Equals(a, "--test", StringComparison.OrdinalIgnoreCase));
-// Watch mode (interactive re-run loop). Needed this early because it relaxes SqlFileSource error handling
-// (a broken endpoint file must not kill the watch session — see CreateEndpointSources).
-bool watchMode = testMode && (args.Any(a => string.Equals(a, "--watch", StringComparison.OrdinalIgnoreCase))
-    || config.GetConfigBool("Watch", config.Cfg.GetSection("TestRunner")));
+// Watch mode — one feature, two flavors chosen by --test. The --watch flag is shorthand for
+// Watch:Enabled. Needed this early because it relaxes SqlFileSource error handling (a broken endpoint
+// file must not kill the watch session — see CreateEndpointSources).
+bool watchRequested = args.Any(a => string.Equals(a, "--watch", StringComparison.OrdinalIgnoreCase))
+    || config.GetConfigBool("Enabled", config.Cfg.GetSection("Watch"));
+bool watchMode = testMode && watchRequested;
 
-// Server watch mode (--watch WITHOUT --test): this process becomes a supervisor that spawns itself as
+// Server watch (--watch WITHOUT --test): this process becomes a supervisor that spawns itself as
 // a child server and restarts it on SQL/config file changes; the child (marked by an env variable)
 // falls through and runs the normal server pipeline. See WatchSupervisor.
-if (testMode is false && args.Any(a => string.Equals(a, "--watch", StringComparison.OrdinalIgnoreCase)))
+if (testMode is false && watchRequested)
 {
     if (WatchSupervisor.IsChild is false)
     {
@@ -730,6 +732,26 @@ if (statsEnabled)
         tablesEndpoint.CacheOutput(policy => policy.Expire(statsCacheDuration.Value).SetVaryByQuery([]));
         indexesEndpoint.CacheOutput(policy => policy.Expire(statsCacheDuration.Value).SetVaryByQuery([]));
         activityEndpoint.CacheOutput(policy => policy.Expire(statsCacheDuration.Value).SetVaryByQuery([]));
+    }
+}
+
+// Server watch child: poll the routine discovery query (hashed server-side, same configured filters)
+// and request a restart (exit code 64 -> the supervisor respawns immediately) when its result changes —
+// routines, their comments (annotations), and the types their signatures use are invisible to a file watcher.
+if (WatchSupervisor.IsChild)
+{
+    var dbPollInterval = NpgsqlRestClient.Builder.ParseTestTimeout(
+        config.GetConfigStr("DatabasePollingInterval", config.Cfg.GetSection("Watch")), TimeSpan.FromSeconds(2));
+    var routineSources = options.EndpointSources.OfType<NpgsqlRest.RoutineSource>().ToArray();
+    if (dbPollInterval > TimeSpan.Zero && routineSources.Length > 0)
+    {
+        var dbPoller = new WatchDbPoller(connectionString!, dbPollInterval, onChange: () =>
+        {
+            builder.ClientLogger?.LogInformation("watch: database change detected — restarting");
+            Environment.ExitCode = WatchSupervisor.DbChangeExitCode;
+            app.Lifetime.StopApplication();
+        }, builder.ClientLogger, routineSources);
+        _ = dbPoller.RunAsync(app.Lifetime.ApplicationStopping);
     }
 }
 

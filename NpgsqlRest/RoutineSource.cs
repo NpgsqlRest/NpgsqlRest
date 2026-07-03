@@ -45,6 +45,44 @@ public class RoutineSource(
     /// </summary>
     public bool ResolveNestedCompositeTypes { get; set; } = resolveNestedCompositeTypes;
 
+    /// <summary>
+    /// The discovery command (query text + the ten filter parameters, each resolved against this source
+    /// or the global options) — shared by <see cref="Read"/> and <see cref="CreateFingerprintCommand"/>.
+    /// With <paramref name="fingerprint"/> the SAME query is wrapped in an order-independent server-side
+    /// hash of its result rows: if the hash changes, the discovered endpoints changed — by definition.
+    /// </summary>
+    private NpgsqlCommand CreateSourceCommand(NpgsqlConnection connection, bool fingerprint)
+    {
+        var command = connection.CreateCommand();
+        Query ??= RoutineSourceQuery.Query;
+        var text = Query.Contains(Consts.Space) is false
+            ? string.Concat("select * from ", Query, "($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)")
+            : Query;
+        command.CommandText = fingerprint
+            ? string.Concat("select coalesce(sum(hashtextextended(q::text, 0)), 0)::text from (", text, ") q")
+            : text;
+
+        command.AddParameter(SchemaSimilarTo ?? Options.SchemaSimilarTo); // $1
+        command.AddParameter(SchemaNotSimilarTo ?? Options.SchemaNotSimilarTo); // $2
+        command.AddParameter(IncludeSchemas ?? Options.IncludeSchemas, true); // $3
+        command.AddParameter(ExcludeSchemas ?? Options.ExcludeSchemas, true); // $4
+        command.AddParameter(NameSimilarTo ?? Options.NameSimilarTo); // $5
+        command.AddParameter(NameNotSimilarTo ?? Options.NameNotSimilarTo); // $6
+        command.AddParameter(IncludeNames ?? Options.IncludeNames, true); // $7
+        command.AddParameter(ExcludeNames ?? Options.ExcludeNames, true); // $8
+        command.AddParameter(IncludeLanguages, true); // $9
+        command.AddParameter(ExcludeLanguages is null ? ["c", "internal"] : ExcludeLanguages, true); // $10
+        return command;
+    }
+
+    /// <summary>
+    /// A command returning one text value: a hash of this source's ENTIRE discovery result (same query,
+    /// same configured filters). Watch mode polls it to detect any change to the discovered endpoints —
+    /// routines, their comments/annotations, and the composite/table types their signatures use.
+    /// </summary>
+    public NpgsqlCommand CreateFingerprintCommand(NpgsqlConnection connection)
+        => CreateSourceCommand(connection, fingerprint: true);
+
     public IEnumerable<(Routine, IRoutineSourceParameterFormatter)> Read(IServiceProvider? serviceProvider, RetryStrategy? retryStrategy)
     {
         bool shouldDispose = true;
@@ -64,28 +102,7 @@ public class RoutineSource(
                 CompositeTypeCache.Initialize(connection, Options.NameConverter);
             }
 
-            using var command = connection.CreateCommand();
-            Query ??= RoutineSourceQuery.Query;
-            if (Query.Contains(Consts.Space) is false)
-            {
-                command.CommandText = string.Concat("select * from ", Query, "($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)");
-            }
-            else
-            {
-                command.CommandText = Query;
-            }
-
-            command.AddParameter(SchemaSimilarTo ?? Options.SchemaSimilarTo); // $1
-            command.AddParameter(SchemaNotSimilarTo ?? Options.SchemaNotSimilarTo); // $2
-            command.AddParameter(IncludeSchemas ?? Options.IncludeSchemas, true); // $3
-            command.AddParameter(ExcludeSchemas ?? Options.ExcludeSchemas, true); // $4
-            command.AddParameter(NameSimilarTo ?? Options.NameSimilarTo); // $5
-            command.AddParameter(NameNotSimilarTo ?? Options.NameNotSimilarTo); // $6
-            command.AddParameter(IncludeNames ?? Options.IncludeNames, true); // $7
-            command.AddParameter(ExcludeNames ?? Options.ExcludeNames, true); // $8
-            command.AddParameter(IncludeLanguages, true); // $9
-            command.AddParameter(ExcludeLanguages is null ? ["c", "internal"] : ExcludeLanguages, true); // $10
-
+            using var command = CreateSourceCommand(connection, fingerprint: false);
             command.LogCommand(nameof(RoutineSource));
             using NpgsqlDataReader reader = command.ExecuteReaderWithRetry(retryStrategy);
             while (reader.Read())

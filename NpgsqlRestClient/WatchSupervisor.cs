@@ -31,6 +31,9 @@ public static class WatchSupervisor
 
     public static bool IsChild { get; } = string.IsNullOrEmpty(Environment.GetEnvironmentVariable(ChildEnv)) is false;
 
+    /// <summary>Child exit code meaning "the database poller detected a change — respawn me immediately".</summary>
+    public const int DbChangeExitCode = 64;
+
     // Blittable signature — plain DllImport is AOT-safe here and avoids AllowUnsafeBlocks.
     [DllImport("libc", SetLastError = true, EntryPoint = "kill")]
     private static extern int kill(int pid, int sig);
@@ -70,31 +73,47 @@ public static class WatchSupervisor
     {
         var output = new Out();
 
-        // Something to watch? Server watch requires an enabled SqlFileSource (database routines have no
-        // files to watch — a change in the database needs a manual restart either way).
+        // Something to watch? A SqlFileSource tree, database catalog polling, or both.
         var sqlFileCfg = config.NpgsqlRestCfg.GetSection("SqlFileSource");
         string? filePattern = null;
         if (sqlFileCfg.Exists() && config.GetConfigBool("Enabled", sqlFileCfg, true))
         {
             filePattern = config.GetConfigStr("FilePattern", sqlFileCfg);
         }
-        if (string.IsNullOrWhiteSpace(filePattern))
+        // Database polling (the child does the actual polling by hashing the routine discovery query;
+        // the supervisor needs the value for validation and the banner). With polling active, --watch is
+        // valid even without a SQL file source — a routines-only project restarts on create/replace/drop/
+        // comment. Polling is only meaningful when the routine source itself is enabled.
+        var dbPollInterval = Builder.ParseTestTimeout(
+            config.GetConfigStr("DatabasePollingInterval", config.Cfg.GetSection("Watch")), TimeSpan.FromSeconds(2));
+        var routineOptionsCfg = config.NpgsqlRestCfg.GetSection("RoutineOptions");
+        if (routineOptionsCfg.Exists() && config.GetConfigBool("Enabled", routineOptionsCfg, true) is false)
+        {
+            dbPollInterval = TimeSpan.Zero;
+        }
+
+        string? baseDirFull = null;
+        var skipPattern = "*.test.sql";
+        if (string.IsNullOrWhiteSpace(filePattern) is false)
+        {
+            var baseDir = WatchUtils.GetWatchBaseDir(filePattern);
+            if (baseDir is null)
+            {
+                output.LineAnsi(
+                    $"watch: cannot watch — SqlFileSource FilePattern \"{filePattern}\" has no existing base directory.",
+                    Testing.TestRunner.AnsiFail);
+                return 1;
+            }
+            baseDirFull = Path.GetFullPath(baseDir);
+            skipPattern = (config.GetConfigStr("SkipPattern", sqlFileCfg) ?? "*.test.sql").Replace('\\', '/');
+        }
+        else if (dbPollInterval <= TimeSpan.Zero)
         {
             output.LineAnsi(
-                "watch: nothing to watch — --watch without --test requires an enabled SqlFileSource with a FilePattern. For test watch mode use --test --watch.",
+                "watch: nothing to watch — --watch without --test requires an enabled SqlFileSource with a FilePattern and/or database polling (Watch:DatabasePollingInterval). For test watch mode use --test --watch.",
                 Testing.TestRunner.AnsiFail);
             return 1;
         }
-        var baseDir = WatchUtils.GetWatchBaseDir(filePattern);
-        if (baseDir is null)
-        {
-            output.LineAnsi(
-                $"watch: cannot watch — SqlFileSource FilePattern \"{filePattern}\" has no existing base directory.",
-                Testing.TestRunner.AnsiFail);
-            return 1;
-        }
-        var baseDirFull = Path.GetFullPath(baseDir);
-        var skipPattern = (config.GetConfigStr("SkipPattern", sqlFileCfg) ?? "*.test.sql").Replace('\\', '/');
 
         // Config files restart the server too: the .json/.jsonc files passed on the command line, plus
         // the implicit default when present.
@@ -130,11 +149,14 @@ public static class WatchSupervisor
         bool polling = WatchUtils.UsePollingWatcher;
         if (polling)
         {
-            WatchUtils.StartPollingWatcher(baseDirFull, configFiles, changes.Writer, stop.Token);
+            WatchUtils.StartPollingWatcher(baseDirFull ?? "", configFiles, changes.Writer, stop.Token);
         }
         else
         {
-            watchers.Add(WatchUtils.NewSqlWatcher(baseDirFull, changes.Writer));
+            if (baseDirFull is not null)
+            {
+                watchers.Add(WatchUtils.NewSqlWatcher(baseDirFull, changes.Writer));
+            }
             foreach (var dir in configFiles.Select(Path.GetDirectoryName).Where(d => d is not null).Distinct(StringComparer.Ordinal))
             {
                 var w = new FileSystemWatcher(dir!)
@@ -156,32 +178,56 @@ public static class WatchSupervisor
             }
         }
 
-        var watchingWhat = $"{Path.GetRelativePath(Environment.CurrentDirectory, baseDirFull)} (*.sql)"
-            + (configFiles.Count > 0 ? " + config files" : "")
-            + (polling ? " [polling]" : "");
+        var watchingParts = new List<string>(3);
+        if (baseDirFull is not null)
+        {
+            watchingParts.Add($"{Path.GetRelativePath(Environment.CurrentDirectory, baseDirFull)} (*.sql)");
+        }
+        if (configFiles.Count > 0)
+        {
+            watchingParts.Add("config files");
+        }
+        if (dbPollInterval > TimeSpan.Zero)
+        {
+            watchingParts.Add($"database (poll {dbPollInterval.TotalSeconds:0.#}s)");
+        }
+        var watchingWhat = string.Join(" + ", watchingParts) + (polling ? " [polling]" : "");
         output.Line($"watch mode: supervising the server process, watching {watchingWhat} — Ctrl+C to stop", ConsoleColor.Cyan);
 
         Process child = Spawn(args);
         Task exitTask = child.WaitForExitAsync(CancellationToken.None);
+        // The pending batch survives iterations that don't consume it (e.g. a database-change respawn),
+        // so the channel never has two competing readers.
+        Task<List<string>?>? pendingBatch = null;
 
         try
         {
             while (stopping is false)
             {
-                var batchTask = WatchUtils.NextChangeBatchAsync(changes.Reader, stop.Token);
-                var completed = await Task.WhenAny(exitTask, batchTask);
+                pendingBatch ??= WatchUtils.NextChangeBatchAsync(changes.Reader, stop.Token);
+                var completed = await Task.WhenAny(exitTask, pendingBatch);
 
                 if (stopping)
                 {
                     break;
                 }
 
-                if (completed == exitTask && batchTask.IsCompleted is false)
+                if (completed == exitTask && pendingBatch.IsCompleted is false)
                 {
+                    if (child.ExitCode == DbChangeExitCode)
+                    {
+                        // The child's database poller detected a routine/annotation change and asked to be
+                        // restarted.
+                        output.Line($"\n— {DateTime.Now:HH:mm:ss} database change detected — restarting —", ConsoleColor.Cyan);
+                        child = Spawn(args);
+                        exitTask = child.WaitForExitAsync(CancellationToken.None);
+                        continue;
+                    }
                     // The child died on its own (crash, config error, port conflict). Don't respawn in a
                     // loop — hold until the next file change, then try again.
                     output.Line($"\nserver exited (code {child.ExitCode}) — waiting for file changes", ConsoleColor.Yellow);
-                    var wakeBatch = await batchTask;
+                    var wakeBatch = await pendingBatch;
+                    pendingBatch = null;
                     if (wakeBatch is null || stopping)
                     {
                         break;
@@ -197,7 +243,8 @@ public static class WatchSupervisor
                     continue;
                 }
 
-                var batch = await batchTask;
+                var batch = await pendingBatch;
+                pendingBatch = null;
                 if (batch is null)
                 {
                     break;
@@ -229,7 +276,7 @@ public static class WatchSupervisor
     /// SqlFileSource FilePattern and does NOT match SkipPattern (a test-file edit must not bounce the
     /// server).
     /// </summary>
-    private static string? Relevant(List<string> batch, string baseDirFull, string skipPattern, HashSet<string> configFileSet)
+    private static string? Relevant(List<string> batch, string? baseDirFull, string skipPattern, HashSet<string> configFileSet)
     {
         foreach (var path in batch.Distinct(StringComparer.Ordinal))
         {
@@ -239,7 +286,8 @@ public static class WatchSupervisor
             {
                 return rel;
             }
-            if (full.StartsWith(baseDirFull, StringComparison.Ordinal)
+            if (baseDirFull is not null
+                && full.StartsWith(baseDirFull, StringComparison.Ordinal)
                 && rel.EndsWith(".sql", StringComparison.OrdinalIgnoreCase)
                 && WatchUtils.MatchesCwdRelativePattern(rel, skipPattern) is false)
             {

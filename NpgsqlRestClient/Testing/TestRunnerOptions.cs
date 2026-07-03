@@ -75,13 +75,11 @@ public class TestRunnerOptions
     public bool AllowEmpty { get; set; } = false;
 
     /// <summary>
-    /// Watch mode (interactive/dev-only; CLI: <c>--watch</c>): run everything once, then re-run on file
-    /// changes until Ctrl+C. A changed test file re-runs alone; a changed ENDPOINT file (SqlFileSource
-    /// FilePattern) rebuilds the endpoints in-process (delta reported) and re-runs everything; any other
-    /// changed .sql under the test tree re-runs everything (an included fixture's dependents are unknown).
-    /// Teardown runs once, on exit; graceful exit code is 0.
+    /// Watch mode only: poll the test database's catalog for routine changes (create/replace/drop/alter
+    /// of functions/procedures, COMMENT ON) and rebuild endpoints + re-run everything when it changes.
+    /// Read from the shared top-level Watch:DatabasePollingInterval setting; zero disables.
     /// </summary>
-    public bool Watch { get; set; } = false;
+    public TimeSpan DatabasePollingInterval { get; set; } = TimeSpan.FromSeconds(2);
 
     /// <summary>
     /// SourceContext name for the runner's own log channel — discovery/parsing at Debug, each query and HTTP
