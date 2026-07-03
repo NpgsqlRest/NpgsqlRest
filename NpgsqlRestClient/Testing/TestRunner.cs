@@ -44,6 +44,10 @@ public sealed class TestRunner
     private readonly NpgsqlRestOptions _rest;
     private readonly TestRunnerOptions _opt;
     private readonly string _connString;
+    // The debug mirror writes on its own POOLED connections (unlike test connections, which are
+    // deliberately non-pooled) — autocommit, outside any test transaction.
+    private readonly string _debugConnString;
+    private bool _debugTableWarned;
     private readonly IReadOnlyDictionary<string, string> _named;
     private readonly ILogger? _log;
     private readonly bool _logNotices;
@@ -108,6 +112,7 @@ public sealed class TestRunner
         // Always non-pooled: a fresh physical session per test (no temp-table / GUC / prepared-statement carryover).
         // In test mode baseConnectionString is already the test connection (TestRunner.ConnectionName, when set).
         _connString = new NpgsqlConnectionStringBuilder(baseConnectionString) { Pooling = false }.ConnectionString;
+        _debugConnString = baseConnectionString;
         // Named ConnectionStrings entries for Setup/Teardown steps that target another connection (e.g. an
         // "Admin" maintenance connection that runs create/drop database).
         _named = namedConnections ?? new Dictionary<string, string>();
@@ -239,6 +244,7 @@ public sealed class TestRunner
     {
         _failFast = false; // reset per run (watch mode reuses the runner across iterations)
         if (only is null) _invoked.Clear(); // coverage counts per full run (partial watch reruns don't report)
+        await EnsureDebugTableAsync(ct); // debug mirror holds the LAST run — recreated per run
 
         var files = only ?? DiscoverFiles();
         if (only is null)
@@ -710,7 +716,7 @@ public sealed class TestRunner
                     else if (step is HttpStep http)
                     {
                         httpOrdinal++;
-                        sr = await InvokeHttpStepAsync(conn, http, ResolveResponseTable(http, httpOrdinal, httpTotal), lookup, ct);
+                        sr = await InvokeHttpStepAsync(conn, http, ResolveResponseTable(http, httpOrdinal, httpTotal), lookup, contextName, ct);
                     }
                     else
                     {
@@ -842,7 +848,7 @@ public sealed class TestRunner
     }
 
     private async Task<StepResult> InvokeHttpStepAsync(
-        NpgsqlConnection conn, HttpStep step, string responseTable, IReadOnlyDictionary<string, RoutineEndpoint> lookup, CancellationToken ct)
+        NpgsqlConnection conn, HttpStep step, string responseTable, IReadOnlyDictionary<string, RoutineEndpoint> lookup, string testFile, CancellationToken ct)
     {
         var httpName = $"{step.Method} {step.Path}";
         var pathOnly = StripQuery(step.Path);
@@ -894,6 +900,10 @@ public sealed class TestRunner
             step.Method, step.Path, response.StatusCode, responseTable);
 
         await WriteResponseAsync(conn, responseTable, response, ct);
+        if (string.IsNullOrWhiteSpace(_opt.ResponseTempTable.DebugTable) is false)
+        {
+            await MirrorResponseAsync(testFile, responseTable, step, response, ct);
+        }
 
         // An HTTP block is an act step: it captures the response into the temp table and produces no test
         // of its own — the assertions are the boolean SELECTs that follow it. It only surfaces as a result
@@ -940,6 +950,82 @@ public sealed class TestRunner
             ins.Parameters.AddWithValue(col.Value ?? DBNull.Value);
         }
         await ins.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>
+    /// Debug mirror (ResponseTempTable.DebugTable): recreate the PERMANENT mirror table at the start of a
+    /// run and print the do-not-use-in-CI warning once. Runs on its own autocommit connection, so mirrored
+    /// rows survive test rollbacks and connection closes — that is the whole point.
+    /// </summary>
+    private async Task EnsureDebugTableAsync(CancellationToken ct)
+    {
+        var table = _opt.ResponseTempTable.DebugTable;
+        if (string.IsNullOrWhiteSpace(table))
+        {
+            return;
+        }
+        if (!ValidateIdentifier(table))
+        {
+            throw new InvalidOperationException($"invalid ResponseTempTable.DebugTable name '{table}'");
+        }
+        if (_debugTableWarned is false)
+        {
+            _debugTableWarned = true;
+            _out.Line($"WARNING: ResponseTempTable.DebugTable is enabled — every captured response is written to the PERMANENT table \"{table}\" (debugging aid; do not enable in CI)", ConsoleColor.Yellow);
+            _log?.LogWarning("ResponseTempTable.DebugTable enabled: mirroring responses into permanent table {Table}", table);
+        }
+        await using var conn = new NpgsqlConnection(_debugConnString);
+        await conn.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"""
+            drop table if exists "{table}";
+            create table "{table}" (
+                captured_at timestamptz not null default now(),
+                test_file text not null,
+                block text not null,
+                method text not null,
+                path text not null,
+                status int,
+                body text,
+                content_type text,
+                headers jsonb,
+                is_success boolean
+            )
+            """;
+        // The debug connection is plain Npgsql (SQL rewriting enabled is irrelevant here — no parameters),
+        // but the client disables rewriting globally, so run the two statements separately.
+        foreach (var statement in cmd.CommandText.Split(';', StringSplitOptions.RemoveEmptyEntries))
+        {
+            await using var one = new NpgsqlCommand(statement, conn);
+            await one.ExecuteNonQueryAsync(ct);
+        }
+    }
+
+    /// <summary>Best-effort mirror insert — a failure warns but never fails the test.</summary>
+    private async Task MirrorResponseAsync(string testFile, string block, HttpStep step, RoutineInvokeResult response, CancellationToken ct)
+    {
+        try
+        {
+            await using var conn = new NpgsqlConnection(_debugConnString);
+            await conn.OpenAsync(ct);
+            await using var ins = new NpgsqlCommand(
+                $"insert into \"{_opt.ResponseTempTable.DebugTable}\" (test_file, block, method, path, status, body, content_type, headers, is_success) values ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9)",
+                conn);
+            ins.Parameters.AddWithValue(testFile);
+            ins.Parameters.AddWithValue(block);
+            ins.Parameters.AddWithValue(step.Method.ToString());
+            ins.Parameters.AddWithValue(step.Path);
+            ins.Parameters.AddWithValue(response.StatusCode);
+            ins.Parameters.AddWithValue((object?)response.Body ?? DBNull.Value);
+            ins.Parameters.AddWithValue((object?)response.ContentType ?? DBNull.Value);
+            ins.Parameters.AddWithValue((object?)response.Headers ?? DBNull.Value);
+            ins.Parameters.AddWithValue(response.IsSuccess);
+            await ins.ExecuteNonQueryAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            _log?.LogWarning("debug table write failed for {File}: {Message}", testFile, ex.Message);
+        }
     }
 
     // The temp-table name for an HTTP block: explicit `# @response` wins; otherwise a file with a single

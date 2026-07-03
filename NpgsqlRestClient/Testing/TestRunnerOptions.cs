@@ -112,6 +112,19 @@ public class ResponseTempTableOptions
     /// <summary>Temp table name pattern when a file has 2+ HTTP blocks. <c>{n}</c> = the 1-based block ordinal.</summary>
     public string MultiNamePattern { get; set; } = "_response_{n}";
 
+    /// <summary>
+    /// Debugging aid: when set (e.g. "_responses_debug"), every captured response is ALSO mirrored into a
+    /// PERMANENT table with this name — written on a separate autocommit connection, so it survives the
+    /// test's rollback and the connection close, and can be examined in a query editor after the run.
+    /// Recreated at the start of every run (always holds the LAST run). ONE table covers all blocks and
+    /// files: each HTTP block adds one row, with the block column recording that block's response-table
+    /// name (<see cref="Name"/>, a <see cref="MultiNamePattern"/> ordinal, or the `# @response` name)
+    /// alongside test_file/method/path and the response columns. The temp-table semantics are unchanged.
+    /// Null (default) = off. Do not enable in CI. In the fresh-test-database workflow combine with Keep,
+    /// or teardown drops the database (and the mirror with it).
+    /// </summary>
+    public string? DebugTable { get; set; } = null;
+
     public ResponseColumnOptions Columns { get; set; } = new();
 }
 

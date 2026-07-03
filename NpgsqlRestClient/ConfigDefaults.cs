@@ -1124,6 +1124,7 @@ public static class ConfigDefaults
             {
                 ["Name"] = "_response",
                 ["MultiNamePattern"] = "_response_{n}",
+                ["DebugTable"] = null,
                 ["Columns"] = new JsonObject
                 {
                     ["Status"] = "status",

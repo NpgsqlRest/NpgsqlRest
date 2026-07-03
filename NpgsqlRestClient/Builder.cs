@@ -3093,6 +3093,7 @@ public class Builder
         {
             opt.ResponseTempTable.Name = _config.GetConfigStr("Name", rt) ?? opt.ResponseTempTable.Name;
             opt.ResponseTempTable.MultiNamePattern = _config.GetConfigStr("MultiNamePattern", rt) ?? opt.ResponseTempTable.MultiNamePattern;
+            opt.ResponseTempTable.DebugTable = _config.GetConfigStr("DebugTable", rt) ?? opt.ResponseTempTable.DebugTable;
             var cols = rt.GetSection("Columns");
             if (cols.Exists())
             {
