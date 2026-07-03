@@ -531,13 +531,9 @@ public sealed class TestRunner
         }
     }
 
-    // A cwd-relative path against a cwd-relative glob (leading "./" tolerated on the pattern).
+    // A cwd-relative path against a cwd-relative glob (shared with the server watch supervisor).
     private static bool MatchesCwdRelativePattern(string relativePath, string pattern)
-    {
-        pattern = pattern.Replace('\\', '/');
-        if (pattern.StartsWith("./")) pattern = pattern[2..];
-        return Parser.IsPatternMatch(relativePath, pattern);
-    }
+        => WatchUtils.MatchesCwdRelativePattern(relativePath, pattern);
 
     // Rebuild delta: how many endpoints now, plus every added/removed "METHOD path" — a removed endpoint
     // usually means its SQL file failed to parse/describe and was skipped.
@@ -564,46 +560,13 @@ public sealed class TestRunner
             after.Length, before.Length, added.Count, removed.Count);
     }
 
-    // First change (blocking), then a quiet period so editor write bursts coalesce into one rerun.
-    private static async Task<List<string>?> NextChangeBatchAsync(System.Threading.Channels.ChannelReader<string> reader, CancellationToken ct)
-    {
-        string first;
-        try
-        {
-            first = await reader.ReadAsync(ct);
-        }
-        catch (OperationCanceledException)
-        {
-            return null;
-        }
-        var batch = new List<string> { first };
-        while (true)
-        {
-            try { await Task.Delay(300, ct); } catch (OperationCanceledException) { return null; }
-            bool any = false;
-            while (reader.TryRead(out var more))
-            {
-                batch.Add(more);
-                any = true;
-            }
-            if (!any) return batch;
-        }
-    }
+    // First change (blocking) + quiet-period coalescing (shared with the server watch supervisor).
+    private static Task<List<string>?> NextChangeBatchAsync(System.Threading.Channels.ChannelReader<string> reader, CancellationToken ct)
+        => WatchUtils.NextChangeBatchAsync(reader, ct);
 
-    // The deepest fixed (wildcard-free) directory of the FilePattern — same logic DiscoverFiles uses.
+    // The deepest fixed (wildcard-free) directory of the FilePattern (shared with the supervisor).
     private static string? GetWatchBaseDir(string pattern)
-    {
-        if (string.IsNullOrWhiteSpace(pattern)) return null;
-        int firstWildcard = pattern.IndexOfAny(['*', '?']);
-        if (firstWildcard < 0)
-        {
-            var dir = Path.GetDirectoryName(pattern);
-            return string.IsNullOrEmpty(dir) ? "." : dir;
-        }
-        int lastSlash = pattern.LastIndexOf('/', firstWildcard);
-        var baseDir = lastSlash >= 0 ? pattern[..lastSlash] : ".";
-        return Directory.Exists(baseDir) ? baseDir : null;
-    }
+        => WatchUtils.GetWatchBaseDir(pattern);
 
     private async Task<FileResult> RunFileAsync(string file, IReadOnlyDictionary<string, RoutineEndpoint> lookup, CancellationToken runCt)
     {

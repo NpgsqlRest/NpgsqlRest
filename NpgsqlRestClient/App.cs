@@ -690,7 +690,7 @@ public class App
                     // session (Environment.Exit) on a broken SQL file — Skip drops the file instead, and
                     // the runner reports the endpoint delta after each rebuild.
                     opts.ErrorMode = ParseErrorMode.Skip;
-                    _builder.TestLogger?.LogDebug("watch mode: SqlFileSource ErrorMode forced from Exit to Skip");
+                    (_builder.TestLogger ?? _builder.ClientLogger)?.LogDebug("watch mode: SqlFileSource ErrorMode forced from Exit to Skip");
                 }
                 var resultPrefix = _config.GetConfigStr("ResultPrefix", sqlFileSourceCfg);
                 if (resultPrefix is not null)

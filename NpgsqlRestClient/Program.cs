@@ -40,6 +40,7 @@ if (args.Length >= 1 && (string.Equals(args[0], "-h", StringComparison.CurrentCu
         ("npgsqlrest [files...] --endpoints", "Connect to database, discover endpoints, output as JSON, then exit. Syntax highlighted in terminal, plain JSON when piped."),
         ("npgsqlrest [files...] --test", "Run SQL test files (TestRunner config), then exit. Exit codes: 0 pass, 1 failures, 2 errors, 3 config error, 4 no tests."),
         ("npgsqlrest [files...] --test --watch", "Watch mode: run the tests, then re-run on file changes until Ctrl+C (interactive/dev-only; teardown runs on exit)."),
+        ("npgsqlrest [files...] --watch", "Server watch mode (dev): run the server and restart it on SQL file source or configuration file changes until Ctrl+C. Requires an enabled SqlFileSource."),
         (" ", " "),
         ("npgsqlrest --hash [value]", "Hash value with default hasher and print to console."),
         ("npgsqlrest --basic_auth [username] [password]", "Print out basic basic auth header value in format 'Authorization: Basic base64(username:password)'."),
@@ -276,6 +277,20 @@ bool testMode = args.Any(a => string.Equals(a, "--test", StringComparison.Ordina
 bool watchMode = testMode && (args.Any(a => string.Equals(a, "--watch", StringComparison.OrdinalIgnoreCase))
     || config.GetConfigBool("Watch", config.Cfg.GetSection("TestRunner")));
 
+// Server watch mode (--watch WITHOUT --test): this process becomes a supervisor that spawns itself as
+// a child server and restarts it on SQL/config file changes; the child (marked by an env variable)
+// falls through and runs the normal server pipeline. See WatchSupervisor.
+if (testMode is false && args.Any(a => string.Equals(a, "--watch", StringComparison.OrdinalIgnoreCase)))
+{
+    if (WatchSupervisor.IsChild is false)
+    {
+        Environment.ExitCode = await WatchSupervisor.RunAsync(config, args);
+        return;
+    }
+    // The child exits by itself if the supervisor dies without stopping it (no orphan on the port).
+    WatchSupervisor.StartParentWatchdog();
+}
+
 builder.BuildInstance();
 builder.Instance.Services.AddRouting();
 if (!endpointsMode)
@@ -478,7 +493,9 @@ NpgsqlRestOptions options = new()
     SseResponseHeaders = builder.GetSseResponseHeaders(),
     WarnUnboundSseNotices = config.GetConfigBool("WarnUnboundServerSentEventsNotices", config.NpgsqlRestCfg, true),
 
-    EndpointSources = appInstance.CreateEndpointSources(relaxSqlFileErrors: watchMode),
+    // Both watch flavors must survive a broken SQL file: the test runner's in-process watch and the
+    // server watch child (supervisor restarts it on the next save either way).
+    EndpointSources = appInstance.CreateEndpointSources(relaxSqlFileErrors: watchMode || WatchSupervisor.IsChild),
     UploadOptions = appInstance.CreateUploadOptions(),
     
     CacheOptions = builder.BuildCacheOptions(app, cacheType),
