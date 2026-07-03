@@ -1,6 +1,6 @@
 ---
 name: npgsqlrest
-description: Build and modify REST APIs with NpgsqlRest — exposing PostgreSQL as HTTP endpoints from two sources (database functions/procedures/tables/views, and plain .sql files), driven by SQL comment annotations (no C# needed). Use when working in an NpgsqlRest project: writing or changing endpoint SQL (functions or .sql files), comment annotations (HTTP routing, authorize, cached, proxy, HTTP Custom Types, SSE, MCP, upload), appsettings.json config, or running/troubleshooting the `npgsqlrest` client.
+description: Build and modify REST APIs with NpgsqlRest — exposing PostgreSQL as HTTP endpoints from two sources (database functions/procedures/tables/views, and plain .sql files), driven by SQL comment annotations (no C# needed). Use when working in an NpgsqlRest project: writing or changing endpoint SQL (functions or .sql files), comment annotations (HTTP routing, authorize, cached, proxy, HTTP Custom Types, SSE, MCP, upload), appsettings.json config, testing endpoints with SQL test files (`--test`), running in watch mode (`--watch`), or running/troubleshooting the `npgsqlrest` client.
 ---
 
 # Working with NpgsqlRest
@@ -67,20 +67,20 @@ Annotations live in **leading line comments** (`-- ...` or `/* ... */`) in a `.s
 { "NpgsqlRest": { "SqlFileSource": { "Enabled": true, "FilePattern": "sql/**/*.sql" } } }
 ```
 
+Files matching `SkipPattern` (default `"*.test.sql"`) are excluded from endpoint discovery — they are test files for the [test runner](#testing-sql-test-files---test), which makes the co-located layout (`app.sql` next to `app.test.sql`) safe.
+
 ```sql
 -- sql/get-reports.sql
 -- HTTP GET
--- @param $1 from_date
--- @param $2 to_date
 -- @authorize
 select id, title, created_at
 from reports
-where created_at between $1 and $2;
+where created_at between :from_date and :to_date;
 ```
 
 - **Filename → path**: `get-reports.sql` → `/api/get-reports`.
 - **Startup Describe = static type checking.** Each statement is parsed/described against the live DB (no execution); SQL errors fail startup (`ErrorMode: Exit`; set `Skip` to log-and-continue). This catches `column does not exist` etc. before serving.
-- **Parameters are positional** (`$1, $2`). `@param $N name [type] [default ...]` names/retypes/defaults them (positional params have no native DEFAULT). `@define_param name [type]` creates a *virtual* param (for placeholders/claims; not bound to SQL).
+- **Parameters: named (`:name`) or positional (`$1, $2`)** — one style per file (mixing is a startup error). **Prefer named**: the placeholder IS the parameter name (camelCased for the API: `:from_date` → `fromDate`), a repeated name is ONE parameter (also across statements), and claim mappings (`@user_parameters` + `:_user_id`) hook up with zero annotations. `@param` then only handles type/default: `@param from_date default null`, `@param :from_date date` (Describe type hint), `@param from_date type is date` (retype without rename). Positional: `@param $N name [type] [default ...]` names/retypes/defaults. `@define_param name [type]` creates a *virtual* param (placeholders/claims; not bound to SQL). Tokenizer caveats for `:name`: `::casts`, `:=`, and `a[1:3]` never match; a variable slice bound needs a space (`a[1 : n]`).
 - **Verb inference** when no `HTTP` tag: `SELECT`→GET, `INSERT`→PUT, `UPDATE`→POST, `DELETE`→DELETE, `DO`→POST (most destructive wins). Explicit `-- HTTP POST` overrides.
 - **Multi-command files** (statements split on `;`) run in **one batch / round-trip** and return a JSON object keyed per statement. Positional annotations apply to the *next* statement (or inline after `;`):
   - `@result name` — name the result key (default `result1`, `result2`, …)
@@ -119,6 +119,9 @@ Same annotations apply to functions and `.sql` files. Confirm exact syntax/alias
 
 **Other**
 - `@rate_limiter_policy name`. `@command_timeout 30s`. `@connection Name` (multi-connection). `@buffer_rows N`. `@validate _email using required, email`. `@error_code_policy 23505 -> 409`. `@upload [for csv|excel|file_system|large_object]`.
+
+**Test files only** (`*.test.sql`, run by `--test` — not endpoint annotations)
+- Header: `-- @setup Step ...`, `-- @teardown Step ...`, `-- @connection Name`, `-- @tag a, b`. Inside HTTP blocks: `# @claim name=value`, `# @response name`. Includes: `\i file` / `\ir file`.
 
 ## HTTP Custom Types (outbound HTTP from SQL)
 
@@ -215,9 +218,47 @@ npgsqlrest                                  # appsettings.json in cwd
 npgsqlrest ./config/appsettings.json ./config/appsettings.development.json
 npgsqlrest --connectionstrings:default="Host=localhost;Database=db;Username=postgres;Password=postgres"
 npgsqlrest --log:minimallevels:npgsqlrest=debug    # see every annotation parsed
+npgsqlrest ./config.json --test             # run SQL test files, then exit (0 pass / 1 fail / 2 error / 3 config / 4 none)
+npgsqlrest ./config.json --watch            # dev server: restart on SQL file / config / database routine changes
+npgsqlrest ./config.json --test --watch     # dev test loop: re-run tests on changes
 ```
 
 Install via the GitHub release binary, `npm install -g npgsqlrest`, or the `vbilopav/npgsqlrest` Docker image.
+
+## Testing: SQL test files (`--test`)
+
+Tests are plain `.sql` files (glob: `TestRunner.FilePattern`, e.g. `./tests/**/*.test.sql` or co-located next to endpoints). Each file runs on its **own non-pooled connection**, in parallel; endpoints are invoked **in-process** (full pipeline: routing, auth, params, serialization) **on the test's own connection/transaction** — so a test can `begin`, insert fixtures, call the endpoint (it sees the uncommitted rows), assert, and `rollback`.
+
+```sql
+begin;
+insert into users (email) values ('x@example.com');
+
+/*
+GET /api/get-users
+# @claim user_id=1
+*/
+select status = 200, 'authenticated caller gets 200' from _response;
+select body::jsonb @> '[{"email": "x@example.com"}]', 'fixture listed' from _response;
+
+rollback;
+```
+
+Essentials:
+- **Assertions**: a SELECT whose first column is `boolean` (2nd column = assertion name), or a `do $$ ... assert ... $$` block. Everything else is arrange/act.
+- **HTTP blocks**: block comment, first line `METHOD /full/path` (incl. `/api` prefix). Directives: `# @claim name=value` (repeatable; any claim = authenticated principal, none = anonymous), `# @response name` (custom capture table). Body after a blank line. Response lands in temp table `_response` (`_response_{n}` for 2+ blocks): `status int, body text, content_type text, headers jsonb, is_success boolean`.
+- **Per-file header annotations** (leading `--` comments, TEST files only): `-- @setup StepName ...`, `-- @teardown StepName ...`, `-- @connection Name` (perfect isolation: run the file on its own database), `-- @tag smoke, slow`. Reuse scripts with psql-style `\i file` / `\ir file` includes (paste semantics).
+- **Setup/Teardown/Steps** (`TestRunner` config): run-once steps in written order — `{ "Sql": ... }` / `{ "SqlFile": ... }` / `{ "Command": ... }`, each with optional `ConnectionName` and `Enabled` (false = ignored wherever referenced; the default config ships disabled examples to flip on). `Setup` runs BEFORE endpoint discovery → it can `create database app_test_{rnd5}` on an admin connection; `TestRunner.ConnectionName` points the whole run at it; teardown drops it (guaranteed — runs even on Ctrl+C/SIGTERM). `{rnd1}`..`{rnd10}` are per-run-stable random tokens (`{rndN_1}`.. for independent instances).
+- **Selection**: `--testrunner:filter=login` (path substring/glob), `--testrunner:tag=smoke --testrunner:excludetag=slow`.
+- **Endpoint coverage** reports after full runs (on by default; `CoverageThreshold: 100` fails the build naming untested endpoints). `JUnitOutput` for CI.
+- **Debugging**: `DetailedReport: true` (richer report); `ResponseTempTable.DebugTable: "_responses_debug"` mirrors every response into a permanent table (survives rollback; query it after the run; not for CI); the `NpgsqlRestTest` log channel at `Verbose` shows every statement and HTTP call.
+
+## Watch mode (`--watch`)
+
+One flag (`--watch`, or config `Watch: { "Enabled": true }`), two flavors chosen by `--test`:
+- **Server watch** (`--watch`): a supervisor restarts the server (~1s) on `.sql` source changes (SkipPattern-filtered), **configuration file** changes, and **database routine changes** — polling runs the routine discovery query hashed server-side (`Watch:DatabasePollingInterval`, default `2s`; detects create/replace/drop/comment on functions, grants, and type/table shape changes; never fires on unrelated objects). Code generation (TS client, HTTP files) re-runs every cycle. A broken SQL file logs its error and drops only its endpoint (`ErrorMode` forced to `Skip` while watching).
+- **Test watch** (`--test --watch`): a changed test re-runs alone; a changed endpoint file or database routine rebuilds endpoints in-process (endpoint delta reported) and re-runs everything; teardown runs once, on exit.
+
+For Docker Desktop bind mounts set `DOTNET_USE_POLLING_FILE_WATCHER=1` (file events only; database polling is unaffected).
 
 ## Project conventions worth copying (from real projects)
 
@@ -234,5 +275,8 @@ Install via the GitHub release binary, `npm install -g npgsqlrest`, or the `vbil
 - **HTTP-type directives** are safest **before the request line**.
 - **Passthrough proxy doesn't run the function** — declare proxy-response params (transform mode) if you need the body executed.
 - **`HttpClientOptions.Enabled` / `ProxyOptions.Enabled` / `SqlFileSource.Enabled`** must be true for those features. `@cache` on a non-GET HTTP type is ignored with a warning.
-- **SQL files:** annotations are in `--`/`/* */` comments; params are positional `$N` (name via `@param`); a startup Describe error fails boot unless `ErrorMode: Skip`; use `@returns` for statements over not-yet-existing objects (temp tables); `DO` blocks can't take `$N` or return values.
+- **SQL files:** annotations are in `--`/`/* */` comments; params are named `:name` (preferred — auto-named) or positional `$N` (name via `@param`) — **never mixed in one file** (startup error); a startup Describe error fails boot unless `ErrorMode: Skip`; use `@returns` for statements over not-yet-existing objects (temp tables); `DO` blocks can't take params or return values.
+- **A `.sql` file named `*.test.sql` never becomes an endpoint** — `SqlFileSource.SkipPattern` excludes test files by default.
+- **Test HTTP block paths must be the FULL path** including `UrlPathPrefix` (`/api/...`) — a bare `/get-users` is a 404 with a warning.
+- **`ResponseTempTable.DebugTable` is a dev-only debugging aid** — never enable in CI; combine with `Keep: true` when the run drops its test database.
 - After changing an annotation, re-run with `--log:minimallevels:npgsqlrest=debug` (or `--validate`) to confirm it parsed as intended.

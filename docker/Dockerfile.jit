@@ -24,10 +24,13 @@ COPY NpgsqlRest/ NpgsqlRest/
 # Shared source compiled into NpgsqlRest.csproj (<Compile Include="..\NpgsqlRest.Common\*.cs"/> + global
 # usings). Without this the JIT build fails: NpgsqlRest.GlobalUsings.g.cs -> CS0234 'NpgsqlRest.Common'.
 COPY NpgsqlRest.Common/ NpgsqlRest.Common/
+# NOTE: `COPY NpgsqlRestClient/*.cs` is NOT recursive — every SUBFOLDER of NpgsqlRestClient must be
+# copied explicitly below, or the JIT build fails with CS0234/CS0246 (this bit Fido2 and Testing already).
 COPY NpgsqlRestClient/*.cs NpgsqlRestClient/
 COPY NpgsqlRestClient/*.csproj NpgsqlRestClient/
 COPY NpgsqlRestClient/appsettings.json NpgsqlRestClient/
 COPY NpgsqlRestClient/Fido2/ NpgsqlRestClient/Fido2/
+COPY NpgsqlRestClient/Testing/ NpgsqlRestClient/Testing/
 COPY plugins/ plugins/
 
 # Build and publish

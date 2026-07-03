@@ -2,7 +2,7 @@
 
 [![Build, Test, Publish and Release](https://github.com/NpgsqlRest/NpgsqlRest/actions/workflows/build-test-publish.yml/badge.svg)](https://github.com/NpgsqlRest/NpgsqlRest/actions/workflows/build-test-publish.yml)
 [![Tests](https://github.com/NpgsqlRest/NpgsqlRest/actions/workflows/test.yml/badge.svg)](https://github.com/NpgsqlRest/NpgsqlRest/actions/workflows/test.yml)
-![1800+ integration tests](https://img.shields.io/badge/integration%20tests-1837%2B-brightgreen)
+![2300+ integration tests](https://img.shields.io/badge/integration%20tests-2394%2B-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![GitHub Stars](https://img.shields.io/github/stars/NpgsqlRest/NpgsqlRest?style=social)
 ![GitHub Forks](https://img.shields.io/github/forks/NpgsqlRest/NpgsqlRest?style=social)
@@ -11,9 +11,9 @@
 
 **Automatic REST API for PostgreSQL** | [6.1x faster than PostgREST](https://npgsqlrest.github.io/blog/postgresql-rest-api-benchmark-2026.html)
 
-> SQL files and PostgreSQL objects become REST endpoints. TypeScript clients are generated automatically.
+> SQL files and PostgreSQL objects become REST endpoints. TypeScript clients are generated automatically. Tests are SQL files too.
 
-**4,500+ req/s** on a single host · **1,800+ integration tests** · **12K LOC SQL** in production · **MIT** licensed
+**4,500+ req/s** on a single host · **2,394 integration tests** · **12K LOC SQL** in production · **MIT** licensed
 
 *"Simplicity is the ultimate sophistication."* — Leonardo da Vinci
 
@@ -42,38 +42,45 @@ Write a SQL file:
 -- sql/process_order.sql
 -- HTTP POST
 -- @authorize admin
--- @param $1 order_id
 -- @result validate
-select count(*) as found from orders where id = $1;
-update orders set status = 'processing' where id = $1;
+-- @single
+select count(*) as found from orders where id = :order_id;
+update orders set status = 'processing' where id = :order_id;
 -- @result confirm
-select id, status from orders where id = $1;
+select id, status from orders where id = :order_id;
 ```
 
 That gives you `POST /api/process-order`:
 
 ```json
-{"validate": [1], "result2": 1, "confirm": [{"id": 42, "status": "processing"}]}
+{"validate": 1, "result2": 1, "confirm": [{"id": 42, "status": "processing"}]}
 ```
 
 And a generated TypeScript client with full type safety:
 
 ```typescript
-export async function processOrder(orderid: number) : Promise<{
-    validate: number[],
-    result2: number,
-    confirm: { id: number, status: string }[]
-}> {
+interface IProcessOrderResponse {
+    validate: number;
+    result2: number;
+    confirm: { id: number, status: string }[];
+}
+
+export async function processOrder(
+    request: IProcessOrderRequest
+) : Promise<ApiResult<IProcessOrderResponse>> {
     const response = await fetch(baseUrl + "/api/process-order", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderid }),
+        body: JSON.stringify(request)
     });
-    return await response.json();
+    return {
+        status: response.status,
+        response: response.ok ? await response.json() as IProcessOrderResponse : undefined!,
+        error: !response.ok && response.headers.get("content-length") !== "0" ? await response.json() as ApiError : undefined
+    };
 }
 ```
 
-No framework, no ORM, no boilerplate. Authorization, parameters, type safety — from a SQL file.
+No framework, no ORM, no boilerplate. The named placeholder `:order_id` — used three times, bound once — *is* the API parameter, and every result key is typed, down to the `@single` scalar and the column shapes. `ApiResult<T>` carries the status and a typed error, so failures are type-safe too.
 
 ## Endpoint Sources
 
@@ -107,9 +114,51 @@ where $1 is null or department_id = $1;
 
 Same pattern for PostgreSQL functions via `comment on function ... is '...'`. No middleware to register, no decorators, no controllers — the SQL is the source of truth. See [all annotations](https://npgsqlrest.github.io/annotations/).
 
+## Tests Are SQL Files Too
+
+No test framework, no running server, no mocks. `npgsqlrest --test` invokes the **real endpoint pipeline in-process, on the test's own transaction** — insert fixtures, call the endpoint (it sees your uncommitted rows), assert with SQL, roll back:
+
+```sql
+-- tests/get_users.test.sql
+begin;
+
+insert into users (email) values ('fixture@example.com');
+
+/*
+GET /api/get-users
+# @claim user_id=1
+*/
+select status = 200, 'authenticated caller gets 200' from _response;
+select body::jsonb @> '[{"email": "fixture@example.com"}]', 'fixture is listed' from _response;
+
+rollback;
+```
+
+```
+npgsqlrest ./config.json --test
+
+PASS  tests/get_users.test.sql  (2 assertions, 52ms)
+19 passed, 0 failed, 0 error(s)  —  19 assertions in 9 files
+endpoint coverage: 2/2 (100%)
+```
+
+Parallel isolated connections, throwaway test databases (`create database app_test_{rnd5}` as a plain setup step), per-test database clones, tags, JUnit XML, and **endpoint coverage** with a CI threshold gate — [Testing Guide](https://npgsqlrest.github.io/guide/testing).
+
+## Watch Mode
+
+```sh
+npgsqlrest ./config.json --watch
+```
+
+Save a `.sql` file and the running API restarts with the change (~1s). `create or replace` a function in psql and the endpoint is live seconds later — **the database itself is watched**, annotations included. The TypeScript client regenerates every cycle, so your frontend types follow your SQL as you type. Add `--test` and it becomes a millisecond test loop instead — a changed test re-runs alone; a changed endpoint rebuilds in-process. [Watch Mode](https://npgsqlrest.github.io/config/watch).
+
 ## Features
 
 - **Multi-command SQL scripts** — multiple statements in one file execute as a batch, returning named result sets
+- **Named parameters in SQL files** — `where email = :email`; the placeholder is the API parameter, repeated names bind once
+- **SQL test runner** (`--test`) — tests as plain SQL files, in-process endpoint invocation inside the test's transaction, throwaway test databases, JUnit XML, endpoint-coverage gating
+- **Watch mode** (`--watch`) — restart on SQL file, configuration, and database routine changes; test watch re-runs in milliseconds
+- **MCP server** — `@mcp` exposes any endpoint as a Model Context Protocol tool for AI agents, same auth and rate limits
 - **TypeScript/JS code generation** and `.http` files — types flow from PostgreSQL to your frontend
 - **AOT-compiled native binaries** — zero dependencies, instant startup
 - [**6.1x faster than PostgREST**](https://npgsqlrest.github.io/blog/postgresql-rest-api-benchmark-2026.html) at 100 concurrent users
@@ -142,7 +191,7 @@ Same pattern for PostgreSQL functions via `comment on function ... is '...'`. No
 
 ## Claude Code skill
 
-A [Claude Code](https://claude.com/claude-code) skill that teaches the agent how to build with NpgsqlRest — both endpoint sources (database functions/procedures/tables/views and `.sql` files), the full annotation set, configuration, HTTP custom types, proxy, caching, auth, SSE, and MCP. It lives in [`.claude/skills/npgsqlrest/`](.claude/skills/npgsqlrest/) and bundles a complete annotation reference and a full annotated `appsettings.json`.
+A [Claude Code](https://claude.com/claude-code) skill that teaches the agent how to build with NpgsqlRest — both endpoint sources (database functions/procedures/tables/views and `.sql` files), the full annotation set, configuration, HTTP custom types, proxy, caching, auth, SSE, MCP, the SQL test runner (`--test`), and watch mode (`--watch`). It lives in [`.claude/skills/npgsqlrest/`](.claude/skills/npgsqlrest/) and bundles a complete annotation reference and a full annotated `appsettings.json`.
 
 Install it for your own NpgsqlRest projects — per-user (available everywhere):
 
@@ -158,7 +207,7 @@ done
 
 ## About
 
-NpgsqlRest is built and maintained by [Vedran Bilopavlović](https://www.linkedin.com/in/vb-software/). The C# library, parser, codegen, and runtime are hand-written, covered by 1,800+ integration tests, and battle-tested in production.
+NpgsqlRest is built and maintained by [Vedran Bilopavlović](https://www.linkedin.com/in/vb-software/). The C# library, parser, codegen, and runtime are hand-written, covered by 2,394 integration tests, and battle-tested in production.
 
 ## Contributing
 

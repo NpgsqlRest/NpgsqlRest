@@ -233,8 +233,8 @@ internal static partial class DefaultCommentParser
         {
             ["name"] = "param",
             ["aliases"] = ToJsonArray(ParameterKey),
-            ["syntax"] = "param <name> is hash of <other_name> | param <name> is upload metadata | param <original> <new_name> [type] | param <original> is <new_name> [type]",
-            ["description"] = "Configure parameter behavior: hash computation, upload metadata binding, or rename/retype. Rename forms: 'param $1 user_id', 'param $1 user_id integer', 'param $1 is user_id', 'param _old_name better_name'. Works on all endpoint types."
+            ["syntax"] = "param <name> is hash of <other_name> | param <name> is upload metadata | param <original> <new_name> [type] | param <original> is <new_name> [type] | param <name> type is <type> | param <name> default <value>",
+            ["description"] = "Configure parameter behavior: hash computation, upload metadata binding, rename/retype, retype WITHOUT rename ('param user_id type is integer'), or default value ('param user_id default null'). Rename forms: 'param $1 user_id', 'param $1 user_id integer', 'param $1 is user_id', 'param _old_name better_name'. In SQL files with named (:name) placeholders the parameter is addressed by the placeholder's own name (a leading ':' is tolerated). Works on all endpoint types."
         });
 
         annotations.Add((JsonNode)new JsonObject
