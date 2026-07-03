@@ -1526,17 +1526,6 @@ public static partial class ConfigSchemaGenerator
         "ResponseTempTable": {
           "Name": "_response",
           "MultiNamePattern": "_response_{n}",
-          //
-          // Debugging aid: when set (e.g. "_responses_debug"), every captured response is ALSO mirrored into a
-          // PERMANENT table with this name — written on a separate autocommit connection, so it survives the
-          // test's rollback and the connection close and can be examined in a query editor after the run.
-          // Recreated at the start of every run (always holds the LAST run). ONE table covers everything: each
-          // HTTP block adds one row, and the "block" column records that block's response-table name (Name,
-          // MultiNamePattern ordinal, or the # @response name) alongside test_file, method, path, status, body,
-          // content_type, headers, is_success, captured_at. The temp-table semantics are unchanged. Do not
-          // enable in CI. In the fresh-test-database workflow combine with "Keep": true, or teardown drops the
-          // database (and the mirror with it).
-          //
           "DebugTable": null,
           "Columns": {
             "Status": "status",
