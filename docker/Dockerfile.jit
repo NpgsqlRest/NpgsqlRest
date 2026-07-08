@@ -13,6 +13,9 @@ COPY plugins/NpgsqlRest.CrudSource/*.csproj plugins/NpgsqlRest.CrudSource/
 COPY plugins/NpgsqlRest.HttpFiles/*.csproj plugins/NpgsqlRest.HttpFiles/
 COPY plugins/NpgsqlRest.OpenApi/*.csproj plugins/NpgsqlRest.OpenApi/
 COPY plugins/NpgsqlRest.TsClient/*.csproj plugins/NpgsqlRest.TsClient/
+COPY plugins/NpgsqlRest.DartClient/*.csproj plugins/NpgsqlRest.DartClient/
+COPY plugins/NpgsqlRest.SqlFileSource/*.csproj plugins/NpgsqlRest.SqlFileSource/
+COPY plugins/NpgsqlRest.Mcp/*.csproj plugins/NpgsqlRest.Mcp/
 
 # Restore dependencies
 RUN dotnet restore NpgsqlRestClient/NpgsqlRestClient.csproj

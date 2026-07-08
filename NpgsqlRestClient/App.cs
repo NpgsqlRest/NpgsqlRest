@@ -3,6 +3,7 @@ using Npgsql;
 using NpgsqlRest;
 using NpgsqlRest.HttpFiles;
 using NpgsqlRest.TsClient;
+using NpgsqlRest.DartClient;
 using Serilog;
 using NpgsqlRest.SqlFileSource;
 using Microsoft.AspNetCore.Antiforgery;
@@ -588,6 +589,86 @@ public class App
 
             handlers.Add(new TsClient(ts));
             _builder.ClientLogger?.LogDebug("TypeScript client code generation enabled. FilePath={FilePath}", ts.FilePath);
+        }
+
+        var dartClientCfg = _config.NpgsqlRestCfg.GetSection("DartClientCodeGen");
+        if (dartClientCfg is not null && _config.GetConfigBool("Enabled", dartClientCfg) is true)
+        {
+            var dart = new DartClientOptions
+            {
+                FilePath = _config.GetConfigStr("FilePath", dartClientCfg),
+                FileOverwrite = _config.GetConfigBool("FileOverwrite", dartClientCfg, true),
+                IncludeHost = _config.GetConfigBool("IncludeHost", dartClientCfg, true),
+                CustomHost = dartClientCfg.GetSection("CustomHost").Value is not null
+                    ? (_config.GetConfigStr("CustomHost", dartClientCfg) ?? "")
+                    : null,
+                CommentHeader = _config.GetConfigEnum<CommentHeader?>("CommentHeader", dartClientCfg) ?? CommentHeader.Simple,
+                CommentHeaderIncludeComments = _config.GetConfigBool("CommentHeaderIncludeComments", dartClientCfg, true),
+                BySchema = _config.GetConfigBool("BySchema", dartClientCfg, true),
+                IncludeStatusCode = _config.GetConfigBool("IncludeStatusCode", dartClientCfg, true),
+                SeparateModelsFile = _config.GetConfigBool("SeparateModelsFile", dartClientCfg),
+                ImportBaseUrlFrom = _config.GetConfigStr("ImportBaseUrlFrom", dartClientCfg),
+                UseRoutineNameInsteadOfEndpoint = _config.GetConfigBool("UseRoutineNameInsteadOfEndpoint", dartClientCfg),
+                DefaultJsonType = _config.GetConfigStr("DefaultJsonType", dartClientCfg) ?? "dynamic",
+                ExportUrls = _config.GetConfigBool("ExportUrls", dartClientCfg),
+                UniqueModels = _config.GetConfigBool("UniqueModels", dartClientCfg),
+                XsrfTokenHeaderName = _config.GetConfigStr("XsrfTokenHeaderName", dartClientCfg),
+                ExportEventSources = _config.GetConfigBool("ExportEventSources", dartClientCfg, true),
+                IncludeParseUrlParam = _config.GetConfigBool("IncludeParseUrlParam", dartClientCfg),
+                IncludeParseRequestParam = _config.GetConfigBool("IncludeParseRequestParam", dartClientCfg),
+                CustomImports = _config.GetConfigEnumerable("CustomImports", dartClientCfg)?.ToArray() ?? [],
+                IncludeSchemaInNames = _config.GetConfigBool("IncludeSchemaInNames", dartClientCfg, true),
+                ErrorTypeName = _config.GetConfigStr("ErrorTypeName", dartClientCfg) ?? "ApiError",
+                ResultTypeName = _config.GetConfigStr("ResultTypeName", dartClientCfg) ?? "ApiResult",
+                OmitAutomaticParameters = _config.GetConfigBool("OmitAutomaticParameters", dartClientCfg),
+                ModelPrefix = _config.GetConfigStr("ModelPrefix", dartClientCfg) ?? "",
+                ModelSuffix = _config.GetConfigStr("ModelSuffix", dartClientCfg) ?? "",
+                UseDateTimeType = _config.GetConfigBool("UseDateTimeType", dartClientCfg, true),
+            };
+
+            Dictionary<string, string> dartCustomHeaders = [];
+            foreach (var section in dartClientCfg.GetSection("CustomHeaders").GetChildren())
+            {
+                if (section?.Value is null)
+                {
+                    continue;
+                }
+                dartCustomHeaders.Add(section.Key, section.Value!);
+            }
+            dart.CustomHeaders = dartCustomHeaders;
+
+            var dartHeaderLines = _config.GetConfigEnumerable("HeaderLines", dartClientCfg);
+            if (dartHeaderLines is not null)
+            {
+                dart.HeaderLines = [.. dartHeaderLines];
+            }
+
+            var dartSkipRoutineNames = _config.GetConfigEnumerable("SkipRoutineNames", dartClientCfg);
+            if (dartSkipRoutineNames is not null)
+            {
+                dart.SkipRoutineNames = [.. dartSkipRoutineNames];
+            }
+
+            var dartSkipFunctionNames = _config.GetConfigEnumerable("SkipFunctionNames", dartClientCfg);
+            if (dartSkipFunctionNames is not null)
+            {
+                dart.SkipFunctionNames = [.. dartSkipFunctionNames];
+            }
+
+            var dartSkipPaths = _config.GetConfigEnumerable("SkipPaths", dartClientCfg);
+            if (dartSkipPaths is not null)
+            {
+                dart.SkipPaths = [.. dartSkipPaths];
+            }
+
+            var dartSkipSchemas = _config.GetConfigEnumerable("SkipSchemas", dartClientCfg);
+            if (dartSkipSchemas is not null)
+            {
+                dart.SkipSchemas = [.. dartSkipSchemas];
+            }
+
+            handlers.Add(new NpgsqlRest.DartClient.DartClient(dart));
+            _builder.ClientLogger?.LogDebug("Dart client code generation enabled. FilePath={FilePath}", dart.FilePath);
         }
 
         var mcpCfg = _config.NpgsqlRestCfg.GetSection("McpOptions");

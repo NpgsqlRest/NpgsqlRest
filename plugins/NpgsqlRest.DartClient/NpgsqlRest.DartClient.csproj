@@ -1,0 +1,62 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+    <PropertyGroup>
+        <OutputType>Library</OutputType>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <NoDefaultLaunchSettingsFile>true</NoDefaultLaunchSettingsFile>
+        <NoWarn>$(NoWarn);1591</NoWarn>
+        <IsPackable>true</IsPackable>
+        <Title>NpgsqlRest.DartClient</Title>
+        <Company>VB-Consulting</Company>
+        <Description>Automatic Dart Client Code Generation for NpgsqlRest (Flutter)</Description>
+        <PackageTags>api;api-rest;restful-api;postgres;dotnet;dart;flutter;code-gen;database;rest;server;postgresql;npgsqlrest;pgsql;pg;automatic</PackageTags>
+        <PackageProjectUrl>https://github.com/NpgsqlRest/NpgsqlRest/NpgsqlRest.DartClient</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/NpgsqlRest/NpgsqlRest</RepositoryUrl>
+        <PackageReleaseNotes>https://github.com/NpgsqlRest/NpgsqlRest/blob/master/changelog.md</PackageReleaseNotes>
+        <PackageId>NpgsqlRest.DartClient</PackageId>
+        <PackageLicenseFile>LICENSE</PackageLicenseFile>
+        <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+        <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+        <IncludeSymbols>true</IncludeSymbols>
+        <PublishRepositoryUrl>true</PublishRepositoryUrl>
+        <EmbedUntrackedSources>true</EmbedUntrackedSources>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <PackageReadmeFile>README.MD</PackageReadmeFile>
+        <DocumentationFile>bin\$(Configuration)\$(AssemblyName).xml</DocumentationFile>
+        <Version>1.0.0</Version>
+        <AssemblyVersion>1.0.0</AssemblyVersion>
+        <FileVersion>1.0.0</FileVersion>
+        <PackageVersion>1.0.0</PackageVersion>
+        <LangVersion>14</LangVersion>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(GITHUB_ACTIONS)' == 'true'">
+        <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.300" PrivateAssets="All" />
+        <PackageReferenceFiles Include="bin\$(Configuration)\$(AssemblyName).xml" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="..\..\LICENSE">
+            <Pack>True</Pack>
+            <PackagePath></PackagePath>
+        </None>
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include=".\README.MD">
+            <Pack>True</Pack>
+            <PackagePath></PackagePath>
+        </None>
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\NpgsqlRest\NpgsqlRest.csproj" />
+    </ItemGroup>
+</Project>

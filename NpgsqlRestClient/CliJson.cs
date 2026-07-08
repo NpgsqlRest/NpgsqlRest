@@ -4,6 +4,7 @@ using Npgsql;
 using NpgsqlRest;
 using NpgsqlRest.HttpFiles;
 using NpgsqlRest.TsClient;
+using NpgsqlRest.DartClient;
 
 namespace NpgsqlRestClient;
 
@@ -36,6 +37,7 @@ public static class CliJson
                 ["NpgsqlRestClient"] = GetVersion<Program>(),
                 ["NpgsqlRest.HttpFiles"] = GetVersion<HttpFileOptions>(),
                 ["NpgsqlRest.TsClient"] = GetVersion<TsClientOptions>(),
+                ["NpgsqlRest.DartClient"] = GetVersion<DartClientOptions>(),
                 ["NpgsqlRest.SqlFileSource"] = GetVersion<NpgsqlRest.SqlFileSource.SqlFileSource>(),
                 ["NpgsqlRest.OpenApi"] = GetVersion<NpgsqlRest.OpenAPI.OpenApiOptions>(),
                 ["Npgsql"] = GetVersion<NpgsqlConnection>(),

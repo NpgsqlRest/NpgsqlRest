@@ -39,6 +39,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NpgsqlRest.SqlFileSource", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NpgsqlRest.Mcp", "plugins\NpgsqlRest.Mcp\NpgsqlRest.Mcp.csproj", "{3F535AAB-7F76-47E0-A2FE-AD140242F742}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NpgsqlRest.DartClient", "plugins\NpgsqlRest.DartClient\NpgsqlRest.DartClient.csproj", "{130E2206-EAFC-48B9-9B5C-BD8A0FA4FDF8}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -169,6 +171,18 @@ Global
 		{3F535AAB-7F76-47E0-A2FE-AD140242F742}.Release|x64.Build.0 = Release|Any CPU
 		{3F535AAB-7F76-47E0-A2FE-AD140242F742}.Release|x86.ActiveCfg = Release|Any CPU
 		{3F535AAB-7F76-47E0-A2FE-AD140242F742}.Release|x86.Build.0 = Release|Any CPU
+		{130E2206-EAFC-48B9-9B5C-BD8A0FA4FDF8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{130E2206-EAFC-48B9-9B5C-BD8A0FA4FDF8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{130E2206-EAFC-48B9-9B5C-BD8A0FA4FDF8}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{130E2206-EAFC-48B9-9B5C-BD8A0FA4FDF8}.Debug|x64.Build.0 = Debug|Any CPU
+		{130E2206-EAFC-48B9-9B5C-BD8A0FA4FDF8}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{130E2206-EAFC-48B9-9B5C-BD8A0FA4FDF8}.Debug|x86.Build.0 = Debug|Any CPU
+		{130E2206-EAFC-48B9-9B5C-BD8A0FA4FDF8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{130E2206-EAFC-48B9-9B5C-BD8A0FA4FDF8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{130E2206-EAFC-48B9-9B5C-BD8A0FA4FDF8}.Release|x64.ActiveCfg = Release|Any CPU
+		{130E2206-EAFC-48B9-9B5C-BD8A0FA4FDF8}.Release|x64.Build.0 = Release|Any CPU
+		{130E2206-EAFC-48B9-9B5C-BD8A0FA4FDF8}.Release|x86.ActiveCfg = Release|Any CPU
+		{130E2206-EAFC-48B9-9B5C-BD8A0FA4FDF8}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -182,6 +196,7 @@ Global
 		{E43845E8-55F3-49EB-80E8-BE35B939FF1C} = {168D4570-4DD0-4E85-83E4-889B7495370A}
 		{C9DF26C1-5B83-4E6C-BF29-E89629BD45EF} = {168D4570-4DD0-4E85-83E4-889B7495370A}
 		{3F535AAB-7F76-47E0-A2FE-AD140242F742} = {168D4570-4DD0-4E85-83E4-889B7495370A}
+		{130E2206-EAFC-48B9-9B5C-BD8A0FA4FDF8} = {168D4570-4DD0-4E85-83E4-889B7495370A}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {C7C9B024-BFBB-414E-BD34-3CBF21C6C275}

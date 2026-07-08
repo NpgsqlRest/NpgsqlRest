@@ -9,6 +9,7 @@ using NpgsqlRestClient.Fido2;
 using Npgsql;
 using NpgsqlRest.HttpFiles;
 using NpgsqlRest.TsClient;
+using NpgsqlRest.DartClient;
 
 Stopwatch sw = new();
 sw.Start();
@@ -80,6 +81,7 @@ if (args.Length >= 1 && (string.Equals(args[0], "-v", StringComparison.CurrentCu
         ("NpgsqlRestClient", System.Reflection.Assembly.GetAssembly(typeof(Program))?.GetName().Version?.ToString() ?? "-"),
         ("NpgsqlRest.HttpFiles", System.Reflection.Assembly.GetAssembly(typeof(HttpFileOptions))?.GetName().Version?.ToString() ?? "-"),
         ("NpgsqlRest.TsClient", System.Reflection.Assembly.GetAssembly(typeof(TsClientOptions))?.GetName().Version?.ToString() ?? "-"),
+        ("NpgsqlRest.DartClient", System.Reflection.Assembly.GetAssembly(typeof(DartClientOptions))?.GetName().Version?.ToString() ?? "-"),
         ("NpgsqlRest.SqlFileSource", System.Reflection.Assembly.GetAssembly(typeof(NpgsqlRest.SqlFileSource.SqlFileSource))?.GetName().Version?.ToString() ?? "-"),
         ("NpgsqlRest.OpenApi", System.Reflection.Assembly.GetAssembly(typeof(NpgsqlRest.OpenAPI.OpenApiOptions))?.GetName().Version?.ToString() ?? "-"),
         (" ", " "),

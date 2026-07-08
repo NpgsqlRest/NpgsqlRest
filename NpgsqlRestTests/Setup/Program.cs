@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using NpgsqlRest.Auth;
 using NpgsqlRest.CrudSource;
 using NpgsqlRest.TsClient;
+using NpgsqlRest.DartClient;
 using NpgsqlRest.HttpFiles;
 using NpgsqlRest.OpenAPI;
 using NpgsqlRest.UploadHandlers;
@@ -42,6 +43,21 @@ public class Program
     /// Output path for TsClient generated files with OmitAutomaticParameters=true (used by tests)
     /// </summary>
     public static string TsClientOmitOutputPath { get; } = Path.Combine(Path.GetTempPath(), "NpgsqlRestTests", "TsClientOmit");
+
+    /// <summary>
+    /// Output path for DartClient generated files (used by tests)
+    /// </summary>
+    public static string DartClientOutputPath { get; } = Path.Combine(Path.GetTempPath(), "NpgsqlRestTests", "DartClient");
+
+    /// <summary>
+    /// Output path for DartClient generated files with OmitAutomaticParameters=true (used by tests)
+    /// </summary>
+    public static string DartClientOmitOutputPath { get; } = Path.Combine(Path.GetTempPath(), "NpgsqlRestTests", "DartClientOmit");
+
+    /// <summary>
+    /// Output path for DartClient generated files with SeparateModelsFile=true (used by tests)
+    /// </summary>
+    public static string DartClientModelsOutputPath { get; } = Path.Combine(Path.GetTempPath(), "NpgsqlRestTests", "DartClientModels");
 
     /// <summary>
     /// Output path for HttpFiles generated files (used by tests)
@@ -213,7 +229,7 @@ public class Program
         {
             //NameSimilarTo = "get_conn1_connection_name_p",
             //SchemaSimilarTo = "custom_param_schema",
-            IncludeSchemas = ["public", "custom_param_schema", "my_schema", "custom_table_param_schema", "tsclient_test", "polp_schema"],
+            IncludeSchemas = ["public", "custom_param_schema", "my_schema", "custom_table_param_schema", "tsclient_test", "dartclient_test", "polp_schema"],
             // Exclude cp_* / cpx_* (owned by CacheProfilesTestFixture), rlpt_* (owned by
             // RateLimiterPartitionTestFixture), rlpm_* (owned by RateLimiterPerPolicyTestFixture), and
             // apt_* (owned by AuthSchemeTestFixture). All reference fixture-specific configuration that
@@ -233,7 +249,7 @@ public class Program
                     CommentHeader = CommentHeader.Simple,
                     HeaderLines = [], // No auto-generated timestamp for consistent test assertions
                     // Only process tsclient_test schema to avoid issues with custom sources that have null definitions
-                    SkipSchemas = ["public", "custom_param_schema", "my_schema", "custom_table_param_schema", ""],
+                    SkipSchemas = ["public", "custom_param_schema", "my_schema", "custom_table_param_schema", "dartclient_test", ""],
                     IncludeStatusCode = false
                 }),
                 // TsClient configuration for SkipTypes testing - generates pure JavaScript
@@ -246,7 +262,7 @@ public class Program
                     CreateSeparateTypeFile = false,
                     CommentHeader = CommentHeader.Simple,
                     HeaderLines = [],
-                    SkipSchemas = ["public", "custom_param_schema", "my_schema", "custom_table_param_schema", ""],
+                    SkipSchemas = ["public", "custom_param_schema", "my_schema", "custom_table_param_schema", "dartclient_test", ""],
                     IncludeStatusCode = false,
                     SkipTypes = true
                 }),
@@ -261,7 +277,7 @@ public class Program
                     ExportTypes = true,
                     CommentHeader = CommentHeader.None,
                     HeaderLines = [],
-                    SkipSchemas = ["public", "custom_param_schema", "my_schema", "custom_table_param_schema", ""],
+                    SkipSchemas = ["public", "custom_param_schema", "my_schema", "custom_table_param_schema", "dartclient_test", ""],
                     IncludeStatusCode = false
                 }),
                 // TsClient configuration for OmitAutomaticParameters testing - server-filled params omitted
@@ -274,9 +290,50 @@ public class Program
                     CreateSeparateTypeFile = false,
                     CommentHeader = CommentHeader.Simple,
                     HeaderLines = [],
-                    SkipSchemas = ["public", "custom_param_schema", "my_schema", "custom_table_param_schema", ""],
+                    SkipSchemas = ["public", "custom_param_schema", "my_schema", "custom_table_param_schema", "dartclient_test", ""],
                     IncludeStatusCode = false,
                     OmitAutomaticParameters = true
+                }),
+                // DartClient configuration for testing - uses dartclient_module annotations for per-function files
+                new DartClient(new DartClientOptions
+                {
+                    FilePath = Path.Combine(DartClientOutputPath, "{0}.dart"),
+                    FileOverwrite = true,
+                    BySchema = true, // Required for dartclient_module to generate separate files
+                    IncludeHost = false,
+                    CommentHeader = CommentHeader.Simple,
+                    HeaderLines = [], // No auto-generated timestamp for consistent test assertions
+                    // Only process dartclient_test schema to keep the Dart corpus deterministic
+                    SkipSchemas = ["public", "custom_param_schema", "my_schema", "custom_table_param_schema", "tsclient_test", "polp_schema", ""],
+                    IncludeStatusCode = false
+                }),
+                // DartClient configuration for OmitAutomaticParameters testing - server-filled params omitted
+                new DartClient(new DartClientOptions
+                {
+                    FilePath = Path.Combine(DartClientOmitOutputPath, "{0}.dart"),
+                    FileOverwrite = true,
+                    BySchema = true,
+                    IncludeHost = false,
+                    CommentHeader = CommentHeader.Simple,
+                    HeaderLines = [],
+                    SkipSchemas = ["public", "custom_param_schema", "my_schema", "custom_table_param_schema", "tsclient_test", "polp_schema", ""],
+                    IncludeStatusCode = false,
+                    OmitAutomaticParameters = true
+                }),
+                // DartClient configuration for SeparateModelsFile + UniqueModels testing - models in a
+                // separate importable file, identical model shapes merged into one class
+                new DartClient(new DartClientOptions
+                {
+                    FilePath = Path.Combine(DartClientModelsOutputPath, "{0}.dart"),
+                    FileOverwrite = true,
+                    BySchema = true,
+                    IncludeHost = false,
+                    CommentHeader = CommentHeader.None,
+                    HeaderLines = [],
+                    SkipSchemas = ["public", "custom_param_schema", "my_schema", "custom_table_param_schema", "tsclient_test", "polp_schema", ""],
+                    IncludeStatusCode = false,
+                    SeparateModelsFile = true,
+                    UniqueModels = true
                 }),
                 // HttpFiles configuration for testing path parameters
                 new HttpFile(new HttpFileOptions
