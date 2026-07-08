@@ -588,6 +588,22 @@ public class App
                 ts.SkipSchemas = [.. skipSchemas];
             }
 
+            var reactQueryCfg = tsClientCfg.GetSection("ReactQuery");
+            ts.ReactQuery = new TsClientReactQueryOptions
+            {
+                Enabled = _config.GetConfigBool("Enabled", reactQueryCfg),
+                FilePath = _config.GetConfigStr("FilePath", reactQueryCfg),
+                FileOverwrite = _config.GetConfigBool("FileOverwrite", reactQueryCfg, true),
+                QueryKeyPrefix = _config.GetConfigStr("QueryKeyPrefix", reactQueryCfg),
+                ExposeQueryKeys = _config.GetConfigBool("ExposeQueryKeys", reactQueryCfg, true),
+                ImportFrom = _config.GetConfigStr("ImportFrom", reactQueryCfg) ?? "@tanstack/react-query",
+            };
+            var reactQueryHeaderLines = _config.GetConfigEnumerable("HeaderLines", reactQueryCfg);
+            if (reactQueryHeaderLines is not null)
+            {
+                ts.ReactQuery.HeaderLines = [.. reactQueryHeaderLines];
+            }
+
             handlers.Add(new TsClient(ts));
             _builder.ClientLogger?.LogDebug("TypeScript client code generation enabled. FilePath={FilePath}", ts.FilePath);
         }

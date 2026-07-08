@@ -18,7 +18,30 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
     private const string IncludeStatusCode = "tsclient_status_code";
     private const string ExportUrl = "tsclient_export_url";
     private const string UrlOnly = "tsclient_url_only";
-    
+    private const string Hooks = "tsclient_hooks";
+
+    // Resolved in the constructor so a misconfigured ReactQuery section fails fast at startup,
+    // when the handler is built - not silently at generation time.
+    private readonly TsClientReactQueryOptions _reactQuery = ValidateReactQuery(options.ReactQuery);
+
+    private static TsClientReactQueryOptions ValidateReactQuery(TsClientReactQueryOptions reactQuery)
+    {
+        if (reactQuery.Enabled && reactQuery.FilePath is null)
+        {
+            throw new ArgumentException(
+                "TsClientOptions.ReactQuery.Enabled is true but ReactQuery.FilePath is not set. " +
+                "Set ReactQuery.FilePath to the hooks output path (use the {0} placeholder for the module or schema name in multi-file mode).");
+        }
+        if (reactQuery.Enabled && string.IsNullOrWhiteSpace(reactQuery.ImportFrom))
+        {
+            throw new ArgumentException(
+                "TsClientOptions.ReactQuery.ImportFrom cannot be null or empty. " +
+                "It must be a module specifier that re-exports useQuery, useMutation, UseQueryOptions and UseMutationOptions " +
+                "with TanStack Query v5 semantics (default \"@tanstack/react-query\").");
+        }
+        return reactQuery;
+    }
+
     public void Setup(IApplicationBuilder builder, NpgsqlRestOptions npgsqlRestoptions)
     {
         _builder = builder;
@@ -35,10 +58,19 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
         }
         _filesCreated = 0;
 
+        // Hooks output is TypeScript-only in v1: with SkipTypes (plain JS client) the run proceeds
+        // without hooks generation instead of erroring.
+        var hooksEnabled = _reactQuery.Enabled;
+        if (hooksEnabled && options.SkipTypes)
+        {
+            Logger?.LogWarning("TsClient: ReactQuery hooks generation is TypeScript-only and SkipTypes is true. Skipping hooks generation for this run.");
+            hooksEnabled = false;
+        }
+
         var containsModuleParam = endpoints.Any(e => e.CustomParameters?.ContainsKey(Module) is true);
         if (!options.BySchema && containsModuleParam)
         {
-            Run(endpoints, options.FilePath);
+            Run(endpoints, options.FilePath, hooksEnabled ? _reactQuery.FilePath : null);
         }
         else
         {
@@ -47,7 +79,14 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 Logger?.LogError("TsClient Option FilePath doesn't contain {{0}} formatter and BySchema options is true. Some files may be overwritten! Existing...");
                 return;
             }
-            
+            // Mirror the FilePath {0} rule for the hooks path; a misconfigured hooks path only
+            // disables hooks generation, it does not stop the client generation.
+            if (hooksEnabled && !_reactQuery.FilePath!.Contains("{0}"))
+            {
+                Logger?.LogError("TsClient Option ReactQuery.FilePath doesn't contain {{0}} formatter while generating multiple files (BySchema or module annotations). Skipping hooks generation for this run.");
+                hooksEnabled = false;
+            }
+
             HashSet<string> processedModules = [];
             if (containsModuleParam)
             {
@@ -66,7 +105,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                     {
                         filename = filename[..^3] + ".js";
                     }
-                    Run([.. group], filename);
+                    Run([.. group], filename, hooksEnabled ? string.Format(_reactQuery.FilePath!, group.Key) : null);
                 }
             }
 
@@ -77,8 +116,8 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 {
                     filename = filename[..^3] + ".js";
                 }
-                RoutineEndpoint[] groupArray = [.. group.Where(g => 
-                    (g.CustomParameters?.ContainsKey(Module) is false) || 
+                RoutineEndpoint[] groupArray = [.. group.Where(g =>
+                    (g.CustomParameters?.ContainsKey(Module) is false) ||
                     (g.CustomParameters?.GetValueOrDefault(Module) is null) ||
                     (!processedModules.Contains(g.CustomParameters?.GetValueOrDefault(Module) ?? ""))
                 )];
@@ -86,7 +125,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 {
                     continue;
                 }
-                Run([.. groupArray], filename);
+                Run([.. groupArray], filename, hooksEnabled ? string.Format(_reactQuery.FilePath!, ConvertToCamelCase(group.Key)) : null);
             }
         }
 
@@ -96,7 +135,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
         }
     }
 
-    private void Run(RoutineEndpoint[] endpoints, string? fileName)
+    private void Run(RoutineEndpoint[] endpoints, string? fileName, string? hooksFileName = null)
     {
         if (fileName is null)
         {
@@ -106,6 +145,10 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
         // Internal-only endpoints have no public HTTP route (404), so a generated client function for one
         // would be dead — e.g. a bare-`@mcp` MCP-only routine. Exclude them from the REST client.
         RoutineEndpoint[] filtered = [.. endpoints.Where(e => e.InternalOnly is false && e.CustomParameters.ParameterEnabled(Enabled) is not false)];
+
+        // TanStack Query hooks entries collected while handling this module's endpoints:
+        // (generated function name, PascalCase name, GET = useQuery vs useMutation, takes a request object)
+        List<(string Camel, string Pascal, bool IsGet, bool HasRequest)> hookEntries = [];
 
         Dictionary<string, string> modelsDict = [];
         Dictionary<string, int> names = [];
@@ -334,6 +377,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 Logger?.LogTrace("Created Javascript file: {fileName}", fileName);
             }
         }
+        WriteHooks(hooksFileName, fileName, hookEntries);
         return;
 
         void AddHeader(StringBuilder sb)
@@ -1574,8 +1618,162 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                     content.AppendLine("}");
                 }
             }
+            // TanStack Query hooks: only plain fetch functions are eligible. SSE, upload and
+            // url-only endpoints (the latter returned earlier above) are skipped, as are routines
+            // opted out with the tsclient_hooks=off annotation.
+            if (hooksFileName is not null &&
+                !endpoint.Upload &&
+                !eventsStreamingEnabled &&
+                endpoint.CustomParameters.ParameterEnabled(Hooks) is not false)
+            {
+                hookEntries.Add((camel, pascal, endpoint.Method == Method.GET, requestName is not null));
+            }
             return true;
         } // void Handle
+    }
+
+    /// <summary>
+    /// Writes the TanStack Query (React Query) hooks module for one generated client module:
+    /// useQuery hooks for GET endpoints, useMutation hooks for everything else, importing the
+    /// client functions via a relative import. Types are derived from the client functions
+    /// (Parameters / Awaited-ReturnType), so the hooks file never references request/response
+    /// type names directly (they are not reliably exported).
+    /// </summary>
+    private void WriteHooks(string? hooksFileName, string clientFileName, List<(string Camel, string Pascal, bool IsGet, bool HasRequest)> hookEntries)
+    {
+        // No eligible routines in this module - don't write an empty hooks file.
+        if (hooksFileName is null || hookEntries.Count == 0)
+        {
+            return;
+        }
+        if (!_reactQuery.FileOverwrite && File.Exists(hooksFileName))
+        {
+            return;
+        }
+        var dir = Path.GetDirectoryName(hooksFileName);
+        if (dir is not null && !Directory.Exists(dir))
+        {
+            Directory.CreateDirectory(dir);
+        }
+
+        var prefix = _reactQuery.QueryKeyPrefix is not null ? $"\"{_reactQuery.QueryKeyPrefix}\", " : "";
+
+        StringBuilder sb = new();
+        sb.AppendLine("import {");
+        sb.AppendLine("    useQuery,");
+        sb.AppendLine("    useMutation,");
+        sb.AppendLine("    type UseQueryOptions,");
+        sb.AppendLine("    type UseMutationOptions,");
+        sb.AppendLine($"}} from \"{_reactQuery.ImportFrom}\";");
+        sb.AppendLine($"import * as api from \"{GetRelativeModuleImport(hooksFileName, clientFileName)}\";");
+
+        // future: @invalidates annotation will generate onSuccess invalidation
+        // against the exported key factories
+        foreach (var (camel, pascal, isGet, hasRequest) in hookEntries)
+        {
+            sb.AppendLine();
+            if (hasRequest)
+            {
+                sb.AppendLine($"type {pascal}Request = Parameters<typeof api.{camel}>[0];");
+            }
+            sb.AppendLine($"type {pascal}Result = Awaited<ReturnType<typeof api.{camel}>>;");
+            sb.AppendLine();
+
+            if (isGet)
+            {
+                if (_reactQuery.ExposeQueryKeys)
+                {
+                    sb.AppendLine($"export const {camel}Keys = {{");
+                    sb.AppendLine($"    all: [{prefix}\"{camel}\"] as const,");
+                    if (hasRequest)
+                    {
+                        sb.AppendLine($"    byRequest: (request: {pascal}Request) =>");
+                        sb.AppendLine($"        [{prefix}\"{camel}\", request] as const,");
+                    }
+                    sb.AppendLine("};");
+                    sb.AppendLine();
+                }
+                sb.AppendLine($"export function use{pascal}(");
+                if (hasRequest)
+                {
+                    sb.AppendLine($"    request: {pascal}Request,");
+                }
+                sb.AppendLine("    options?: Omit<");
+                sb.AppendLine($"        UseQueryOptions<{pascal}Result>,");
+                sb.AppendLine("        \"queryKey\" | \"queryFn\"");
+                sb.AppendLine("    >,");
+                sb.AppendLine(") {");
+                sb.AppendLine("    return useQuery({");
+                if (_reactQuery.ExposeQueryKeys)
+                {
+                    sb.AppendLine(hasRequest
+                        ? $"        queryKey: {camel}Keys.byRequest(request),"
+                        : $"        queryKey: {camel}Keys.all,");
+                }
+                else
+                {
+                    sb.AppendLine(hasRequest
+                        ? $"        queryKey: [{prefix}\"{camel}\", request] as const,"
+                        : $"        queryKey: [{prefix}\"{camel}\"] as const,");
+                }
+                sb.AppendLine(hasRequest
+                    ? $"        queryFn: () => api.{camel}(request),"
+                    : $"        queryFn: () => api.{camel}(),");
+                sb.AppendLine("        ...options,");
+                sb.AppendLine("    });");
+                sb.AppendLine("}");
+            }
+            else
+            {
+                sb.AppendLine($"export function use{pascal}Mutation(");
+                sb.AppendLine("    options?: Omit<");
+                sb.AppendLine(hasRequest
+                    ? $"        UseMutationOptions<{pascal}Result, unknown, {pascal}Request>,"
+                    : $"        UseMutationOptions<{pascal}Result, unknown, void>,");
+                sb.AppendLine("        \"mutationFn\"");
+                sb.AppendLine("    >,");
+                sb.AppendLine(") {");
+                sb.AppendLine("    return useMutation({");
+                sb.AppendLine(hasRequest
+                    ? $"        mutationFn: (request: {pascal}Request) => api.{camel}(request),"
+                    : $"        mutationFn: () => api.{camel}(),");
+                sb.AppendLine("        ...options,");
+                sb.AppendLine("    });");
+                sb.AppendLine("}");
+            }
+        }
+
+        if (_reactQuery.HeaderLines.Count > 0)
+        {
+            var now = DateTime.Now.ToString("O");
+            sb.Insert(0, string.Concat(string.Join(
+                Environment.NewLine,
+                _reactQuery.HeaderLines.Select(l => string.Format(l, now).Trim())), Environment.NewLine)
+            );
+        }
+
+        File.WriteAllText(hooksFileName, sb.ToString());
+        _filesCreated++;
+        Logger?.LogTrace("Created TanStack Query hooks file: {hooksFileName}", hooksFileName);
+    }
+
+    /// <summary>
+    /// Relative import specifier from the hooks module to its client module
+    /// (extension stripped, always explicitly relative).
+    /// </summary>
+    private static string GetRelativeModuleImport(string hooksFileName, string clientFileName)
+    {
+        var hooksDir = Path.GetDirectoryName(Path.GetFullPath(hooksFileName)) ?? "";
+        var relative = Path.GetRelativePath(hooksDir, Path.GetFullPath(clientFileName)).Replace('\\', '/');
+        if (relative.EndsWith(".ts", StringComparison.OrdinalIgnoreCase))
+        {
+            relative = relative[..^3];
+        }
+        if (!relative.StartsWith('.'))
+        {
+            relative = "./" + relative;
+        }
+        return relative;
     }
 
     //paramComments.Add(("parseRequest", "(request: RequestInit) => RequestInit", "Optional function to parse constructed request before making the request."));

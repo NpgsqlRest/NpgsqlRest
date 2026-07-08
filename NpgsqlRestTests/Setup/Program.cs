@@ -45,6 +45,16 @@ public class Program
     public static string TsClientOmitOutputPath { get; } = Path.Combine(Path.GetTempPath(), "NpgsqlRestTests", "TsClientOmit");
 
     /// <summary>
+    /// Output path for TsClient generated files with ReactQuery hooks enabled (used by tests)
+    /// </summary>
+    public static string TsClientHooksOutputPath { get; } = Path.Combine(Path.GetTempPath(), "NpgsqlRestTests", "TsClientHooks");
+
+    /// <summary>
+    /// Output path for TsClient generated files with ReactQuery hooks + QueryKeyPrefix + ExposeQueryKeys=false (used by tests)
+    /// </summary>
+    public static string TsClientHooksPrefixOutputPath { get; } = Path.Combine(Path.GetTempPath(), "NpgsqlRestTests", "TsClientHooksPrefix");
+
+    /// <summary>
     /// Output path for DartClient generated files (used by tests)
     /// </summary>
     public static string DartClientOutputPath { get; } = Path.Combine(Path.GetTempPath(), "NpgsqlRestTests", "DartClient");
@@ -298,6 +308,51 @@ public class Program
                     SkipSchemas = ["public", "custom_param_schema", "my_schema", "custom_table_param_schema", "dartclient_test", ""],
                     IncludeStatusCode = false,
                     OmitAutomaticParameters = true
+                }),
+                // TsClient configuration for ReactQuery hooks testing - hooks module generated per
+                // client module into a hooks/ subdirectory (exercises the relative import path)
+                new TsClient(new TsClientOptions
+                {
+                    FilePath = Path.Combine(TsClientHooksOutputPath, "{0}.ts"),
+                    FileOverwrite = true,
+                    BySchema = true,
+                    IncludeHost = false,
+                    CreateSeparateTypeFile = false,
+                    CommentHeader = CommentHeader.Simple,
+                    HeaderLines = [],
+                    SkipSchemas = ["public", "custom_param_schema", "my_schema", "custom_table_param_schema", "dartclient_test", ""],
+                    IncludeStatusCode = false,
+                    ReactQuery = new TsClientReactQueryOptions
+                    {
+                        Enabled = true,
+                        FilePath = Path.Combine(TsClientHooksOutputPath, "hooks", "{0}Hooks.ts"),
+                        FileOverwrite = true,
+                        HeaderLines = []
+                    }
+                }),
+                // TsClient configuration for ReactQuery hooks testing with QueryKeyPrefix and
+                // ExposeQueryKeys=false - keys are inlined into the hooks, prefixed with "testApi"
+                new TsClient(new TsClientOptions
+                {
+                    FilePath = Path.Combine(TsClientHooksPrefixOutputPath, "{0}.ts"),
+                    FileOverwrite = true,
+                    BySchema = true,
+                    IncludeHost = false,
+                    CreateSeparateTypeFile = false,
+                    CommentHeader = CommentHeader.Simple,
+                    HeaderLines = [],
+                    SkipSchemas = ["public", "custom_param_schema", "my_schema", "custom_table_param_schema", "dartclient_test", ""],
+                    IncludeStatusCode = false,
+                    ReactQuery = new TsClientReactQueryOptions
+                    {
+                        Enabled = true,
+                        FilePath = Path.Combine(TsClientHooksPrefixOutputPath, "hooks", "{0}Hooks.ts"),
+                        FileOverwrite = true,
+                        QueryKeyPrefix = "testApi",
+                        ExposeQueryKeys = false,
+                        ImportFrom = "~/lib/query",
+                        HeaderLines = []
+                    }
                 }),
                 // DartClient configuration for testing - uses dartclient_module annotations for per-function files
                 new DartClient(new DartClientOptions
