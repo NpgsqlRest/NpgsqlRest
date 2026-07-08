@@ -455,6 +455,7 @@ public static partial class ConfigSchemaGenerator
         ["NpgsqlRest:OpenApiOptions:FileOverwrite"] = "Set to true to overwrite existing files.",
         ["NpgsqlRest:OpenApiOptions:DocumentTitle"] = "The title of the OpenAPI document. This appears in the \"info\" section of the OpenAPI specification.\nIf not set, the database name from the ConnectionString will be used.",
         ["NpgsqlRest:OpenApiOptions:DocumentVersion"] = "The version of the OpenAPI document. This appears in the \"info\" section of the OpenAPI specification.\nWhen null, default is \"1.0.0\".",
+        ["NpgsqlRest:OpenApiOptions:SpecVersion"] = "OpenAPI specification version of the generated document: \"3.0\" or \"3.1\". \"3.0\" emits openapi: 3.0.3 (default, backward compatible), \"3.1\" emits openapi: 3.1.1 (JSON Schema 2020-12 alignment). This is the spec version, not your API version (that is DocumentVersion).",
         ["NpgsqlRest:OpenApiOptions:DocumentDescription"] = "Optional description of the API. This appears in the \"info\" section of the OpenAPI specification.",
         ["NpgsqlRest:OpenApiOptions:AddCurrentServer"] = "Include current server information in the \"servers\" section of the OpenAPI document.",
         ["NpgsqlRest:OpenApiOptions:Servers"] = "Additional server entries to add to the \"servers\" section of the OpenAPI document.\nEach server entry must have \"Url\" property and optional \"Description\" property.\napi.example.com\", \"Description\": \"Production server\"}*/],",

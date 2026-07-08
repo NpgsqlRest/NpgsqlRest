@@ -1,3 +1,5 @@
+using NpgsqlRest.OpenAPI;
+
 namespace NpgsqlRestTests
 {
     public static partial class Database
@@ -315,7 +317,8 @@ namespace NpgsqlRestTests.OpenApiTests
         {
             var doc = GetDocument();
 
-            doc["openapi"]?.GetValue<string>().Should().Be("3.0.3", "Should be OpenAPI 3.0.3");
+            // Default SpecVersion ("3.0") must keep emitting the 3.0.x document version.
+            doc["openapi"]?.GetValue<string>().Should().Be(OpenApiSpecVersions.V30, $"Should be OpenAPI {OpenApiSpecVersions.V30}");
             doc["info"].Should().NotBeNull("Should have info section");
             doc["info"]?["title"].Should().NotBeNull("Should have title");
             doc["info"]?["version"].Should().NotBeNull("Should have version");

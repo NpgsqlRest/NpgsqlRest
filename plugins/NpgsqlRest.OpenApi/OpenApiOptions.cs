@@ -33,6 +33,15 @@ public class OpenApiOptions
     public string DocumentVersion { get; set; } = "1.0.0";
 
     /// <summary>
+    /// OpenAPI specification version of the generated document.
+    /// "3.0" emits openapi: 3.0.3, "3.1" emits openapi: 3.1.1.
+    /// Default is "3.0" for backward compatibility.
+    /// NOTE: this is the OpenAPI SPEC version, not the API version
+    /// (see DocumentVersion for that).
+    /// </summary>
+    public string SpecVersion { get; set; } = "3.0";
+
+    /// <summary>
     /// Optional description of the API.
     /// This appears in the "info" section of the OpenAPI specification.
     /// </summary>

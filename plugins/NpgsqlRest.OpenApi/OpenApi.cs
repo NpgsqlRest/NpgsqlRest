@@ -11,9 +11,39 @@ namespace NpgsqlRest.OpenAPI;
 [JsonSerializable(typeof(JsonObject))]
 internal partial class OpenApiSerializerContext : JsonSerializerContext;
 
+/// <summary>
+/// Exact "openapi" field values emitted for each supported OpenApiOptions.SpecVersion setting.
+/// Public so consumers and tests can reference the emitted versions instead of string literals.
+/// </summary>
+public static class OpenApiSpecVersions
+{
+    public const string V30 = "3.0.3";
+    public const string V31 = "3.1.1";
+}
+
 public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
 {
     public OpenApi() : this(new OpenApiOptions()) { }
+
+    // Resolved in the constructor so an invalid SpecVersion fails fast at startup,
+    // when the handler is built - not silently at generation time.
+    private readonly string _specVersion = ResolveSpecVersion(openApiOptions.SpecVersion);
+
+    internal static string ResolveSpecVersion(string? specVersion)
+    {
+        var value = specVersion?.Trim();
+        if (string.Equals(value, "3.0", StringComparison.OrdinalIgnoreCase))
+        {
+            return OpenApiSpecVersions.V30;
+        }
+        if (string.Equals(value, "3.1", StringComparison.OrdinalIgnoreCase))
+        {
+            return OpenApiSpecVersions.V31;
+        }
+        throw new ArgumentException(
+            $"Invalid OpenApiOptions.SpecVersion value '{specVersion}'. " +
+            $"Valid values are \"3.0\" (emits openapi: {OpenApiSpecVersions.V30}) and \"3.1\" (emits openapi: {OpenApiSpecVersions.V31}).");
+    }
 
     private IApplicationBuilder _builder = default!;
     private JsonObject _document = default!;
@@ -43,7 +73,9 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
 
         _document = new JsonObject
         {
-            ["openapi"] = "3.0.3",
+            // When nullability emission is added, this option must also gate
+            // nullable: true (3.0) vs "type": [T, "null"] (3.1).
+            ["openapi"] = _specVersion,
             ["info"] = info
         };
 

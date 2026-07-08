@@ -2675,6 +2675,13 @@ public static partial class ConfigSchemaGenerator
           //
           "DocumentDescription": null,
           //
+          // OpenAPI specification version of the generated document: "3.0" or "3.1".
+          // "3.0" emits openapi: 3.0.3 (default, backward compatible),
+          // "3.1" emits openapi: 3.1.1 (JSON Schema 2020-12 alignment).
+          // This is the spec version, not your API version (that is DocumentVersion).
+          //
+          "SpecVersion": "3.0",
+          //
           // Include current server information in the "servers" section of the OpenAPI document.
           //
           "AddCurrentServer": true,

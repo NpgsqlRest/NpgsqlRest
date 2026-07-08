@@ -969,6 +969,7 @@ public static class ConfigDefaults
             ["DocumentTitle"] = null,
             ["DocumentVersion"] = "1.0.0",
             ["DocumentDescription"] = null,
+            ["SpecVersion"] = "3.0",
             ["AddCurrentServer"] = true,
             ["Servers"] = new JsonArray(),
             ["SecuritySchemes"] = new JsonArray(),

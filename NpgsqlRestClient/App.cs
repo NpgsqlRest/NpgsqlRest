@@ -322,6 +322,7 @@ public class App
             DocumentTitle = _config.GetConfigStr("DocumentTitle", openApiCfg),
             DocumentVersion = _config.GetConfigStr("DocumentVersion", openApiCfg) ?? "1.0.0",
             DocumentDescription = _config.GetConfigStr("DocumentDescription", openApiCfg),
+            SpecVersion = _config.GetConfigStr("SpecVersion", openApiCfg) ?? "3.0",
             ConnectionString = connectionString,
             AddCurrentServer = _config.GetConfigBool("AddCurrentServer", openApiCfg, true),
             IncludeSchemas = _config.GetConfigEnumerable("IncludeSchemas", openApiCfg)?.ToArray(),
