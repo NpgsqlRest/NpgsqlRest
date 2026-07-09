@@ -218,8 +218,9 @@ public partial class Mcp(McpOptions options) : IEndpointCreateHandler
             inputSchema["required"] = required;
         }
 
-        // Safety hints derived from the HTTP method. GET → read-only; DELETE → destructive.
-        var annotations = new JsonObject { ["readOnlyHint"] = endpoint.Method == Method.GET };
+        // Safety hints derived from the HTTP method. GET/QUERY → read-only (both are safe methods);
+        // DELETE → destructive.
+        var annotations = new JsonObject { ["readOnlyHint"] = endpoint.Method is Method.GET or Method.QUERY };
         if (endpoint.Method == Method.DELETE)
         {
             annotations["destructiveHint"] = true;

@@ -2,7 +2,7 @@
 
 public enum RoutineType { Table, View, Function, Procedure, Other, SqlFile }
 public enum CrudType { Select, Insert, Update, Delete }
-public enum Method { GET, PUT, POST, DELETE }
+public enum Method { GET, PUT, POST, DELETE, QUERY }
 public enum RequestParamType { QueryString, BodyJson }
 public enum ParamType { QueryString, BodyJson, BodyParam, HeaderParam, PathParam }
 public enum CommentHeader { None, Simple, Full }

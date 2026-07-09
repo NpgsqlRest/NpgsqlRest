@@ -1626,7 +1626,8 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 !eventsStreamingEnabled &&
                 endpoint.CustomParameters.ParameterEnabled(Hooks) is not false)
             {
-                hookEntries.Add((camel, pascal, endpoint.Method == Method.GET, requestName is not null));
+                // GET and QUERY are both safe, idempotent read methods -> useQuery; everything else -> useMutation.
+                hookEntries.Add((camel, pascal, endpoint.Method is Method.GET or Method.QUERY, requestName is not null));
             }
             return true;
         } // void Handle

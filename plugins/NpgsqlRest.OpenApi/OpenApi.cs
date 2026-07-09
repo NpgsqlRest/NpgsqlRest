@@ -195,6 +195,15 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
         }
 
         var path = endpoint.Path;
+        // OpenAPI 3.0/3.1 path items only allow the fixed operation keys (get/put/post/delete/...);
+        // the QUERY method has no representation until OpenAPI 3.2. Skip those endpoints instead of
+        // emitting an invalid `query` key.
+        if (endpoint.Method == Method.QUERY)
+        {
+            Logger?.LogWarning("OpenAPI: skipping {Method} {Path} - the QUERY method cannot be represented in OpenAPI {Version} (supported from OpenAPI 3.2).",
+                endpoint.Method, endpoint.Path, _specVersion);
+            return;
+        }
         var method = endpoint.Method.ToString().ToLowerInvariant();
 
         // Initialize path object if it doesn't exist
