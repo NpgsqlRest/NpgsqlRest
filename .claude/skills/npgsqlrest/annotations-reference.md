@@ -1,12 +1,12 @@
 # NpgsqlRest — Full Annotation Reference
 
-Every comment annotation, generated from `npgsqlrest --annotations` (NpgsqlRest v3.19.0).
+Every comment annotation, generated from `npgsqlrest --annotations` (NpgsqlRest v3.20.0).
 Annotations apply to both endpoint sources (database routines via `comment on`, and `.sql` files via leading `--` comments). The `@` prefix is optional. Regenerate with `npgsqlrest --annotations`.
 
 ## `http`
 
 - **Aliases:** http
-- **Syntax:** `http [GET|POST|PUT|DELETE] [path]`
+- **Syntax:** `http [GET|POST|PUT|DELETE|QUERY] [path]`
 
 Enable endpoint and configure HTTP method and/or path. Required (for HTTP exposure) when CommentsMode is OnlyAnnotated (or its alias OnlyWithHttpTag).
 
@@ -265,14 +265,14 @@ Add parameter validation using a named validation rule.
 ## `proxy`
 
 - **Aliases:** proxy, reverse_proxy
-- **Syntax:** `proxy [GET|POST|PUT|DELETE|PATCH] [host_url]`
+- **Syntax:** `proxy [GET|POST|PUT|DELETE|QUERY] [host_url]`
 
 Configure endpoint as a reverse proxy.
 
 ## `proxy_out`
 
 - **Aliases:** proxy_out, forward_proxy
-- **Syntax:** `proxy_out [GET|POST|PUT|DELETE|PATCH] [host_url]`
+- **Syntax:** `proxy_out [GET|POST|PUT|DELETE|QUERY] [host_url]`
 
 Execute function first, then forward result body to upstream proxy service.
 

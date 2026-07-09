@@ -5,9 +5,9 @@ internal static partial class DefaultCommentParser
     /// <summary>
     /// Annotation: proxy
     /// Syntax: proxy
-    ///         proxy [GET | POST | PUT | DELETE | PATCH]
+    ///         proxy [GET | POST | PUT | DELETE | QUERY]
     ///         proxy host_url
-    ///         proxy [GET | POST | PUT | DELETE | PATCH] host_url
+    ///         proxy [GET | POST | PUT | DELETE | QUERY] host_url
     ///
     /// Description: Configure this endpoint as a reverse proxy.
     /// - Use 'proxy' alone to forward to ProxyOptions.Host with same HTTP method.

@@ -1,5 +1,5 @@
 // NpgsqlRest — FULL configuration reference (every option, with inline comments).
-// Generated verbatim from: npgsqlrest --config   (NpgsqlRest v3.19.0)
+// Generated verbatim from: npgsqlrest --config   (NpgsqlRest v3.20.0)
 // This is the source of truth for configuration. Regenerate with: npgsqlrest --config
 
 {
@@ -69,7 +69,7 @@
   // For connection string definition see https://www.npgsql.org/doc/connection-string-parameters.html
   //
   "ConnectionStrings": {
-    "Default": "Host={PGHOST};Port=5432;Database={PGDATABASE};Username={PGUSER};Password={PGPASSWORD}"
+    "Default": "Host={!PGHOST};Port=5432;Database={!PGDATABASE};Username={!PGUSER};Password={!PGPASSWORD}"
   },
 
   //
@@ -2670,6 +2670,13 @@
       //
       "DocumentDescription": null,
       //
+      // OpenAPI specification version of the generated document: "3.0" or "3.1".
+      // "3.0" emits openapi: 3.0.3 (default, backward compatible),
+      // "3.1" emits openapi: 3.1.1 (JSON Schema 2020-12 alignment).
+      // This is the spec version, not your API version (that is DocumentVersion).
+      //
+      "SpecVersion": "3.0",
+      //
       // Include current server information in the "servers" section of the OpenAPI document.
       //
       "AddCurrentServer": true,
@@ -2804,6 +2811,31 @@
         // When true, tools/list hides tools the calling principal could not run (their routine's authorize/role check would deny it). When false (default), every opted-in tool is listed (discoverable) and authorization is enforced on tools/call.
         //
         "FilterToolsByRole": false
+      },
+      //
+      // Generation of plain function-calling schema documents (OpenAI and Anthropic tools arrays) and llms.txt from the MCP tool set. Requires at least one routine with the `mcp` annotation; produces empty documents otherwise. Independent of Enabled above: tools are collected from `mcp` annotations and the documents are generated and served even when the /mcp endpoint is disabled. Set any FileName to null to skip writing that file; set any UrlPath to null to skip serving that document.
+      //
+      "ToolSchemas": {
+        "Enabled": false,
+        //
+        // Set to true to overwrite existing files.
+        //
+        "FileOverwrite": true,
+        //
+        // OpenAI Chat Completions `tools` array document.
+        //
+        "OpenAiFileName": "npgsqlrest_tools_openai.json",
+        "OpenAiUrlPath": "/tools/openai.json",
+        //
+        // Anthropic Messages API `tools` array document.
+        //
+        "AnthropicFileName": "npgsqlrest_tools_anthropic.json",
+        "AnthropicUrlPath": "/tools/anthropic.json",
+        //
+        // llms.txt markdown document (H1, summary from Instructions, endpoint list, machine-readable links).
+        //
+        "LlmsTxtFileName": "llms.txt",
+        "LlmsTxtUrlPath": "/llms.txt"
       }
     },
 
@@ -2945,7 +2977,181 @@
       //
       // When true, parameters filled by the server and not settable by the client are omitted from the generated request interface, query string, and body. Covers optional automatic parameters: HTTP Custom Type fields, resolved-parameter expressions, upload metadata, and (on endpoints using user parameters) IP-address and user-claim parameters. Default is false.
       //
-      "OmitAutomaticParameters": false
+      "OmitAutomaticParameters": false,
+      //
+      // TanStack Query (React Query) hooks generation. When enabled, a hooks module is generated for each client module: useQuery hooks for GET endpoints and useMutation hooks for other methods, importing the client functions and @tanstack/react-query (v5 object syntax). TypeScript only - skipped with a warning when SkipTypes is true. Use the tsclient_hooks=off routine annotation to exclude an endpoint from the hooks file only.
+      //
+      "ReactQuery": {
+        "Enabled": false,
+        //
+        // Output file path for the hooks module. In multi-file mode (BySchema or tsclient_module usage) must contain {0}, mirroring FilePath rules. Required when Enabled is true.
+        //
+        "FilePath": null,
+        //
+        // Force file overwrite.
+        //
+        "FileOverwrite": true,
+        //
+        // Optional first segment prepended to every query key (for apps consuming multiple NpgsqlRest APIs). Null to omit.
+        //
+        "QueryKeyPrefix": null,
+        //
+        // Export query key factory objects alongside hooks.
+        //
+        "ExposeQueryKeys": true,
+        //
+        // Module specifier the generated hooks import TanStack Query from. Point this at an internal wrapper module when direct imports of @tanstack/react-query are not allowed; the module must re-export useQuery, useMutation, UseQueryOptions and UseMutationOptions with TanStack Query v5 semantics.
+        //
+        "ImportFrom": "@tanstack/react-query",
+        //
+        // Header lines on the generated hooks file. {0} is the current timestamp.
+        //
+        "HeaderLines": [
+          "// autogenerated at {0}",
+          ""
+        ]
+      }
+    },
+
+    //
+    // Enable or disable the generation of Dart client source code files for NpgsqlRest endpoints (package:http, for Flutter projects).
+    //
+    "DartClientCodeGen": {
+      "Enabled": false,
+      //
+      // File path for the generated code. Set to null to skip the code generation. Use {0} to set schema (or module) name when BySchema is true
+      //
+      "FilePath": null,
+      //
+      //  Force file overwrite.
+      //
+      "FileOverwrite": true,
+      //
+      // Include current host information in the baseUrl variable.
+      //
+      "IncludeHost": true,
+      //
+      // Set the custom host prefix information.
+      //
+      "CustomHost": null,
+      //
+      // Adds comment header above each request based on PostgreSQL routine
+      // Set None to skip.
+      // Set Simple (default) to add name, parameters and return values to comment header.
+      // Set Full to add the entire routine code as comment header.
+      //
+      "CommentHeader": "Simple",
+      //
+      // When CommentHeader is set to Simple or Full, set to true to include routine comments in comment header.
+      //
+      "CommentHeaderIncludeComments": true,
+      //
+      // Create files by PostgreSQL schema. File name will use formatted FilePath where {0} is the schema name in snake case.
+      //
+      "BySchema": true,
+      //
+      // Set to true to wrap responses as ApiResult<T> carrying status code, response and error.
+      //
+      "IncludeStatusCode": true,
+      //
+      // Emit request/response (and composite) model classes into a separate {name}_models.dart file. The client file imports and re-exports the models file so consumers keep a single import.
+      //
+      "SeparateModelsFile": false,
+      //
+      // Dart import URI that provides a top-level `baseUrl` String variable, instead of defining it in the module. Example: "package:my_app/base_url.dart".
+      //
+      "ImportBaseUrlFrom": null,
+      //
+      // Header lines on each auto-generated source file. Default is ["// autogenerated at {0}", "", ""] where {0} is the current timestamp.
+      //
+      "HeaderLines": [
+        "// autogenerated at {0}",
+        ""
+      ],
+      //
+      // Array of routine names to skip (without schema)
+      //
+      "SkipRoutineNames": [],
+      //
+      // Array of generated function names to skip (without schema)
+      //
+      "SkipFunctionNames": [],
+      //
+      // Array of url paths to skip
+      //
+      "SkipPaths": [],
+      //
+      // Array of schema names to skip
+      //
+      "SkipSchemas": [],
+      //
+      // Default Dart type for JSON values (columns and parameters of json/jsonb type)
+      //
+      "DefaultJsonType": "dynamic",
+      //
+      // Use routine name instead of endpoint name when generating function names.
+      //
+      "UseRoutineNameInsteadOfEndpoint": false,
+      //
+      // Emit top-level {name}Url functions that build the request URL.
+      //
+      "ExportUrls": false,
+      //
+      // Keep Dart models unique, meaning models with the same fields and types will be merged into one model with the name of the first model. This significantly reduces the number of generated models.
+      //
+      "UniqueModels": false,
+      //
+      // Name of the XSRF Token Header (Anti-forgery Token). This is used in multipart upload requests when Anti-forgery is enabled.
+      //
+      "XsrfTokenHeaderName": null,
+      //
+      // Emit public create{Name}EventSource factory functions for streaming (SSE) endpoints. When false, the factories are emitted with a private (underscore) name and only used internally.
+      //
+      "ExportEventSources": true,
+      //
+      // Include optional named parameter `Uri Function(Uri uri)? parseUrl` that can rewrite the constructed URI before the request is made.
+      //
+      "IncludeParseUrlParam": false,
+      //
+      // Include optional named parameter `http.Request Function(http.Request request)? parseRequest` (or the MultipartRequest variant for uploads) that can rewrite the constructed request before it is sent.
+      //
+      "IncludeParseRequestParam": false,
+      //
+      // List of custom imports to add to the generated code. It adds a line to a file. Use full expression like `import 'package:my_app/my_type.dart';`
+      //
+      "CustomImports": [],
+      //
+      // Dictionary of custom headers to add to each request in generated code. Header value is inserted verbatim (include quotes for literals).
+      //
+      "CustomHeaders": {},
+      //
+      // When true, include PostgreSQL schema name in the generated names to avoid name collisions. Set to false to simplify names when no name collisions are expected.
+      //
+      "IncludeSchemaInNames": true,
+      //
+      // Name for the generated error class carrying problem-details responses. Only used when IncludeStatusCode is true.
+      //
+      "ErrorTypeName": "ApiError",
+      //
+      // Name for the generated generic result class with status, response and error fields. Only used when IncludeStatusCode is true.
+      //
+      "ResultTypeName": "ApiResult",
+      //
+      // When true, parameters filled by the server and not settable by the client are omitted from the generated request class, query string, and body. Covers optional automatic parameters: HTTP Custom Type fields, resolved-parameter expressions, upload metadata, and (on endpoints using user parameters) IP-address and user-claim parameters. Default is false.
+      //
+      "OmitAutomaticParameters": false,
+      //
+      // Prefix for generated model class names.
+      //
+      "ModelPrefix": null,
+      //
+      // Suffix for generated model class names.
+      //
+      "ModelSuffix": null,
+      //
+      // When true (default), date, timestamp and timestamptz values map to Dart DateTime (parsed with DateTime.parse, serialized with toIso8601String). When false, they map to String.
+      //
+      "UseDateTimeType": true
     },
 
     //

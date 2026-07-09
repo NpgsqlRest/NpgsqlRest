@@ -4,8 +4,8 @@ internal static partial class DefaultCommentParser
 {
     /// <summary>
     /// Annotation: proxy_out
-    /// Syntax: proxy_out [GET | POST | PUT | DELETE | PATCH]
-    ///         proxy_out [GET | POST | PUT | DELETE | PATCH] host_url
+    /// Syntax: proxy_out [GET | POST | PUT | DELETE | QUERY]
+    ///         proxy_out [GET | POST | PUT | DELETE | QUERY] host_url
     ///
     /// Description: Execute the PostgreSQL function first, then forward its result body
     /// to an upstream proxy service. The upstream response is returned to the client.

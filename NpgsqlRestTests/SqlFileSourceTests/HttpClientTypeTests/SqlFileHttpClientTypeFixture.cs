@@ -16,7 +16,9 @@ public class SqlFileHttpClientTypeFixtureCollection : ICollectionFixture<SqlFile
 /// </summary>
 public class SqlFileHttpClientTypeFixture : IDisposable
 {
-    public const int MockPort = 50954;
+    // Must be unique across all WireMock fixtures: this collection runs in parallel with the
+    // "TestFixture" collection, whose Proxy* class fixtures bind 50954 (ProxyWireMockFixture).
+    public const int MockPort = 50956;
 
     private readonly WebApplication _app;
     private readonly HttpClient _client;
