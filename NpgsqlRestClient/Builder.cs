@@ -1730,11 +1730,11 @@ public class Builder
         bool skipRetryOpts,
         bool skipValidation = false)
     {
-        if (_config.EnvDict is not null)
-        {
-            connectionString = Formatter.FormatString(connectionString.AsSpan(), _config.EnvDict).ToString();
-        }
-        
+        // ResolveEnv (not the plain formatter) so the {!NAME} required-variable syntax works in
+        // connection strings: a missing required variable fails fast here with an error naming it,
+        // instead of surfacing later as a cryptic Npgsql host-resolution failure.
+        connectionString = _config.ResolveEnv(connectionString)!;
+
         var connectionStringBuilder = new NpgsqlConnectionStringBuilder(connectionString);
         if (_config.GetConfigBool("SetApplicationNameInConnection", _config.ConnectionSettingsCfg, true) is true)
         {
@@ -1922,11 +1922,8 @@ public class Builder
             {
                 continue;
             }
-            var cs = section.Value;
-            if (_config.EnvDict is not null)
-            {
-                cs = Formatter.FormatString(cs.AsSpan(), _config.EnvDict).ToString();
-            }
+            // ResolveEnv so the {!NAME} required-variable syntax works here too (see BuildConnection).
+            var cs = _config.ResolveEnv(section.Value)!;
             // Non-pooled: maintenance/test sessions are short-lived and must not linger (a pooled session
             // would block DROP DATABASE in a Teardown step).
             var b = new NpgsqlConnectionStringBuilder(cs) { Pooling = false, Enlist = false };

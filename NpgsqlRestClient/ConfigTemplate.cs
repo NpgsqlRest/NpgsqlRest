@@ -74,7 +74,7 @@ public static partial class ConfigSchemaGenerator
       // For connection string definition see https://www.npgsql.org/doc/connection-string-parameters.html
       //
       "ConnectionStrings": {
-        "Default": "Host={PGHOST};Port=5432;Database={PGDATABASE};Username={PGUSER};Password={PGPASSWORD}"
+        "Default": "Host={!PGHOST};Port=5432;Database={!PGDATABASE};Username={!PGUSER};Password={!PGPASSWORD}"
       },
     
       //

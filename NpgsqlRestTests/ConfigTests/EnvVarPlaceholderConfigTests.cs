@@ -82,6 +82,17 @@ public class EnvVarPlaceholderConfigTests
     }
 
     [Fact]
+    public void ResolveEnv_Required_Missing_NonThrowingMode_KeepsLiteralPlaceholder()
+    {
+        // The serialization/inspection paths (--config output, config validation) must be able to
+        // render a configuration whose required variables are not set yet - the placeholder is kept
+        // verbatim instead of throwing. Real value access still throws (test above).
+        var config = CreateConfig([]);
+        config.ResolveEnv("host={!DB_HOST}", throwOnMissingRequired: false)
+            .Should().Be("host={!DB_HOST}");
+    }
+
+    [Fact]
     public void ResolveEnv_Mixed_OptionalAndRequired()
     {
         var config = CreateConfig(new() { { "REQ", "r" } }); // OPT not set

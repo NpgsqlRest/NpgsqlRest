@@ -201,7 +201,16 @@ public class Config
     /// Returns the input unchanged when environment-variable parsing is disabled (<see cref="EnvDict"/> is null,
     /// i.e. <c>Config:ParseEnvironmentVariables</c> is false).
     /// </summary>
-    public string? ResolveEnv(string? value)
+    public string? ResolveEnv(string? value) => ResolveEnv(value, throwOnMissingRequired: true);
+
+    /// <summary>
+    /// Same as <see cref="ResolveEnv(string?)"/>, but with <paramref name="throwOnMissingRequired"/>
+    /// false a missing required variable keeps its literal <c>{!NAME}</c> placeholder instead of
+    /// throwing. Used by the serialization/inspection paths (--config output, config validation) so
+    /// the configuration can always be printed and validated even before the environment is set up;
+    /// real value access still fails fast.
+    /// </summary>
+    public string? ResolveEnv(string? value, bool throwOnMissingRequired)
     {
         if (value is null || EnvDict is null || value.IndexOf('{') < 0)
         {
@@ -231,7 +240,7 @@ public class Config
             {
                 sb.Append(envValue);
             }
-            else if (required)
+            else if (required && throwOnMissingRequired)
             {
                 throw new InvalidOperationException(
                     $"Required environment variable '{name}' (referenced as '{{!{name}}}' in configuration) is not set.");
@@ -1051,7 +1060,7 @@ public class Config
             {
                 return null;
             }
-            var value = ResolveEnv(section.Value) ?? string.Empty;
+            var value = ResolveEnv(section.Value, throwOnMissingRequired: false) ?? string.Empty;
             if (bool.TryParse(value, out bool boolean))
             {
                 return JsonValue.Create(boolean);
