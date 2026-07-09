@@ -158,6 +158,13 @@ public class CliCommandTests
         json.Should().NotBeNull();
         json.Should().BeOfType<JsonArray>();
         json!.AsArray().Count.Should().BeGreaterThan(0);
+        var names = json!.AsArray().Select(n => n?["name"]?.GetValue<string>()).ToArray();
+        // Core annotations
+        names.Should().Contain(["http", "single", "void"]);
+        // SQL-file statement annotations
+        names.Should().Contain(["skip", "returns", "resultN", "define_param"]);
+        // Plugin annotations
+        names.Should().Contain(["mcp", "openapi"]);
         stderr.Should().BeEmpty();
     }
 
@@ -240,6 +247,59 @@ public class CliCommandTests
         json["warningsAreFatal"]!.GetValue<bool>().Should().BeFalse();
         json["validationMode"]!.GetValue<string>().Should().Be("Warning");
         json["warnings"]!.AsArray().Count.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task Validate_Json_MissingRequiredEnvVar_ReportsConnectionTestFailure()
+    {
+        // A connection string with an unset {!NAME} required variable must not crash --validate
+        // (it runs GetConfigStr, which throws for missing required variables) - the failure is
+        // reported as the connectionTest result and validate still prints its JSON.
+        var tempDir = Path.Combine(Path.GetTempPath(), $"npgsqlrest_test_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(tempDir, "appsettings.json"), """
+            {
+              "ConnectionStrings": {
+                "Default": "Host={!NPGSQLREST_TEST_MISSING_VAR};Port=5432;Database=x;Username=x;Password=x"
+              }
+            }
+            """);
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = "dotnet",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WorkingDirectory = tempDir,
+            };
+            psi.ArgumentList.Add(DllPath);
+            psi.ArgumentList.Add("--validate");
+            psi.ArgumentList.Add("--json");
+
+            using var process = new Process { StartInfo = psi };
+            process.Start();
+            var stdoutTask = process.StandardOutput.ReadToEndAsync();
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            await process.WaitForExitAsync(cts.Token);
+            var stdout = await stdoutTask;
+
+            var json = JsonNode.Parse(stdout);
+            json.Should().NotBeNull();
+            json!["valid"]!.GetValue<bool>().Should().BeFalse();
+            json["configValid"]!.GetValue<bool>().Should().BeTrue();
+            json["connectionTest"]!.GetValue<string>().Should()
+                .Contain("Required environment variable")
+                .And.Contain("NPGSQLREST_TEST_MISSING_VAR");
+            process.ExitCode.Should().Be(1);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
     }
 
     [Fact]

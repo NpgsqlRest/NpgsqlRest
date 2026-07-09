@@ -2,37 +2,36 @@
 
 [![Build, Test, Publish and Release](https://github.com/NpgsqlRest/NpgsqlRest/actions/workflows/build-test-publish.yml/badge.svg)](https://github.com/NpgsqlRest/NpgsqlRest/actions/workflows/build-test-publish.yml)
 [![Tests](https://github.com/NpgsqlRest/NpgsqlRest/actions/workflows/test.yml/badge.svg)](https://github.com/NpgsqlRest/NpgsqlRest/actions/workflows/test.yml)
-![2300+ integration tests](https://img.shields.io/badge/integration%20tests-2394%2B-brightgreen)
+![2400+ integration tests](https://img.shields.io/badge/integration%20tests-2484%2B-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/NpgsqlRest)
 ![GitHub Stars](https://img.shields.io/github/stars/NpgsqlRest/NpgsqlRest?style=social)
 ![GitHub Forks](https://img.shields.io/github/forks/NpgsqlRest/NpgsqlRest?style=social)
 
-# Your SQL is the API.
+# Your SQL is the API
 
 **Automatic REST API for PostgreSQL** | [6.1x faster than PostgREST](https://npgsqlrest.github.io/blog/postgresql-rest-api-benchmark-2026.html)
 
 > SQL files and PostgreSQL objects become REST endpoints. TypeScript clients are generated automatically. Tests are SQL files too.
 
-**4,500+ req/s** on a single host · **2,394 integration tests** · **12K LOC SQL** in production · **MIT** licensed
+**4,500+ req/s** on a single host · **2,484 integration tests** · **12K LOC SQL** in production · **MIT** licensed
 
 *"Simplicity is the ultimate sophistication."* — Leonardo da Vinci
 
 SQL is declarative — your API should be too. With NpgsqlRest, you write SQL and annotate it with comments to declare what you want from your endpoint: caching, timeouts, retries, authorization, rate limiting, and everything in between. No controllers, no models, no mapping layers. Backend features become simple declarations on your SQL objects, putting PostgreSQL at the dead center of your architecture — the opposite of Clean Architecture, which treats the database as a detail. Here, PostgreSQL *is* the architecture.
-
-<p align="center">
-  <img src="clean.png?v=2" alt="NpgsqlRest Architecture" width="340">
-</p>
 
 ## Install
 
 | Method | Command |
 |--------|---------|
 | **NPM** | `npm i npgsqlrest` |
+| **Bun** | `bun add --trust npgsqlrest` |
+| **Deno** | `deno install --allow-scripts=npm:npgsqlrest npm:npgsqlrest` |
 | **Docker** | `docker pull vbilopav/npgsqlrest:latest` |
 | **Direct Download** | [Releases](https://github.com/NpgsqlRest/NpgsqlRest/releases) |
 | **.NET Library** | `dotnet add package NpgsqlRest` |
 
-Requires PostgreSQL >= 13. Native executables have zero runtime dependencies.
+Requires PostgreSQL >= 13. Native executables have zero runtime dependencies. See the [Installation Guide](https://npgsqlrest.github.io/guide/installation) for all options and details.
 
 ## From SQL to REST API
 
@@ -159,7 +158,9 @@ Save a `.sql` file and the running API restarts with the change (~1s). `create o
 - **SQL test runner** (`--test`) — tests as plain SQL files, in-process endpoint invocation inside the test's transaction, throwaway test databases, JUnit XML, endpoint-coverage gating
 - **Watch mode** (`--watch`) — restart on SQL file, configuration, and database routine changes; test watch re-runs in milliseconds
 - **MCP server** — `@mcp` exposes any endpoint as a Model Context Protocol tool for AI agents, same auth and rate limits
-- **TypeScript/JS code generation** and `.http` files — types flow from PostgreSQL to your frontend
+- **AI function-calling schemas & llms.txt** — project the MCP tool set into OpenAI and Anthropic `tools` array documents plus an llms.txt capability document, generated and served even without the /mcp endpoint
+- **TypeScript/JS code generation** and `.http` files — types flow from PostgreSQL to your frontend, with optional **TanStack Query (React Query) v5 hooks** (`useQuery`/`useMutation` + query-key factories)
+- **Dart client generation** — typed Flutter clients on `package:http`: request/response models with `fromJson`/`toJson`, multipart uploads with progress, SSE subscriptions, `MockClient` testability
 - **AOT-compiled native binaries** — zero dependencies, instant startup
 - [**6.1x faster than PostgREST**](https://npgsqlrest.github.io/blog/postgresql-rest-api-benchmark-2026.html) at 100 concurrent users
 - **50+ comment annotations** — `@authorize`, `@param`, `@returns`, `@void`, `@single`, `@result`, `@skip`, `@cached`, `@proxy`, and more
@@ -168,11 +169,12 @@ Save a `.sql` file and the running API restarts with the change (~1s). `create o
 - **Response caching** with per-endpoint expiration control
 - **Rate limiting** per endpoint
 - **SSE streaming** via `RAISE INFO/NOTICE` with graceful shutdown
+- **HTTP QUERY method** — the standardized safe method with a request body; parameters bind from the JSON body, clients treat it as a cacheable read
 - **File uploads** — large objects, file system, MIME filtering
 - **Reverse proxy** — forward to upstream services, transform proxy responses
 - **HTTP custom types** — PostgreSQL composite types that call external APIs and return structured responses
 - **Composite type support** — nested JSON, arrays of composites, `@returns` to skip Describe
-- **OpenAPI 3.0** spec generation
+- **OpenAPI 3.0 / 3.1** spec generation (configurable `SpecVersion`)
 - **CSV/Excel/HTML** table format response handlers
 
 ### How does it compare?
@@ -191,7 +193,7 @@ Save a `.sql` file and the running API restarts with the change (~1s). `create o
 
 ## Claude Code skill
 
-A [Claude Code](https://claude.com/claude-code) skill that teaches the agent how to build with NpgsqlRest — both endpoint sources (database functions/procedures/tables/views and `.sql` files), the full annotation set, configuration, HTTP custom types, proxy, caching, auth, SSE, MCP, the SQL test runner (`--test`), and watch mode (`--watch`). It lives in [`.claude/skills/npgsqlrest/`](.claude/skills/npgsqlrest/) and bundles a complete annotation reference and a full annotated `appsettings.json`.
+A [Claude Code](https://claude.com/claude-code) skill that teaches the agent how to build with NpgsqlRest — both endpoint sources (database functions/procedures/tables/views and `.sql` files), the full annotation set, configuration, HTTP custom types, proxy, caching, auth, SSE, MCP, client code generation (TypeScript/React Query hooks, Dart), the SQL test runner (`--test`), and watch mode (`--watch`). It lives in [`.claude/skills/npgsqlrest/`](.claude/skills/npgsqlrest/) and bundles a complete annotation reference and a full annotated `appsettings.json`.
 
 Install it for your own NpgsqlRest projects — per-user (available everywhere):
 
@@ -207,7 +209,11 @@ done
 
 ## About
 
-NpgsqlRest is built and maintained by [Vedran Bilopavlović](https://www.linkedin.com/in/vb-software/). The C# library, parser, codegen, and runtime are hand-written, covered by 2,394 integration tests, and battle-tested in production.
+NpgsqlRest is built and maintained by [Vedran Bilopavlović](https://www.linkedin.com/in/vb-software/). The C# library, parser, codegen, and runtime are hand-written, covered by 2,484 integration tests, and battle-tested in production.
+
+## Support This Project ❤️
+
+NpgsqlRest is free, MIT-licensed, and built by one person out of passion. If it saves you time, [GitHub Sponsors](https://github.com/sponsors/NpgsqlRest) is the primary way to support it — [Patreon](https://patreon.com/vbconsulting) and [Buy Me a Coffee](https://buymeacoffee.com/vbilopavu) work too. Read more on the [support page](https://npgsqlrest.github.io/support).
 
 ## Contributing
 

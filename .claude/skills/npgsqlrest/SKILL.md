@@ -1,6 +1,6 @@
 ---
 name: npgsqlrest
-description: Build and modify REST APIs with NpgsqlRest — exposing PostgreSQL as HTTP endpoints from two sources (database functions/procedures/tables/views, and plain .sql files), driven by SQL comment annotations (no C# needed). Use when working in an NpgsqlRest project: writing or changing endpoint SQL (functions or .sql files), comment annotations (HTTP routing, authorize, cached, proxy, HTTP Custom Types, SSE, MCP, upload), appsettings.json config, testing endpoints with SQL test files (`--test`), running in watch mode (`--watch`), or running/troubleshooting the `npgsqlrest` client.
+description: Build and modify REST APIs with NpgsqlRest — exposing PostgreSQL as HTTP endpoints from two sources (database functions/procedures/tables/views, and plain .sql files), driven by SQL comment annotations (no C# needed). Use when working in an NpgsqlRest project: writing or changing endpoint SQL (functions or .sql files), comment annotations (HTTP routing, authorize, cached, proxy, HTTP Custom Types, SSE, MCP, upload), appsettings.json config, client code generation (TypeScript/React Query hooks, Dart/Flutter), testing endpoints with SQL test files (`--test`), running in watch mode (`--watch`), or running/troubleshooting the `npgsqlrest` client.
 ---
 
 # Working with NpgsqlRest
@@ -20,7 +20,7 @@ NpgsqlRest auto-generates a REST API from PostgreSQL. You write SQL and **annota
 The annotation/config surface is large and version-dependent. In order of preference:
 
 1. **Bundled with this skill** (offline, complete — these files sit next to this `SKILL.md`):
-   - `annotations-reference.md` — every comment annotation (name, aliases, syntax, description).
+   - `annotations-reference.md` — every comment annotation (name, aliases, syntax, description), including a supplement for annotations `--annotations` doesn't emit (SQL-file statement, plugin, custom-parameter, and test-file annotations).
    - `configuration-reference.jsonc` — the full `appsettings.json` with every option and inline comments.
 2. **The installed binary** (authoritative for the exact version in use):
    ```bash
@@ -103,7 +103,7 @@ Everything below (annotations, HTTP types, proxy, caching, auth, SSE, MCP) works
 Same annotations apply to functions and `.sql` files. Confirm exact syntax/aliases with `npgsqlrest --annotations`.
 
 **Routing / exposure**
-- `HTTP [METHOD] [/path]` — expose. `@path /x` — override path. `@disabled`/`@enabled`. `@internal` — exists but no public route (reachable via proxy / HTTP-type self-call). `@tags a,b`, `@openapi …`.
+- `HTTP [GET|POST|PUT|DELETE|QUERY] [/path]` — expose (`QUERY` = the standardized safe method with a body; its params default to the JSON body). `@path /x` — override path. `@disabled`/`@enabled`. `@internal` — exists but no public route (reachable via proxy / HTTP-type self-call). `@tags a,b`, `@openapi …`.
 
 **Auth**
 - `@authorize` (any authenticated) / `@authorize role1, role2`. `@allow_anonymous` (aliases `@anonymous`, `@anon`). `@login` / `@logout`. `@user_context` (claims → PG context + headers), `@user_parameters` (claims → params). `@security_sensitive` (keep param values out of logs).
@@ -112,13 +112,17 @@ Same annotations apply to functions and `.sql` files. Confirm exact syntax/alias
 - `@param $1 name [type] [default …]` (rename/retype/default). `@define_param name [type]` (virtual, SQL-file). `@request_param_type query_string | body_json`. `@body_parameter_name _x` (one param = raw body). `@request_headers_mode parameter` + `@request_headers_parameter_name _headers`. Resolved param: a line `_token = select api_token from tokens where user_name = {_name}` fills `_token` server-side (client can't override).
 
 **Response shaping**
-- `@single`, `@raw` (+ `@separator`, `@new_line`, `@columns`), `@result <name>` (multi-command key), `@skip`, `@void` (204), `@nested` (keep composites nested), `@returns <type>` (SQL-file, skip Describe). Header lines like `Content-Type: text/csv`.
+- `@single`, `@raw` (+ `@separator`, `@new_line`, `@columns`), `@result <name>` (multi-command key), `@skip`, `@void` (204), `@nested` (keep composites nested), `@returns <type>` (SQL-file, skip Describe). Header lines like `Content-Type: text/csv` — header values accept `{name}` substitution (params + allowlisted env vars; response headers are client-visible, so never secrets). `@table_format = html|excel` (+ `excel_file_name`, `excel_sheet`) renders results as an HTML table or `.xlsx` download.
 
 **Caching** (server-side response cache)
 - `@cached [p1, p2, …]` — **always list the key params explicitly** (a bare `@cached` keys on the endpoint only). `@cache_expires_in 30s|5m|1h` (alias `@cache_expires`). `@cache_profile name` (backend + defaults from `CacheOptions:Profiles`).
 
 **Other**
-- `@rate_limiter_policy name`. `@command_timeout 30s`. `@connection Name` (multi-connection). `@buffer_rows N`. `@validate _email using required, email`. `@error_code_policy 23505 -> 409`. `@upload [for csv|excel|file_system|large_object]`.
+- `@rate_limiter_policy name`. `@retry_strategy name` (retry transient DB errors). `@command_timeout 30s`. `@connection Name` (multi-connection). `@buffer_rows N`. `@validate _email using required, email`. `@error_code_policy 23505 -> 409`. `@upload [for csv|excel|file_system|large_object]`. `@encrypt [params]` / `@decrypt [columns]` (data protector).
+
+**Client codegen** (custom parameters — the `=` is REQUIRED: `@tsclient = off` works, `@tsclient off` is silently ignored)
+- TypeScript: `@tsclient = off`, `@tsclient_module = name` (group into one file), `@tsclient_status_code = true`, `@tsclient_hooks = off` (exclude from React Query hooks), `@tsclient_parse_url/_parse_request/_export_url/_url_only`.
+- Dart: `@dartclient = off`, `@dartclient_module = name` (falls back to `tsclient_module`), `@dartclient_status_code`, `@dartclient_events`, `@dartclient_parse_url/_parse_request/_export_url/_url_only`.
 
 **Test files only** (`*.test.sql`, run by `--test` — not endpoint annotations)
 - Header: `-- @setup Step ...`, `-- @teardown Step ...`, `-- @connection Name`, `-- @tag a, b`. Inside HTTP blocks: `# @claim name=value`, `# @response name`. Includes: `\i file` / `\ir file`.
@@ -141,7 +145,7 @@ Accept: text/html';
 - Directives `@timeout` / `@retry_delay` / `@cache` may appear before the request line OR after the headers (both work since 3.18.0; before is safest).
 - Response fields (names configurable in `HttpClientOptions`): `body`, `status_code`, `content_type`, `headers` (json), `success`, `error_message`.
 - `@cache <interval>` (3.18.0+): caches the outbound response — **GET only, 2xx only**, stampede-coalesced; globally toggled by `HttpClientOptions.CacheEnabled`.
-- Placeholders `{name}` in URL/headers/body substitute from params, resolved-param expressions, allow-listed env vars.
+- Placeholders `{name}` in URL/headers/body substitute from params, resolved-param expressions, and allowlisted env vars. Env vars are opt-in via `NpgsqlRest:AvailableEnvVars` (array of names, or object of `name → default`; resolved once at startup, matched case-insensitively; a same-named routine parameter wins) — ideal for API keys: `Authorization: Bearer {WEATHER_API_KEY}`.
 - A relative URL (`GET /api/other`) is a **self-call** to another endpoint with no HTTP round-trip — give a function several HTTP-type params and they fire concurrently.
 - Requires `HttpClientOptions.Enabled = true`.
 
@@ -152,6 +156,7 @@ Accept: text/html';
 - **Passthrough** (no proxy-response params): function body is **not executed**; upstream response streamed back; no DB connection.
 - **Transform** (routine declares `_proxy_status_code int`, `_proxy_body text`, `_proxy_success boolean`, `_proxy_headers json`, `_proxy_content_type text`, `_proxy_error_message text`): NpgsqlRest proxies, binds the response into those params, runs the function, returns its result.
 - **Automatic params forwarded upstream** (3.18.1+): user claims, IP, HTTP-Custom-Type fields, resolved-param expressions are forwarded in the endpoint's native shape (query for `QueryString` endpoints, merged JSON body for `BodyJson`), honoring `@body_parameter_name`.
+- **`@proxy_out [METHOD] [host]`** — the inverse direction: run the function FIRST, then forward its result body to the upstream service and return the upstream response (content-type and status included) to the client. E.g. build invoice JSON in SQL, `@proxy_out POST https://pdf-renderer.internal/render` returns the rendered PDF.
 - Requires `ProxyOptions.Enabled = true`.
 
 ## SSE (server-sent events)
@@ -161,6 +166,8 @@ A long-running routine streams progress via `RAISE INFO/NOTICE`. Annotate with `
 ## MCP (Model Context Protocol)
 
 `@mcp [text]` exposes a routine as an MCP tool. A bare `@mcp` with **no** HTTP tag = MCP-only (no public route). `@mcp_description` / `@mcp_name` refine it. Served at `/mcp` when the `NpgsqlRest.Mcp` plugin is loaded.
+
+**Function-calling schemas & llms.txt** (`McpOptions:ToolSchemas`, 3.20.0+): projects the same MCP tool set into three servable/writable documents — an OpenAI `tools` array, an Anthropic `tools` array, and an `llms.txt` capability summary (each has a `...UrlPath` to serve and a `...FileName` to write; set either to `null` to skip it). Works even when the `/mcp` endpoint itself is disabled — annotate with `@mcp` and keep `Mcp.Enabled = false` to get schemas only.
 
 ## Auth pattern (login → claims)
 
@@ -186,7 +193,7 @@ comment on function auth_login(text, text) is 'HTTP POST
 
 ```jsonc
 {
-  "ConnectionStrings": { "Default": "Host={PGHOST};Port={PGPORT};Database={PGDATABASE};Username={APP_USER};Password={APP_PASSWORD}" },
+  "ConnectionStrings": { "Default": "Host={!PGHOST};Port=5432;Database={!PGDATABASE};Username={!PGUSER};Password={!PGPASSWORD}" },
   "Urls": "http://0.0.0.0:8080",
   "Auth": { "CookieAuth": true, "CookieName": "app", "CookieValid": "365 days" /* + Jwt/Bearer/Passkey/External */ },
   "NpgsqlRest": {
@@ -207,9 +214,9 @@ comment on function auth_login(text, text) is 'HTTP POST
 ```
 
 - **Two sources, independently enabled:** database routines (always available via the catalog, filtered by `IncludeSchemas`/`SchemaSimilarTo`/`NameSimilarTo`/`CommentsMode`) and `NpgsqlRest:SqlFileSource` (off by default; needs `Enabled` + `FilePattern`).
-- `{ENV_VAR}` placeholders are substituted from environment variables at startup.
+- `{ENV_VAR}` placeholders are substituted from environment variables at startup (left untouched when unset). `{!ENV_VAR}` (3.20.0+) marks the variable **required** — startup fails naming the missing variable. The default connection string ships as `{!PGHOST}`/`{!PGDATABASE}`/`{!PGUSER}`/`{!PGPASSWORD}`, so a fresh install tells you exactly which env vars to set.
 - `--config <file>` loads a specific file; multiple files overlay (later wins): `npgsqlrest ./appsettings.json ./appsettings.development.json`.
-- Dev override file commonly enables `Debug` logging, TypeScript client codegen, and `.http` export.
+- Dev override file commonly enables `Debug` logging, client codegen (`ClientCodeGen` for TypeScript — optional React Query hooks via its `ReactQuery` sub-section; `DartClientCodeGen` for Dart/Flutter), and `.http` export.
 
 ## Running
 
@@ -255,7 +262,7 @@ Essentials:
 ## Watch mode (`--watch`)
 
 One flag (`--watch`, or config `Watch: { "Enabled": true }`), two flavors chosen by `--test`:
-- **Server watch** (`--watch`): a supervisor restarts the server (~1s) on `.sql` source changes (SkipPattern-filtered), **configuration file** changes, and **database routine changes** — polling runs the routine discovery query hashed server-side (`Watch:DatabasePollingInterval`, default `2s`; detects create/replace/drop/comment on functions, grants, and type/table shape changes; never fires on unrelated objects). Code generation (TS client, HTTP files) re-runs every cycle. A broken SQL file logs its error and drops only its endpoint (`ErrorMode` forced to `Skip` while watching).
+- **Server watch** (`--watch`): a supervisor restarts the server (~1s) on `.sql` source changes (SkipPattern-filtered), **configuration file** changes, and **database routine changes** — polling runs the routine discovery query hashed server-side (`Watch:DatabasePollingInterval`, default `2s`; detects create/replace/drop/comment on functions, grants, and type/table shape changes; never fires on unrelated objects). Code generation (TS/Dart clients, HTTP files) re-runs every cycle. A broken SQL file logs its error and drops only its endpoint (`ErrorMode` forced to `Skip` while watching).
 - **Test watch** (`--test --watch`): a changed test re-runs alone; a changed endpoint file or database routine rebuilds endpoints in-process (endpoint delta reported) and re-runs everything; teardown runs once, on exit.
 
 For Docker Desktop bind mounts set `DOTNET_USE_POLLING_FILE_WATCHER=1` (file events only; database polling is unaffected).
@@ -264,13 +271,14 @@ For Docker Desktop bind mounts set `DOTNET_USE_POLLING_FILE_WATCHER=1` (file eve
 
 - **One schema for the API** (`IncludeSchemas: ["myapi"]`); internal helpers in another schema.
 - **Organize by feature/domain**, not by migration type. Define endpoints as **repeatable migrations** (`R__<action>_<entity>.sql`) so re-running is idempotent — or as plain `.sql` files under the source glob.
-- **Dev codegen:** enable the TypeScript client generator + `.http` export in the dev override file only; commit the generated client.
+- **Dev codegen:** enable the TypeScript client generator (`ClientCodeGen`; add its `ReactQuery` sub-section for TanStack Query v5 hooks) and/or the Dart client (`DartClientCodeGen`, for Flutter) + `.http` export in the dev override file only; commit the generated client.
 - **Two-layer caching:** a `Cache-Control` header for the browser + server-side `@cached`/`@cache_profile` for cross-client dedup; match the windows.
 - **Cache-key discipline:** include every param that changes the result (and `_user_id` for per-user data); omit `_user_id` for shared results so all users hit one entry. Add a `_cache_bust`/`_param_hash` param to force misses after writes.
 
 ## Gotchas
 
 - **`@cached` needs an explicit param list** — bare `@cached` keys on the endpoint only (a common silent bug).
+- **Custom parameters need the `=`** — plugin keys like `tsclient`, `dartclient_module`, `tsclient_hooks` are key-value custom parameters: `@dartclient = off` works; `@dartclient off` parses as prose and silently does nothing.
 - **Verb ≠ param location** — use `@request_param_type`, not the method, to reason about where params come from / are forwarded.
 - **HTTP-type directives** are safest **before the request line**.
 - **Passthrough proxy doesn't run the function** — declare proxy-response params (transform mode) if you need the body executed.

@@ -200,7 +200,18 @@ if (args.Any(a => string.Equals(a, "--validate", StringComparison.CurrentCulture
 
     // Test database connection
     string? connectionError = null;
-    var connStr = config.GetConfigStr("Default", config.Cfg.GetSection("ConnectionStrings"));
+    string? connStr = null;
+    try
+    {
+        // GetConfigStr resolves {!NAME} placeholders and throws when a required environment
+        // variable is not set. --validate must report that as a failed connection test and
+        // still print its results - never crash before producing output.
+        connStr = config.GetConfigStr("Default", config.Cfg.GetSection("ConnectionStrings"));
+    }
+    catch (Exception ex)
+    {
+        connectionError = ex.Message;
+    }
     if (connStr is not null)
     {
         try

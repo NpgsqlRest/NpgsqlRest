@@ -25,7 +25,7 @@ internal static partial class DefaultCommentParser
         {
             ["name"] = "http",
             ["aliases"] = ToJsonArray1(HttpKey),
-            ["syntax"] = "http [GET|POST|PUT|DELETE] [path]",
+            ["syntax"] = "http [GET|POST|PUT|DELETE|QUERY] [path]",
             ["description"] = "Enable endpoint and configure HTTP method and/or path. Required (for HTTP exposure) when CommentsMode is OnlyAnnotated (or its alias OnlyWithHttpTag)."
         });
 
@@ -321,7 +321,7 @@ internal static partial class DefaultCommentParser
         {
             ["name"] = "proxy",
             ["aliases"] = ToJsonArray(ProxyKey),
-            ["syntax"] = "proxy [GET|POST|PUT|DELETE|PATCH] [host_url]",
+            ["syntax"] = "proxy [GET|POST|PUT|DELETE|QUERY] [host_url]",
             ["description"] = "Configure endpoint as a reverse proxy."
         });
 
@@ -329,7 +329,7 @@ internal static partial class DefaultCommentParser
         {
             ["name"] = "proxy_out",
             ["aliases"] = ToJsonArray(ProxyOutKey),
-            ["syntax"] = "proxy_out [GET|POST|PUT|DELETE|PATCH] [host_url]",
+            ["syntax"] = "proxy_out [GET|POST|PUT|DELETE|QUERY] [host_url]",
             ["description"] = "Execute function first, then forward result body to upstream proxy service."
         });
 

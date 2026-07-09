@@ -1,12 +1,14 @@
 # NpgsqlRest — Full Annotation Reference
 
-Every comment annotation, generated from `npgsqlrest --annotations` (NpgsqlRest v3.19.0).
+Every comment annotation, generated from `npgsqlrest --annotations` (NpgsqlRest v3.20.0).
 Annotations apply to both endpoint sources (database routines via `comment on`, and `.sql` files via leading `--` comments). The `@` prefix is optional. Regenerate with `npgsqlrest --annotations`.
+
+A hand-maintained **Supplement** at the end of this file covers annotations the binary does NOT emit — SQL-file statement annotations, plugin annotations (`mcp`, `openapi`), custom-parameter families (`tsclient*`, `dartclient*`, `table_format`), and test-file annotations. **Keep the Supplement when regenerating the section above.**
 
 ## `http`
 
 - **Aliases:** http
-- **Syntax:** `http [GET|POST|PUT|DELETE] [path]`
+- **Syntax:** `http [GET|POST|PUT|DELETE|QUERY] [path]`
 
 Enable endpoint and configure HTTP method and/or path. Required (for HTTP exposure) when CommentsMode is OnlyAnnotated (or its alias OnlyWithHttpTag).
 
@@ -265,14 +267,14 @@ Add parameter validation using a named validation rule.
 ## `proxy`
 
 - **Aliases:** proxy, reverse_proxy
-- **Syntax:** `proxy [GET|POST|PUT|DELETE|PATCH] [host_url]`
+- **Syntax:** `proxy [GET|POST|PUT|DELETE|QUERY] [host_url]`
 
 Configure endpoint as a reverse proxy.
 
 ## `proxy_out`
 
 - **Aliases:** proxy_out, forward_proxy
-- **Syntax:** `proxy_out [GET|POST|PUT|DELETE|PATCH] [host_url]`
+- **Syntax:** `proxy_out [GET|POST|PUT|DELETE|QUERY] [host_url]`
 
 Execute function first, then forward result body to upstream proxy service.
 
@@ -352,3 +354,97 @@ Rename a result key in multi-command SQL file responses. N is the 1-based comman
 - **Syntax:** `define_param <name> [type]`
 
 Define a virtual parameter that exists for HTTP matching and claim mapping but is NOT bound to the PostgreSQL command. Useful for SQL file endpoints where you need parameters for comment placeholders or claim mapping without referencing them in SQL. Default type is text. SQL file source only.
+
+---
+
+# Supplement — annotations not emitted by `--annotations`
+
+Hand-maintained from the docs (<https://npgsqlrest.github.io/annotations/>). Everything above comes from the binary's annotation registry; the annotations below are equally real but live elsewhere (the SQL-file statement parser, plugins, custom-parameter conventions, the test runner), so `--annotations` does not list them.
+
+> **Maintenance note:** `single`, `void`, `skip`, `returns`, `mcp`, and `openapi` were added to the binary's annotation registry after v3.20.0. When regenerating this file from a newer release they will appear in the generated section above — remove their sections from this supplement then. The custom-parameter families and test-file annotations stay hand-maintained.
+
+## SQL-file statement annotations (SQL file source only)
+
+Positional: placed on a line before a statement (or inline after the previous `;`), they apply to the NEXT statement — same placement rule as `resultN`.
+
+### `single`
+
+- **Syntax:** `single`
+
+That statement returns a single object instead of an array.
+
+### `skip`
+
+- **Syntax:** `skip`
+
+Run the statement but exclude its result from the response.
+
+### `void`
+
+- **Aliases:** void, void_result
+- **Syntax:** `void`
+
+The whole endpoint returns **204 No Content**; all statements run for side effects only.
+
+### `returns`
+
+- **Syntax:** `returns <composite_type> | returns <scalar_type> | returns void`
+
+Skip the startup Describe for that statement and resolve result columns from the given type instead (composite type name, any built-in scalar type for a single-column result, or `void`). Needed when a statement references objects that don't exist at startup (e.g. a temp table created in a `DO` block).
+
+## Plugin annotations
+
+### `mcp` (3.17.0+)
+
+- **Syntax:** `mcp [description]` · `mcp_description <text>` (alias `mcp_desc`) · `mcp_name <name>`
+
+Expose the routine as an MCP tool. A bare `@mcp` with **no** HTTP tag = MCP-only (internal, no REST route). Description precedence: `@mcp_description` > inline `@mcp <text>` > comment prose fallback. No-op when the MCP plugin isn't loaded or `McpOptions.Enabled` is false.
+
+### `openapi` (3.15.0+)
+
+- **Syntax:** `openapi [hide|hidden|ignore]` · `openapi tag <name>` · `openapi tags <a>, <b>, ...`
+
+Per-routine OpenAPI document control: hide the endpoint from the spec (default action; the endpoint itself is unaffected), or replace its default schema-name tag with custom tags (casing preserved). No-op when the OpenAPI plugin isn't loaded.
+
+## Custom-parameter families (`@key = value` — the `=` is REQUIRED)
+
+### TypeScript client (`tsclient*`)
+
+| Key | Effect |
+|-----|--------|
+| `tsclient` | `off`/`false`/`disabled`/`0` — exclude endpoint from the generated TS client |
+| `tsclient_module` | group endpoints with the same module name into one file |
+| `tsclient_events` | enable/disable the SSE events parameter |
+| `tsclient_parse_url` / `tsclient_parse_request` | enable/disable those generated-function parameters |
+| `tsclient_status_code` | include status code in the return value |
+| `tsclient_export_url` | `true` — export a URL constant regardless of global `ExportUrls` |
+| `tsclient_hooks` (3.20.0+) | `off` — exclude from generated TanStack Query hooks only |
+| `tsclient_url_only` | `true` — only URL constant + request interface (no fetch function); implies `tsclient_export_url` |
+
+### Dart client (`dartclient*`)
+
+Same shape as `tsclient*`: `dartclient` (off), `dartclient_module` (falls back to `tsclient_module`), `dartclient_status_code`, `dartclient_events`, `dartclient_parse_url`, `dartclient_parse_request`, `dartclient_export_url`, `dartclient_url_only`.
+
+### Table format (`table_format`)
+
+| Key | Effect |
+|-----|--------|
+| `table_format` | `html` (HTML table) or `excel` (`.xlsx` download); unrecognized value → warning + JSON fallback |
+| `excel_file_name` | download filename (excel only; defaults to routine name) |
+| `excel_sheet` | worksheet name (excel only; defaults to routine name, max 31 chars) |
+
+Values accept `{param}` placeholders — e.g. `@table_format = {_format}` lets the caller pick the output format.
+
+## Test-file annotations (`*.test.sql`, test runner only — not endpoint annotations)
+
+**File header** (leading `--` comments before the first statement or HTTP block):
+
+- `-- @setup <StepName | inline step>` — run-once setup step
+- `-- @teardown <StepName | inline step>` — guaranteed teardown step
+- `-- @connection <Name>` — run the file on a specific named connection
+- `-- @tag a, b` — tags for `--testrunner:tag` / `--testrunner:excludetag` selection
+
+**Inside HTTP block comments** (`/* METHOD /full/path ... */`):
+
+- `# @claim name=value` — repeatable; any claim = authenticated principal, none = anonymous
+- `# @response <name>` — capture the response into a custom temp table instead of `_response`

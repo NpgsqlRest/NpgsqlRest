@@ -43,7 +43,7 @@ All model fields are nullable (`T?`).
 
 Per-endpoint overrides in routine comments:
 
-- `dartclient off` — exclude the endpoint from generation.
+- `dartclient = off` — exclude the endpoint from generation.
 - `dartclient_module=name` — group the endpoint into module file `name` (falls back to `tsclient_module`, so SQL-file directory grouping applies to both generators).
 - `dartclient_status_code=true` — wrap this endpoint's response in `ApiResult<T>`.
 - `dartclient_events=false` — generate a plain function for an SSE endpoint (no event-source parameters).
