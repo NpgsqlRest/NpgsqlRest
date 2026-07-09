@@ -42,6 +42,10 @@ public partial class Mcp
 
     public void Cleanup()
     {
+        // Function-calling schema documents + llms.txt are generated from the completed tool set
+        // regardless of Enabled - they do not require the /mcp endpoint to be served.
+        GenerateToolSchemas();
+
         if (!_options.Enabled)
         {
             return;

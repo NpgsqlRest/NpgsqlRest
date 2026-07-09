@@ -49,4 +49,38 @@ public class McpOptions
     /// (e.g. server-to-server) are allowed. Empty (default) = only same-origin browser requests pass.
     /// </summary>
     public string[] AllowedOrigins { get; set; } = [];
+
+    /// <summary>Generation of plain function-calling schema documents and llms.txt
+    /// from the MCP tool set. Requires at least one routine with the `mcp`
+    /// annotation; produces empty documents otherwise.</summary>
+    public McpToolSchemaOptions ToolSchemas { get; set; } = new();
+}
+
+public class McpToolSchemaOptions
+{
+    /// <summary>Enable generation. Independent of serving the /mcp endpoint:
+    /// tools are collected from `mcp` annotations either way.</summary>
+    public bool Enabled { get; set; } = false;
+
+    public bool FileOverwrite { get; set; } = true;
+
+    /// <summary>OpenAI Chat Completions `tools` array. Null skips.</summary>
+    public string? OpenAiFileName { get; set; } = "npgsqlrest_tools_openai.json";
+    public string? OpenAiUrlPath { get; set; } = "/tools/openai.json";
+
+    /// <summary>Anthropic Messages API `tools` array. Null skips.</summary>
+    public string? AnthropicFileName { get; set; } = "npgsqlrest_tools_anthropic.json";
+    public string? AnthropicUrlPath { get; set; } = "/tools/anthropic.json";
+
+    /// <summary>llms.txt markdown document. Null skips.</summary>
+    public string? LlmsTxtFileName { get; set; } = "llms.txt";
+    public string? LlmsTxtUrlPath { get; set; } = "/llms.txt";
+
+    /// <summary>
+    /// URL path of the OpenAPI document, rendered into the llms.txt "Machine-readable" section.
+    /// Not a configuration key: the client application wires this from OpenApiOptions.UrlPath when
+    /// the OpenAPI plugin is enabled (the MCP plugin has no reference to the OpenAPI plugin).
+    /// Null = the OpenAPI line is omitted.
+    /// </summary>
+    public string? OpenApiUrlPath { get; set; } = null;
 }

@@ -689,12 +689,18 @@ public class App
         }
 
         var mcpCfg = _config.NpgsqlRestCfg.GetSection("McpOptions");
-        if (mcpCfg is not null && _config.GetConfigBool("Enabled", mcpCfg) is true)
+        var mcpEnabled = mcpCfg is not null && _config.GetConfigBool("Enabled", mcpCfg) is true;
+        var toolSchemasCfg = mcpCfg?.GetSection("ToolSchemas");
+        var toolSchemasEnabled = toolSchemasCfg is not null && _config.GetConfigBool("Enabled", toolSchemasCfg) is true;
+        // The handler is registered when either the /mcp endpoint or the ToolSchemas documents are
+        // enabled - the schema documents are generated from `mcp` annotations independently of
+        // serving the /mcp endpoint.
+        if (mcpCfg is not null && (mcpEnabled || toolSchemasEnabled))
         {
             var mcpAuthCfg = mcpCfg.GetSection("Authorization");
             handlers.Add(new Mcp(new McpOptions
             {
-                Enabled = true,
+                Enabled = mcpEnabled,
                 UrlPath = _config.GetConfigStr("UrlPath", mcpCfg) ?? "/mcp",
                 ServerName = _config.GetConfigStr("ServerName", mcpCfg),
                 ServerVersion = _config.GetConfigStr("ServerVersion", mcpCfg),
@@ -711,12 +717,44 @@ public class App
                     ProtectedResourceMetadataPath = _config.GetConfigStr("ProtectedResourceMetadataPath", mcpAuthCfg),
                     FilterToolsByRole = _config.GetConfigBool("FilterToolsByRole", mcpAuthCfg),
                 },
+                ToolSchemas = new McpToolSchemaOptions
+                {
+                    Enabled = toolSchemasEnabled,
+                    FileOverwrite = _config.GetConfigBool("FileOverwrite", toolSchemasCfg!, true),
+                    // An explicitly null (or empty) configured value skips that document; an absent key keeps the default.
+                    OpenAiFileName = BindToolSchemaPath("OpenAiFileName", "npgsqlrest_tools_openai.json"),
+                    OpenAiUrlPath = BindToolSchemaPath("OpenAiUrlPath", "/tools/openai.json"),
+                    AnthropicFileName = BindToolSchemaPath("AnthropicFileName", "npgsqlrest_tools_anthropic.json"),
+                    AnthropicUrlPath = BindToolSchemaPath("AnthropicUrlPath", "/tools/anthropic.json"),
+                    LlmsTxtFileName = BindToolSchemaPath("LlmsTxtFileName", "llms.txt"),
+                    LlmsTxtUrlPath = BindToolSchemaPath("LlmsTxtUrlPath", "/llms.txt"),
+                    // Rendered into the llms.txt Machine-readable section; wired from the OpenAPI
+                    // plugin's configuration (the MCP plugin has no reference to it).
+                    OpenApiUrlPath = openApi?.UrlPath,
+                },
             }));
-            _builder.ClientLogger?.LogDebug("MCP server enabled. UrlPath={UrlPath}",
-                _config.GetConfigStr("UrlPath", mcpCfg) ?? "/mcp");
+            if (mcpEnabled)
+            {
+                _builder.ClientLogger?.LogDebug("MCP server enabled. UrlPath={UrlPath}",
+                    _config.GetConfigStr("UrlPath", mcpCfg) ?? "/mcp");
+            }
+            if (toolSchemasEnabled)
+            {
+                _builder.ClientLogger?.LogDebug("MCP ToolSchemas generation enabled.");
+            }
         }
 
         return handlers;
+
+        string? BindToolSchemaPath(string key, string defaultValue)
+        {
+            if (toolSchemasCfg?.GetSection(key).Exists() is not true)
+            {
+                return defaultValue;
+            }
+            var value = _config.GetConfigStr(key, toolSchemasCfg);
+            return string.IsNullOrEmpty(value) ? null : value;
+        }
     }
 
     public List<IEndpointSource> CreateEndpointSources(bool relaxSqlFileErrors = false)

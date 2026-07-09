@@ -2816,6 +2816,31 @@ public static partial class ConfigSchemaGenerator
             // When true, tools/list hides tools the calling principal could not run (their routine's authorize/role check would deny it). When false (default), every opted-in tool is listed (discoverable) and authorization is enforced on tools/call.
             //
             "FilterToolsByRole": false
+          },
+          //
+          // Generation of plain function-calling schema documents (OpenAI and Anthropic tools arrays) and llms.txt from the MCP tool set. Requires at least one routine with the `mcp` annotation; produces empty documents otherwise. Independent of Enabled above: tools are collected from `mcp` annotations and the documents are generated and served even when the /mcp endpoint is disabled. Set any FileName to null to skip writing that file; set any UrlPath to null to skip serving that document.
+          //
+          "ToolSchemas": {
+            "Enabled": false,
+            //
+            // Set to true to overwrite existing files.
+            //
+            "FileOverwrite": true,
+            //
+            // OpenAI Chat Completions `tools` array document.
+            //
+            "OpenAiFileName": "npgsqlrest_tools_openai.json",
+            "OpenAiUrlPath": "/tools/openai.json",
+            //
+            // Anthropic Messages API `tools` array document.
+            //
+            "AnthropicFileName": "npgsqlrest_tools_anthropic.json",
+            "AnthropicUrlPath": "/tools/anthropic.json",
+            //
+            // llms.txt markdown document (H1, summary from Instructions, endpoint list, machine-readable links).
+            //
+            "LlmsTxtFileName": "llms.txt",
+            "LlmsTxtUrlPath": "/llms.txt"
           }
         },
     

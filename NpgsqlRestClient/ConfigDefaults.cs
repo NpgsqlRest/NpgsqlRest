@@ -1002,6 +1002,17 @@ public static class ConfigDefaults
                 ["Audience"] = null,
                 ["ProtectedResourceMetadataPath"] = null,
                 ["FilterToolsByRole"] = false
+            },
+            ["ToolSchemas"] = new JsonObject
+            {
+                ["Enabled"] = false,
+                ["FileOverwrite"] = true,
+                ["OpenAiFileName"] = "npgsqlrest_tools_openai.json",
+                ["OpenAiUrlPath"] = "/tools/openai.json",
+                ["AnthropicFileName"] = "npgsqlrest_tools_anthropic.json",
+                ["AnthropicUrlPath"] = "/tools/anthropic.json",
+                ["LlmsTxtFileName"] = "llms.txt",
+                ["LlmsTxtUrlPath"] = "/llms.txt"
             }
         };
     }
