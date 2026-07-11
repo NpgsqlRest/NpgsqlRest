@@ -421,6 +421,54 @@ internal static partial class DefaultCommentParser
             ["description"] = "Define a virtual parameter that exists for HTTP matching and claim mapping but is NOT bound to the PostgreSQL command. Useful for SQL file endpoints where you need parameters for comment placeholders or claim mapping without referencing them in SQL. Default type is text. SQL file source only."
         });
 
+        annotations.Add((JsonNode)new JsonObject
+        {
+            ["name"] = "single",
+            ["aliases"] = ToJsonArray(SingleKey),
+            ["syntax"] = "single",
+            ["description"] = "Return only the first row as a JSON object instead of a JSON array. In multi-command SQL files the annotation is positional: it applies to the next statement (or, inline after the semicolon, to the statement on that line)."
+        });
+
+        annotations.Add((JsonNode)new JsonObject
+        {
+            ["name"] = "void",
+            ["aliases"] = ToJsonArray(VoidKey),
+            ["syntax"] = "void",
+            ["description"] = "Return no content (204 No Content); results are discarded. In multi-command SQL files all statements still execute for side effects."
+        });
+
+        annotations.Add((JsonNode)new JsonObject
+        {
+            ["name"] = "skip",
+            ["aliases"] = new JsonArray("skip", "skip_result", "no_result"),
+            ["syntax"] = "skip",
+            ["description"] = "Execute the statement but exclude its result from the response. Positional: applies to the next statement (or, inline after the semicolon, to the statement on that line). SQL file source only."
+        });
+
+        annotations.Add((JsonNode)new JsonObject
+        {
+            ["name"] = "returns",
+            ["aliases"] = new JsonArray("returns"),
+            ["syntax"] = "returns <composite_type> | returns <scalar_type> | returns void",
+            ["description"] = "Skip the startup Describe for a statement and resolve result columns from the given type instead: a composite type name (schema-qualified or not), a built-in scalar type (single-column result), or void. Needed when a statement references objects that do not exist at startup (e.g. a temp table created in a DO block). SQL file source only."
+        });
+
+        annotations.Add((JsonNode)new JsonObject
+        {
+            ["name"] = "mcp",
+            ["aliases"] = new JsonArray("mcp", "mcp_name", "mcp_description", "mcp_desc"),
+            ["syntax"] = "mcp [description] | mcp_name <name> | mcp_description <text>",
+            ["description"] = "Expose the routine as an MCP tool (Model Context Protocol). A bare mcp with no HTTP tag creates an MCP-only tool with no public HTTP route. Description precedence: mcp_description, then inline mcp text, then the comment prose fallback. No-op when the MCP plugin (NpgsqlRest.Mcp) is not loaded."
+        });
+
+        annotations.Add((JsonNode)new JsonObject
+        {
+            ["name"] = "openapi",
+            ["aliases"] = new JsonArray("openapi"),
+            ["syntax"] = "openapi [hide|hidden|ignore] | openapi tag <name> | openapi tags <a>, <b>, ...",
+            ["description"] = "Per-routine OpenAPI document control: hide the endpoint from the document (default action; the endpoint itself is unaffected), or replace its default schema-name tag with one or more custom tags (original casing preserved). No-op when the OpenAPI plugin (NpgsqlRest.OpenApi) is not loaded."
+        });
+
         return annotations;
     }
 }
