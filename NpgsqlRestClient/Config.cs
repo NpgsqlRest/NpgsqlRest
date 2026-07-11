@@ -6,6 +6,23 @@ namespace NpgsqlRestClient;
 
 public class Config
 {
+    /// <summary>The default env file location shipped in appsettings.json ("EnvFile": "./.env").</summary>
+    public const string DefaultEnvFile = "./.env";
+
+    /// <summary>Outcome of the Config:EnvFile load during <see cref="Build"/>, logged later by Program
+    /// once the logger exists (the file loads before logging is configured).</summary>
+    public enum EnvFileStatus
+    {
+        /// <summary>EnvFile is null/empty or env handling is disabled - nothing to report.</summary>
+        NotConfigured,
+        /// <summary>The file existed and was loaded (see the loaded/skipped counts).</summary>
+        Loaded,
+        /// <summary>The file does not exist and the path is the shipped default "./.env" - informational.</summary>
+        MissingDefault,
+        /// <summary>The file does not exist and the path was explicitly customized - a warning.</summary>
+        MissingCustom,
+    }
+
     public IConfigurationRoot Cfg { get; private set; } = null!;
     public IConfigurationSection NpgsqlRestCfg { get; private set; } = null!;
     public IConfigurationSection ConnectionSettingsCfg { get; private set; } = null!;
@@ -13,6 +30,10 @@ public class Config
     public string CurrentDir => Directory.GetCurrentDirectory();
     public Dictionary<string, string>? EnvDict { get; private set; } = null;
     public string? ConfigFilter { get; private set; }
+    public EnvFileStatus EnvFileState { get; private set; } = EnvFileStatus.NotConfigured;
+    public string? EnvFilePath { get; private set; }
+    public int EnvFileLoadedCount { get; private set; }
+    public int EnvFileSkippedCount { get; private set; }
     
     public void Build(string[] args, string[] skip)
     {
@@ -86,13 +107,25 @@ public class Config
         var parseEnv = cfgCfg != null && GetConfigBool("ParseEnvironmentVariables", cfgCfg, true) is true;
         if (useEnv || parseEnv)
         {
+            // Set to null (or empty) to disable env file loading entirely. The outcome is only recorded
+            // here - logging is deferred to Program, because the logger does not exist yet at this point.
             var envFilePath = cfgCfg?.GetSection("EnvFile")?.Value;
-            if (envFilePath is not null)
+            if (string.IsNullOrEmpty(envFilePath) is false)
             {
                 var fullPath = Path.GetFullPath(envFilePath, CurrentDir);
+                EnvFilePath = fullPath;
                 if (File.Exists(fullPath))
                 {
-                    LoadEnvFile(fullPath);
+                    (EnvFileLoadedCount, EnvFileSkippedCount) = LoadEnvFile(fullPath);
+                    EnvFileState = EnvFileStatus.Loaded;
+                }
+                else
+                {
+                    // The shipped default "./.env" is optional (informational when absent); an explicitly
+                    // customized path that does not exist is a likely misconfiguration (warning).
+                    EnvFileState = string.Equals(fullPath, Path.GetFullPath(DefaultEnvFile, CurrentDir), StringComparison.Ordinal)
+                        ? EnvFileStatus.MissingDefault
+                        : EnvFileStatus.MissingCustom;
                 }
             }
         }
@@ -1113,8 +1146,20 @@ public class Config
         return obj;
     }
 
-    private static void LoadEnvFile(string path)
+    /// <summary>
+    /// Loads KEY=VALUE lines from an env file into the process environment. A variable that already
+    /// exists in the real environment always wins - the file only fills in missing ones (the standard
+    /// dotenv convention; before 3.20.1 the file overwrote the environment). Within the file itself a
+    /// repeated key keeps its last value. Returns (variables set, variables skipped because the
+    /// environment already had them).
+    /// </summary>
+    private static (int Loaded, int Skipped) LoadEnvFile(string path)
     {
+        int loaded = 0;
+        // keys this load set itself - a duplicate key later in the file may overwrite them (last wins),
+        // while a variable that pre-existed in the environment is never touched
+        HashSet<string> setByFile = new(StringComparer.Ordinal);
+        HashSet<string> skippedByEnv = new(StringComparer.Ordinal);
         foreach (var line in File.ReadLines(path))
         {
             var trimmed = line.Trim();
@@ -1140,8 +1185,18 @@ public class Config
                 value = value[1..^1];
             }
 
+            if (setByFile.Contains(key) is false && Environment.GetEnvironmentVariable(key) is not null)
+            {
+                skippedByEnv.Add(key);
+                continue;
+            }
             Environment.SetEnvironmentVariable(key, value);
+            if (setByFile.Add(key))
+            {
+                loaded++;
+            }
         }
+        return (loaded, skippedByEnv.Count);
     }
 
     private (List<(string fileName, bool optional)> configFiles, string[] commanLineArgs) BuildFromArgs(string[] args)

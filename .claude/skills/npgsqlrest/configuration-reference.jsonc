@@ -53,9 +53,13 @@
     // Path to a .env file containing environment variables.
     // When AddEnvironmentVariables or ParseEnvironmentVariables is true and this file exists,
     // variables from this file will be loaded and made available for configuration parsing.
+    // Variables already present in the process environment always win - the file only fills in missing ones.
+    // The default "./.env" (relative to the working directory) is optional: when the file does not exist it is
+    // skipped with an information message. A custom path that does not exist logs a warning.
+    // Set to null to disable env file loading entirely.
     // Format: KEY=VALUE (one per line)
     //
-    "EnvFile": null,
+    "EnvFile": "./.env",
     //
     // Validate configuration keys against known defaults at startup.
     // "Ignore" - no validation

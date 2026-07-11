@@ -315,6 +315,35 @@ if (!endpointsMode)
         System.Reflection.Assembly.GetAssembly(typeof(Program))?.GetName()?.Version?.ToString() ?? "-");
 }
 
+// Report the Config:EnvFile outcome recorded during config build (the logger did not exist yet there).
+switch (config.EnvFileState)
+{
+    case Config.EnvFileStatus.Loaded:
+        if (config.EnvFileSkippedCount > 0)
+        {
+            builder.ClientLogger?.LogInformation(
+                "Loaded {Count} environment variable(s) from env file {Path} ({Skipped} already set in the environment and kept)",
+                config.EnvFileLoadedCount, config.EnvFilePath, config.EnvFileSkippedCount);
+        }
+        else
+        {
+            builder.ClientLogger?.LogInformation(
+                "Loaded {Count} environment variable(s) from env file {Path}",
+                config.EnvFileLoadedCount, config.EnvFilePath);
+        }
+        break;
+    case Config.EnvFileStatus.MissingDefault:
+        builder.ClientLogger?.LogInformation(
+            "Env file {Path} not found, skipping (set Config:EnvFile to null to disable env file loading)",
+            config.EnvFilePath);
+        break;
+    case Config.EnvFileStatus.MissingCustom:
+        builder.ClientLogger?.LogWarning(
+            "Configured env file {Path} does not exist (set Config:EnvFile to null to disable env file loading)",
+            config.EnvFilePath);
+        break;
+}
+
 // Validate configuration keys against known defaults
 var (validationMode, configWarnings) = config.ValidateConfigKeys();
 if (configWarnings.Count > 0)
