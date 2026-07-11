@@ -1636,9 +1636,11 @@ public partial class NpgsqlRestEndpoint(
                 // Case-insensitive so `{name}` placeholders match parameter names regardless of casing,
                 // consistent with the resolved-parameter SQL expression resolver (Formatter.ParameterizeSqlExpression).
                 var envVars = Options.SubstitutionEnvironmentVariables;
-                Dictionary<string, string> replacements = new(command.Parameters.Count * 2 + (envVars?.Count ?? 0), StringComparer.OrdinalIgnoreCase);
+                Dictionary<string, string> replacements = new(command.Parameters.Count * 4 + (envVars?.Count ?? 0), StringComparer.OrdinalIgnoreCase);
                 // Allowlisted env vars first (base); parameter values added below overwrite them on a name
                 // collision, so a routine parameter always wins over an env var of the same name.
+                // Entries under a "!NAME" key mark names that resolved to a real value - that is what the
+                // {!NAME}/{!NAME:fallback} forms key off in Formatter.TryResolveToken.
                 if (envVars is not null)
                 {
                     foreach (var (name, value) in envVars)
@@ -1648,16 +1650,32 @@ public partial class NpgsqlRestEndpoint(
                 }
                 for (var i = 0; i < command.Parameters.Count; i++)
                 {
-                    var value = command.Parameters[i].Value == DBNull.Value ? "" : command.Parameters[i].Value?.ToString() ?? "";
+                    var isNull = command.Parameters[i].Value is null || command.Parameters[i].Value == DBNull.Value;
+                    var value = isNull ? "" : command.Parameters[i].Value?.ToString() ?? "";
                     var param = (NpgsqlRestParameter)command.Parameters[i];
+                    // A parameter wins over an env var in BOTH forms: a non-null value registers its own
+                    // "!name" key; a null value removes any "!name" an env var of the same name left behind,
+                    // so {!name:fallback} then yields the fallback instead of the env value.
+                    void AddParam(string key)
+                    {
+                        replacements[key] = value;
+                        if (isNull is false)
+                        {
+                            replacements[string.Concat("!", key)] = value;
+                        }
+                        else if (envVars is not null)
+                        {
+                            replacements.Remove(string.Concat("!", key));
+                        }
+                    }
                     if (!string.IsNullOrEmpty(param.ActualName))
                     {
-                        replacements[param.ActualName] = value;
+                        AddParam(param.ActualName);
                     }
-                    replacements[param.ConvertedName] = value;
+                    AddParam(param.ConvertedName);
                     if (param.TypeDescriptor.CustomTypeName is not null)
                     {
-                        replacements[param.TypeDescriptor.CustomTypeName] = value;
+                        AddParam(param.TypeDescriptor.CustomTypeName);
                     }
                 }
                 lookup = replacements.GetAlternateLookup<ReadOnlySpan<char>>();

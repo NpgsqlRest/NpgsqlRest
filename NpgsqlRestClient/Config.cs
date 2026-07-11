@@ -197,6 +197,12 @@ public class Config
     /// "{Timestamp}" is preserved, and typed readers like <see cref="GetConfigBool"/> fall back to their
     /// default rather than crashing).</item>
     /// <item><c>{!NAME}</c> - required: replaced with the variable's value, or throws at startup when it is not set.</item>
+    /// <item><c>{!NAME:fallback}</c> - required with a fallback: replaced with the variable's value when set,
+    /// otherwise with the literal <c>fallback</c> text - never throws. The fallback starts after the first
+    /// <c>:</c> and runs to the closing brace (so it may itself contain <c>:</c>, but not <c>}</c>).
+    /// Only the <c>{!</c> form supports a fallback - a plain <c>{NAME:...}</c> is never treated as an env
+    /// placeholder, which keeps brace-colon syntax like Serilog format specifiers <c>{Timestamp:HH:mm:ss}</c>,
+    /// inline CSS <c>{border:1px}</c>, or TypeScript object types <c>{status: number}</c> intact.</item>
     /// </list>
     /// Returns the input unchanged when environment-variable parsing is disabled (<see cref="EnvDict"/> is null,
     /// i.e. <c>Config:ParseEnvironmentVariables</c> is false).
@@ -236,9 +242,27 @@ public class Config
             var token = value.Substring(i + 1, close - i - 1);
             var required = token.StartsWith('!');
             var name = required ? token[1..] : token;
+            string? fallback = null;
+            if (required)
+            {
+                // {!NAME:fallback} - only the bang form takes a fallback; a plain {NAME:...} stays literal
+                // so brace-colon syntax (Serilog {Timestamp:HH:mm:ss}, CSS {border:1px}) is never consumed.
+                var colon = name.IndexOf(':');
+                if (colon >= 0)
+                {
+                    fallback = name[(colon + 1)..];
+                    name = name[..colon];
+                }
+            }
             if (EnvDict.TryGetValue(name, out var envValue))
             {
                 sb.Append(envValue);
+            }
+            else if (fallback is not null)
+            {
+                // Fallback resolves in the non-throwing (--config/--validate) mode too: it IS the
+                // value the running application will use.
+                sb.Append(fallback);
             }
             else if (required && throwOnMissingRequired)
             {

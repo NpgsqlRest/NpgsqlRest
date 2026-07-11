@@ -22,11 +22,11 @@ public class DefaultResponseParser(
         {
             return [];
         }
-        var result = new Dictionary<string, string>(envVars.Count);
+        var result = new Dictionary<string, string>(envVars.Count * 2);
         foreach (var (name, def) in envVars)
         {
             // present env var wins → configured default → empty string.
-            var raw = Environment.GetEnvironmentVariable(name) ?? def ?? string.Empty;
+            var raw = Environment.GetEnvironmentVariable(name) ?? def;
             // JSON-escape exactly like the claim path below (PgConverters.SerializeString). The
             // substituted value is a complete JSON literal (a quoted, escaped string) so templates
             // use a bare {NAME} token with no surrounding quotes and an accidental quote/backslash in
@@ -36,7 +36,14 @@ public class DefaultResponseParser(
             // SECURITY: this is an explicit allowlist - only names listed in AvailableEnvVars are ever
             // read. NEVER widen this to the whole environment (Environment.GetEnvironmentVariables) -
             // that would leak secrets (DB passwords, keys) to every client.
-            result[name] = PgConverters.SerializeString(raw);
+            var serialized = PgConverters.SerializeString(raw ?? string.Empty);
+            result[name] = serialized;
+            // "!NAME" key ⇔ the name resolved to a real value (env set, or a configured default given).
+            // The {!NAME}/{!NAME:fallback} template forms key off this in Formatter.TryResolveToken.
+            if (raw is not null)
+            {
+                result[string.Concat("!", name)] = serialized;
+            }
         }
         return result;
     }
@@ -78,6 +85,21 @@ public class DefaultResponseParser(
             }
         }
 
+        // Every entry so far is a real claim value - register the "!name" alias each so the
+        // {!name}/{!name:fallback} forms resolve to the value (a claim value always beats an inline
+        // fallback). Names containing ':' (URI-style claim types) are skipped: the fallback grammar
+        // splits on ':' so the bang form can never address them anyway.
+        if (replacements.Count > 0)
+        {
+            foreach (var (name, value) in replacements.ToArray())
+            {
+                if (name.IndexOf(':') < 0)
+                {
+                    replacements[string.Concat("!", name)] = value;
+                }
+            }
+        }
+
         if (replacements.ContainsKey(options.DefaultUserIdClaimType) is false)
         {
             replacements.Add(options.DefaultUserIdClaimType, Consts.Null);
@@ -92,20 +114,33 @@ public class DefaultResponseParser(
             if (antiforgeryFieldNameTag is not null)
             {
                 replacements.Add(antiforgeryFieldNameTag, tokenSet.FormFieldName);
+                if (antiforgeryFieldNameTag.IndexOf(':') < 0)
+                {
+                    replacements[string.Concat("!", antiforgeryFieldNameTag)] = tokenSet.FormFieldName;
+                }
             }
             if (antiforgeryTokenTag is not null && tokenSet.RequestToken is not null)
             {
                 replacements.Add(antiforgeryTokenTag, tokenSet.RequestToken);
+                if (antiforgeryTokenTag.IndexOf(':') < 0)
+                {
+                    replacements[string.Concat("!", antiforgeryTokenTag)] = tokenSet.RequestToken;
+                }
             }
         }
         // Listed-but-absent claims fall back to their configured default, or Consts.Null (the
         // historical behaviour) when the array form gives no explicit default. Claim values added
-        // above from context.User.Claims are already present and win via TryAdd.
+        // above from context.User.Claims are already present and win via TryAdd - same for their
+        // "!name" aliases, registered only when a real default exists.
         if (availableClaims is not null && availableClaims.Count > 0)
         {
             foreach (var (name, def) in availableClaims)
             {
                 replacements.TryAdd(name, def ?? Consts.Null);
+                if (def is not null && name.IndexOf(':') < 0)
+                {
+                    replacements.TryAdd(string.Concat("!", name), def);
+                }
             }
         }
         // Feed app-wide env-var values into the same dictionary. Per-request claim values added above

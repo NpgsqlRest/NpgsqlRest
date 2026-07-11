@@ -6,6 +6,53 @@ public static class Formatter
 {
     // SIMD-accelerated search for brace characters
     private static readonly SearchValues<char> BraceChars = SearchValues.Create("{}");
+
+    /// <summary>
+    /// Resolves one <c>{token}</c> against the lookup, including the strict forms:
+    /// <c>{name}</c> - direct hit; <c>{!name}</c> - the <c>"!name"</c> entry (registered only for names
+    /// that actually resolved to a value) or, failing that, the plain <c>"name"</c> entry;
+    /// <c>{!name:fallback}</c> - the <c>"!name"</c> entry, or the inline fallback text when the name is
+    /// known but carries no resolved value (env var unset with no configured default, or a null parameter).
+    /// Returns false when the token is unknown in every form - the caller emits it verbatim, so arbitrary
+    /// brace content (JSON, CSS, JS, Serilog format specifiers) is never consumed.
+    /// </summary>
+    private static bool TryResolveToken(
+        ReadOnlySpan<char> token,
+        Dictionary<string, string>.AlternateLookup<ReadOnlySpan<char>> lookup,
+        out ReadOnlySpan<char> value)
+    {
+        if (lookup.TryGetValue(token, out var direct))
+        {
+            value = direct;
+            return true;
+        }
+        if (token.Length > 1 && token[0] == '!')
+        {
+            var colon = token.IndexOf(':');
+            if (colon > 1) // {!name:fallback} - the name part must be non-empty
+            {
+                if (lookup.TryGetValue(token[..colon], out var resolved))
+                {
+                    value = resolved;
+                    return true;
+                }
+                if (lookup.TryGetValue(token[1..colon], out _))
+                {
+                    // Known name without a resolved value - use the inline fallback.
+                    value = token[(colon + 1)..];
+                    return true;
+                }
+            }
+            else if (colon < 0 && lookup.TryGetValue(token[1..], out var plain))
+            {
+                // {!name} with no "!name" entry aliases the plain entry.
+                value = plain;
+                return true;
+            }
+        }
+        value = default;
+        return false;
+    }
     public static ReadOnlySpan<char> FormatString(ReadOnlySpan<char> input, Dictionary<string, string> replacements)
     {
         if (replacements is null || replacements.Count == 0)
@@ -82,7 +129,7 @@ public static class Formatter
                 if (inside)
                 {
                     inside = false;
-                    if (lookup.TryGetValue(input[(startIndex + 1)..braceIndex], out var value))
+                    if (TryResolveToken(input[(startIndex + 1)..braceIndex], lookup, out var value))
                     {
                         resultLength += value.Length;
                     }
@@ -160,9 +207,9 @@ public static class Formatter
                 if (inside)
                 {
                     inside = false;
-                    if (lookup.TryGetValue(input[(startIndex + 1)..braceIndex], out var value))
+                    if (TryResolveToken(input[(startIndex + 1)..braceIndex], lookup, out var value))
                     {
-                        value.AsSpan().CopyTo(result.Slice(resultPos));
+                        value.CopyTo(result.Slice(resultPos));
                         resultPos += value.Length;
                     }
                     else

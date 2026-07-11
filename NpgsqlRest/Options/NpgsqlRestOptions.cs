@@ -366,6 +366,10 @@ public class NpgsqlRestOptions
     /// (The standalone client populates this from the `NpgsqlRest:AvailableEnvVars` config, reading the
     /// process environment once at startup.) Note: a value used in a response header is sent to the client,
     /// so reserve this for non-secret values (e.g. server/environment name) when used in responses.
+    /// Strict forms: an entry under a `"!NAME"` key marks NAME as resolved-to-a-real-value and is what the
+    /// `{!NAME}` and `{!NAME:fallback}` placeholder forms resolve to; when only the plain `"NAME"` key exists,
+    /// `{!NAME:fallback}` substitutes the inline fallback text instead. When populating this dictionary
+    /// directly, register both keys for every variable that has a value (the client does this automatically).
     /// </summary>
     public Dictionary<string, string>? SubstitutionEnvironmentVariables { get; set; } = null;
 

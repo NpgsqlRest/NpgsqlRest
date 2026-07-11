@@ -48,8 +48,10 @@ public static partial class ConfigSchemaGenerator
         //
         "AddEnvironmentVariables": false,
         //
-        // When set, configuration values will be parsed for environment variables in the format {ENV_VAR_NAME}
-        // and replaced with the value of the environment variable when available.
+        // When set, configuration values will be parsed for environment variable placeholders:
+        // {ENV_VAR_NAME} - optional: replaced when the variable is set, left untouched otherwise.
+        // {!ENV_VAR_NAME} - required: replaced when the variable is set, startup fails otherwise.
+        // {!ENV_VAR_NAME:fallback} - replaced when the variable is set, otherwise the fallback value is used.
         //
         "ParseEnvironmentVariables": true,
         //
@@ -74,7 +76,7 @@ public static partial class ConfigSchemaGenerator
       // For connection string definition see https://www.npgsql.org/doc/connection-string-parameters.html
       //
       "ConnectionStrings": {
-        "Default": "Host={!PGHOST};Port=5432;Database={!PGDATABASE};Username={!PGUSER};Password={!PGPASSWORD}"
+        "Default": "Host={!PGHOST:localhost};Port={!PGPORT:5432};Database={!PGDATABASE};Username={!PGUSER:postgres};Password={!PGPASSWORD:postgres}"
       },
     
       //

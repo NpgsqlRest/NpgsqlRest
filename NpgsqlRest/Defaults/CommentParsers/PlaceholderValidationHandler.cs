@@ -35,6 +35,14 @@ internal static partial class DefaultCommentParser
             var token = span[(open + 1)..close];
             pos = close + 1;
 
+            // Strict forms {!name} / {!name:fallback}: validate just the name part - the fallback
+            // text after the first ':' is arbitrary literal content.
+            if (token.Length > 1 && token[0] == '!')
+            {
+                var colon = token.IndexOf(':');
+                token = colon < 0 ? token[1..] : token[1..colon];
+            }
+
             // Only flag tokens that look like a parameter name; skip literal/JSON braces.
             if (IsPlaceholderIdentifier(token) && !IsKnownParameter(routine, token))
             {

@@ -1972,12 +1972,19 @@ public class Builder
         {
             return null;
         }
-        var result = new Dictionary<string, string>(names.Count, StringComparer.OrdinalIgnoreCase);
+        var result = new Dictionary<string, string>(names.Count * 2, StringComparer.OrdinalIgnoreCase);
         foreach (var (name, def) in names)
         {
             // present env var wins → configured default → empty string. Raw value (not JSON-escaped):
             // these are injected into headers / URLs / bodies, not into HTML/JS content.
-            result[name] = Environment.GetEnvironmentVariable(name) ?? def ?? string.Empty;
+            var resolved = Environment.GetEnvironmentVariable(name) ?? def;
+            result[name] = resolved ?? string.Empty;
+            // "!NAME" key ⇔ the name resolved to a real value. Formatter.TryResolveToken keys the
+            // {!NAME}/{!NAME:fallback} forms off this: present → value; absent-but-name-known → fallback.
+            if (resolved is not null)
+            {
+                result[string.Concat("!", name)] = resolved;
+            }
         }
         return result;
     }

@@ -166,6 +166,81 @@ public class ResponseParserEnvVarTests
         Parse(arrayForm, "plan: {plan};", Anonymous()).Should().Be("plan: null;");
     }
 
+    // ---- strict forms {!NAME} / {!NAME:fallback} ----
+
+    [Fact]
+    public void StrictForms_ResolvedVar_ValueWinsOverInlineFallback()
+    {
+        const string name = "NPGSQLREST_TEST_STRICT_SET";
+        Environment.SetEnvironmentVariable(name, "demo");
+        try
+        {
+            var parser = Parser(envVars: new() { [name] = null });
+            Parse(parser, $"a: {{!{name}}}; b: {{!{name}:fb}};", Anonymous())
+                .Should().Be("a: \"demo\"; b: \"demo\";");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(name, null);
+        }
+    }
+
+    [Fact]
+    public void StrictForms_UnresolvedVar_InlineFallbackUsed()
+    {
+        const string name = "NPGSQLREST_TEST_STRICT_UNSET";
+        Environment.SetEnvironmentVariable(name, null); // ensure absent, no configured default
+        var parser = Parser(envVars: new() { [name] = null });
+        // {!NAME} behaves like {NAME} (empty JSON string); the inline fallback is raw literal text
+        // (the template author quotes it as needed), used only when the var is allowlisted-but-unresolved
+        Parse(parser, $"a: {{!{name}}}; b: {{!{name}:\"fb\"}};", Anonymous())
+            .Should().Be("a: \"\"; b: \"fb\";");
+    }
+
+    [Fact]
+    public void StrictForms_ConfiguredDefault_WinsOverInlineFallback()
+    {
+        const string name = "NPGSQLREST_TEST_STRICT_DEFAULT";
+        Environment.SetEnvironmentVariable(name, null); // ensure absent
+        var parser = Parser(envVars: new() { [name] = "false" });
+        Parse(parser, $"v: {{!{name}:true}};", Anonymous()).Should().Be("v: \"false\";");
+    }
+
+    [Fact]
+    public void StrictForms_UnlistedName_LeftVerbatim()
+    {
+        // the allowlist is a security boundary: the strict forms never widen it
+        var parser = Parser(envVars: new() { ["NPGSQLREST_TEST_STRICT_OTHER"] = "x" });
+        Parse(parser, "v: {!NOT_LISTED_ANYWHERE:fb};", Anonymous())
+            .Should().Be("v: {!NOT_LISTED_ANYWHERE:fb};");
+    }
+
+    [Fact]
+    public void StrictForms_PresentClaim_BeatsInlineFallback()
+    {
+        var parser = Parser();
+        Parse(parser, "plan: {!plan:none};", WithClaims(("plan", "pro")))
+            .Should().Be("plan: \"pro\";");
+    }
+
+    [Fact]
+    public void StrictForms_AbsentClaim_NoDefault_InlineFallbackUsed()
+    {
+        // listed claim without a default -> plain token gives the historical null, the strict
+        // form gives the inline fallback
+        var parser = Parser(claims: new() { ["plan"] = null });
+        Parse(parser, "a: {plan}; b: {!plan:\"free\"};", Anonymous())
+            .Should().Be("a: null; b: \"free\";");
+    }
+
+    [Fact]
+    public void StrictForms_CssContent_NeverConsumed()
+    {
+        var parser = Parser(envVars: new() { ["NPGSQLREST_TEST_STRICT_CSS"] = "x" });
+        const string css = "td{border:1px solid #d4d4d4;padding:4px 8px} h1{color:red !important}";
+        Parse(parser, css, Anonymous()).Should().Be(css);
+    }
+
     [Fact]
     public void EnvVarResolvedAtConstruction_NotReReadPerRequest()
     {

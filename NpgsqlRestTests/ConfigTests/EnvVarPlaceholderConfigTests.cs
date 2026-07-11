@@ -10,6 +10,9 @@ namespace NpgsqlRestTests.ConfigTests;
 /// <item><c>{NAME}</c> - optional: resolves to the variable's value when set; left untouched when not set
 /// (so non-env brace syntax like Serilog templates survives, and typed bool/int reads fall back to default).</item>
 /// <item><c>{!NAME}</c> - required: resolves to the variable's value, or throws at startup when it is not set.</item>
+/// <item><c>{!NAME:fallback}</c> - resolves to the variable's value when set, otherwise to the literal
+/// fallback text - never throws. Only the bang form takes a fallback: a plain <c>{NAME:...}</c> stays
+/// literal so brace-colon syntax (Serilog format specifiers, CSS, TS types) is never consumed.</item>
 /// </list>
 /// Previously a missing <c>{NAME}</c> crashed typed reads
 /// (e.g. "Invalid boolean value '{GITHUB_AUTH_ENABLED}' for configuration key 'Enabled'").
@@ -98,6 +101,86 @@ public class EnvVarPlaceholderConfigTests
         var config = CreateConfig(new() { { "REQ", "r" } }); // OPT not set
         // required resolves; unset optional is left untouched
         config.ResolveEnv("{!REQ}/{OPT}").Should().Be("r/{OPT}");
+    }
+
+    // ---- {!NAME:fallback} ----
+
+    [Fact]
+    public void ResolveEnv_Fallback_Present_UsesValue()
+    {
+        var config = CreateConfig(new() { { "FB_DB_HOST", "db.internal" } });
+        config.ResolveEnv("host={!FB_DB_HOST:localhost}").Should().Be("host=db.internal");
+    }
+
+    [Fact]
+    public void ResolveEnv_Fallback_Missing_UsesFallback()
+    {
+        var config = CreateConfig([]);
+        config.ResolveEnv("host={!FB_DB_HOST:localhost}").Should().Be("host=localhost");
+    }
+
+    [Fact]
+    public void ResolveEnv_Fallback_Missing_NonThrowingMode_AlsoUsesFallback()
+    {
+        // The fallback IS the value the running application will use, so the serialization/inspection
+        // paths (--config output, config validation) resolve it too instead of keeping the literal.
+        var config = CreateConfig([]);
+        config.ResolveEnv("host={!FB_DB_HOST:localhost}", throwOnMissingRequired: false)
+            .Should().Be("host=localhost");
+    }
+
+    [Fact]
+    public void ResolveEnv_Fallback_Empty_ResolvesToEmptyString()
+    {
+        var config = CreateConfig([]);
+        config.ResolveEnv("opts=[{!FB_OPTS:}]").Should().Be("opts=[]");
+    }
+
+    [Fact]
+    public void ResolveEnv_Fallback_MayContainColons()
+    {
+        // the fallback starts after the FIRST ':' and runs to the closing brace
+        var config = CreateConfig([]);
+        config.ResolveEnv("url={!FB_URL:http://localhost:5000}").Should().Be("url=http://localhost:5000");
+    }
+
+    [Fact]
+    public void ResolveEnv_PlainColonToken_NeverTreatedAsFallback()
+    {
+        // brace-colon content without the bang stays literal - Serilog templates, CSS, TS types
+        var config = CreateConfig([]);
+        config.ResolveEnv("[{Timestamp:HH:mm:ss.fff} {Level:u3}] {Message:lj}")
+            .Should().Be("[{Timestamp:HH:mm:ss.fff} {Level:u3}] {Message:lj}");
+        config.ResolveEnv("td{border:1px solid #d4d4d4;padding:4px 8px}")
+            .Should().Be("td{border:1px solid #d4d4d4;padding:4px 8px}");
+        config.ResolveEnv("{status: number; title: string} | undefined")
+            .Should().Be("{status: number; title: string} | undefined");
+    }
+
+    [Fact]
+    public void ResolveEnv_DefaultConnectionString_AllFallbacks_NoEnvironment()
+    {
+        // the shipped default connection string shape: fallbacks fill everything except the
+        // required {!PGDATABASE}, which still fails fast naming the variable
+        var config = CreateConfig([]);
+        config.ResolveEnv("Host={!FB_PGHOST:localhost};Port={!FB_PGPORT:5432};Username={!FB_PGUSER:postgres};Password={!FB_PGPASSWORD:postgres}")
+            .Should().Be("Host=localhost;Port=5432;Username=postgres;Password=postgres");
+        var act = () => config.ResolveEnv("Database={!FB_PGDATABASE}");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*FB_PGDATABASE*not set*");
+    }
+
+    [Fact]
+    public void GetConfigBool_Fallback_ParsesFallbackValue()
+    {
+        var config = CreateConfig([]);
+        config.GetConfigBool("Enabled", Section("Enabled", "{!FB_FLAG:true}")).Should().BeTrue();
+    }
+
+    [Fact]
+    public void GetConfigInt_Fallback_ParsesFallbackValue()
+    {
+        var config = CreateConfig([]);
+        config.GetConfigInt("Port", Section("Port", "{!FB_PORT:5432}")).Should().Be(5432);
     }
 
     // ---- GetConfigBool ----

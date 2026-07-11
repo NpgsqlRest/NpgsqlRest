@@ -145,7 +145,7 @@ Accept: text/html';
 - Directives `@timeout` / `@retry_delay` / `@cache` may appear before the request line OR after the headers (both work since 3.18.0; before is safest).
 - Response fields (names configurable in `HttpClientOptions`): `body`, `status_code`, `content_type`, `headers` (json), `success`, `error_message`.
 - `@cache <interval>` (3.18.0+): caches the outbound response — **GET only, 2xx only**, stampede-coalesced; globally toggled by `HttpClientOptions.CacheEnabled`.
-- Placeholders `{name}` in URL/headers/body substitute from params, resolved-param expressions, and allowlisted env vars. Env vars are opt-in via `NpgsqlRest:AvailableEnvVars` (array of names, or object of `name → default`; resolved once at startup, matched case-insensitively; a same-named routine parameter wins) — ideal for API keys: `Authorization: Bearer {WEATHER_API_KEY}`.
+- Placeholders `{name}` in URL/headers/body substitute from params, resolved-param expressions, and allowlisted env vars. Env vars are opt-in via `NpgsqlRest:AvailableEnvVars` (array of names, or object of `name → default`; resolved once at startup, matched case-insensitively; a same-named routine parameter wins) — ideal for API keys: `Authorization: Bearer {WEATHER_API_KEY}`. Strict forms (3.20.1+): `{!name}` resolves like `{name}` for known names; `{!name:fallback}` substitutes the inline fallback when the listed var is unset with no configured default, or when a parameter value is null (`X-Plan: {!_plan:free}`); unlisted names stay literal in every form.
 - A relative URL (`GET /api/other`) is a **self-call** to another endpoint with no HTTP round-trip — give a function several HTTP-type params and they fire concurrently.
 - Requires `HttpClientOptions.Enabled = true`.
 
@@ -193,7 +193,7 @@ comment on function auth_login(text, text) is 'HTTP POST
 
 ```jsonc
 {
-  "ConnectionStrings": { "Default": "Host={!PGHOST};Port=5432;Database={!PGDATABASE};Username={!PGUSER};Password={!PGPASSWORD}" },
+  "ConnectionStrings": { "Default": "Host={!PGHOST:localhost};Port={!PGPORT:5432};Database={!PGDATABASE};Username={!PGUSER:postgres};Password={!PGPASSWORD:postgres}" },
   "Urls": "http://0.0.0.0:8080",
   "Auth": { "CookieAuth": true, "CookieName": "app", "CookieValid": "365 days" /* + Jwt/Bearer/Passkey/External */ },
   "NpgsqlRest": {
@@ -214,7 +214,7 @@ comment on function auth_login(text, text) is 'HTTP POST
 ```
 
 - **Two sources, independently enabled:** database routines (always available via the catalog, filtered by `IncludeSchemas`/`SchemaSimilarTo`/`NameSimilarTo`/`CommentsMode`) and `NpgsqlRest:SqlFileSource` (off by default; needs `Enabled` + `FilePattern`).
-- `{ENV_VAR}` placeholders are substituted from environment variables at startup (left untouched when unset). `{!ENV_VAR}` (3.20.0+) marks the variable **required** — startup fails naming the missing variable. The default connection string ships as `{!PGHOST}`/`{!PGDATABASE}`/`{!PGUSER}`/`{!PGPASSWORD}`, so a fresh install tells you exactly which env vars to set.
+- `{ENV_VAR}` placeholders are substituted from environment variables at startup (left untouched when unset). `{!ENV_VAR}` (3.20.0+) marks the variable **required** — startup fails naming the missing variable. `{!ENV_VAR:fallback}` (3.20.1+) uses the literal fallback text when unset — never fails (fallback runs from the first `:` to the closing `}`, so it may contain `:`; only the `{!` form takes a fallback, a plain `{NAME:...}` stays literal). The default connection string ships with fallbacks matching PostgreSQL defaults (`{!PGHOST:localhost}`, `{!PGPORT:5432}`, `{!PGUSER:postgres}`, `{!PGPASSWORD:postgres}`) and only `{!PGDATABASE}` required — setting just `PGDATABASE` connects to a stock local PostgreSQL.
 - `--config <file>` loads a specific file; multiple files overlay (later wins): `npgsqlrest ./appsettings.json ./appsettings.development.json`.
 - Dev override file commonly enables `Debug` logging, client codegen (`ClientCodeGen` for TypeScript — optional React Query hooks via its `ReactQuery` sub-section; `DartClientCodeGen` for Dart/Flutter), and `.http` export.
 

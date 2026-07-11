@@ -40,10 +40,16 @@ public class PlaceholderSubstitutionTestFixture : IDisposable
             RequiresAuthorization = false,
             // Allowlisted env vars available to {name} substitution. Case-insensitive (as the client builds it).
             // `region` deliberately collides with the phsub_collision routine's `_region` parameter to test precedence.
+            // Mirrors the client convention: a "!NAME" key marks a name that resolved to a real value
+            // (drives the {!NAME}/{!NAME:fallback} forms); UNSET_VAR is allowlisted-but-unresolved
+            // (plain key only, empty value), so its inline fallback applies.
             SubstitutionEnvironmentVariables = new(StringComparer.OrdinalIgnoreCase)
             {
                 ["SERVER_NAME"] = "pod-7",
+                ["!SERVER_NAME"] = "pod-7",
                 ["region"] = "env-region",
+                ["!region"] = "env-region",
+                ["UNSET_VAR"] = "",
             },
         });
 
