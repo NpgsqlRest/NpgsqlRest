@@ -388,7 +388,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     - name: Setup Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v6
       with:
         node-version: '24'
     - name: Sync npm package version from version.txt
