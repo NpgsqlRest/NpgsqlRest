@@ -8,15 +8,37 @@ public class Out
 
     public void Logo()
     {
+        try
+        {
+            // The block glyphs need UTF-8 - matters on legacy Windows consoles with an OEM codepage.
+            Console.OutputEncoding = Encoding.UTF8;
+        }
+        catch
+        {
+            // some hosts do not allow changing the encoding - the logo may degrade, nothing else breaks
+        }
+        Console.WriteLine();
         Console.ForegroundColor = ConsoleColor.Cyan;
-        Console.WriteLine(@"
-    _   __                   __  ____            __
-   / | / /___  ____ ________/ / / __ \___  _____/ /_
-  /  |/ / __ \/ __ `/ ___/ __ \/ /_/ / _ \/ ___/ __/
- / /|  / /_/ / /_/ (__  ) /_/ / _, _/  __(__  ) /_
-/_/ |_/ .___/\__, /____/\__, /_/ |_|\___/____/\__/
-     /_/    /____/        /_/
-");
+        Console.WriteLine("""
+███╗   ██╗██████╗  ██████╗ ███████╗ ██████╗ ██╗
+████╗  ██║██╔══██╗██╔════╝ ██╔════╝██╔═══██╗██║
+██╔██╗ ██║██████╔╝██║  ███╗███████╗██║   ██║██║
+██║╚██╗██║██╔═══╝ ██║   ██║╚════██║██║▄▄ ██║██║
+██║ ╚████║██║     ╚██████╔╝███████║╚██████╔╝███████╗
+╚═╝  ╚═══╝╚═╝      ╚═════╝ ╚══════╝ ╚══▀▀═╝ ╚══════╝
+""");
+        Console.ForegroundColor = ConsoleColor.DarkYellow;
+        Console.WriteLine("""
+                   ██████╗ ███████╗███████╗████████╗
+                   ██╔══██╗██╔════╝██╔════╝╚══██╔══╝
+                   ██████╔╝█████╗  ███████╗   ██║
+                   ██╔══██╗██╔══╝  ╚════██║   ██║
+                   ██║  ██║███████╗███████║   ██║
+                   ╚═╝  ╚═╝╚══════╝╚══════╝   ╚═╝
+""");
+        Console.ForegroundColor = ConsoleColor.DarkGray;
+        Console.WriteLine("       PostgreSQL -> REST, no code, just SQL");
+        Console.WriteLine();
         Console.ResetColor();
     }
 
