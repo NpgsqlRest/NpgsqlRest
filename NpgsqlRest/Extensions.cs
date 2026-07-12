@@ -12,13 +12,18 @@ public static class Ext
         IServiceProvider? serviceProvider,
         ref NpgsqlConnection? connection,
         ref bool shouldDispose,
-        string? sourceName = null)
+        string? sourceName = null,
+        string? connectionName = null)
     {
+        // A source-level connection name (per-connection routine discovery) overrides the global
+        // MetadataQueryConnectionName; both resolve through the same named-connection chain.
+        var metadataConnectionName = connectionName ?? options.MetadataQueryConnectionName;
+
         // Try named connection first (check DataSources for multi-host, then ConnectionStrings)
-        if (options.MetadataQueryConnectionName is not null)
+        if (metadataConnectionName is not null)
         {
             // First check if there's a data source for this connection name (for multi-host support)
-            if (options.DataSources?.TryGetValue(options.MetadataQueryConnectionName, out var namedDataSource) is true)
+            if (options.DataSources?.TryGetValue(metadataConnectionName, out var namedDataSource) is true)
             {
                 connection = namedDataSource.OpenConnection();
                 shouldDispose = true;
@@ -28,14 +33,14 @@ public static class Ext
                     SetSearchPath(connection, options.MetadataQuerySchema);
                     Logger?.LogTrace("{source}: Using named data source '{name}' with schema '{schema}' for metadata queries.",
                         sourceName ?? "Unknown",
-                        options.MetadataQueryConnectionName,
+                        metadataConnectionName,
                         options.MetadataQuerySchema);
                 }
                 else
                 {
                     Logger?.LogTrace("{source}: Using named data source '{name}' for metadata queries.",
                         sourceName ?? "Unknown",
-                        options.MetadataQueryConnectionName);
+                        metadataConnectionName);
                 }
                 return;
             }
@@ -45,9 +50,9 @@ public static class Ext
             {
                 throw new ArgumentException("ConnectionStrings or DataSources must be provided when using named connections.");
             }
-            if (!options.ConnectionStrings.TryGetValue(options.MetadataQueryConnectionName, out var connectionString))
+            if (!options.ConnectionStrings.TryGetValue(metadataConnectionName, out var connectionString))
             {
-                throw new ArgumentException($"Connection '{options.MetadataQueryConnectionName}' not found in DataSources or ConnectionStrings.");
+                throw new ArgumentException($"Connection '{metadataConnectionName}' not found in DataSources or ConnectionStrings.");
             }
 
             if (options.MetadataQuerySchema is not null)
@@ -67,7 +72,7 @@ public static class Ext
                 shouldDispose = true;
                 Logger?.LogTrace("{source}: Using named connection string '{name}' with schema '{schema}' for metadata queries.",
                     sourceName ?? "Unknown",
-                    options.MetadataQueryConnectionName,
+                    metadataConnectionName,
                     options.MetadataQuerySchema);
             }
             else
@@ -76,7 +81,7 @@ public static class Ext
                 shouldDispose = true;
                 Logger?.LogTrace("{source}: Using named connection string '{name}' for metadata queries.",
                     sourceName ?? "Unknown",
-                    options.MetadataQueryConnectionName);
+                    metadataConnectionName);
             }
 
             connection.OpenRetry(Options.ConnectionRetryOptions);

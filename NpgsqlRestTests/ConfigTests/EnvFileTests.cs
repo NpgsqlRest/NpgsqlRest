@@ -3,10 +3,10 @@ using NpgsqlRestClient;
 namespace NpgsqlRestTests.ConfigTests;
 
 /// <summary>
-/// The <c>Config:EnvFile</c> loader (default <c>"./.env"</c> since 3.20.1):
+/// The <c>Config:EnvFile</c> loader (default <c>"./.env"</c> since 3.21.0):
 /// <list type="bullet">
 /// <item>Variables already present in the process environment always win - the file only fills in
-/// missing ones (dotenv convention; before 3.20.1 the file overwrote the environment).</item>
+/// missing ones (dotenv convention; before 3.21.0 the file overwrote the environment).</item>
 /// <item>Within the file a repeated key keeps its last value.</item>
 /// <item>The load outcome is recorded on <see cref="Config.EnvFileState"/> (with path and
 /// loaded/skipped counts) and logged later by Program: the missing shipped default is informational,

@@ -161,8 +161,11 @@ public static partial class Log
     [LoggerMessage(Level = LogLevel.Warning, Message = "Cache profile '{profile}' rule for parameter '{paramName}' was dropped: {reason}.")]
     public static partial void CacheWhenRuleDropped(this ILogger logger, string profile, string paramName, string reason);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "{description} tried to set CONNECTION NAME to {conn} but that connection could not be found in the ConnectionStrings dictionary.")]
+    [LoggerMessage(Level = LogLevel.Warning, Message = "{description} tried to set CONNECTION NAME to {conn} but that connection could not be found in the DataSources or ConnectionStrings dictionaries.")]
     public static partial void CommentInvalidConnectionName(this ILogger logger, string description, string conn);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Endpoint {method} {path} discovered from source {newSource} (connection: {newConnection}) conflicts with an endpoint from source {existingSource} (connection: {existingConnection}); {consequence}. Use schema/name filters or a path annotation to disambiguate.")]
+    public static partial void CrossSourceEndpointCollision(this ILogger logger, string method, string path, string newSource, string newConnection, string existingSource, string existingConnection, string consequence);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "{description} tried to set CONNECTION NAME but the connection name was not initialized. Did you forget to set the connection name?")]
     public static partial void CommentEmptyConnectionName(this ILogger logger, string description);

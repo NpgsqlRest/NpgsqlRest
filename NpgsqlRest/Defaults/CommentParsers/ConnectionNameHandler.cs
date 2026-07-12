@@ -21,16 +21,27 @@ internal static partial class DefaultCommentParser
         var name = string.Join(Consts.Space, wordsLower[1..]);
         if (string.IsNullOrEmpty(name) is false)
         {
-            if (Options.ConnectionStrings is null || Options.ConnectionStrings.ContainsKey(name) is false)
-            {
-                Logger?.CommentInvalidConnectionName(description, name);
-            }
-            endpoint.ConnectionName = name;
+            SetValidatedConnectionName(endpoint, name, description);
             CommentLogger?.CommentConnectionName(description, name);
         }
         else
         {
             Logger?.CommentEmptyConnectionName(description);
         }
+    }
+
+    /// <summary>
+    /// Shared by both annotation parse forms ("connection name" and "connection=name"): warns when the
+    /// name is not registered in either DataSources (multi-host) or ConnectionStrings, then assigns it
+    /// anyway (warn-only, back-compat - an unknown name still fails the request with a 500 at run time).
+    /// </summary>
+    private static void SetValidatedConnectionName(RoutineEndpoint endpoint, string name, string description)
+    {
+        if (Options.DataSources?.ContainsKey(name) is not true &&
+            Options.ConnectionStrings?.ContainsKey(name) is not true)
+        {
+            Logger?.CommentInvalidConnectionName(description, name);
+        }
+        endpoint.ConnectionName = name;
     }
 }

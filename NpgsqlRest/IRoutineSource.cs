@@ -20,6 +20,15 @@ public interface IEndpointSource
     bool NestedJsonForCompositeTypes { get; set; }
 
     /// <summary>
+    /// Named connection (a DataSources/ConnectionStrings key) this source discovers against.
+    /// Endpoints yielded by this source default their ConnectionName to this value - they execute on
+    /// the connection they were discovered from (an explicit `connection` comment annotation wins).
+    /// Null (the default) resolves through MetadataQueryConnectionName and the default connection.
+    /// Default interface member so existing source implementations keep compiling unchanged.
+    /// </summary>
+    string? ConnectionName => null;
+
+    /// <summary>
     /// Yield all routines with the formatters from the current source.
     /// </summary>
     /// <param name="serviceProvider">Service provider</param>

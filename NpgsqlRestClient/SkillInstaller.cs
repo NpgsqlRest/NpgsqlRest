@@ -23,7 +23,7 @@ public static class SkillInstaller
         Environment.GetEnvironmentVariable("NPGSQLREST_SKILL_BASE_URL")?.TrimEnd('/')
         ?? "https://raw.githubusercontent.com/NpgsqlRest/NpgsqlRest";
 
-    /// <summary>The running version as the release branch name, e.g. "3.20.1".</summary>
+    /// <summary>The running version as the release branch name, e.g. "3.21.0".</summary>
     public static string VersionBranch
     {
         get

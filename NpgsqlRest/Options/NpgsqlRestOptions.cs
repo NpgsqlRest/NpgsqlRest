@@ -86,6 +86,15 @@ public class NpgsqlRestOptions
     public string? MetadataQuerySchema { get; set; } = "public";
 
     /// <summary>
+    /// Opt-in startup verification for endpoints routed (by the `connection` comment annotation) to a
+    /// different connection than the one their source discovered them on. Those endpoints assume the
+    /// target database has identical routine metadata; this checks routine/relation existence there
+    /// with one batched query per distinct target connection. `Warn` logs each missing routine,
+    /// `Fail` stops startup. Existence/signature only - result shapes are not compared. Default: None.
+    /// </summary>
+    public EndpointConnectionVerification EndpointConnectionVerification { get; set; } = EndpointConnectionVerification.None;
+
+    /// <summary>
     /// Retry options for the connection opening.
     /// </summary>
     public ConnectionRetryOptions ConnectionRetryOptions { get; set; } = new();

@@ -1149,7 +1149,7 @@ public class Config
     /// <summary>
     /// Loads KEY=VALUE lines from an env file into the process environment. A variable that already
     /// exists in the real environment always wins - the file only fills in missing ones (the standard
-    /// dotenv convention; before 3.20.1 the file overwrote the environment). Within the file itself a
+    /// dotenv convention; before 3.21.0 the file overwrote the environment). Within the file itself a
     /// repeated key keeps its last value. Returns (variables set, variables skipped because the
     /// environment already had them).
     /// </summary>

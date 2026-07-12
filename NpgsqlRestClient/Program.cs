@@ -397,10 +397,15 @@ if (connectionString is null)
 {
     return;
 }
-var connectionStrings = 
-    config.GetConfigBool("UseMultipleConnections", config.NpgsqlRestCfg, false) ? 
-        builder.BuildConnectionStringDict() : 
-        null;
+// UseMultipleConnections, or implicitly when per-connection routine discovery is configured
+// (RoutineOptions:ReadMetadataFromConnections) - configuring that IS opting into multiple connections.
+var (buildConnectionDict, implicitMultipleConnections) = builder.ShouldBuildConnectionDict();
+if (implicitMultipleConnections)
+{
+    builder.ClientLogger?.LogInformation(
+        "Multiple connections enabled implicitly by NpgsqlRest:RoutineOptions:ReadMetadataFromConnections (UseMultipleConnections is false)");
+}
+var connectionStrings = buildConnectionDict ? builder.BuildConnectionStringDict() : null;
 
 var dataProtectionName = builder.BuildDataProtection(cmdRetryStrategy);
 builder.BuildAuthentication();
@@ -490,16 +495,22 @@ appInstance.ConfigureStaticFiles(app, authenticationOptions);
 // Build data source (handles both single-host and multi-host connections)
 await using var dataSource = builder.BuildMainDataSource(connectionString);
 
-// Build additional multi-host data sources for named connections
-var dataSources = builder.BuildDataSources(connectionString);
+// Build additional data sources for named connections. The main data source appears in the
+// dictionary under its own name (and the "_default" alias when multi-host) as the SAME instance,
+// so cleanup must dispose each distinct instance once and never the main one (owned by the
+// enclosing `await using`).
+var dataSources = builder.BuildDataSources(connectionString, dataSource);
 if (dataSources.Count > 0)
 {
     // Register disposal of additional data sources
     app.Lifetime.ApplicationStopping.Register(() =>
     {
-        foreach (var ds in dataSources.Values)
+        foreach (var ds in dataSources.Values.Distinct())
         {
-            ds.Dispose();
+            if (ReferenceEquals(ds, dataSource) is false)
+            {
+                ds.Dispose();
+            }
         }
     });
 }
@@ -518,6 +529,7 @@ NpgsqlRestOptions options = new()
     CommandTimeout = Parser.ParsePostgresInterval(config.GetConfigStr("CommandTimeout", config.NpgsqlRestCfg)),
     MetadataQueryConnectionName = config.GetConfigStr("MetadataQueryConnectionName", config.ConnectionSettingsCfg),
     MetadataQuerySchema = config.GetConfigStr("MetadataQuerySchema", config.ConnectionSettingsCfg) ?? "public",
+    EndpointConnectionVerification = config.GetConfigEnum<EndpointConnectionVerification?>("VerifyRoutedEndpoints", config.NpgsqlRestCfg.GetSection("RoutineOptions")) ?? EndpointConnectionVerification.None,
     SchemaSimilarTo = config.GetConfigStr("SchemaSimilarTo", config.NpgsqlRestCfg),
     SchemaNotSimilarTo = config.GetConfigStr("SchemaNotSimilarTo", config.NpgsqlRestCfg),
     IncludeSchemas = config.GetConfigEnumerable("IncludeSchemas", config.NpgsqlRestCfg)?.ToArray(),
@@ -814,13 +826,28 @@ if (WatchSupervisor.IsChild)
     var routineSources = options.EndpointSources.OfType<NpgsqlRest.RoutineSource>().ToArray();
     if (dbPollInterval > TimeSpan.Zero && routineSources.Length > 0)
     {
-        var dbPoller = new WatchDbPoller(connectionString!, dbPollInterval, onChange: () =>
+        void OnDbChange()
         {
             builder.ClientLogger?.LogInformation("watch: database change detected — restarting");
             Environment.ExitCode = WatchSupervisor.DbChangeExitCode;
             app.Lifetime.StopApplication();
-        }, builder.ClientLogger, routineSources);
-        _ = dbPoller.RunAsync(app.Lifetime.ApplicationStopping);
+        }
+        // Poll each source on the connection it actually discovers on (source connection ->
+        // MetadataQueryConnectionName -> the primary connection): one poller per distinct target.
+        string ResolvePollConnectionString(NpgsqlRest.RoutineSource source)
+        {
+            var name = source.ConnectionName ?? options.MetadataQueryConnectionName;
+            if (name is not null && connectionStrings?.TryGetValue(name, out var cs) is true)
+            {
+                return cs;
+            }
+            return connectionString!;
+        }
+        foreach (var group in routineSources.GroupBy(ResolvePollConnectionString, StringComparer.Ordinal))
+        {
+            var dbPoller = new WatchDbPoller(group.Key, dbPollInterval, OnDbChange, builder.ClientLogger, [.. group]);
+            _ = dbPoller.RunAsync(app.Lifetime.ApplicationStopping);
+        }
     }
 }
 

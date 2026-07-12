@@ -91,6 +91,41 @@ public static partial class Database
     }
 
     /// <summary>
+    /// Creates a REAL second database named "{Dbname}_{suffix}" with its own schema script and returns
+    /// its connection string. Unlike <see cref="CreateAdditional"/> (same database, different
+    /// ApplicationName), this is for multi-connection tests that need genuinely DIFFERENT metadata per
+    /// connection (per-connection routine discovery, endpoint connection verification).
+    /// </summary>
+    public static string CreateSecondDatabase(string suffix, string script)
+    {
+        var dbName = $"{Dbname}_{suffix}";
+        using (NpgsqlConnection connection = new(InitialConnectionString))
+        {
+            connection.Open();
+            using (var drop = connection.CreateCommand())
+            {
+                drop.CommandText = $"drop database if exists {dbName} with (force)";
+                drop.ExecuteNonQuery();
+            }
+            using var create = connection.CreateCommand();
+            create.CommandText = $"create database {dbName}";
+            create.ExecuteNonQuery();
+        }
+        var builder = new NpgsqlConnectionStringBuilder(InitialConnectionString)
+        {
+            Database = dbName
+        };
+        using (NpgsqlConnection connection = new(builder.ConnectionString))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = script;
+            command.ExecuteNonQuery();
+        }
+        return builder.ConnectionString;
+    }
+
+    /// <summary>
     /// Creates a connection string for the test_user with minimal privileges (PoLP testing).
     /// </summary>
     public static string CreatePolpConnection()

@@ -2020,8 +2020,11 @@ public static partial class ConfigSchemaGenerator
         //
         "ConnectionName": null,
         //
-        // Allow using multiple connections from the ConnectionStrings section. When set to true, the connection name can be set for individual Routines.
+        // Allow using multiple connections from the ConnectionStrings section. When set to true, the connection name can be set for individual Routines with the "connection" comment annotation.
         // Some routines might use the primary database connection string, while others might want to use a read-only connection string from the replica servers.
+        // This assumes the target databases have identical routine metadata (replicas, shards) - metadata is still read from a single connection.
+        // For genuinely different databases use RoutineOptions.ReadMetadataFromConnections instead, which enables multiple connections implicitly.
+        // The main connection is routable by its own name too.
         //
         "UseMultipleConnections": false,
         //
@@ -2255,7 +2258,27 @@ public static partial class ConfigSchemaGenerator
           // an array of composites ["(1,a)","(2,b)"] becomes [{"id":1,"name":"a"},{"id":2,"name":"b"}].
           // Default is true.
           //
-          "ResolveNestedCompositeTypes": true
+          "ResolveNestedCompositeTypes": true,
+          //
+          // Per-connection routine discovery: list of connection names from the ConnectionStrings section to read functions/procedures metadata from.
+          // NULL or empty (default): metadata is read from a single connection (ConnectionName or MetadataQueryConnectionName) - the current behavior.
+          // Non-empty: routine metadata is read from EACH listed connection, and every discovered endpoint EXECUTES on the connection
+          // it was discovered from (an explicit "connection" comment annotation still wins). The list replaces the default -
+          // include the main connection's name to also serve its routines. All other RoutineOptions settings and global filters are shared.
+          // Setting this implicitly enables multiple connections (no UseMultipleConnections flag required).
+          // Use this when different databases host different routines (for example OLTP + OLAP); for identical databases (replicas, shards)
+          // use UseMultipleConnections with the "connection" annotation instead.
+          //
+          "ReadMetadataFromConnections": null,
+          //
+          // Startup verification for routines routed by the "connection" annotation to a different connection than they were discovered on:
+          // "None" - no verification (default).
+          // "Warn" - one batched existence check per target connection at startup; every missing routine is logged as a warning.
+          // "Fail" - same check, but any missing routine stops the startup.
+          // This checks CONTENT (does the routine exist over there?) - connectivity of every connection string is a separate
+          // check, ConnectionSettings.TestConnectionStrings (opens and closes the connection).
+          //
+          "VerifyRoutedEndpoints": "None"
         },
     
         //

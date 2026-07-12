@@ -250,7 +250,7 @@ public class Program
             // apt_* (owned by AuthSchemeTestFixture). All reference fixture-specific configuration that
             // is not present here (cache profiles, rate-limiter policies named "rlpt-..."/"rlpm-...",
             // auth profiles), so picking them up in the default fixture would fail at startup.
-            NameNotSimilarTo = "(cp[_x]|rlpt[_]|rlpm[_]|ast[_]|cab[_]|cabx[_]|sset[_])%",
+            NameNotSimilarTo = "(cp[_x]|rlpt[_]|rlpm[_]|ast[_]|cab[_]|cabx[_]|sset[_]|pcd)%",
 
             // TsClient configuration for testing - uses tsclient_module annotations for per-function files
             EndpointCreateHandlers = [

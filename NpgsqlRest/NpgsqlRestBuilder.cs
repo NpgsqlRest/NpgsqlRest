@@ -174,6 +174,14 @@ public static class NpgsqlRestBuilder
         // Pre-size dictionaries with reasonable capacity to reduce allocations
         Dictionary<string, NpgsqlRestMetadataEntry> lookup = new(capacity: 128);
         Dictionary<string, NpgsqlRestMetadataEntry> overloads = new(capacity: 16);
+        // Which source produced each key - a collision within one source is the PostgreSQL function
+        // overload mechanism (silent, intentional); a collision ACROSS sources is shadowing and warns.
+        Dictionary<string, IEndpointSource> keyOwner = new(capacity: 128);
+
+        // Endpoint/source pairs for opt-in connection verification (collected per registration so
+        // overloads and cache-invalidation endpoints associate with their true source).
+        List<(RoutineEndpoint Endpoint, IEndpointSource Source)>? verifyPairs =
+            Options.EndpointConnectionVerification == EndpointConnectionVerification.None ? null : new(capacity: 32);
 
         // Create default upload handlers from upload handler options
         Options.UploadOptions.UploadHandlers ??= Options.UploadOptions.CreateUploadHandlers();
@@ -226,6 +234,11 @@ public static class NpgsqlRestBuilder
                     endpoint.NestedJsonForCompositeTypes = true;
                 }
 
+                // Endpoints execute on the connection they were discovered from: a source bound to a
+                // named connection is the execution default. An explicit `connection` comment
+                // annotation (or the EndpointCreated callback) has already set the property and wins.
+                endpoint.ConnectionName ??= source.ConnectionName;
+
                 if (defaultStrategy is not null && endpoint.RetryStrategy is null)
                 {
                     endpoint.RetryStrategy = defaultStrategy;
@@ -267,9 +280,24 @@ public static class NpgsqlRestBuilder
                 var value = new NpgsqlRestMetadataEntry(endpoint, formatter, key);
                 if (lookup.TryGetValue(key, out var existing))
                 {
+                    if (keyOwner.TryGetValue(key, out var owner) && ReferenceEquals(owner, source) is false)
+                    {
+                        Logger?.CrossSourceEndpointCollision(
+                            method,
+                            endpoint.Path,
+                            source.GetType().Name,
+                            source.ConnectionName ?? "default",
+                            owner.GetType().Name,
+                            owner.ConnectionName ?? "default",
+                            existing.Endpoint.Routine.ParamCount == routine.ParamCount
+                                ? "the later registration is used"
+                                : "requests resolve by parameter count");
+                    }
                     overloads[string.Concat(key, existing.Endpoint.Routine.ParamCount)] = existing;
                 }
                 lookup[key] = value;
+                keyOwner[key] = source;
+                verifyPairs?.Add((endpoint, source));
 
                 // Create cache invalidation endpoint if configured and this endpoint is cached
                 if (endpoint.Cached is true && Options.CacheOptions.InvalidateCacheSuffix is not null)
@@ -306,6 +334,8 @@ public static class NpgsqlRestBuilder
                     var invalidateKey = string.Concat(method, invalidatePath);
                     var invalidateValue = new NpgsqlRestMetadataEntry(invalidateEndpoint, formatter, invalidateKey);
                     lookup[invalidateKey] = invalidateValue;
+                    keyOwner[invalidateKey] = source;
+                    verifyPairs?.Add((invalidateEndpoint, source));
 
                     // Notify endpoint create handlers about the invalidation endpoint
                     if (builder is not null)
@@ -662,7 +692,10 @@ public static class NpgsqlRestBuilder
                 handler.Cleanup();
             }
         }
-        
+
+        // Runs last so callback/handler mutations of endpoint ConnectionName are what gets verified.
+        ConnectionVerifier.Verify(verifyPairs);
+
         return (entries, overloads.ToFrozenDictionary(), hasStreamingEvents);
     }
 }

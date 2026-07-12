@@ -1884,9 +1884,33 @@ public class Builder
         return (result, retryOpts);
     }
 
+    /// <summary>
+    /// True when the named-connections dictionary (and data sources) should be built: either
+    /// NpgsqlRest:UseMultipleConnections is set, or per-connection routine discovery
+    /// (NpgsqlRest:RoutineOptions:ReadMetadataFromConnections) is configured - configuring the latter
+    /// IS opting into multiple connections, no separate flag required. The second tuple member is true
+    /// when multiple connections were enabled implicitly by ReadMetadataFromConnections alone.
+    /// </summary>
+    public (bool Build, bool Implicit) ShouldBuildConnectionDict()
+    {
+        var explicitFlag = _config.GetConfigBool("UseMultipleConnections", _config.NpgsqlRestCfg, false);
+        var readMetadataFrom = _config.GetConfigEnumerable("ReadMetadataFromConnections", _config.NpgsqlRestCfg.GetSection("RoutineOptions"));
+        var hasPerConnectionDiscovery = readMetadataFrom?.Any() is true;
+        return (explicitFlag || hasPerConnectionDiscovery, explicitFlag is false && hasPerConnectionDiscovery);
+    }
+
     public IDictionary<string, string> BuildConnectionStringDict()
     {
-        var result = new Dictionary<string, string>();
+        // Case-insensitive like IConfiguration keys (and like the main-name comparison below), so a
+        // lowercased annotation name still finds a mixed-case ConnectionStrings entry.
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        // The main connection is routable by its own name too (@connection <main-name>,
+        // MetadataQueryConnectionName = <main-name>). It was already built and validated by
+        // BuildConnectionString - insert it directly instead of re-running BuildConnection.
+        if (ConnectionName is not null && ConnectionString is not null)
+        {
+            result.Add(ConnectionName, ConnectionString);
+        }
         foreach (var section in _config.Cfg.GetSection("ConnectionStrings").GetChildren())
         {
             if (section?.Key is null)
@@ -1904,7 +1928,7 @@ public class Builder
                 result.Add(section?.Key!, conn!);
             }
         }
-        return result.ToFrozenDictionary();
+        return result.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -3021,24 +3045,32 @@ public class Builder
     }
 
     /// <summary>
-    /// Builds data sources dictionary for multi-host connections.
+    /// Builds data sources dictionary for multi-host connections. The main data source instance
+    /// (built by <see cref="BuildMainDataSource"/>, owned by the caller) is registered under the main
+    /// connection's real name - and under the legacy "_default" alias when multi-host - so a request
+    /// routed to the main name shares the exact same pool as unrouted requests. Entries that reference
+    /// the main instance must NOT be disposed by the caller's cleanup (the main is owned elsewhere).
     /// </summary>
-    public Dictionary<string, NpgsqlDataSource> BuildDataSources(string mainConnectionString)
+    public Dictionary<string, NpgsqlDataSource> BuildDataSources(string mainConnectionString, NpgsqlDataSource mainDataSource)
     {
-        var result = new Dictionary<string, NpgsqlDataSource>();
+        // Case-insensitive like IConfiguration keys, so a lowercased annotation name still matches.
+        var result = new Dictionary<string, NpgsqlDataSource>(StringComparer.OrdinalIgnoreCase);
 
-        // Build main data source if it's multi-host
+        // Legacy alias for the multi-host main - same instance, no second pool.
         if (IsMultiHostConnectionString(mainConnectionString))
         {
-            var target = GetTargetSessionAttribute(ConnectionName);
-            var multiHost = new NpgsqlDataSourceBuilder(mainConnectionString).BuildMultiHost();
-            result["_default"] = multiHost.WithTargetSession(target);
-            ClientLogger?.LogDebug("Built multi-host data source for main connection with target session '{TargetSession}'", target);
+            result["_default"] = mainDataSource;
         }
 
         // Build additional connection data sources
-        if (_config.GetConfigBool("UseMultipleConnections", _config.NpgsqlRestCfg, false))
+        if (ShouldBuildConnectionDict().Build)
         {
+            // Main connection routable by its own name, through the same pool. DataSources is checked
+            // before ConnectionStrings at request time, so this wins over the raw string entry.
+            if (ConnectionName is not null)
+            {
+                result[ConnectionName] = mainDataSource;
+            }
             foreach (var section in _config.Cfg.GetSection("ConnectionStrings").GetChildren())
             {
                 if (section?.Key is null || string.Equals(ConnectionName, section.Key, StringComparison.OrdinalIgnoreCase))

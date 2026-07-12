@@ -36,6 +36,13 @@ public class RoutineSource(
     public bool NestedJsonForCompositeTypes { get; set; } = nestedJsonForCompositeTypes;
 
     /// <summary>
+    /// Named connection (a DataSources/ConnectionStrings key) this source discovers against - and the
+    /// execution default for every endpoint it yields (an explicit `connection` annotation wins).
+    /// Null (the default) resolves through MetadataQueryConnectionName and the default connection.
+    /// </summary>
+    public string? ConnectionName { get; set; }
+
+    /// <summary>
     /// When true, nested composite types and arrays of composite types within composite fields
     /// are serialized as JSON objects/arrays instead of PostgreSQL tuple strings.
     /// For example, a nested composite "(1,x)" becomes {"id":1,"name":"x"}.
@@ -89,7 +96,7 @@ public class RoutineSource(
         NpgsqlConnection? connection = null;
         try
         {
-            Options.CreateAndOpenSourceConnection(serviceProvider, ref connection, ref shouldDispose, nameof(RoutineSource));
+            Options.CreateAndOpenSourceConnection(serviceProvider, ref connection, ref shouldDispose, nameof(RoutineSource), ConnectionName);
 
             if (connection is null)
             {

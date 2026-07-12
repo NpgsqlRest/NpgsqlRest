@@ -768,29 +768,63 @@ public class App
         }
         else
         {
-            var source = new RoutineSource();
-            if (routineOptionsCfg.Exists() is true)
+            RoutineSource CreateRoutineSource()
             {
-                var customTypeParameterSeparator = _config.GetConfigStr("CustomTypeParameterSeparator", routineOptionsCfg);
-                if (customTypeParameterSeparator is not null)
+                var source = new RoutineSource();
+                if (routineOptionsCfg.Exists() is true)
                 {
-                    source.CustomTypeParameterSeparator = customTypeParameterSeparator;
+                    var customTypeParameterSeparator = _config.GetConfigStr("CustomTypeParameterSeparator", routineOptionsCfg);
+                    if (customTypeParameterSeparator is not null)
+                    {
+                        source.CustomTypeParameterSeparator = customTypeParameterSeparator;
+                    }
+                    var includeLanguages = _config.GetConfigEnumerable("IncludeLanguages", routineOptionsCfg);
+                    if (includeLanguages is not null)
+                    {
+                        source.IncludeLanguages = [.. includeLanguages];
+                    }
+                    var excludeLanguages = _config.GetConfigEnumerable("ExcludeLanguages", routineOptionsCfg);
+                    if (excludeLanguages is not null)
+                    {
+                        source.ExcludeLanguages = [.. excludeLanguages];
+                    }
+                    source.NestedJsonForCompositeTypes = _config.GetConfigBool("NestedJsonForCompositeTypes", routineOptionsCfg);
+                    source.ResolveNestedCompositeTypes = _config.GetConfigBool("ResolveNestedCompositeTypes", routineOptionsCfg, true);
                 }
-                var includeLanguages = _config.GetConfigEnumerable("IncludeLanguages", routineOptionsCfg);
-                if (includeLanguages is not null)
-                {
-                    source.IncludeLanguages = [.. includeLanguages];
-                }
-                var excludeLanguages = _config.GetConfigEnumerable("ExcludeLanguages", routineOptionsCfg);
-                if (excludeLanguages is not null)
-                {
-                    source.ExcludeLanguages = [.. excludeLanguages];
-                }
-                source.NestedJsonForCompositeTypes = _config.GetConfigBool("NestedJsonForCompositeTypes", routineOptionsCfg);
-                source.ResolveNestedCompositeTypes = _config.GetConfigBool("ResolveNestedCompositeTypes", routineOptionsCfg, true);
+                return source;
             }
-            sources.Add(source);
-            _builder.ClientLogger?.LogDebug("Using {name} PostrgeSQL Source", nameof(RoutineSource));
+
+            // Per-connection routine discovery: one RoutineSource per listed connection name, sharing
+            // every other RoutineOptions setting and the global filters. Replace semantics: list the
+            // main connection's name to also discover the default database's routines. Endpoints
+            // execute on the connection they were discovered from (a `connection` annotation wins).
+            var readMetadataFrom = _config.GetConfigEnumerable("ReadMetadataFromConnections", routineOptionsCfg)?.ToArray();
+            if (readMetadataFrom is { Length: > 0 })
+            {
+                var available = _config.Cfg.GetSection("ConnectionStrings").GetChildren()
+                    .Select(c => c.Key).Where(k => k is not null).ToArray();
+                foreach (var name in readMetadataFrom)
+                {
+                    if (available.Contains(name, StringComparer.OrdinalIgnoreCase) is false)
+                    {
+                        throw new InvalidOperationException(
+                            $"NpgsqlRest:RoutineOptions:ReadMetadataFromConnections entry '{name}' was not found in the ConnectionStrings section. " +
+                            $"Available connection names: {string.Join(", ", available)}.");
+                    }
+                }
+                foreach (var name in readMetadataFrom.Distinct(StringComparer.OrdinalIgnoreCase))
+                {
+                    var source = CreateRoutineSource();
+                    source.ConnectionName = name;
+                    sources.Add(source);
+                    _builder.ClientLogger?.LogDebug("Using {name} PostgreSQL Source on connection {connection}", nameof(RoutineSource), name);
+                }
+            }
+            else
+            {
+                sources.Add(CreateRoutineSource());
+                _builder.ClientLogger?.LogDebug("Using {name} PostrgeSQL Source", nameof(RoutineSource));
+            }
         }
 
         var sqlFileSourceCfg = _config.NpgsqlRestCfg.GetSection("SqlFileSource");

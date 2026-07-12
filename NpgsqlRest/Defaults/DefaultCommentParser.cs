@@ -594,7 +594,7 @@ internal static partial class DefaultCommentParser
         return routineEndpoint;
     }
 
-    public static void SetCustomParameter(RoutineEndpoint endpoint, string name, string value)
+    public static void SetCustomParameter(RoutineEndpoint endpoint, string name, string value, string? description = null)
     {
         value = Regex.Unescape(value);
 
@@ -643,11 +643,8 @@ internal static partial class DefaultCommentParser
         }
         else if (StrEqualsToArray(name, ConnectionNameKey))
         {
-            //if (Options.ConnectionStrings is not null && options.ConnectionStrings.ContainsKey(value) is true)
-            //{
-            //    endpoint.ConnectionName = value;
-            //}
-            endpoint.ConnectionName = value;
+            SetValidatedConnectionName(endpoint, value,
+                description ?? string.Concat(endpoint.Method.ToString(), " ", endpoint.Path));
         }
         else if (StrEqualsToArray(name, UserContextKey))
         {

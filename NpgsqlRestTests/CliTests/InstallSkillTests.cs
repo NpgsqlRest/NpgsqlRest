@@ -31,7 +31,7 @@ public class InstallSkillTests
         return Path.Combine(dir!.FullName, "NpgsqlRestClient", "bin", configuration, "net10.0", "NpgsqlRestClient.dll");
     }
 
-    // The version branch the client will request, derived from the built DLL ("3.20.1").
+    // The version branch the client will request, derived from the built DLL ("3.21.0").
     private static string ExpectedVersionBranch()
     {
         var v = System.Reflection.AssemblyName.GetAssemblyName(DllPath).Version!;

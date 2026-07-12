@@ -83,6 +83,56 @@ public class CreateAndOpenSourceConnectionTests : IDisposable
     }
 
     [Fact]
+    public void PerSourceConnectionName_OverridesMetadataQueryConnectionName()
+    {
+        // Arrange: MetadataQueryConnectionName points at a broken entry; the source-level name must win.
+        var options = new NpgsqlRestOptions
+        {
+            MetadataQueryConnectionName = "broken",
+            ConnectionStrings = new Dictionary<string, string>
+            {
+                { "broken", "Host=host.invalid;Database=x;Username=x;Password=x" },
+                { "sourceconn", TestConnectionString }
+            }
+        };
+        NpgsqlConnection? connection = null;
+        bool shouldDispose = false;
+
+        // Act
+        options.CreateAndOpenSourceConnection(null, ref connection, ref shouldDispose, "TestSource", "sourceconn");
+
+        // Assert
+        connection.Should().NotBeNull();
+        connection!.State.Should().Be(ConnectionState.Open);
+        shouldDispose.Should().BeTrue();
+
+        _connectionsToDispose.Add(connection);
+    }
+
+    [Fact]
+    public void PerSourceConnectionName_Unknown_ThrowsArgumentException()
+    {
+        // Arrange: a misconfigured source connection must fail startup, not silently discover
+        // from the wrong database.
+        var options = new NpgsqlRestOptions
+        {
+            ConnectionStrings = new Dictionary<string, string>
+            {
+                { "test", TestConnectionString }
+            }
+        };
+        NpgsqlConnection? connection = null;
+        bool shouldDispose = false;
+
+        // Act
+        var act = () => options.CreateAndOpenSourceConnection(null, ref connection, ref shouldDispose, "TestSource", "nonexistent");
+
+        // Assert
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*'nonexistent' not found in DataSources or ConnectionStrings*");
+    }
+
+    [Fact]
     public void NamedConnectionString_NotFound_ThrowsArgumentException()
     {
         // Arrange

@@ -58,7 +58,15 @@ public static class CompositeTypeCache
     private static readonly ConcurrentDictionary<string, CompositeTypeMetadata> _cache = new(StringComparer.Ordinal);
     private static readonly object _initLock = new();
     private static volatile bool _initialized = false;
+    private static string? _initializedFor;
     private static Func<string, string?>? _nameConverter;
+
+    /// <summary>
+    /// Identifies the database a connection points at (configured host list, port, database name) -
+    /// stable per configured connection string, so replicas behind one multi-host string share a key.
+    /// </summary>
+    private static string DatabaseKey(NpgsqlConnection connection) =>
+        string.Concat(connection.Host, ":", connection.Port.ToString(System.Globalization.CultureInfo.InvariantCulture), "/", connection.Database);
 
     /// <summary>
     /// SQL query to fetch all composite types and their fields.
@@ -92,21 +100,28 @@ public static class CompositeTypeCache
 
     /// <summary>
     /// Initialize the composite type cache from the database.
-    /// Thread-safe and idempotent - only loads once.
+    /// Thread-safe and idempotent per database: a repeated call for the SAME database is a no-op; a
+    /// call for a DIFFERENT database (per-connection routine discovery) reloads the cache from it.
+    /// Sources are processed sequentially at build time and every cache consumer runs during
+    /// discovery/comment parsing (resolved metadata is baked into TypeDescriptors; nothing reads the
+    /// cache at request time), so the cache only has to be correct for the source currently reading.
     /// </summary>
     /// <param name="connection">Open database connection</param>
     /// <param name="nameConverter">Name converter function for field names</param>
     public static void Initialize(NpgsqlConnection connection, Func<string, string?>? nameConverter = null)
     {
-        if (_initialized) return;
+        var key = DatabaseKey(connection);
+        if (_initialized && string.Equals(_initializedFor, key, StringComparison.Ordinal)) return;
 
         lock (_initLock)
         {
-            if (_initialized) return;
+            if (_initialized && string.Equals(_initializedFor, key, StringComparison.Ordinal)) return;
 
+            _cache.Clear();
             _nameConverter = nameConverter;
             LoadAllCompositeTypes(connection);
             ResolveNestedTypes();
+            _initializedFor = key;
             _initialized = true;
         }
     }
@@ -120,6 +135,7 @@ public static class CompositeTypeCache
         {
             _cache.Clear();
             _initialized = false;
+            _initializedFor = null;
             _nameConverter = null;
         }
     }

@@ -821,7 +821,9 @@ public static class ConfigDefaults
                 ["IncludeLanguages"] = null,
                 ["ExcludeLanguages"] = null,
                 ["NestedJsonForCompositeTypes"] = false,
-                ["ResolveNestedCompositeTypes"] = true
+                ["ResolveNestedCompositeTypes"] = true,
+                ["ReadMetadataFromConnections"] = null,
+                ["VerifyRoutedEndpoints"] = "None"
             },
 
             ["UploadOptions"] = GetUploadOptionsDefaults(),
