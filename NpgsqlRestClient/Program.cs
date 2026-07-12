@@ -47,6 +47,9 @@ if (args.Length >= 1 && (string.Equals(args[0], "-h", StringComparison.CurrentCu
         ("npgsqlrest --basic_auth [username] [password]", "Print out basic basic auth header value in format 'Authorization: Basic base64(username:password)'."),
         ("npgsqlrest --encrypt [value]", "Encrypt string using default data protection and print to console."),
         (" ", " "),
+        ("npgsqlrest --install-skill", "Download and install the Claude Code skill matching this version into ./.claude/skills/npgsqlrest (project scope, commit it for the whole team)."),
+        ("npgsqlrest --install-skill global", "Install the Claude Code skill into ~/.claude/skills/npgsqlrest (user scope, available in every project)."),
+        (" ", " "),
         (" ", " "),
         ("Examples:", " "),
         ("Example: use two config files", "npgsqlrest appsettings.json appsettings.Development.json"),
@@ -134,6 +137,30 @@ if (args.Length >= 1 && string.Equals(args[0], "--annotations", StringComparison
 {
     var annotations = NpgsqlRest.Defaults.DefaultCommentParser.GetAnnotationReference();
     new Out().JsonHighlight(annotations.ToJsonString(CliJson.JsonOptions));
+    return;
+}
+
+if (args.Length >= 1 && string.Equals(args[0], "--install-skill", StringComparison.CurrentCultureIgnoreCase))
+{
+    bool installGlobal = false;
+    if (args.Length >= 2)
+    {
+        if (string.Equals(args[1], "global", StringComparison.CurrentCultureIgnoreCase))
+        {
+            installGlobal = true;
+        }
+        else
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.Error.WriteLine($"Unknown --install-skill scope '{args[1]}'. Use 'global' for ~/.claude/skills, or omit for ./.claude/skills (project).");
+            Console.ResetColor();
+            Environment.ExitCode = 1;
+            return;
+        }
+    }
+    new Out().Logo();
+    Console.WriteLine($"Installing the NpgsqlRest Claude Code skill (version {SkillInstaller.VersionBranch}, {(installGlobal ? "global" : "project")} scope)...");
+    Environment.ExitCode = await SkillInstaller.InstallAsync(installGlobal);
     return;
 }
 

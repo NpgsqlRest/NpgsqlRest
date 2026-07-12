@@ -414,3 +414,5 @@ dist/
 .vscode/settings.json
 
 scrap/
+.env
+.claude

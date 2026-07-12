@@ -31,7 +31,7 @@ The annotation/config surface is large and version-dependent. In order of prefer
    ```
 3. **Online:** docs at <https://npgsqlrest.github.io> (e.g. `/guide/annotations`, `/guide/sql-files`, `/annotations/<name>`, `/config/<section>`); source & issues at <https://github.com/NpgsqlRest/NpgsqlRest>.
 
-The two bundled files were generated from `--annotations` / `--config`. If your installed `npgsqlrest` version differs, trust the binary (or regenerate them with those commands).
+The two bundled files were generated from `--annotations` / `--config`. If your installed `npgsqlrest` version differs, trust the binary (or regenerate them with those commands). `npgsqlrest --install-skill` (3.20.1+) re-installs this skill from the release branch matching the installed binary (`global` argument targets `~/.claude/skills` instead of the project).
 
 ## The two endpoint sources
 
