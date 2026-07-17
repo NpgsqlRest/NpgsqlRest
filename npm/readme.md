@@ -123,7 +123,7 @@ export async function publicHelloWorld(): Promise<{status: number, response: str
 - **Instant API Generation** - REST endpoints from functions, procedures, tables, and views
 - **Declarative Configuration** - Configure endpoints via SQL comment annotations
 - **TypeScript/JavaScript Generation** - Auto-generate frontend code with full type safety
-- **High Performance** - AOT-compiled native executable, [6x faster than PostgREST](https://npgsqlrest.github.io/blog/postgresql-rest-api-benchmark-2025.html)
+- **High Performance** - AOT-compiled native executable, [2.7x faster than PostgREST](https://npgsqlrest.github.io/blog/benchmarks-2026-07/)
 - **RESTful Path Parameters** - Routes like `/products/{id}` with URL parameter extraction
 - **Authentication** - Cookie auth, JWT, Bearer tokens, OAuth (Google, GitHub, etc.)
 - **Authorization** - Role-based access control with PostgreSQL integration

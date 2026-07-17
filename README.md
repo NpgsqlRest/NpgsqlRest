@@ -10,11 +10,11 @@
 
 # Your SQL is the API
 
-**Automatic REST API for PostgreSQL** | [6.1x faster than PostgREST](https://npgsqlrest.github.io/blog/postgresql-rest-api-benchmark-2026.html)
+**Automatic REST API for PostgreSQL** | [2.7x faster than PostgREST, #2 of 20 services benchmarked](https://npgsqlrest.github.io/blog/benchmarks-2026-07/)
 
 > SQL files and PostgreSQL objects become REST endpoints. TypeScript clients are generated automatically. Tests are SQL files too.
 
-**4,500+ req/s** on a single host · **2,484 integration tests** · **12K LOC SQL** in production · **MIT** licensed
+**3,500+ req/s** on 4 dedicated cores · **2,484 integration tests** · **12K LOC SQL** in production · **MIT** licensed
 
 *"Simplicity is the ultimate sophistication."* — Leonardo da Vinci
 
@@ -162,7 +162,7 @@ Save a `.sql` file and the running API restarts with the change (~1s). `create o
 - **TypeScript/JS code generation** and `.http` files — types flow from PostgreSQL to your frontend, with optional **TanStack Query (React Query) v5 hooks** (`useQuery`/`useMutation` + query-key factories)
 - **Dart client generation** — typed Flutter clients on `package:http`: request/response models with `fromJson`/`toJson`, multipart uploads with progress, SSE subscriptions, `MockClient` testability
 - **AOT-compiled native binaries** — zero dependencies, instant startup
-- [**6.1x faster than PostgREST**](https://npgsqlrest.github.io/blog/postgresql-rest-api-benchmark-2026.html) at 100 concurrent users
+- [**2.7x faster than PostgREST**](https://npgsqlrest.github.io/blog/benchmarks-2026-07/npgsqlrest.html) at 100 concurrent users — #2 of 20 services in the July 2026 benchmark, ahead of hand-written .NET endpoints on the same driver by 50%+
 - **50+ comment annotations** — `@authorize`, `@param`, `@returns`, `@void`, `@single`, `@result`, `@skip`, `@cached`, `@proxy`, and more
 - **Auth** — cookie auth, Basic auth, JWT claims, role-based access, `@authorize`, `@allow_anonymous`
 - **Column-level encryption**, security-sensitive endpoints, IP address binding
@@ -184,7 +184,7 @@ Save a `.sql` file and the running API restarts with the change (~1s). `create o
 ## From the Blog
 
 - [**Case Study: 74 Endpoints, Zero Backend Code**](https://npgsqlrest.github.io/blog/case-study-zero-backend-code) — A production app built entirely on NpgsqlRest: ~74 endpoints, 12K LOC of SQL, zero C# or Python.
-- [**PostgreSQL REST API Benchmark 2026**](https://npgsqlrest.github.io/blog/postgresql-rest-api-benchmark-2026) — 14 frameworks, identical PostgreSQL functions: NpgsqlRest vs PostgREST, Django, FastAPI, Spring Boot, Go, Rust, and more.
+- [**PostgreSQL REST API Benchmark, July 2026**](https://npgsqlrest.github.io/blog/benchmarks-2026-07/) — 20 services, 760 tests under equalized conditions: NpgsqlRest vs PostgREST, FastAPI, Go, Rust, Spring Boot, Bun, Deno, and more.
 - [**From SQL to Type-Safe TypeScript**](https://npgsqlrest.github.io/blog/typescript-codegen-walkthrough) — End-to-end type safety: typed fetch modules generated directly from PostgreSQL functions and SQL files.
 
 ## Documentation
