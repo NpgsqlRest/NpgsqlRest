@@ -22,17 +22,24 @@
   </PropertyGroup>
 
   <!--
-    .NET 11 Runtime Async (<Features>$(Features);runtime-async=on</Features>) is deliberately NOT enabled.
-    Measured on .NET 11.0.0 (see BenchmarkTests/Baselines/EndpointBenchmarks-3.22.0-perf.md):
+    .NET 11 Runtime Async (<Features>$(Features);runtime-async=on</Features>) is NOT enabled by default.
+    It can be turned on for the net11.0 builds with -p:NpgsqlRestRuntimeAsync=true (see Directory.Build.targets).
+    Measured on .NET 11.0.0 (BenchmarkTests/Baselines/EndpointBenchmarks-3.22.0-perf.md):
     - With the original single ~3,400-line request handler: the NativeAOT client crashed on the first request
       (SIGBUS) and each suspension saved ~13.7 KB continuation frames (+7..12 KB per request).
-    - With the handler split into small methods (3.22.0): AOT works (real requests, 500 in parallel), and the
-      cost per request is normal - but it allocates ~0.65 KB/request MORE than the current classic build, whose
-      request methods use PoolingAsyncValueTaskMethodBuilder (pooled state machines; methods with a custom
-      builder are compiled classically even when runtime-async is on), at equal latency.
-    Re-evaluate when it beats the pooled classic build, and only together with an AOT smoke test that serves
-    real requests (not just printing the version).
-    Note: <UseRuntimeAsync>false</UseRuntimeAsync> is not implemented by SDK 11.0.100; to opt a project out,
-    remove runtime-async=on from $(Features).
+    - With the handler split into a few large methods: AOT worked, but ~1 KB more per request. With Runtime Async
+      the continuation of a method is sized for its largest suspension point, and every suspension pays for it.
+    - With the request pipeline as small methods around one pooled request state (3.22.0): same CPU per request,
+      latency and throughput as the classic build within measurement noise (JIT and AOT), ~0.3 KB more per request.
+      AOT works (smoke test with real requests), the test suite passes.
+    It stays off because it has no benefit yet: the request waits inside Npgsql, which is compiled classically,
+    and each await that crosses that boundary allocates (RuntimeAsyncTask + continuation), while the classic build
+    pools its state machines. Re-measure when Npgsql ships Runtime Async builds.
+    Notes:
+    - With runtime-async=on the compiler ignores [AsyncMethodBuilder(PoolingAsyncValueTaskMethodBuilder)]: those
+      methods become Runtime Async methods like any other (they do NOT stay classic).
+    - <UseRuntimeAsync>false</UseRuntimeAsync> is not implemented by SDK 11.0.100; to opt a project out, remove
+      runtime-async=on from $(Features).
+    - Only ever enable it together with the AOT smoke test that serves real requests (.github/scripts).
   -->
 </Project>

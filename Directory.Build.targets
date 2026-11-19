@@ -1,0 +1,15 @@
+<Project>
+  <!--
+    Build switch for .NET 11 Runtime Async (off by default; see Directory.Build.props for why):
+      -p:NpgsqlRestRuntimeAsync=true      compile the net11.0 builds with <Features>runtime-async=on</Features>
+    As an environment variable (NpgsqlRestRuntimeAsync=true) it also reaches builds started by other tools, such as
+    BenchmarkDotNet's.
+    The switch also defines a compilation symbol: MSBuild's incremental-build check does not look at $(Features),
+    so without a changed symbol a toggled build would silently reuse the previous binaries.
+    This file (not Directory.Build.props) because $(TargetFramework) is only known after the project body.
+  -->
+  <PropertyGroup Condition="'$(NpgsqlRestRuntimeAsync)' == 'true' and '$(TargetFramework)' == 'net11.0'">
+    <Features>$(Features);runtime-async=on</Features>
+    <DefineConstants>$(DefineConstants);NPGSQLREST_RUNTIME_ASYNC</DefineConstants>
+  </PropertyGroup>
+</Project>
