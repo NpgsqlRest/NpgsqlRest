@@ -2,15 +2,16 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
-    <LangVersion>14</LangVersion>
+    <LangVersion>15</LangVersion>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
+    <!-- Preview: the latest stable (0.15.8) does not recognize the .NET 11 runtime (NotImplementedException: GetRuntimeVersion not implemented for NotRecognized) -->
+    <PackageReference Include="BenchmarkDotNet" Version="0.16.0-preview.2" />
     <!-- Npgsql comes transitively from the NpgsqlRest project: no direct pin, so benchmarks always measure the Npgsql version NpgsqlRest ships with -->
   </ItemGroup>
 

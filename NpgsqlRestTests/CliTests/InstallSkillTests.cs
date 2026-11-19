@@ -28,7 +28,8 @@ public class InstallSkillTests
         var baseParts = AppContext.BaseDirectory.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
         var binIndex = Array.LastIndexOf(baseParts, "bin");
         var configuration = binIndex >= 0 && binIndex + 1 < baseParts.Length ? baseParts[binIndex + 1] : "Debug";
-        return Path.Combine(dir!.FullName, "NpgsqlRestClient", "bin", configuration, "net10.0", "NpgsqlRestClient.dll");
+        var targetFramework = binIndex >= 0 && binIndex + 2 < baseParts.Length ? baseParts[binIndex + 2] : "net11.0";
+        return Path.Combine(dir!.FullName, "NpgsqlRestClient", "bin", configuration, targetFramework, "NpgsqlRestClient.dll");
     }
 
     // The version branch the client will request, derived from the built DLL ("3.21.0").

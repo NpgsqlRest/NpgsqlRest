@@ -54,7 +54,7 @@ if (runHttpBenchmarks || runAll)
 
     var httpConfig = DefaultConfig.Instance
         .AddJob(Job.Default
-            .WithToolchain(new InProcessEmitToolchain(timeout: TimeSpan.FromSeconds(30), logOutput: false))
+            .WithToolchain(InProcessEmitToolchain.Default)
             .WithLaunchCount(1)
             .WithWarmupCount(3)
             .WithIterationCount(20)

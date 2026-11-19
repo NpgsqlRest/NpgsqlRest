@@ -14,7 +14,7 @@ Thank you for considering a contribution! Bug reports, documentation fixes, test
 
 ## Building and testing
 
-Prerequisites: **.NET 10 SDK** and a local **PostgreSQL** (any recent version; CI tests 15/16/17) listening on `localhost:5432` with user `postgres` / password `postgres`. The test run creates and drops its own database (`npgsql_rest_test`); connection constants live in `NpgsqlRestTests/Setup/Database.cs`.
+Prerequisites: **.NET 11 SDK** and a local **PostgreSQL** (any recent version; CI tests 15/16/17) listening on `localhost:5432` with user `postgres` / password `postgres`. The test run creates and drops its own database (`npgsql_rest_test`); connection constants live in `NpgsqlRestTests/Setup/Database.cs`.
 
 ```sh
 dotnet build

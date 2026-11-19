@@ -29,10 +29,10 @@ jobs:
           --health-retries 5
     steps:
     - uses: actions/checkout@v4  # Updated from v2
-    - name: Setup .NET10
+    - name: Setup .NET11
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 10.0.x
+        dotnet-version: 11.0.x
     - name: Install dependencies
       run: dotnet restore
     - name: Build
@@ -112,10 +112,10 @@ jobs:
       contents: write
     steps:
     - uses: actions/checkout@v4
-    - name: Setup .NET10
+    - name: Setup .NET11
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 10.0.x
+        dotnet-version: 11.0.x
     - name: Build Windows AOT
       run: dotnet publish ./NpgsqlRestClient/NpgsqlRestClient.csproj -r win-x64 -c Release
     - name: Upload Windows executable
@@ -124,7 +124,7 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ needs.create-release.outputs.upload_url }}
-        asset_path: ./NpgsqlRestClient/bin/Release/net10.0/win-x64/publish/NpgsqlRestClient.exe
+        asset_path: ./NpgsqlRestClient/bin/Release/net11.0/win-x64/publish/NpgsqlRestClient.exe
         asset_name: npgsqlrest-win64.exe
         asset_content_type: application/octet-stream
 
@@ -149,10 +149,10 @@ jobs:
           --health-retries 5
     steps:
     - uses: actions/checkout@v4
-    - name: Setup .NET10
+    - name: Setup .NET11
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 10.0.x
+        dotnet-version: 11.0.x
     - name: Build Linux AOT
       run: dotnet publish ./NpgsqlRestClient/NpgsqlRestClient.csproj -r linux-x64 -c Release
     - name: AOT smoke test (config validation + database connection)
@@ -164,7 +164,7 @@ jobs:
           }
         }
         SMOKE
-        BIN=./NpgsqlRestClient/bin/Release/net10.0/linux-x64/publish/NpgsqlRestClient
+        BIN=./NpgsqlRestClient/bin/Release/net11.0/linux-x64/publish/NpgsqlRestClient
         "$BIN" --version
         "$BIN" smoke.appsettings.json --validate
     - name: Upload Linux executable
@@ -173,14 +173,14 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ needs.create-release.outputs.upload_url }}
-        asset_path: ./NpgsqlRestClient/bin/Release/net10.0/linux-x64/publish/NpgsqlRestClient
+        asset_path: ./NpgsqlRestClient/bin/Release/net11.0/linux-x64/publish/NpgsqlRestClient
         asset_name: npgsqlrest-linux64
         asset_content_type: application/octet-stream
     - name: Upload Linux executable artifact
       uses: actions/upload-artifact@v4
       with:
         name: npgsqlrest-linux64
-        path: ./NpgsqlRestClient/bin/Release/net10.0/linux-x64/publish/NpgsqlRestClient
+        path: ./NpgsqlRestClient/bin/Release/net11.0/linux-x64/publish/NpgsqlRestClient
 
   build-linux-arm:
     needs: create-release
@@ -189,10 +189,10 @@ jobs:
       contents: write
     steps:
     - uses: actions/checkout@v4
-    - name: Setup .NET10
+    - name: Setup .NET11
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 10.0.x
+        dotnet-version: 11.0.x
     - name: Build Linux ARM64 AOT
       run: dotnet publish ./NpgsqlRestClient/NpgsqlRestClient.csproj -r linux-arm64 -c Release
     - name: Upload Linux ARM64 executable
@@ -201,14 +201,14 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ needs.create-release.outputs.upload_url }}
-        asset_path: ./NpgsqlRestClient/bin/Release/net10.0/linux-arm64/publish/NpgsqlRestClient
+        asset_path: ./NpgsqlRestClient/bin/Release/net11.0/linux-arm64/publish/NpgsqlRestClient
         asset_name: npgsqlrest-linux-arm64
         asset_content_type: application/octet-stream
     - name: Upload Linux ARM64 executable artifact
       uses: actions/upload-artifact@v4
       with:
         name: npgsqlrest-linux-arm64
-        path: ./NpgsqlRestClient/bin/Release/net10.0/linux-arm64/publish/NpgsqlRestClient
+        path: ./NpgsqlRestClient/bin/Release/net11.0/linux-arm64/publish/NpgsqlRestClient
 
   build-macos:
     needs: create-release
@@ -217,10 +217,10 @@ jobs:
       contents: write
     steps:
     - uses: actions/checkout@v4
-    - name: Setup .NET10
+    - name: Setup .NET11
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 10.0.x
+        dotnet-version: 11.0.x
     - name: Build macOS ARM64 AOT
       run: dotnet publish ./NpgsqlRestClient/NpgsqlRestClient.csproj -r osx-arm64 -c Release
     - name: Upload macOS executable
@@ -229,7 +229,7 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ needs.create-release.outputs.upload_url }}
-        asset_path: ./NpgsqlRestClient/bin/Release/net10.0/osx-arm64/publish/NpgsqlRestClient
+        asset_path: ./NpgsqlRestClient/bin/Release/net11.0/osx-arm64/publish/NpgsqlRestClient
         asset_name: npgsqlrest-osx-arm64
         asset_content_type: application/octet-stream
 

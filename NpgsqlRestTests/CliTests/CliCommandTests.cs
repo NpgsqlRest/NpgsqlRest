@@ -20,13 +20,15 @@ public class CliCommandTests
         }
 
         // Find the built DLL matching the current build configuration.
-        // AppContext.BaseDirectory is e.g. .../NpgsqlRestTests/bin/Debug/net10.0/
-        // Extract the configuration (Debug/Release) from that path.
+        // AppContext.BaseDirectory is e.g. .../NpgsqlRestTests/bin/Debug/net11.0/
+        // Extract the configuration (Debug/Release) and the target framework folder from that path
+        // (the client targets the same framework as the tests).
         var baseParts = AppContext.BaseDirectory.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
         var binIndex = Array.LastIndexOf(baseParts, "bin");
         var configuration = binIndex >= 0 && binIndex + 1 < baseParts.Length ? baseParts[binIndex + 1] : "Debug";
+        var targetFramework = binIndex >= 0 && binIndex + 2 < baseParts.Length ? baseParts[binIndex + 2] : "net11.0";
 
-        var dllPath = Path.Combine(dir.FullName, "NpgsqlRestClient", "bin", configuration, "net10.0", "NpgsqlRestClient.dll");
+        var dllPath = Path.Combine(dir.FullName, "NpgsqlRestClient", "bin", configuration, targetFramework, "NpgsqlRestClient.dll");
         if (!File.Exists(dllPath))
         {
             throw new InvalidOperationException("NpgsqlRestClient.dll not found at " + dllPath);

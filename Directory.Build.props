@@ -7,4 +7,29 @@
   <PropertyGroup>
     <NpgsqlRestProductVersion>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)version.txt').Trim())</NpgsqlRestProductVersion>
   </PropertyGroup>
+
+  <!--
+    No project in this repo uses the ASP.NET Core static web assets pipeline (no wwwroot, no MapStaticAssets);
+    the Web SDK is used only for the ASP.NET Core shared framework. Since .NET SDK 11, every Web SDK project
+    in a Debug build defines Blazor Hot Reload browser-tools JS modules as static web assets, and a Web SDK
+    project referencing another Web SDK project (every plugin -> NpgsqlRest) fails with
+    "The following scoped css bundles do not have matching endpoints:
+    _framework/Microsoft.NET.Sdk.BlazorWeb.HotReload#[.{fingerprint}]!.lib.module.js".
+    Disabling the unused pipeline avoids it (Release builds were never affected; runtime Hot Reload is unaffected).
+  -->
+  <PropertyGroup>
+    <StaticWebAssetsEnabled>false</StaticWebAssetsEnabled>
+  </PropertyGroup>
+
+  <!--
+    .NET 11 Runtime Async (<Features>$(Features);runtime-async=on</Features>) is deliberately NOT enabled.
+    Measured on .NET 11.0.0 (see BenchmarkTests/Baselines/EndpointBenchmarks-3.22.0-net11.md):
+    - the NativeAOT client binary built with it crashes on the first request (SIGBUS), JIT builds work;
+    - the request handler (NpgsqlRestEndpoint.InvokeAsync, one very large async method) gets ~13.7 KB
+      continuation frames per suspension instead of one ~0.8 KB state machine box (+7..12 KB per request).
+    Re-evaluate after the request handler is split into small methods, and only together with an AOT smoke
+    test that serves real requests (not just printing the version).
+    Note: <UseRuntimeAsync>false</UseRuntimeAsync> is not implemented by SDK 11.0.100; to opt a project out,
+    remove runtime-async=on from $(Features).
+  -->
 </Project>

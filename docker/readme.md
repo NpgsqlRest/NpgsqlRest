@@ -28,7 +28,7 @@ Your REST API is now live at `http://localhost:8080`
 |-----|-------------|------|
 | `latest` | AOT-compiled native executable (x64) | ~80 MB |
 | `latest-arm` | AOT-compiled native executable (ARM64) | ~80 MB |
-| `latest-jit` | .NET 10 JIT runtime | ~250 MB |
+| `latest-jit` | .NET 11 JIT runtime | ~250 MB |
 | `latest-bun` | AOT executable + Bun runtime | ~120 MB |
 
 Version-specific tags are also available (e.g., `3.12.0`, `3.12.0-arm`, `3.12.0-jit`, `3.12.0-bun`).
