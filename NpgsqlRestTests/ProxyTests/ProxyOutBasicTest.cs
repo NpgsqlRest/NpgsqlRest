@@ -44,7 +44,7 @@ public class ProxyOutBasicTest : IClassFixture<ProxyWireMockFixture>
             .Given(Request.Create()
                 .WithPath("/api/proxy-out-basic/")
                 .UsingPost()
-                .WithBody(b => b.Contains("key") && b.Contains("value")))
+                .WithBody(b => b!.Contains("key") && b.Contains("value")))
             .RespondWith(Response.Create()
                 .WithStatusCode(200)
                 .WithHeader("Content-Type", "application/json")

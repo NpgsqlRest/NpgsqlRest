@@ -67,7 +67,7 @@ public class ProxyForwardingSecurityTests : IClassFixture<ProxyWireMockFixture>
     }
 
     private WireMock.Logging.ILogEntry? LastRequest(string path) =>
-        _server.LogEntries.LastOrDefault(r => r.RequestMessage.Path == path);
+        _server.LogEntries.LastOrDefault(r => r.RequestMessage!.Path == path);
 
     [Fact]
     public async Task Authenticated_user_parameter_is_forwarded_once_with_the_server_value()
@@ -81,7 +81,7 @@ public class ProxyForwardingSecurityTests : IClassFixture<ProxyWireMockFixture>
 
         var upstream = LastRequest("/api/proxy-sec-user-params/");
         upstream.Should().NotBeNull();
-        upstream!.RequestMessage.Query!["userId"].Should().BeEquivalentTo(["999"]);
+        upstream!.RequestMessage!.Query!["userId"].Should().BeEquivalentTo(["999"]);
     }
 
     [Fact]
@@ -92,7 +92,7 @@ public class ProxyForwardingSecurityTests : IClassFixture<ProxyWireMockFixture>
 
         var upstream = LastRequest("/api/proxy-sec-user-params/");
         upstream.Should().NotBeNull();
-        (upstream!.RequestMessage.Query?.ContainsKey("userId") ?? false).Should().BeFalse();
+        (upstream!.RequestMessage!.Query?.ContainsKey("userId") ?? false).Should().BeFalse();
     }
 
     [Fact]
@@ -106,7 +106,7 @@ public class ProxyForwardingSecurityTests : IClassFixture<ProxyWireMockFixture>
 
         var upstream = LastRequest("/api/proxy-sec-user-context/");
         upstream.Should().NotBeNull();
-        upstream!.RequestMessage.Headers!.ContainsKey("request.user_id").Should().BeFalse();
+        upstream!.RequestMessage!.Headers!.ContainsKey("request.user_id").Should().BeFalse();
         upstream.RequestMessage.Headers.ContainsKey("request.user_roles").Should().BeFalse();
     }
 
@@ -124,7 +124,7 @@ public class ProxyForwardingSecurityTests : IClassFixture<ProxyWireMockFixture>
 
         var upstream = LastRequest("/api/proxy-sec-user-context/");
         upstream.Should().NotBeNull();
-        upstream!.RequestMessage.Headers!["request.user_id"].Should().BeEquivalentTo(["999"]);
+        upstream!.RequestMessage!.Headers!["request.user_id"].Should().BeEquivalentTo(["999"]);
     }
 
     [Fact]
@@ -142,7 +142,7 @@ public class ProxyForwardingSecurityTests : IClassFixture<ProxyWireMockFixture>
 
         var upstream = LastRequest("/api/proxy-sec-passthrough/");
         upstream.Should().NotBeNull();
-        upstream!.RequestMessage.Headers!.ContainsKey("Authorization").Should().BeFalse();
+        upstream!.RequestMessage!.Headers!.ContainsKey("Authorization").Should().BeFalse();
         upstream.RequestMessage.Headers.ContainsKey("Cookie").Should().BeFalse();
         upstream.RequestMessage.Headers["X-Custom"].Should().BeEquivalentTo(["forwarded"]);
     }

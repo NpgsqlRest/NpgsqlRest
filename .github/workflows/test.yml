@@ -24,13 +24,47 @@ jobs:
         postgresql user: 'postgres'
         postgresql password: 'postgres'
     - uses: actions/checkout@v4
-    - name: Setup .NET11
+    - name: Setup .NET 10 and .NET 11
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 11.0.x
+        dotnet-version: |
+          10.0.x
+          11.0.x
     - name: Install dependencies
       run: dotnet restore
     - name: Build
       run: dotnet build --configuration Release --no-restore
     - name: Test
       run: dotnet test --no-restore --verbosity m
+    - name: Test on .NET 10
+      # The library and plugins also target net10.0 (LTS): run the whole suite against that build too.
+      run: dotnet test NpgsqlRestTests/NpgsqlRestTests.csproj -c Release -p:NpgsqlRestTestFramework=net10.0 --verbosity m
+
+  aot-smoke:
+    # Publishes the native AOT executable and serves real requests with it. A version check is not enough:
+    # a native AOT build once passed it and crashed on its first request.
+    runs-on: ubuntu-22.04
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup .NET11
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 11.0.x
+    - name: Build Linux AOT
+      run: dotnet publish ./NpgsqlRestClient/NpgsqlRestClient.csproj -r linux-x64 -c Release
+    - name: AOT smoke test (real requests)
+      run: ./.github/scripts/aot-smoke-test.sh ./NpgsqlRestClient/bin/Release/net11.0/linux-x64/publish/NpgsqlRestClient

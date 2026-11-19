@@ -29,16 +29,21 @@ jobs:
           --health-retries 5
     steps:
     - uses: actions/checkout@v4  # Updated from v2
-    - name: Setup .NET11
+    - name: Setup .NET 10 and .NET 11
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 11.0.x
+        dotnet-version: |
+          10.0.x
+          11.0.x
     - name: Install dependencies
       run: dotnet restore
     - name: Build
       run: dotnet build --configuration Release --no-restore
     - name: Test
       run: dotnet test --no-restore --verbosity m
+    - name: Test on .NET 10
+      # The library and plugins also target net10.0 (LTS): run the whole suite against that build too.
+      run: dotnet test NpgsqlRestTests/NpgsqlRestTests.csproj -c Release -p:NpgsqlRestTestFramework=net10.0 --verbosity m
     - name: Publish
       run: dotnet nuget push **\*.nupkg --source https://api.nuget.org/v3/index.json --api-key ${{secrets.NUGET_API_KEY}} --skip-duplicate
 
@@ -155,7 +160,7 @@ jobs:
         dotnet-version: 11.0.x
     - name: Build Linux AOT
       run: dotnet publish ./NpgsqlRestClient/NpgsqlRestClient.csproj -r linux-x64 -c Release
-    - name: AOT smoke test (config validation + database connection)
+    - name: AOT smoke test (config validation, database connection, real requests)
       run: |
         cat > smoke.appsettings.json <<'SMOKE'
         {
@@ -167,6 +172,7 @@ jobs:
         BIN=./NpgsqlRestClient/bin/Release/net11.0/linux-x64/publish/NpgsqlRestClient
         "$BIN" --version
         "$BIN" smoke.appsettings.json --validate
+        ./.github/scripts/aot-smoke-test.sh "$BIN"
     - name: Upload Linux executable
       uses: actions/upload-release-asset@v1
       env:

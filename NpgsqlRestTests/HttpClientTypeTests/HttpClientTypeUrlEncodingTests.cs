@@ -63,7 +63,7 @@ public class HttpClientTypeUrlEncodingTests : IClassFixture<WireMockFixture>
         using var response = await _test.Client.GetAsync("/api/get-http-enc-path/?name=..%2F..%2Fadmin%3Fx%3D1");
         (await response.Content.ReadAsStringAsync()).Should().Be("200:ok");
 
-        var received = _server.LogEntries.Single().RequestMessage;
+        var received = _server.LogEntries.Single().RequestMessage!;
         // one segment: '/' and '?' stay encoded (System.Uri canonicalizes %3D back to '=', which is inert in a path)
         received.AbsoluteUrl.Should().Be($"http://localhost:{WireMockFixture.Port}/api/enc/users/..%2F..%2Fadmin%3Fx=1/profile");
     }
@@ -75,7 +75,7 @@ public class HttpClientTypeUrlEncodingTests : IClassFixture<WireMockFixture>
         using var response = await _test.Client.GetAsync("/api/get-http-enc-query/?q=x%26limit%3D1000");
         (await response.Content.ReadAsStringAsync()).Should().Be("200:ok");
 
-        var received = _server.LogEntries.Single().RequestMessage;
+        var received = _server.LogEntries.Single().RequestMessage!;
         received.AbsoluteUrl.Should().Be($"http://localhost:{WireMockFixture.Port}/api/enc/search?q=x%26limit%3D1000&limit=5");
         received.Query!["q"].Should().BeEquivalentTo(["x&limit=1000"]);
         received.Query!["limit"].Should().BeEquivalentTo(["5"]);

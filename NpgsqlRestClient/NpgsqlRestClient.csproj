@@ -2,6 +2,9 @@
 
   <PropertyGroup>
     <TargetFramework>net11.0</TargetFramework>
+    <!-- CI only: the .NET 10 test pass (dotnet test NpgsqlRestTests -p:NpgsqlRestTestFramework=net10.0) builds the client
+         for net10.0 so the library's net10.0 build can be tested. The shipped executable is net11.0. -->
+    <TargetFramework Condition="'$(NpgsqlRestTestFramework)' == 'net10.0'">net10.0</TargetFramework>
     <LangVersion>15</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -16,11 +19,15 @@
   <ItemGroup>
     <PackageReference Include="AspNetCore.HealthChecks.NpgSql" Version="9.0.0" />
     <PackageReference Include="ExcelDataReader" Version="3.9.0" />
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="11.0.0" />
-    <PackageReference Include="Serilog.AspNetCore" Version="11.0.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="11.0.0" Condition="'$(TargetFramework)' != 'net10.0'" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.9" Condition="'$(TargetFramework)' == 'net10.0'" />
+    <PackageReference Include="Serilog.AspNetCore" Version="11.0.0" Condition="'$(TargetFramework)' != 'net10.0'" />
+    <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" Condition="'$(TargetFramework)' == 'net10.0'" />
     <PackageReference Include="Serilog.Sinks.OpenTelemetry" Version="4.2.0" />
-    <PackageReference Include="Microsoft.Extensions.Caching.Hybrid" Version="11.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="11.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Hybrid" Version="11.0.0" Condition="'$(TargetFramework)' != 'net10.0'" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Hybrid" Version="10.7.0" Condition="'$(TargetFramework)' == 'net10.0'" />
+    <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="11.0.0" Condition="'$(TargetFramework)' != 'net10.0'" />
+    <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.9" Condition="'$(TargetFramework)' == 'net10.0'" />
     <PackageReference Include="SpreadCheetah" Version="1.29.0" />
     <PackageReference Include="StackExchange.Redis" Version="3.4.35" />
   </ItemGroup>

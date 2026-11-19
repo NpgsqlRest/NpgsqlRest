@@ -179,11 +179,11 @@ public class ProxyWithUserParamsTest : IClassFixture<ProxyWireMockFixture>
 
         // Verify the proxy received the userClaims parameter by checking WireMock logs
         var requests = _server.LogEntries;
-        var proxyRequest = requests.FirstOrDefault(r => r.RequestMessage.Path == "/api/proxy-with-ip-and-claims/");
+        var proxyRequest = requests.FirstOrDefault(r => r.RequestMessage!.Path == "/api/proxy-with-ip-and-claims/");
         proxyRequest.Should().NotBeNull();
 
         // Check that userClaims parameter was forwarded (URL encoded JSON)
-        proxyRequest!.RequestMessage.Query.Should().ContainKey("userClaims");
+        proxyRequest!.RequestMessage!.Query.Should().ContainKey("userClaims");
         var userClaimsValue = proxyRequest.RequestMessage.Query["userClaims"].First();
         userClaimsValue.Should().Contain("name_identifier");
         userClaimsValue.Should().Contain("999");
@@ -222,12 +222,12 @@ public class ProxyWithUserParamsTest : IClassFixture<ProxyWireMockFixture>
 
         // Verify the proxy received the user context as headers
         var requests = _server.LogEntries;
-        var proxyRequest = requests.FirstOrDefault(r => r.RequestMessage.Path == "/api/proxy-with-user-context/");
+        var proxyRequest = requests.FirstOrDefault(r => r.RequestMessage!.Path == "/api/proxy-with-user-context/");
         proxyRequest.Should().NotBeNull();
 
         // Check that user context headers were forwarded (using ContextKeyClaimsMapping defaults)
         // Default mappings: request.user_id -> user_id, request.user_name -> user_name, request.user_roles -> user_roles
-        proxyRequest!.RequestMessage.Headers.Should().ContainKey("request.user_id");
+        proxyRequest!.RequestMessage!.Headers.Should().ContainKey("request.user_id");
         proxyRequest.RequestMessage.Headers["request.user_id"].First().Should().Be("999");
 
         proxyRequest.RequestMessage.Headers.Should().ContainKey("request.user_name");
