@@ -82,10 +82,11 @@ public class ResolvedParameterWithUserParamsTests : IClassFixture<WireMockFixtur
     [Fact]
     public async Task Test_resolved_param_with_user_params_unauthorized()
     {
-        // Without login, _user_name has no default and isn't in query string → 404
-        // (parameter validation runs before authorization check)
+        // Without login → 401. Authorization is decided before parameter processing (3.22.0), so an anonymous
+        // caller no longer gets the 404 that revealed the missing _user_name parameter.
         using var response = await _test.Client.GetAsync("/api/get-http-resolved-with-user-params/");
 
-        response?.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response?.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await response!.Content.ReadAsStringAsync()).Should().Be("{\"title\":\"Unauthorized\",\"status\":401}");
     }
 }

@@ -6,7 +6,13 @@ using NpgsqlTypes;
 
 namespace NpgsqlRest.HttpClientType;
 
-public class HttpClientTypeHandler(HttpTypeDefinition definition, Dictionary<string, string>.AlternateLookup<ReadOnlySpan<char>>? replacements = null)
+/// <param name="replacements">Raw placeholder values (headers, body).</param>
+/// <param name="urlReplacements">Placeholder values for the URL: request-derived values percent-encoded (falls back to
+/// <paramref name="replacements"/> when null).</param>
+public class HttpClientTypeHandler(
+    HttpTypeDefinition definition,
+    Dictionary<string, string>.AlternateLookup<ReadOnlySpan<char>>? replacements = null,
+    Dictionary<string, string>.AlternateLookup<ReadOnlySpan<char>>? urlReplacements = null)
 {
     // UseCookies = false: the client is shared by all users. With the default cookie container, a cookie that an
     // upstream sets for one user's request was stored and sent with every later request - for every user.
@@ -50,7 +56,7 @@ public class HttpClientTypeHandler(HttpTypeDefinition definition, Dictionary<str
         for (int attempt = 0; attempt <= maxRetries; attempt++)
         {
             var startTimestamp = Stopwatch.GetTimestamp();
-            _resolvedUrl = ResolveValue(definition.Url);
+            _resolvedUrl = ResolveUrl();
             var resolvedUrl = _resolvedUrl;
             if (attempt == 0)
             {
@@ -69,9 +75,7 @@ public class HttpClientTypeHandler(HttpTypeDefinition definition, Dictionary<str
                 // Use internal request handler for self-calls (bypasses HTTP stack entirely)
                 if (isSelfCall && InternalRequestHandler.IsAvailable)
                 {
-                    var url = definition.NeedsParsing && replacements is not null
-                        ? Formatter.FormatString(definition.Url.AsSpan(), replacements.Value).ToString()
-                        : definition.Url;
+                    var url = ResolveUrl();
 
                     var internalResponse = await InternalRequestHandler.ExecuteAsync(
                         definition.Method,
@@ -125,7 +129,7 @@ public class HttpClientTypeHandler(HttpTypeDefinition definition, Dictionary<str
             {
                 StatusCode = 408;
                 IsSuccess = false;
-                ErrorMessage = $"Request timed out after {definition.Timeout?.TotalSeconds ?? 30} seconds";
+                ErrorMessage = $"Request timed out after {EffectiveTimeout.TotalSeconds} seconds";
                 if (attempt < maxRetries)
                 {
                     Logger?.LogWarning("HTTP client request to '{Url}' timed out, retrying after {Delay}ms",
@@ -134,7 +138,7 @@ public class HttpClientTypeHandler(HttpTypeDefinition definition, Dictionary<str
                     continue;
                 }
                 Logger?.LogWarning("HTTP client request to '{Url}' timed out after {Timeout}s",
-                    resolvedUrl, definition.Timeout?.TotalSeconds ?? 30);
+                    resolvedUrl, EffectiveTimeout.TotalSeconds);
             }
             catch (HttpRequestException ex)
             {
@@ -198,7 +202,7 @@ public class HttpClientTypeHandler(HttpTypeDefinition definition, Dictionary<str
     {
         var sb = new StringBuilder();
         sb.Append(definition.Method).Append('\n');
-        sb.Append(ResolveValue(definition.Url)).Append('\n');
+        sb.Append(ResolveUrl()).Append('\n');
         if (definition.ContentType is not null)
         {
             sb.Append(ResolveValue(definition.ContentType));
@@ -243,7 +247,7 @@ public class HttpClientTypeHandler(HttpTypeDefinition definition, Dictionary<str
 
     private HttpRequestMessage CreateRequest()
     {
-        var url = ResolveValue(definition.Url);
+        var url = ResolveUrl();
 
         // Resolve relative paths against the server's own base URL (skip if _selfClient handles it via BaseAddress)
         if (url.StartsWith('/') && _selfClient is null && SelfBaseUrl is not null)
@@ -280,16 +284,32 @@ public class HttpClientTypeHandler(HttpTypeDefinition definition, Dictionary<str
         return request;
     }
 
+    /// <summary>Timeout used when an HTTP type has no timeout directive.</summary>
+    public static readonly TimeSpan DefaultRequestTimeout = TimeSpan.FromSeconds(30);
+
+    private TimeSpan EffectiveTimeout => definition.Timeout ?? DefaultRequestTimeout;
+
     private CancellationTokenSource? CreateTimeoutCancellationTokenSource(CancellationToken cancellationToken)
     {
-        if (definition.Timeout is null)
-        {
-            return null;
-        }
-
+        // Every outbound call has a timeout: without a timeout directive the shared client (infinite timeout) used
+        // to wait forever for a hanging upstream, holding the request - while the messages claimed 30 seconds.
         var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cts.CancelAfter(definition.Timeout.Value);
+        cts.CancelAfter(EffectiveTimeout);
         return cts;
+    }
+
+    /// <summary>
+    /// The URL with placeholders resolved. Request-derived values are percent-encoded (see urlReplacements), so a value
+    /// such as "../admin?x=1" stays inside its path segment or query value instead of changing the request target.
+    /// </summary>
+    private string ResolveUrl()
+    {
+        var lookup = urlReplacements ?? replacements;
+        if (definition.NeedsParsing is false || lookup is null)
+        {
+            return definition.Url;
+        }
+        return new string(Formatter.FormatString(definition.Url.AsSpan(), lookup.Value));
     }
 
     private async Task ProcessResponseAsync(HttpResponseMessage response, long startTimestamp)
@@ -349,7 +369,8 @@ public class HttpClientTypeHandler(HttpTypeDefinition definition, Dictionary<str
         IEnumerable<string> typeNames,
         Dictionary<string, string>.AlternateLookup<ReadOnlySpan<char>>? replacements,
         NpgsqlParameterCollection parameters,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Dictionary<string, string>.AlternateLookup<ReadOnlySpan<char>>? urlReplacements = null)
     {
         var handlers = new Dictionary<string, HttpClientTypeHandler>();
         var tasks = new List<(string TypeName, HttpClientTypeHandler Handler, Task Task)>();
@@ -366,7 +387,7 @@ public class HttpClientTypeHandler(HttpTypeDefinition definition, Dictionary<str
             }
             if (HttpClientTypes.Definitions.TryGetValue(typeName, out var definition))
             {
-                var handler = new HttpClientTypeHandler(definition, replacements);
+                var handler = new HttpClientTypeHandler(definition, replacements, urlReplacements);
                 handlers[typeName] = handler;
                 tasks.Add((typeName, handler, handler.InvokeWithCacheAsync(cancellationToken)));
             }

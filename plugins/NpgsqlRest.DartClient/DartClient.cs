@@ -1603,7 +1603,10 @@ public partial class DartClient(DartClientOptions options) : IEndpointCreateHand
             lines.Add($"See {routine.Type.ToString().ToUpperInvariant()} {routine.Schema}.{routine.Name}");
         }
 
-        return string.Join(Environment.NewLine, lines.Select(l => l.Length == 0 ? "///" : string.Concat("/// ", l)));
+        // Every physical line must start with "///": Dart also ends a line at a lone '\r', and text after it would be code.
+        return string.Join(Environment.NewLine, lines
+            .SelectMany(l => l.Split('\r'))
+            .Select(l => l.Length == 0 ? "///" : string.Concat("/// ", l)));
     }
 
     private static bool IsIntegerFamily(TypeDescriptor descriptor) =>

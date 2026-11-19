@@ -769,6 +769,7 @@ public class Builder
             {
                 options.TokenValidationParameters = JwtTokenConfig.GetTokenValidationParameters();
                 options.SaveToken = true;
+                options.Events = JwtTokenConfig.CreateBearerEvents();
             });
 
             ClientLogger?.LogDebug(
@@ -1290,6 +1291,7 @@ public class Builder
         {
             options.TokenValidationParameters = jwtConfig.GetTokenValidationParameters();
             options.SaveToken = true;
+            options.Events = JwtTokenConfig.CreateBearerEvents();
         });
 
         AdditionalJwtTokenConfigs.Add(jwtConfig);
@@ -2200,6 +2202,7 @@ public class Builder
         options.HashKeyThreshold = _config.GetConfigInt("HashKeyThreshold", cacheCfg) ?? 256;
         options.InvalidateCacheSuffix = _config.GetConfigStr("InvalidateCacheSuffix", cacheCfg);
         options.MemoryCachePruneIntervalSeconds = _config.GetConfigInt("MemoryCachePruneIntervalSeconds", cacheCfg) ?? 60;
+        options.MemoryCacheMaxEntries = _config.GetConfigInt("MemoryCacheMaxEntries", cacheCfg) ?? 100_000;
 
         // Lazy backend instantiation: spin up at most one instance per CacheType, only for types
         // actually referenced by root config or any enabled profile. Profiles that share a Type
@@ -2211,8 +2214,8 @@ public class Builder
         {
             backendsByType[CacheType.Memory] = new RoutineCache();
             ClientLogger?.LogDebug(
-                "Initialized Memory cache backend (MemoryCachePruneIntervalSeconds={Interval}, MaxCacheableRows={MaxRows}, UseHashedCacheKeys={Hash}, HashKeyThreshold={Threshold}).",
-                options.MemoryCachePruneIntervalSeconds, options.MaxCacheableRows, options.UseHashedCacheKeys, options.HashKeyThreshold);
+                "Initialized Memory cache backend (MemoryCachePruneIntervalSeconds={Interval}, MemoryCacheMaxEntries={MaxEntries}, MaxCacheableRows={MaxRows}, UseHashedCacheKeys={Hash}, HashKeyThreshold={Threshold}).",
+                options.MemoryCachePruneIntervalSeconds, options.MemoryCacheMaxEntries, options.MaxCacheableRows, options.UseHashedCacheKeys, options.HashKeyThreshold);
         }
 
         if (usedTypes.Contains(CacheType.Redis))

@@ -553,6 +553,7 @@ public static class ConfigDefaults
             ["Enabled"] = false,
             ["Type"] = "Memory",
             ["MemoryCachePruneIntervalSeconds"] = 60,
+            ["MemoryCacheMaxEntries"] = 100000,
             ["RedisConfiguration"] = "localhost:6379,abortConnect=false,ssl=false,connectTimeout=10000,syncTimeout=5000,connectRetry=3",
             ["MaxCacheableRows"] = 1000,
             ["UseHashedCacheKeys"] = false,

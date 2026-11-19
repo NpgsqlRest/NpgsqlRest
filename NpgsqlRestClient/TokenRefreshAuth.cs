@@ -64,17 +64,21 @@ public class TokenRefreshAuth
                 return;
             }
 
+            // The refresh token is the credential: new tokens are issued for the principal INSIDE the refresh ticket.
+            // (This used to sign in context.User - the caller of the refresh request - so any valid access token
+            // combined with any unexpired refresh token produced new tokens for the access token's owner, and an
+            // expired access token made a perfectly valid refresh token useless.)
             var refreshTicket = refreshTokenProtector.Unprotect(refreshToken);
-            if (
-                (refreshTicket?.Properties?.ExpiresUtc is not { } expiresUtc || timeProvider.GetUtcNow() >= expiresUtc) || 
-                context.User.Identity?.IsAuthenticated is false)
+            if (refreshTicket?.Properties?.ExpiresUtc is not { } expiresUtc ||
+                timeProvider.GetUtcNow() >= expiresUtc ||
+                refreshTicket.Principal.Identity?.IsAuthenticated is not true)
             {
                 result = Results.Challenge();
                 await result.ExecuteAsync(context);
                 return;
             }
 
-            if (Results.SignIn(principal: context.User, authenticationScheme: scheme) is not SignInHttpResult signInResult)
+            if (Results.SignIn(principal: refreshTicket.Principal, authenticationScheme: scheme) is not SignInHttpResult signInResult)
             {
                 logger?.LogError("Failed in constructing user identity for authentication.");
                 context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;

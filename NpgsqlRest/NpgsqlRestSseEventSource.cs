@@ -11,7 +11,48 @@ public readonly record struct SseEvent(
 public class NpgsqlRestSseEventSource(RequestDelegate next)
 {
     public static readonly HashSet<string> Paths = [];
-    public static readonly Broadcaster<SseEvent> Broadcaster = new();
+    /// <summary>
+    /// Events buffered for one SSE subscriber that is not reading (a stalled or deliberately idle client). When the
+    /// buffer is full the oldest pending event is dropped, so idle subscribers cannot grow server memory without limit.
+    /// </summary>
+    public const int MaxPendingEventsPerSubscriber = 10_000;
+
+    public static readonly Broadcaster<SseEvent> Broadcaster = new(MaxPendingEventsPerSubscriber);
+
+    /// <summary>
+    /// Formats a message as one SSE event. Every line of the message gets its own <c>data:</c> line (the client joins
+    /// them back with "\n"), so a line break in the message cannot start another field (<c>event:</c>, <c>id:</c>,
+    /// <c>retry:</c>) or end the event early and forge a second one.
+    /// </summary>
+    internal static string FormatEventData(string? message)
+    {
+        if (string.IsNullOrEmpty(message))
+        {
+            return "data: \n\n";
+        }
+        if (message.AsSpan().IndexOfAny('\r', '\n') < 0)
+        {
+            return string.Concat("data: ", message, "\n\n");
+        }
+        var sb = new System.Text.StringBuilder(message.Length + 16);
+        sb.Append("data: ");
+        for (var i = 0; i < message.Length; i++)
+        {
+            var ch = message[i];
+            if (ch == '\r' || ch == '\n')
+            {
+                if (ch == '\r' && i + 1 < message.Length && message[i + 1] == '\n')
+                {
+                    i++;
+                }
+                sb.Append("\ndata: ");
+                continue;
+            }
+            sb.Append(ch);
+        }
+        sb.Append("\n\n");
+        return sb.ToString();
+    }
 
     /// <summary>
     /// True if any endpoint in the build participates in SSE — either as a publisher (<c>@sse</c> /
@@ -152,7 +193,7 @@ public class NpgsqlRestSseEventSource(RequestDelegate next)
 
                 try
                 {
-                    await context.Response.WriteAsync($"data: {noticeEvent.Notice.MessageText}\n\n", cancellationToken);
+                    await context.Response.WriteAsync(FormatEventData(noticeEvent.Notice.MessageText), cancellationToken);
                     await context.Response.Body.FlushAsync(cancellationToken);
                 }
                 catch (OperationCanceledException)

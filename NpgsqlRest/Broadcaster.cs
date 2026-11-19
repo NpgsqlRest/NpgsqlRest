@@ -3,7 +3,11 @@ using System.Threading.Channels;
 
 namespace NpgsqlRest;
 
-public class Broadcaster<T>
+/// <param name="subscriberCapacity">
+/// Maximum number of messages buffered for one subscriber that is not reading; when exceeded the oldest pending message
+/// is dropped. 0 = unbounded.
+/// </param>
+public class Broadcaster<T>(int subscriberCapacity = 0)
 {
     private readonly ConcurrentDictionary<Guid, Channel<T>> _channels = new();
 
@@ -26,7 +30,16 @@ public class Broadcaster<T>
         {
             existingChannel.Writer.TryComplete();
         }
-        var channel = Channel.CreateUnbounded<T>();
+        // A bounded channel in DropOldest mode never rejects a write (TryWrite still fails only once the channel is
+        // completed), so a subscriber that stops reading costs at most subscriberCapacity messages of memory.
+        var channel = subscriberCapacity > 0
+            ? Channel.CreateBounded<T>(new BoundedChannelOptions(subscriberCapacity)
+            {
+                FullMode = BoundedChannelFullMode.DropOldest,
+                SingleReader = true,
+                SingleWriter = false
+            })
+            : Channel.CreateUnbounded<T>();
         _channels[subscriberId] = channel;
         return channel.Reader;
     }

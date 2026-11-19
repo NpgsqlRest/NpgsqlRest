@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Data;
 using System.IO.Pipelines;
 using System.Net;
@@ -12,6 +13,76 @@ namespace NpgsqlRest;
 
 public partial class NpgsqlRestEndpoint
 {
+    // Authorization is checked before the request is processed (body parsing, password hashing, validation,
+    // encryption) whenever the outcome cannot depend on overload resolution:
+    // - anonymous callers are rejected upfront when this endpoint and every overload of it require authorization;
+    // - roles are checked upfront when the endpoint has no overloads.
+    // The check after parameter processing still runs for the endpoint the request finally resolves to.
+    private readonly bool _rejectAnonymousUpfront = RequiresAuthorizationForAll(entry, overloads);
+    private readonly bool _checkRolesUpfront =
+        entry.Endpoint.Login is false && entry.Endpoint.AuthorizeRoles is not null && HasNoOverloads(entry, overloads);
+
+    private static bool RequiresAuthorization(RoutineEndpoint endpoint) =>
+        endpoint.Login is false && (endpoint.RequiresAuthorization || endpoint.AuthorizeRoles is not null);
+
+    private static bool RequiresAuthorizationForAll(NpgsqlRestMetadataEntry entry, FrozenDictionary<string, NpgsqlRestMetadataEntry> overloads)
+    {
+        if (RequiresAuthorization(entry.Endpoint) is false)
+        {
+            return false;
+        }
+        foreach (var overload in overloads.Values)
+        {
+            if (string.Equals(overload.Key, entry.Key, StringComparison.Ordinal) && RequiresAuthorization(overload.Endpoint) is false)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static bool HasNoOverloads(NpgsqlRestMetadataEntry entry, FrozenDictionary<string, NpgsqlRestMetadataEntry> overloads)
+    {
+        foreach (var overload in overloads.Values)
+        {
+            if (string.Equals(overload.Key, entry.Key, StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Writes 401 (not signed in) or 403 (signed in, no matching role) when the endpoint's authorization is not met.
+    /// Returns true when the request was rejected.
+    /// </summary>
+    private async Task<bool> RejectUnauthorizedAsync(HttpContext context, RoutineEndpoint endpoint, bool checkAuthentication, bool checkRoles)
+    {
+        if (checkAuthentication
+            && (endpoint.RequiresAuthorization || endpoint.AuthorizeRoles is not null)
+            && context.User?.Identity?.IsAuthenticated is not true)
+        {
+            await Results.Problem(
+                type: null,
+                statusCode: (int)HttpStatusCode.Unauthorized,
+                title: "Unauthorized",
+                detail: null).ExecuteAsync(context);
+            return true;
+        }
+        if (checkRoles
+            && endpoint.AuthorizeRoles is not null
+            && endpoint.HasAuthorizeRoleMatch(context.User, Options.AuthenticationOptions) is false)
+        {
+            await Results.Problem(
+                type: null,
+                statusCode: (int)HttpStatusCode.Forbidden,
+                title: "Forbidden",
+                detail: null).ExecuteAsync(context);
+            return true;
+        }
+        return false;
+    }
     /// <summary>
     /// Result of evaluating <see cref="RoutineEndpoint.CacheWhen"/> against the resolved parameter values.
     /// Three possible outcomes:
@@ -483,8 +554,17 @@ public partial class NpgsqlRestEndpoint
                 {
                     return (false, message);
                 }
-                if (!System.Text.RegularExpressions.Regex.IsMatch(originalStringValue, rule.Pattern))
+                try
                 {
+                    if (rule.GetRegex()!.IsMatch(originalStringValue) is false)
+                    {
+                        return (false, message);
+                    }
+                }
+                catch (System.Text.RegularExpressions.RegexMatchTimeoutException)
+                {
+                    Logger?.LogWarning("Validation of parameter {Parameter} timed out (pattern {Pattern}, value length {Length}); rejected as invalid.",
+                        originalParamName, rule.Pattern, originalStringValue.Length);
                     return (false, message);
                 }
                 break;

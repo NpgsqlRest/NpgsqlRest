@@ -76,6 +76,42 @@ public sealed class SseTestClient : IAsyncDisposable
     }
 
     /// <summary>
+    /// Reads the raw field lines of the next event (comment lines starting with ':' skipped), up to the blank line that
+    /// ends it. Returns null if the stream ends or the timeout elapses first.
+    /// </summary>
+    public async Task<List<string>?> ReadEventLinesAsync(TimeSpan timeout)
+    {
+        using var perRead = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+        perRead.CancelAfter(timeout);
+        var lines = new List<string>();
+        try
+        {
+            string? line;
+            while ((line = await _reader.ReadLineAsync(perRead.Token)) is not null)
+            {
+                if (line.Length == 0)
+                {
+                    if (lines.Count > 0)
+                    {
+                        return lines;
+                    }
+                    continue;
+                }
+                if (line.StartsWith(':'))
+                {
+                    continue;
+                }
+                lines.Add(line);
+            }
+            return null;
+        }
+        catch (OperationCanceledException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Reads lines until one starts with <c>data:</c> and returns the value after the colon
     /// (trimmed of leading whitespace). Returns null if the stream ends before a data line is
     /// received within the timeout.

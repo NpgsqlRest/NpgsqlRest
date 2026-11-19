@@ -47,7 +47,49 @@ public class ValidationRule
     /// <summary>
     /// Regular expression pattern for Regex validation type.
     /// </summary>
-    public string? Pattern { get; set; }
+    public string? Pattern
+    {
+        get => _pattern;
+        set
+        {
+            _pattern = value;
+            _regex = null;
+        }
+    }
+    private string? _pattern;
+    private System.Text.RegularExpressions.Regex? _regex;
+
+    /// <summary>
+    /// Time limit for one Regex rule evaluation. A value that takes longer fails validation.
+    /// </summary>
+    public static readonly TimeSpan RegexMatchTimeout = TimeSpan.FromMilliseconds(250);
+
+    /// <summary>
+    /// The compiled <see cref="Pattern"/>, built once. Patterns run on request values, so they use the linear-time
+    /// non-backtracking engine when the pattern allows it (no backreferences or lookarounds) - a backtracking pattern
+    /// such as the built-in email rule took quadratic time on crafted input. Either engine has a match timeout.
+    /// </summary>
+    internal System.Text.RegularExpressions.Regex? GetRegex()
+    {
+        if (_pattern is null)
+        {
+            return null;
+        }
+        if (_regex is not null)
+        {
+            return _regex;
+        }
+        System.Text.RegularExpressions.Regex regex;
+        try
+        {
+            regex = new(_pattern, System.Text.RegularExpressions.RegexOptions.NonBacktracking, RegexMatchTimeout);
+        }
+        catch (NotSupportedException)
+        {
+            regex = new(_pattern, System.Text.RegularExpressions.RegexOptions.None, RegexMatchTimeout);
+        }
+        return _regex = regex;
+    }
 
     /// <summary>
     /// Minimum length for MinLength validation type.

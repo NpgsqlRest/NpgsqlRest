@@ -203,7 +203,7 @@ public class FileSystemUploadHandler() : BaseUploadHandler, IUploadHandler
 
             if (Options.UploadOptions.LogUploadEvent)
             {
-                Logger?.UploadedFileToFileSystem(formFile.FileName, formFile.ContentType, formFile.Length, currentFilePath);
+                Logger?.UploadedFileToFileSystem(formFile.FileName, formFile.ContentType, formFile.Length, currentFilePath!);
             }
             fileId++;
         }

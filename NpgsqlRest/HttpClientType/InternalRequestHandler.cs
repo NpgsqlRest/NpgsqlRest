@@ -201,7 +201,8 @@ internal static class InternalRequestHandler
                     // Extract parameter name (strip { } and optional ?)
                     var paramName = ts[1..^1].TrimEnd('?');
                     routeValues ??= new();
-                    routeValues[paramName] = segments[i];
+                    // Placeholder values are percent-encoded into the URL; route values are decoded, as HTTP routing does.
+                    routeValues[paramName] = Uri.UnescapeDataString(segments[i]);
                     continue;
                 }
                 if (!string.Equals(segments[i], ts, StringComparison.OrdinalIgnoreCase))

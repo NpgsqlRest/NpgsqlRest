@@ -149,6 +149,28 @@ public class NpgsqlRestParameter : NpgsqlParameter
 
     internal static char GetCacheKeySeparator() => CacheKeySeparator;
 
+    /// <summary>
+    /// Appends this parameter to a cache key as <c>\x1F{name}={length}:{value}</c> (or <c>\x1F{name}=N</c> for NULL).
+    /// The name keeps omitted parameters apart (<c>?a=x</c> and <c>?b=x</c> used to produce the same key), and the
+    /// length prefix makes the encoding unambiguous - a value containing the separator (e.g. <c>%1F</c> in a query
+    /// string) can no longer forge another parameter list.
+    /// </summary>
+    internal void AppendCacheKey(StringBuilder? key)
+    {
+        if (key is null)
+        {
+            return;
+        }
+        key.Append(CacheKeySeparator).Append(ActualName).Append('=');
+        if (Value is null || Value == DBNull.Value)
+        {
+            key.Append('N');
+            return;
+        }
+        var value = GetCacheStringValue();
+        key.Append(value.Length).Append(':').Append(value);
+    }
+
 #pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring as nullable.
 #pragma warning disable CS8603 // Possible null reference return.
     public NpgsqlRestParameter NpgsqlRestParameterMemberwiseClone() => MemberwiseClone() as NpgsqlRestParameter;

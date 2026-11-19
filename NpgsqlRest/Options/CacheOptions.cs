@@ -13,6 +13,13 @@ public class CacheOptions
     public int MemoryCachePruneIntervalSeconds { get; set; } = 60;
 
     /// <summary>
+    /// Maximum number of entries held by the in-memory routine cache. Once full, responses for new cache keys are
+    /// served without being cached (existing entries keep serving and expire normally). 0 or less = no limit.
+    /// Default is 100,000.
+    /// </summary>
+    public int MemoryCacheMaxEntries { get; set; } = 100_000;
+
+    /// <summary>
     /// Maximum number of rows that can be cached for set-returning functions.
     /// If a result set exceeds this limit, it will not be cached (but will still be returned).
     /// Set to 0 to disable caching for sets entirely. Set to null for unlimited (use with caution).

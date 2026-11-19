@@ -94,6 +94,10 @@ public class RoutineCache : IRoutineCache
     private static Timer? _cleanupTimer;
     private static CacheOptions _options = new();
 
+    // Test hooks (the cache is process-wide).
+    internal static CacheOptions CurrentOptions => _options;
+    internal static int EntryCount => _cache.Count;
+
     public static void Start(NpgsqlRestOptions options)
     {
         _options = options.CacheOptions;
@@ -147,6 +151,15 @@ public class RoutineCache : IRoutineCache
     public void AddOrUpdate(RoutineEndpoint endpoint, string key, object? value, TimeSpan? overrideExpiration = null)
     {
         var effectiveKey = CacheKeyHasher.GetEffectiveKey(key, _options);
+
+        // Bound memory: cache keys contain request values, so without a limit callers could add entries at will
+        // (and entries without an expiration were never removed). Once full, new keys are not admitted - their
+        // responses are still served, just not cached; existing entries keep serving and expire normally.
+        var maxEntries = _options.MemoryCacheMaxEntries;
+        if (maxEntries > 0 && _cache.Count >= maxEntries && _cache.ContainsKey(effectiveKey) is false)
+        {
+            return;
+        }
 
         var ttl = overrideExpiration ?? endpoint.CacheExpiresIn;
         var entry = new CacheEntry

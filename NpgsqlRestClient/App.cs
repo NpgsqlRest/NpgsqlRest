@@ -403,6 +403,20 @@ public class App
         return openApi;
     }
 
+    /// <summary>
+    /// When antiforgery is enabled, every NpgsqlRest endpoint gets <see cref="Microsoft.AspNetCore.Antiforgery.RequireAntiforgeryTokenAttribute"/>
+    /// metadata, so the antiforgery middleware validates state-changing requests (POST/PUT/PATCH/DELETE) to it.
+    /// Without the metadata the middleware skipped NpgsqlRest endpoints entirely and Antiforgery:Enabled validated nothing.
+    /// </summary>
+    public static Action<RouteHandlerBuilder, RoutineEndpoint>? CreateAntiforgeryRouteHandler(bool antiForgeryUsed)
+    {
+        if (antiForgeryUsed is false)
+        {
+            return null;
+        }
+        return static (route, _) => route.WithMetadata(new Microsoft.AspNetCore.Antiforgery.RequireAntiforgeryTokenAttribute());
+    }
+
     public Action<RoutineEndpoint?>? CreateEndpointCreatedHandler(IConfigurationSection authCfg)
     {
         if (_config.Exists(authCfg) is false)

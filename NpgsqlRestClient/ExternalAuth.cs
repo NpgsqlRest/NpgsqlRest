@@ -118,6 +118,13 @@ public class ExternalAuthConfig
             clientConfig.ExternalType = section.Key;
 
             ClientConfigs.Add(clientConfig.SigninUrl, clientConfig);
+            if (key == "microsoft")
+            {
+                // nOAuth: Microsoft's userinfo has no email_verified flag, and the email of a work/school account is a
+                // directory attribute any tenant administrator can set - including to someone else's address.
+                builder.ClientLogger?.LogWarning(
+                    "External login for Microsoft is enabled. The email it reports for work/school accounts is not verified by Microsoft: identify users by the stable subject id (\"sub\" in the user info JSON, LoginCommand parameter $4), not by email alone.");
+            }
             builder.ClientLogger?.LogDebug("External login available for {Key} available on path: {signinUrl}", section.Key, signinUrl);
         }
 
@@ -177,8 +184,25 @@ public class ExternalAuth
 
             if (string.Equals(context.Request.Method, "GET", StringComparison.OrdinalIgnoreCase))
             {
+                var state = Guid.NewGuid().ToString("N");
+                // The OAuth state is bound to this browser on the server: kept in an HttpOnly cookie when the flow
+                // starts and checked when the code is posted. The provider's callback (GET with code/state/error)
+                // renders the page again - it must not replace the cookie of the flow it is completing.
+                var query = context.Request.Query;
+                if (query.ContainsKey("code") is false && query.ContainsKey("state") is false && query.ContainsKey("error") is false)
+                {
+                    context.Response.Cookies.Append(StateCookieName, state, new CookieOptions
+                    {
+                        HttpOnly = true,
+                        Secure = context.Request.IsHttps,
+                        SameSite = SameSiteMode.Lax,
+                        Path = context.Request.Path,
+                        MaxAge = TimeSpan.FromMinutes(10),
+                        IsEssential = true
+                    });
+                }
                 PrepareResponse(Text.Html, context);
-                await context.Response.WriteAsync(BuildHtmlTemplate(config, context.Request, externalAuthConfig));
+                await context.Response.WriteAsync(BuildHtmlTemplate(config, context.Request, externalAuthConfig, state));
                 await context.Response.CompleteAsync();
                 return;
             }
@@ -195,6 +219,21 @@ public class ExternalAuth
                     string code = (node["code"]?.ToString()) ??
                         throw new ArgumentException("code retrieved from the external provider is null");
 
+                    // Login CSRF protection: the posted state (echoed by the provider) must match the state this
+                    // browser received when it started the flow. A code posted by another site (an attacker's own
+                    // code, to sign the victim into the attacker's account) has neither.
+                    var postedState = node["state"]?.ToString();
+                    var expectedState = context.Request.Cookies[StateCookieName];
+                    context.Response.Cookies.Delete(StateCookieName, new CookieOptions { Path = context.Request.Path });
+                    if (StateMatches(postedState, expectedState) is false)
+                    {
+                        _clientLogger?.LogWarning("External login rejected for {ExternalType}: missing or mismatched OAuth state", config.ExternalType);
+                        context.Response.StatusCode = (int)HttpStatusCode.BadRequest;
+                        await context.Response.WriteAsync("Invalid or expired sign-in state. Please start the sign-in again.");
+                        await context.Response.CompleteAsync();
+                        return;
+                    }
+
                     await ProcessAsync(
                         code, 
                         config, 
@@ -204,6 +243,14 @@ public class ExternalAuth
                         retryStrategy,
                         externalAuthConfig, 
                         loggingMode);
+                    return;
+                }
+                catch (ExternalEmailNotVerifiedException)
+                {
+                    _clientLogger?.LogWarning("External login rejected for {ExternalType}: the provider reports the email address as not verified", config.ExternalType);
+                    context.Response.StatusCode = (int)HttpStatusCode.Forbidden;
+                    await context.Response.WriteAsync(string.Format("The email address of this {0} account is not verified. Verify it with {0} and sign in again.", config.ExternalType));
+                    await context.Response.CompleteAsync();
                     return;
                 }
                 catch (Exception e)
@@ -358,6 +405,14 @@ public class ExternalAuth
             throw new ArgumentException("email retrieved from the external provider is null");
         }
 
+        // An address the provider itself reports as unverified proves nothing about who signed in: anyone can
+        // register an account with someone else's address. The login command identifies the user by email ($2),
+        // so such a sign-in could take over that person's account.
+        if (IsEmailExplicitlyUnverified(infoNode))
+        {
+            throw new ExternalEmailNotVerifiedException();
+        }
+
         //var middlewareLogger = NpgsqlRestMiddleware.Logger;
         await using var connection = new NpgsqlConnection(connectionString);
         if (options.LogConnectionNoticeEvents)
@@ -430,10 +485,47 @@ public class ExternalAuth
             assignUserPrincipalToContext: false);
     }
     
-    private static string BuildHtmlTemplate(ExternalAuthClientConfig config, HttpRequest request, ExternalAuthConfig externalAuthConfig)
+    private const string StateCookieName = "__npgsqlrest_oauth_state";
+
+    private sealed class ExternalEmailNotVerifiedException() : Exception("The external provider reports the email address as not verified.");
+
+    /// <summary>
+    /// True when the provider's user info explicitly marks the email as unverified: OpenID Connect
+    /// <c>email_verified</c> (Google, LinkedIn, most OIDC providers) or Google's legacy <c>verified_email</c>,
+    /// as a JSON boolean or the string "false". Absent flags are not treated as unverified.
+    /// </summary>
+    public static bool IsEmailExplicitlyUnverified(JsonNode? info)
+    {
+        foreach (var key in (ReadOnlySpan<string>)["email_verified", "verified_email"])
+        {
+            if (info?[key] is JsonValue value)
+            {
+                if (value.TryGetValue<bool>(out var verified))
+                {
+                    return verified is false;
+                }
+                if (value.TryGetValue<string>(out var text) && bool.TryParse(text, out verified))
+                {
+                    return verified is false;
+                }
+            }
+        }
+        return false;
+    }
+
+    internal static bool StateMatches(string? postedState, string? expectedState)
+    {
+        if (string.IsNullOrEmpty(postedState) || string.IsNullOrEmpty(expectedState))
+        {
+            return false;
+        }
+        return System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+            Encoding.UTF8.GetBytes(postedState), Encoding.UTF8.GetBytes(expectedState));
+    }
+
+    private static string BuildHtmlTemplate(ExternalAuthClientConfig config, HttpRequest request, ExternalAuthConfig externalAuthConfig, string state)
     {
         string redirectUrl = GetRedirectUrl(config, request, externalAuthConfig);
-        var state = Guid.NewGuid().ToString();
         var redirectTo = "/";
         var authUrl = string.Format(config.AuthUrl, config.ClientId, redirectUrl, state);
         var analyticsData = externalAuthConfig?.ClientAnalyticsData is null ? "null" : externalAuthConfig!.ClientAnalyticsData;

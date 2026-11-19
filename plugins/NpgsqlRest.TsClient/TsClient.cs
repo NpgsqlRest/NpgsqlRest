@@ -1922,7 +1922,9 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             sb.AppendLine("* ");
             sb.Append(string.Format("* @see {0} {1}.{2}", routine.Type.ToString().ToUpperInvariant(), routine.Schema, routine.Name));
         }
-        return sb.ToString().TrimEnd('\n', '\r');
+        // The text goes inside a /** ... */ block: a "*/" in a routine comment or definition (e.g. a /* ... */ comment
+        // in the body with CommentHeader Full) would end the block early and turn the rest into code.
+        return sb.ToString().TrimEnd('\n', '\r').Replace("*/", "*\\/");
     }
 
     private string GetTsType(TypeDescriptor descriptor, bool useDateType)

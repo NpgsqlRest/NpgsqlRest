@@ -44,18 +44,89 @@ public partial class NpgsqlRestEndpoint(
     //
     // The outer map is keyed by the cache instance itself (reference identity, so distinct cache
     // profiles never share a gate even if they reuse a key string) and an inner map holds one gate per
-    // key. SemaphoreSlim instances are never disposed — they hold no OS handle unless AvailableWaitHandle
-    // is touched, and their count is bounded by (cache instances × distinct keys), bounded by the schema.
-    private static readonly ConcurrentDictionary<IRoutineCache, ConcurrentDictionary<string, SemaphoreSlim>> _recordCacheGates
+    // key. A gate exists only while requests hold or wait for it: it is reference-counted and removed by
+    // the last one to leave. (Gates used to stay forever - one per distinct key ever requested, and keys
+    // contain request values, so callers could grow the map without limit.)
+    private static readonly ConcurrentDictionary<IRoutineCache, ConcurrentDictionary<string, RecordCacheGate>> _recordCacheGates
         = new(ReferenceEqualityComparer.Instance);
 
-    private static SemaphoreSlim GetRecordCacheGate(IRoutineCache cache, string key) =>
-        _recordCacheGates
-            .GetOrAdd(cache, static _ => new(StringComparer.Ordinal))
-            .GetOrAdd(key, static _ => new SemaphoreSlim(1, 1));
+    internal static int RecordCacheGateCount => _recordCacheGates.Values.Sum(static g => g.Count);
+
+    private sealed class RecordCacheGate(ConcurrentDictionary<string, RecordCacheGate> owner, string key)
+    {
+        private readonly SemaphoreSlim _semaphore = new(1, 1);
+        private int _users; // requests holding or waiting; -1 = retired (removed from owner). Guarded by lock(this).
+
+        private static RecordCacheGate Enter(IRoutineCache cache, string key)
+        {
+            var gates = _recordCacheGates.GetOrAdd(cache, static _ => new(StringComparer.Ordinal));
+            while (true)
+            {
+                var gate = gates.GetOrAdd(key, static (k, g) => new RecordCacheGate(g, k), gates);
+                lock (gate)
+                {
+                    if (gate._users >= 0)
+                    {
+                        gate._users++;
+                        return gate;
+                    }
+                }
+                // retired by its last user between GetOrAdd and lock: take (or create) the current one
+            }
+        }
+
+        /// <summary>
+        /// Enters the gate for <paramref name="key"/> and waits for it. If the wait is cancelled, the gate is left
+        /// without releasing (it was never acquired) and the cancellation propagates.
+        /// </summary>
+        public static async Task<RecordCacheGate> AcquireAsync(IRoutineCache cache, string key, CancellationToken cancellationToken)
+        {
+            var gate = Enter(cache, key);
+            try
+            {
+                await gate._semaphore.WaitAsync(cancellationToken);
+            }
+            catch
+            {
+                gate.Leave(acquired: false);
+                throw;
+            }
+            return gate;
+        }
+
+        public void Leave(bool acquired = true)
+        {
+            if (acquired)
+            {
+                _semaphore.Release();
+            }
+            lock (this)
+            {
+                if (--_users == 0)
+                {
+                    _users = -1;
+                    owner.TryRemove(new KeyValuePair<string, RecordCacheGate>(key, this));
+                }
+            }
+        }
+    }
 
     public async Task InvokeAsync(HttpContext context, IServiceProvider serviceProvider, CancellationToken cancellationToken = default)
     {
+        // ASP.NET Core's antiforgery middleware (UseAntiforgery) only *records* a failed token validation in
+        // IAntiforgeryValidationFeature and continues - rejecting the request is left to the endpoint (MVC and
+        // minimal-API form binding do it). So when the endpoint carries antiforgery metadata and the token was
+        // missing or invalid, the request is rejected here, before anything runs.
+        if (context.Features.Get<Microsoft.AspNetCore.Antiforgery.IAntiforgeryValidationFeature>() is { IsValid: false })
+        {
+            await Results.Problem(
+                type: null,
+                statusCode: StatusCodes.Status400BadRequest,
+                title: "Bad Request",
+                detail: "Invalid or missing antiforgery token.").ExecuteAsync(context);
+            return;
+        }
+
         Routine routine = entry.Endpoint.Routine;
         RoutineEndpoint endpoint = entry.Endpoint;
         IRoutineSourceParameterFormatter formatter = entry.Formatter;
@@ -75,7 +146,7 @@ public partial class NpgsqlRestEndpoint(
         // reused connection (e.g. ServiceProviderMode=NpgsqlConnection / the SQL test runner's ambient connection).
         NoticeEventHandler? noticeHandler = null;
         // Held (when non-null) for the streaming records/sets cache path; released in the outer finally.
-        SemaphoreSlim? recordCacheGate = null;
+        RecordCacheGate? recordCacheGate = null;
         IUploadHandler? uploadHandler = null;
         var shouldLog = Options.LogCommands && Logger != null;
 
@@ -216,6 +287,13 @@ public partial class NpgsqlRestEndpoint(
                 {
                     return;
                 }
+            }
+
+            // Upfront authorization (see _rejectAnonymousUpfront): reject before any request processing work.
+            if ((_rejectAnonymousUpfront || _checkRolesUpfront)
+                && await RejectUnauthorizedAsync(context, endpoint, checkAuthentication: _rejectAnonymousUpfront, checkRoles: _checkRolesUpfront))
+            {
+                return;
             }
             
             await using var command = NpgsqlRestCommand.Create(connection);
@@ -494,8 +572,7 @@ public partial class NpgsqlRestEndpoint(
                             {
                                 if (endpoint.CachedParams.Contains(parameter.ConvertedName) || endpoint.CachedParams.Contains(parameter.ActualName))
                                 {
-                                    cacheKeys?.Append(NpgsqlRestParameter.GetCacheKeySeparator());
-                                    cacheKeys?.Append(parameter.GetCacheStringValue());
+                                    parameter.AppendCacheKey(cacheKeys);
                                 }
                             }
 
@@ -576,8 +653,7 @@ public partial class NpgsqlRestEndpoint(
                                 {
                                     if (endpoint.CachedParams.Contains(parameter.ConvertedName) || endpoint.CachedParams.Contains(parameter.ActualName))
                                     {
-                                        cacheKeys?.Append(NpgsqlRestParameter.GetCacheKeySeparator());
-                                        cacheKeys?.Append(parameter.GetCacheStringValue());
+                                        parameter.AppendCacheKey(cacheKeys);
                                     }
                                 }
                                 
@@ -672,8 +748,7 @@ public partial class NpgsqlRestEndpoint(
                             {
                                 if (endpoint.CachedParams.Contains(parameter.ConvertedName) || endpoint.CachedParams.Contains(parameter.ActualName))
                                 {
-                                    cacheKeys?.Append(NpgsqlRestParameter.GetCacheKeySeparator());
-                                    cacheKeys?.Append(parameter.GetCacheStringValue());
+                                    parameter.AppendCacheKey(cacheKeys);
                                 }
                             }
                             
@@ -765,8 +840,7 @@ public partial class NpgsqlRestEndpoint(
                                 {
                                     if (endpoint.CachedParams.Contains(parameter.ConvertedName) || endpoint.CachedParams.Contains(parameter.ActualName))
                                     {
-                                        cacheKeys?.Append(NpgsqlRestParameter.GetCacheKeySeparator());
-                                        cacheKeys?.Append(parameter.GetCacheStringValue());
+                                        parameter.AppendCacheKey(cacheKeys);
                                     }
                                 }
 
@@ -934,8 +1008,7 @@ public partial class NpgsqlRestEndpoint(
                     {
                         if (endpoint.CachedParams.Contains(parameter.ConvertedName) || endpoint.CachedParams.Contains(parameter.ActualName))
                         {
-                            cacheKeys?.Append(NpgsqlRestParameter.GetCacheKeySeparator()); 
-                            cacheKeys?.Append(parameter.GetCacheStringValue());
+                            parameter.AppendCacheKey(cacheKeys);
                         }
                     }
 
@@ -1177,8 +1250,7 @@ public partial class NpgsqlRestEndpoint(
                             {
                                 if (endpoint.CachedParams.Contains(parameter.ConvertedName) || endpoint.CachedParams.Contains(parameter.ActualName))
                                 {
-                                    cacheKeys?.Append(NpgsqlRestParameter.GetCacheKeySeparator());
-                                    cacheKeys?.Append(parameter.GetCacheStringValue());
+                                    parameter.AppendCacheKey(cacheKeys);
                                 }
                             }
 
@@ -1270,8 +1342,7 @@ public partial class NpgsqlRestEndpoint(
                                 {
                                     if (endpoint.CachedParams.Contains(parameter.ConvertedName) || endpoint.CachedParams.Contains(parameter.ActualName))
                                     {
-                                        cacheKeys?.Append(NpgsqlRestParameter.GetCacheKeySeparator());
-                                        cacheKeys?.Append(parameter.GetCacheStringValue());
+                                        parameter.AppendCacheKey(cacheKeys);
                                     }
                                 }
 
@@ -1438,8 +1509,7 @@ public partial class NpgsqlRestEndpoint(
                     {
                         if (endpoint.CachedParams.Contains(parameter.ConvertedName) || endpoint.CachedParams.Contains(parameter.ActualName))
                         {
-                            cacheKeys?.Append(NpgsqlRestParameter.GetCacheKeySeparator());
-                            cacheKeys?.Append(parameter.GetCacheStringValue());
+                            parameter.AppendCacheKey(cacheKeys);
                         }
                     }
 
@@ -1540,29 +1610,11 @@ public partial class NpgsqlRestEndpoint(
                 }
             }
 
-            // authorization check
-            if (endpoint.Login is false)
+            // authorization check for the endpoint the request resolved to (it may be an overload)
+            if (endpoint.Login is false
+                && await RejectUnauthorizedAsync(context, endpoint, checkAuthentication: true, checkRoles: true))
             {
-                if ((endpoint.RequiresAuthorization || endpoint.AuthorizeRoles is not null) && context.User?.Identity?.IsAuthenticated is false)
-                {
-                    await Results.Problem(
-                        type: null,
-                        statusCode: (int)HttpStatusCode.Unauthorized,
-                        title: "Unauthorized",
-                        detail: null).ExecuteAsync(context);
-                    return;
-                }
-
-                if (endpoint.AuthorizeRoles is not null
-                    && endpoint.HasAuthorizeRoleMatch(context.User, Options.AuthenticationOptions) is false)
-                {
-                    await Results.Problem(
-                        type: null,
-                        statusCode: (int)HttpStatusCode.Forbidden,
-                        title: "Forbidden",
-                        detail: null).ExecuteAsync(context);
-                    return;
-                }
+                return;
             }
 
             if (formatter.IsFormattable is true)
@@ -1640,12 +1692,19 @@ public partial class NpgsqlRestEndpoint(
 
             Dictionary<string, string>? customParameters = endpoint.CustomParameters;
             Dictionary<string, string>.AlternateLookup<ReadOnlySpan<char>>? lookup = null;
+            // HTTP Custom Type URLs get their own lookup: values that come from the request are percent-encoded there
+            // (env var values - operator configuration such as a base URL - are not), so a request value cannot
+            // change the outbound request's path, query or host.
+            Dictionary<string, string>.AlternateLookup<ReadOnlySpan<char>>? urlLookup = null;
             if (endpoint.HeadersNeedParsing is true || endpoint.CustomParamsNeedParsing || HttpClientTypes.NeedsParsing)
             {
                 // Case-insensitive so `{name}` placeholders match parameter names regardless of casing,
                 // consistent with the resolved-parameter SQL expression resolver (Formatter.ParameterizeSqlExpression).
                 var envVars = Options.SubstitutionEnvironmentVariables;
                 Dictionary<string, string> replacements = new(command.Parameters.Count * 4 + (envVars?.Count ?? 0), StringComparer.OrdinalIgnoreCase);
+                Dictionary<string, string>? urlReplacements = HttpClientTypes.NeedsParsing
+                    ? new(command.Parameters.Count * 4 + (envVars?.Count ?? 0), StringComparer.OrdinalIgnoreCase)
+                    : null;
                 // Allowlisted env vars first (base); parameter values added below overwrite them on a name
                 // collision, so a routine parameter always wins over an env var of the same name.
                 // Entries under a "!NAME" key mark names that resolved to a real value - that is what the
@@ -1655,6 +1714,10 @@ public partial class NpgsqlRestEndpoint(
                     foreach (var (name, value) in envVars)
                     {
                         replacements[name] = value;
+                        if (urlReplacements is not null)
+                        {
+                            urlReplacements[name] = value;
+                        }
                     }
                 }
                 for (var i = 0; i < command.Parameters.Count; i++)
@@ -1665,6 +1728,7 @@ public partial class NpgsqlRestEndpoint(
                     // A parameter wins over an env var in BOTH forms: a non-null value registers its own
                     // "!name" key; a null value removes any "!name" an env var of the same name left behind,
                     // so {!name:fallback} then yields the fallback instead of the env value.
+                    var urlValue = urlReplacements is null ? null : Uri.EscapeDataString(value);
                     void AddParam(string key)
                     {
                         replacements[key] = value;
@@ -1675,6 +1739,18 @@ public partial class NpgsqlRestEndpoint(
                         else if (envVars is not null)
                         {
                             replacements.Remove(string.Concat("!", key));
+                        }
+                        if (urlReplacements is not null)
+                        {
+                            urlReplacements[key] = urlValue!;
+                            if (isNull is false)
+                            {
+                                urlReplacements[string.Concat("!", key)] = urlValue!;
+                            }
+                            else if (envVars is not null)
+                            {
+                                urlReplacements.Remove(string.Concat("!", key));
+                            }
                         }
                     }
                     if (!string.IsNullOrEmpty(param.ActualName))
@@ -1688,6 +1764,7 @@ public partial class NpgsqlRestEndpoint(
                     }
                 }
                 lookup = replacements.GetAlternateLookup<ReadOnlySpan<char>>();
+                urlLookup = urlReplacements?.GetAlternateLookup<ReadOnlySpan<char>>();
             }
 
             if (endpoint.HeadersNeedParsing is true || endpoint.CustomParamsNeedParsing)
@@ -1697,7 +1774,10 @@ public partial class NpgsqlRestEndpoint(
                     customParameters = new Dictionary<string, string>(endpoint.CustomParameters.Count);
                     foreach (var (key, value) in endpoint.CustomParameters)
                     {
-                        customParameters[key] = Formatter.FormatString(value, lookup!.Value).ToString();
+                        // SQL-valued parameters (row_command) are never formatted: request values in SQL text = SQL injection.
+                        customParameters[key] = Defaults.DefaultCommentParser.IsSqlCustomParameter(key)
+                            ? value
+                            : Formatter.FormatString(value, lookup!.Value).ToString();
                     }
                 }
             }
@@ -1751,7 +1831,19 @@ public partial class NpgsqlRestEndpoint(
                         HttpClientTypeHandler.SelfBaseUrl = addr ?? $"{context.Request.Scheme}://{context.Request.Host}";
                     }
                 }
-                await HttpClientTypeHandler.InvokeAllAsync(customHttpTypes, lookup, command.Parameters, cancellationToken);
+                await HttpClientTypeHandler.InvokeAllAsync(customHttpTypes, lookup, command.Parameters, cancellationToken, urlLookup);
+            }
+
+            // A proxied response depends on the whole forwarded request, not only on the routine parameters:
+            // query string keys that are not routine parameters are forwarded too, and so is the request body.
+            if (cacheKeys is not null && endpoint.IsProxy)
+            {
+                var rawQuery = context.Request.QueryString.Value ?? "";
+                cacheKeys.Append(NpgsqlRestParameter.GetCacheKeySeparator()).Append("?=").Append(rawQuery.Length).Append(':').Append(rawQuery);
+                if (body is not null)
+                {
+                    cacheKeys.Append(NpgsqlRestParameter.GetCacheKeySeparator()).Append("body=").Append(body.Length).Append(':').Append(body);
+                }
             }
 
             // Cache the cache key string once to avoid repeated ToString() allocations
@@ -2659,8 +2751,7 @@ public partial class NpgsqlRestEndpoint(
                         // for this key. The lead executes and (within MaxCacheableRows) populates the cache
                         // below, so the waiters that acquire the gate next fall straight into this cache-hit
                         // branch instead of re-executing. Released in the outer finally.
-                        recordCacheGate = GetRecordCacheGate(resolvedCache!, cacheKeyString!);
-                        await recordCacheGate.WaitAsync(cancellationToken);
+                        recordCacheGate = await RecordCacheGate.AcquireAsync(resolvedCache!, cacheKeyString!, cancellationToken);
 
                         if (resolvedCache!.Get(endpoint, cacheKeyString!, out var cachedResult))
                         {
@@ -3325,7 +3416,7 @@ public partial class NpgsqlRestEndpoint(
         {
             // Release the records/sets stampede gate (if this request acquired it) so the next waiter
             // for this key can proceed — by now the cache is either populated or the response was over-limit.
-            recordCacheGate?.Release();
+            recordCacheGate?.Leave();
 
             await writer.CompleteAsync();
 

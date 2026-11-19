@@ -564,6 +564,9 @@ NpgsqlRestOptions options = new()
     BeforeRoutineCommands = builder.BuildBeforeRoutineCommands(),
 
     EndpointCreated = appInstance.CreateEndpointCreatedHandler(authCfg),
+    // Antiforgery:Enabled - mark every NpgsqlRest endpoint as requiring an antiforgery token, so UseAntiforgery()
+    // validates POST/PUT/PATCH/DELETE requests to them (the endpoint rejects a failed validation with 400).
+    RouteHandlerCreated = App.CreateAntiforgeryRouteHandler(antiForgeryUsed),
     ValidateParameters = null,
     ErrorHandlingOptions = errorHandlingOptions,
     BeforeConnectionOpen = appInstance.BeforeConnectionOpen(connectionString, authenticationOptions),

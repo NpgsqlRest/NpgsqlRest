@@ -60,6 +60,26 @@ public class JwtTokenConfig
 
     public SigningCredentials GetSigningCredentials() => new(GetSecurityKey(), SecurityAlgorithms.HmacSha256);
 
+    public const string TokenTypeClaim = "token_type";
+    public const string RefreshTokenType = "refresh";
+
+    /// <summary>
+    /// JwtBearer events for the access-token scheme: a refresh token (same key, issuer and audience, marked with the
+    /// token_type=refresh claim) is rejected. Without this a refresh token - valid for days - was accepted as an
+    /// access token on every API request.
+    /// </summary>
+    public static JwtBearerEvents CreateBearerEvents() => new()
+    {
+        OnTokenValidated = context =>
+        {
+            if (context.Principal?.FindFirst(TokenTypeClaim)?.Value == RefreshTokenType)
+            {
+                context.Fail("A refresh token cannot be used as an access token.");
+            }
+            return Task.CompletedTask;
+        }
+    };
+
     public TokenValidationParameters GetTokenValidationParameters() => new()
     {
         ValidateIssuer = ValidateIssuer,

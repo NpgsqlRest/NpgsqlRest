@@ -1678,6 +1678,12 @@ public static partial class ConfigSchemaGenerator
         //
         "MemoryCachePruneIntervalSeconds": 60,
         //
+        // Maximum number of entries in the memory cache. Cache keys contain request values, so this bounds memory use.
+        // Once full, responses for new keys are returned without being cached; existing entries keep serving and expire normally.
+        // Set to 0 for no limit.
+        //
+        "MemoryCacheMaxEntries": 100000,
+        //
         // Redis configuration string. Used when Type is "Redis", or when Type is "Hybrid" with UseRedisBackend: true.
         // See: https://stackexchange.github.io/StackExchange.Redis/Configuration.html
         //
