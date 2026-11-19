@@ -156,7 +156,8 @@ Accept: text/html';
 
 - **Passthrough** (no proxy-response params): function body is **not executed**; upstream response streamed back; no DB connection.
 - **Transform** (routine declares `_proxy_status_code int`, `_proxy_body text`, `_proxy_success boolean`, `_proxy_headers json`, `_proxy_content_type text`, `_proxy_error_message text`): NpgsqlRest proxies, binds the response into those params, runs the function, returns its result.
-- **Automatic params forwarded upstream** (3.18.1+): user claims, IP, HTTP-Custom-Type fields, resolved-param expressions are forwarded in the endpoint's native shape (query for `QueryString` endpoints, merged JSON body for `BodyJson`), honoring `@body_parameter_name`.
+- **Automatic params forwarded upstream** (3.18.1+): user claims, IP, HTTP-Custom-Type fields, resolved-param expressions are forwarded in the endpoint's native shape (query for `QueryString` endpoints, merged JSON body for `BodyJson`), honoring `@body_parameter_name`. Since 3.22.0 client-sent values under those names are dropped (server values replace, never append).
+- **Credentials are not forwarded** (3.22.0+): `ProxyOptions.ExcludeHeaders` defaults include `Cookie`, `Authorization`, `Proxy-Authorization`; `ExcludeResponseHeaders` includes `Set-Cookie`. Remove `Authorization` only for a trusted internal upstream that needs the caller's bearer token.
 - **`@proxy_out [METHOD] [host]`** — the inverse direction: run the function FIRST, then forward its result body to the upstream service and return the upstream response (content-type and status included) to the client. E.g. build invoice JSON in SQL, `@proxy_out POST https://pdf-renderer.internal/render` returns the rendered PDF.
 - Requires `ProxyOptions.Enabled = true`.
 
@@ -184,6 +185,7 @@ comment on function auth_login(text, text) is 'HTTP POST
 ```
 
 - `status` 200 → success (other codes → that HTTP status); `scheme` picks the auth scheme/cookie.
+- Returning the `hash` column makes password verification mandatory (missing/NULL password or hash → fail). A wrong password answers **401**, the same as an unknown user (no row) — since 3.22.0 (was 404); unknown users also cost one dummy hash check.
 - Column→claim mapping in `AuthenticationOptions` (`StatusColumnName`, `SchemeColumnName`, role/name/id claim columns).
 - **Inject identity from claims, never trust client-supplied IDs.** Declare params like `_user_id text = null`, `_user_roles text[] = '{}'` and map them via `AuthenticationOptions.ParameterNameClaimsMapping` / `IpAddressParameterName`. NpgsqlRest fills them from the authenticated principal.
 - Use `security definer` on API functions and still permission-check inside (`assert _user_roles && array['admin']` …).
@@ -288,6 +290,10 @@ For Docker Desktop bind mounts set `DOTNET_USE_POLLING_FILE_WATCHER=1` (file eve
 - **`HttpClientOptions.Enabled` / `ProxyOptions.Enabled` / `SqlFileSource.Enabled`** must be true for those features. `@cache` on a non-GET HTTP type is ignored with a warning.
 - **SQL files:** annotations are in `--`/`/* */` comments; params are named `:name` (preferred — auto-named) or positional `$N` (name via `@param`) — **never mixed in one file** (startup error); a startup Describe error fails boot unless `ErrorMode: Skip`; use `@returns` for statements over not-yet-existing objects (temp tables); `DO` blocks can't take params or return values.
 - **A `.sql` file named `*.test.sql` never becomes an endpoint** — `SqlFileSource.SkipPattern` excludes test files by default.
+- **Client IP is the connection address** (3.22.0+): `X-Forwarded-For`/`X-Real-IP` are not trusted. Behind a reverse proxy enable `ForwardedHeaders` (`ForwardLimit: 1`, `KnownProxies`), or rate limits, `_ip_address` and `request.ip_address` all see the proxy's IP.
+- **`Antiforgery:Enabled: true` enforces the token** on POST/PUT/PATCH/DELETE of every API endpoint (3.22.0+; before it had no effect on them) → `400` without it. Browser code must send the `Antiforgery:HeaderName` header.
+- **`@user_params` ignore client values for anonymous callers** (3.22.0+): claim-bound params get their default/NULL, never `?userId=...` from the request.
+- **No `{placeholders}` in upload `row_command`** (3.22.0+) — it is SQL; use its `$1`–`$4` params (metadata JSON `$4` includes user claims).
 - **Test HTTP block paths must be the FULL path** including `UrlPathPrefix` (`/api/...`) — a bare `/get-users` is a 404 with a warning.
 - **`ResponseTempTable.DebugTable` is a dev-only debugging aid** — never enable in CI; combine with `Keep: true` when the run drops its test database.
 - After changing an annotation, re-run with `--log:minimallevels:npgsqlrest=debug` (or `--validate`) to confirm it parsed as intended.

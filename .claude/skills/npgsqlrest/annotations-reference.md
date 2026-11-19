@@ -1,9 +1,9 @@
 # NpgsqlRest — Full Annotation Reference
 
-Every comment annotation, generated from `npgsqlrest --annotations` (NpgsqlRest v3.20.0).
+Every comment annotation, generated from `npgsqlrest --annotations` (NpgsqlRest v3.22.0).
 Annotations apply to both endpoint sources (database routines via `comment on`, and `.sql` files via leading `--` comments). The `@` prefix is optional. Regenerate with `npgsqlrest --annotations`.
 
-A hand-maintained **Supplement** at the end of this file covers annotations the binary does NOT emit — SQL-file statement annotations, plugin annotations (`mcp`, `openapi`), custom-parameter families (`tsclient*`, `dartclient*`, `table_format`), and test-file annotations. **Keep the Supplement when regenerating the section above.**
+A hand-maintained **Supplement** at the end of this file covers annotations the binary does NOT emit — custom-parameter families (`tsclient*`, `dartclient*`, `table_format`) and test-file annotations. **Keep the Supplement when regenerating the section above.**
 
 ## `http`
 
@@ -355,56 +355,53 @@ Rename a result key in multi-command SQL file responses. N is the 1-based comman
 
 Define a virtual parameter that exists for HTTP matching and claim mapping but is NOT bound to the PostgreSQL command. Useful for SQL file endpoints where you need parameters for comment placeholders or claim mapping without referencing them in SQL. Default type is text. SQL file source only.
 
----
+## `single`
 
-# Supplement — annotations not emitted by `--annotations`
-
-Hand-maintained from the docs (<https://npgsqlrest.github.io/annotations/>). Everything above comes from the binary's annotation registry; the annotations below are equally real but live elsewhere (the SQL-file statement parser, plugins, custom-parameter conventions, the test runner), so `--annotations` does not list them.
-
-> **Maintenance note:** `single`, `void`, `skip`, `returns`, `mcp`, and `openapi` were added to the binary's annotation registry after v3.20.0. When regenerating this file from a newer release they will appear in the generated section above — remove their sections from this supplement then. The custom-parameter families and test-file annotations stay hand-maintained.
-
-## SQL-file statement annotations (SQL file source only)
-
-Positional: placed on a line before a statement (or inline after the previous `;`), they apply to the NEXT statement — same placement rule as `resultN`.
-
-### `single`
-
+- **Aliases:** single, single_record, single_result
 - **Syntax:** `single`
 
-That statement returns a single object instead of an array.
+Return only the first row as a JSON object instead of a JSON array. In multi-command SQL files the annotation is positional: it applies to the next statement (or, inline after the semicolon, to the statement on that line).
 
-### `skip`
-
-- **Syntax:** `skip`
-
-Run the statement but exclude its result from the response.
-
-### `void`
+## `void`
 
 - **Aliases:** void, void_result
 - **Syntax:** `void`
 
-The whole endpoint returns **204 No Content**; all statements run for side effects only.
+Return no content (204 No Content); results are discarded. In multi-command SQL files all statements still execute for side effects.
 
-### `returns`
+## `skip`
 
+- **Aliases:** skip, skip_result, no_result
+- **Syntax:** `skip`
+
+Execute the statement but exclude its result from the response. Positional: applies to the next statement (or, inline after the semicolon, to the statement on that line). SQL file source only.
+
+## `returns`
+
+- **Aliases:** returns
 - **Syntax:** `returns <composite_type> | returns <scalar_type> | returns void`
 
-Skip the startup Describe for that statement and resolve result columns from the given type instead (composite type name, any built-in scalar type for a single-column result, or `void`). Needed when a statement references objects that don't exist at startup (e.g. a temp table created in a `DO` block).
+Skip the startup Describe for a statement and resolve result columns from the given type instead: a composite type name (schema-qualified or not), a built-in scalar type (single-column result), or void. Needed when a statement references objects that do not exist at startup (e.g. a temp table created in a DO block). SQL file source only.
 
-## Plugin annotations
+## `mcp`
 
-### `mcp` (3.17.0+)
+- **Aliases:** mcp, mcp_name, mcp_description, mcp_desc
+- **Syntax:** `mcp [description] | mcp_name <name> | mcp_description <text>`
 
-- **Syntax:** `mcp [description]` · `mcp_description <text>` (alias `mcp_desc`) · `mcp_name <name>`
+Expose the routine as an MCP tool (Model Context Protocol). A bare mcp with no HTTP tag creates an MCP-only tool with no public HTTP route. Description precedence: mcp_description, then inline mcp text, then the comment prose fallback. No-op when the MCP plugin (NpgsqlRest.Mcp) is not loaded.
 
-Expose the routine as an MCP tool. A bare `@mcp` with **no** HTTP tag = MCP-only (internal, no REST route). Description precedence: `@mcp_description` > inline `@mcp <text>` > comment prose fallback. No-op when the MCP plugin isn't loaded or `McpOptions.Enabled` is false.
+## `openapi`
 
-### `openapi` (3.15.0+)
+- **Aliases:** openapi
+- **Syntax:** `openapi [hide|hidden|ignore] | openapi tag <name> | openapi tags <a>, <b>, ...`
 
-- **Syntax:** `openapi [hide|hidden|ignore]` · `openapi tag <name>` · `openapi tags <a>, <b>, ...`
+Per-routine OpenAPI document control: hide the endpoint from the document (default action; the endpoint itself is unaffected), or replace its default schema-name tag with one or more custom tags (original casing preserved). No-op when the OpenAPI plugin (NpgsqlRest.OpenApi) is not loaded.
 
-Per-routine OpenAPI document control: hide the endpoint from the spec (default action; the endpoint itself is unaffected), or replace its default schema-name tag with custom tags (casing preserved). No-op when the OpenAPI plugin isn't loaded.
+---
+
+# Supplement — annotations not emitted by `--annotations`
+
+Hand-maintained from the docs (<https://npgsqlrest.github.io/annotations/>). Everything above comes from the binary's annotation registry; the annotations below are equally real but live elsewhere (custom-parameter conventions, the test runner), so `--annotations` does not list them.
 
 ## Custom-parameter families (`@key = value` — the `=` is REQUIRED)
 

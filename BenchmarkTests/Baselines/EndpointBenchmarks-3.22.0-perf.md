@@ -36,6 +36,26 @@ Mean time (µs) and allocations per request (whole process, client and server):
 - **Times** were noisy on this day: several other PostgreSQL containers were running, and the controls varied by ±5% (NpgsqlOnly 131.6–139.9 µs). Comparisons are therefore made against the controls. GetRows100 relative to NpgsqlOnly went from 3.36–3.51 before the split to 3.12–3.18 after it. That is the handler being JIT-optimized: before the split, `InvokeAsync`'s state machine (55 KB IL, over 2,000 basic blocks) was always compiled as "Tier-0 switched MinOpts"; afterwards every part reaches "Tier1 with Synthesized PGO". GetText relative to NpgsqlOnly stayed at about 1.39–1.40, since its time is dominated by the HTTP and database round trips.
 - **Runtime Async** with the split handler: the native AOT build no longer crashes (it did with the monolithic handler) and its cost is ordinary, but it allocates about 0.65 KB per request more than the pooled classic build at equal latency. It stays off; see `Directory.Build.props`.
 
+## Native AOT comparison
+
+BenchmarkDotNet runs the benchmark project as a JIT process, so all numbers above are JIT numbers. The native AOT `npgsqlrest` executable was measured separately: the AOT binaries of `5befe76` (before the performance work) and `9d63171` (after) were published for osx-arm64. Each was run against a fresh database on the same PostgreSQL container, with the two benchmark functions and default client configuration, and loaded with ApacheBench (`ab -k`) after a warm-up. Runs were interleaved.
+
+Sequential (one request at a time, mean ms per request; two rounds each):
+
+| | Text (20,000 requests) | 100 rows (5,000 requests) | RSS after load |
+|---|---|---|---|
+| before | 0.248, 0.245 | 0.523, 0.538 | 101, 105 MB |
+| after | 0.241, 0.242 | 0.506, 0.519 | 98, 88 MB |
+
+Concurrent (requests per second; three more rounds each):
+
+| | 100 rows, c=8 | 100 rows, c=32 | Text, c=32 |
+|---|---|---|---|
+| before | 8,770 / 8,563 / 8,435 | 11,635 / 11,881 / 11,775 | 24,142 / 23,960 / 23,216 |
+| after | 9,008 / 8,394 / 8,418 | 12,589 / 11,942 / 11,829 | 23,314 / 20,856 / 23,624 |
+
+Reading: on AOT, sequential latency improves by 2–3.5%. Native AOT compiles every method with optimizations ahead of time; the JIT's MinOpts fallback for very large methods applies only at run time. So the AOT build never had the unoptimized-handler problem, and gains only from the smaller allocations. Concurrent throughput shows no change beyond noise; the single-threaded `ab` is likely the limit at these rates. The load scripts are not part of the repository; the setup above is enough to repeat the comparison.
+
 ## How the JIT verdict was checked
 
 Run the JIT build of the client with `DOTNET_JitStdOutFile=jit.txt DOTNET_JitDisasmSummary=1`, send a few hundred requests, and look for the `NpgsqlRestEndpoint+<...>d__N:MoveNext` lines:
