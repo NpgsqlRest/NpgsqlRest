@@ -425,9 +425,12 @@ public class App
             {
                 endpoint.Login = true;
             }
-            if (logoutPath is not null && string.Equals(endpoint.Routine.Name, logoutPath, StringComparison.OrdinalIgnoreCase))
+            // LogoutPath is a URL path (like LoginPath). It used to be compared with the routine name and to mark the
+            // endpoint as a *login* endpoint: a URL never matched (logout silently did nothing), and setting the
+            // routine name instead turned the logout routine into an anonymous login endpoint.
+            if (logoutPath is not null && string.Equals(endpoint.Path, logoutPath, StringComparison.OrdinalIgnoreCase))
             {
-                endpoint.Login = true;
+                endpoint.Logout = true;
             }
         };
     }

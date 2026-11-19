@@ -29,9 +29,9 @@ Set request parameter type to query string or JSON body.
 ## `authorize`
 
 - **Aliases:** authorize, authorized, requires_authorization
-- **Syntax:** `authorize [role1, role2, ...]`
+- **Syntax:** `authorize [role1, role2, user:name, id:user_id, ...]`
 
-Require authorization, optionally restricting to specific roles.
+Require authorization, optionally restricting access. Plain values are role names (role claim); user:name matches the user name claim and id:value the user id claim.
 
 ## `allow_anonymous`
 
@@ -211,9 +211,9 @@ Set the PostgreSQL notice level for SSE events.
 ## `sse_scope`
 
 - **Aliases:** sse_scope, sse_events_scope
-- **Syntax:** `sse_scope [all|authorize|matching] [role1, role2, ...]`
+- **Syntax:** `sse_scope [all|authorize|matching] [role1, role2, user:name, id:user_id, ...]`
 
-Set the broadcast scope for SSE events.
+Set the broadcast scope for SSE events. Authorize values: plain = role, user:name = user name claim, id:value = user id claim.
 
 ## `basic_auth`
 

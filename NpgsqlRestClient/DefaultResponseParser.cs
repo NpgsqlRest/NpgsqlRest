@@ -27,16 +27,15 @@ public class DefaultResponseParser(
         {
             // present env var wins → configured default → empty string.
             var raw = Environment.GetEnvironmentVariable(name) ?? def;
-            // JSON-escape exactly like the claim path below (PgConverters.SerializeString). The
+            // JSON-escape exactly like the claim path below (PgConverters.SerializeStringHtmlSafe). The
             // substituted value is a complete JSON literal (a quoted, escaped string) so templates
-            // use a bare {NAME} token with no surrounding quotes and an accidental quote/backslash in
-            // the value cannot break the JS string. NOTE: the relaxed encoder does NOT escape '<'/'>',
-            // so this is not a defence against a hostile value - env values are operator-controlled,
-            // matching the claim path's trust model.
+            // use a bare {NAME} token with no surrounding quotes and a quote/backslash in the value
+            // cannot break the JS string. HTML-sensitive characters (< > & ' ") are escaped too, so a
+            // value cannot close a surrounding <script> block or inject markup.
             // SECURITY: this is an explicit allowlist - only names listed in AvailableEnvVars are ever
             // read. NEVER widen this to the whole environment (Environment.GetEnvironmentVariables) -
             // that would leak secrets (DB passwords, keys) to every client.
-            var serialized = PgConverters.SerializeString(raw ?? string.Empty);
+            var serialized = PgConverters.SerializeStringHtmlSafe(raw ?? string.Empty);
             result[name] = serialized;
             // "!NAME" key ⇔ the name resolved to a real value (env set, or a configured default given).
             // The {!NAME}/{!NAME:fallback} template forms key off this in Formatter.TryResolveToken.
@@ -62,7 +61,7 @@ public class DefaultResponseParser(
         {
             if (replacements.TryGetValue(claim.Type, out var existingValue))
             {
-                replacements[claim.Type] = string.Concat(existingValue, ",", PgConverters.SerializeString(claim.Value));
+                replacements[claim.Type] = string.Concat(existingValue, ",", PgConverters.SerializeStringHtmlSafe(claim.Value));
                 if (arrayTypes.Contains(claim.Type) is false)
                 {
                     arrayTypes.Add(claim.Type);
@@ -70,7 +69,7 @@ public class DefaultResponseParser(
             }
             else
             {
-                replacements.Add(claim.Type, PgConverters.SerializeString(claim.Value));
+                replacements.Add(claim.Type, PgConverters.SerializeStringHtmlSafe(claim.Value));
             }
         }
         foreach (var item in arrayTypes)

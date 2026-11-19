@@ -11,7 +11,9 @@ namespace NpgsqlRest.Proxy;
 /// </summary>
 public static class ProxyRequestHandler
 {
-    private static readonly HttpClient SharedClient = new()
+    // UseCookies = false: the client is shared by all users. With the default cookie container, a cookie that an
+    // upstream sets for one user's request was stored and sent with every later request - for every user.
+    private static readonly HttpClient SharedClient = new(new SocketsHttpHandler { UseCookies = false })
     {
         Timeout = Timeout.InfiniteTimeSpan // We handle timeout per-request
     };
@@ -83,6 +85,12 @@ public static class ProxyRequestHandler
         //    can physically carry a JSON body), QueryString -> query string.
         // Additive — the verbatim incoming request is still forwarded; this only adds filled values.
         string? effectiveBody = requestBody;
+
+        // The incoming query string is forwarded as-is, except for names of server-filled parameters: those are
+        // removed whether or not the server has a value for them (an anonymous caller has none), so a client can
+        // never send its own user id / claims / IP to the upstream.
+        targetUrl = RemoveQueryKeys(targetUrl, GetServerFilledRoutineParams(endpoint));
+
         var forwardParams = GetForwardableParams(endpoint, parameters);
         if (forwardParams is not null)
         {
@@ -303,6 +311,10 @@ public static class ProxyRequestHandler
 
     private static string AppendParamsToQuery(string url, List<NpgsqlRestParameter> parameters)
     {
+        // Server-filled parameters replace whatever the client put in the query string under the same name:
+        // the client's copies are removed first (also when the server value is NULL), so the upstream never
+        // receives "?userId=<attacker>&userId=<real>" or a client-chosen value for an anonymous caller.
+        url = RemoveQueryKeys(url, parameters);
         var maxLen = Options.ProxyOptions.MaxForwardedQueryParamLength;
         var sb = new StringBuilder();
         foreach (var p in parameters)
@@ -359,9 +371,96 @@ public static class ProxyRequestHandler
         }
         foreach (var p in parameters)
         {
+            // replace the client's value, under either name, with the server-filled one
+            if (string.Equals(p.ActualName, p.ConvertedName, StringComparison.Ordinal) is false)
+            {
+                obj.Remove(p.ActualName);
+            }
             obj[p.ConvertedName] = ToJsonNode(p);
         }
         return obj.ToJsonString();
+    }
+
+    private static List<NpgsqlRestParameter> GetServerFilledRoutineParams(RoutineEndpoint endpoint)
+    {
+        List<NpgsqlRestParameter> result = [];
+        foreach (var p in endpoint.Routine.Parameters)
+        {
+            if (IsAutomaticParam(endpoint, p))
+            {
+                result.Add(p);
+            }
+        }
+        return result;
+    }
+
+    private static string RemoveQueryKeys(string url, List<NpgsqlRestParameter> parameters)
+    {
+        if (parameters.Count == 0)
+        {
+            return url;
+        }
+        var q = url.IndexOf('?');
+        if (q < 0 || q == url.Length - 1)
+        {
+            return url;
+        }
+        var kept = new StringBuilder(url.Length);
+        var removed = false;
+        foreach (var pair in url.AsSpan(q + 1).ToString().Split('&'))
+        {
+            if (pair.Length == 0)
+            {
+                continue;
+            }
+            var eq = pair.IndexOf('=');
+            var rawKey = eq < 0 ? pair : pair[..eq];
+            string key;
+            try
+            {
+                key = Uri.UnescapeDataString(rawKey.Replace('+', ' '));
+            }
+            catch (UriFormatException)
+            {
+                key = rawKey;
+            }
+            var isServerFilled = false;
+            foreach (var p in parameters)
+            {
+                if (string.Equals(key, p.ConvertedName, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(key, p.ActualName, StringComparison.OrdinalIgnoreCase))
+                {
+                    isServerFilled = true;
+                    break;
+                }
+            }
+            if (isServerFilled)
+            {
+                removed = true;
+                continue;
+            }
+            kept.Append(kept.Length == 0 ? '?' : '&').Append(pair);
+        }
+        return removed ? string.Concat(url.AsSpan(0, q), kept.ToString()) : url;
+    }
+
+    /// <summary>Header names under which the server forwards context values (user claims, claims JSON, IP).</summary>
+    private static bool IsServerContextHeader(string name)
+    {
+        var auth = Options.AuthenticationOptions;
+        if (auth.ContextKeyClaimsMapping.ContainsKey(name))
+        {
+            return true;
+        }
+        foreach (var key in auth.ContextKeyClaimsMapping.Keys)
+        {
+            if (string.Equals(key, name, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        return string.Equals(name, auth.ClaimsJsonContextKey, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(name, auth.IpAddressContextKey, StringComparison.OrdinalIgnoreCase);
     }
 
     // Typed JSON value for a server-filled HTTP-type field, following the field's declared type:
@@ -416,6 +515,14 @@ public static class ProxyRequestHandler
                     continue;
                 }
 
+                // Never forward a client-supplied header named like a server-asserted context value
+                // (request.user_id, request.user_claims, request.ip_address, ...): the upstream must only ever
+                // see the values the server set, not a value an (anonymous) client chose.
+                if (IsServerContextHeader(header.Key))
+                {
+                    continue;
+                }
+
                 // Skip content headers - they'll be set with content
                 if (IsContentHeader(header.Key))
                 {
@@ -426,11 +533,12 @@ public static class ProxyRequestHandler
             }
         }
 
-        // Add user context headers (from UserContext feature)
+        // Add user context headers (from UserContext feature) - replacing, never appending to, any existing value
         if (userContextHeaders is not null)
         {
             foreach (var header in userContextHeaders)
             {
+                request.Headers.Remove(header.Key);
                 request.Headers.TryAddWithoutValidation(header.Key, header.Value);
             }
         }

@@ -459,22 +459,17 @@ public static class Ext
         return sb.ToString();
     }
 
+    /// <summary>
+    /// The client IP address: <c>HttpContext.Connection.RemoteIpAddress</c>.
+    /// Request headers (<c>X-Forwarded-For</c>, <c>X-Real-IP</c>, ...) are deliberately NOT read here: any client can
+    /// send them, so trusting them let callers choose their own IP (bypassing per-IP rate limits, faking audit data).
+    /// Behind a reverse proxy, enable the ASP.NET Core forwarded headers middleware (UseForwardedHeaders, with the
+    /// proxy listed in KnownProxies/KnownNetworks, or ForwardedHeaders:Enabled in the npgsqlrest client): it replaces
+    /// RemoteIpAddress with the address the trusted proxy reported.
+    /// </summary>
     public static string? GetClientIpAddress(this HttpRequest request)
     {
-        // Check X-Forwarded-For header
-        var forwardedIp = request.Headers["X-Forwarded-For"].FirstOrDefault();
-        if (!string.IsNullOrEmpty(forwardedIp))
-        {
-            int commaIndex = forwardedIp.IndexOf(',');
-            return commaIndex > 0 ? forwardedIp[..commaIndex].Trim() : forwardedIp.Trim();
-        }
-
-        // Check other headers with null-coalescing operator
-        var ip = request.Headers["X-Real-IP"].FirstOrDefault()
-              ?? request.Headers["HTTP_X_FORWARDED_FOR"].FirstOrDefault()
-              ?? request.Headers["REMOTE_ADDR"].FirstOrDefault();
-
-        return !string.IsNullOrEmpty(ip) ? ip : request.HttpContext.Connection.RemoteIpAddress?.ToString();
+        return request.HttpContext.Connection.RemoteIpAddress?.ToString();
     }
 
     public static object GetClientIpAddressDbParam(this HttpRequest request)

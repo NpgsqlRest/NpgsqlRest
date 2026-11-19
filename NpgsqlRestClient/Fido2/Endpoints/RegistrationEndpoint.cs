@@ -84,6 +84,17 @@ public sealed class RegistrationEndpoint(PasskeyEndpointContext ctx)
             return;
         }
 
+        // Only the userContext this server issued for this challenge is accepted, and the server's own copy is used
+        // from here on - never the client-supplied object.
+        var issuedUserContext = PasskeyUserContext.Open(context, request.UserContext, request.ChallengeId, boundUserId: null);
+        if (issuedUserContext is null)
+        {
+            ctx.Logger?.LogWarning("Passkey registration rejected: userContext was modified or does not belong to this challenge");
+            await WriteErrorResponseAsync(context, HttpStatusCode.BadRequest,
+                PasskeyErrorCode.InvalidRequest, "Invalid user context");
+            return;
+        }
+
         await using var connection = await OpenConnectionAsync(ctx, context.RequestAborted);
 
         await ExecuteTransactionCommandAsync(connection, "BEGIN", context.RequestAborted);
@@ -156,7 +167,7 @@ public sealed class RegistrationEndpoint(PasskeyEndpointContext ctx)
         byte[] userHandle = [];
         try
         {
-            var userContext = JsonNode.Parse(request.UserContext);
+            var userContext = JsonNode.Parse(issuedUserContext);
             var userHandleBase64 = userContext?["userHandle"]?.GetValue<string>();
             if (!string.IsNullOrEmpty(userHandleBase64))
             {
@@ -201,7 +212,7 @@ public sealed class RegistrationEndpoint(PasskeyEndpointContext ctx)
         {
             storeCommand.Parameters.Add(new NpgsqlParameter
             {
-                Value = request.UserContext,
+                Value = issuedUserContext,
                 NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Unknown
             });
         }

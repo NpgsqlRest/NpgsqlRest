@@ -161,10 +161,58 @@ public static class NpgsqlRestBuilder
             }
         }
 
+        WarnIfRequestContextCanOutliveRequest(entries);
+
         // Register internal handlers for self-referencing calls (bypass HTTP)
         InternalRequestHandler.SetEndpointHandlers(internalHandlers);
 
         return builder;
+    }
+
+    /// <summary>
+    /// user_context / request_headers context values are session-level settings (set_config(..., false)) unless the
+    /// request runs in a transaction. With "No Reset On Close" the pooled connection keeps them, so the next request
+    /// on that connection - including endpoints that never set a context - can read the previous caller's identity.
+    /// </summary>
+    private static void WarnIfRequestContextCanOutliveRequest(List<NpgsqlRestMetadataEntry> entries)
+    {
+        if (Options.WrapInTransaction)
+        {
+            return;
+        }
+        var usesContext = false;
+        foreach (var entry in entries)
+        {
+            if (entry.Endpoint.UserContext || entry.Endpoint.RequestHeadersMode == RequestHeadersMode.Context)
+            {
+                usesContext = true;
+                break;
+            }
+        }
+        if (usesContext is false)
+        {
+            return;
+        }
+        var connectionString = Options.DataSource?.ConnectionString ?? Options.ConnectionString;
+        if (connectionString is null)
+        {
+            return;
+        }
+        try
+        {
+            if (new NpgsqlConnectionStringBuilder(connectionString).NoResetOnClose)
+            {
+                Logger?.LogWarning(
+                    "The connection string sets \"No Reset On Close\" and endpoints use user_context or request_headers context. " +
+                    "Context values are session settings that stay on the pooled connection, so the next request using that connection " +
+                    "can read the previous caller's values (for example request.user_id in an RLS policy). Remove \"No Reset On Close\" " +
+                    "or enable WrapInTransaction.");
+            }
+        }
+        catch (ArgumentException)
+        {
+            // unparsable connection string - connection errors are reported elsewhere
+        }
     }
     
     private const int MaxPathLength = 2048;

@@ -106,7 +106,7 @@ Same annotations apply to functions and `.sql` files. Confirm exact syntax/alias
 - `HTTP [GET|POST|PUT|DELETE|QUERY] [/path]` — expose (`QUERY` = the standardized safe method with a body; its params default to the JSON body). `@path /x` — override path. `@disabled`/`@enabled`. `@internal` — exists but no public route (reachable via proxy / HTTP-type self-call). `@tags a,b`, `@openapi …`.
 
 **Auth**
-- `@authorize` (any authenticated) / `@authorize role1, role2`. `@allow_anonymous` (aliases `@anonymous`, `@anon`). `@login` / `@logout`. `@user_context` (claims → PG context + headers), `@user_parameters` (claims → params). `@security_sensitive` (keep param values out of logs).
+- `@authorize` (any authenticated) / `@authorize role1, role2` (plain values are ROLES only; specific users: `user:<name>`, `id:<user id>` — since 3.22.0). `@allow_anonymous` (aliases `@anonymous`, `@anon`). `@login` / `@logout`. `@user_context` (claims → PG context + headers), `@user_parameters` (claims → params). `@security_sensitive` (keep param values out of logs).
 
 **Params / request**
 - `@param $1 name [type] [default …]` (rename/retype/default). `@define_param name [type]` (virtual, SQL-file). `@request_param_type query_string | body_json`. `@body_parameter_name _x` (one param = raw body). `@request_headers_mode parameter` + `@request_headers_parameter_name _headers`. Resolved param: a line `_token = select api_token from tokens where user_name = {_name}` fills `_token` server-side (client can't override).
@@ -161,7 +161,7 @@ Accept: text/html';
 
 ## SSE (server-sent events)
 
-A long-running routine streams progress via `RAISE INFO/NOTICE`. Annotate with `@sse` (or a project's `sse_publish`/`sse_subscribe` split) and a scope (`all` | `authorize` | `matching`). Per-recipient targeting: `raise info 'msg' using hint = format('authorize %s', _user_id)`. A subscribe-only endpoint's body never runs. A cache hit skips execution → no RAISE → no broadcast (correct).
+A long-running routine streams progress via `RAISE INFO/NOTICE`. Annotate with `@sse` (or a project's `sse_publish`/`sse_subscribe` split) and a scope (`all` | `authorize` | `matching`). Per-recipient targeting: `raise info 'msg' using hint = format('authorize id:%s', _user_id)` (plain hint values are roles; `id:`/`user:` prefixes target users — since 3.22.0). A subscribe-only endpoint's body never runs. A cache hit skips execution → no RAISE → no broadcast (correct).
 
 ## MCP (Model Context Protocol)
 

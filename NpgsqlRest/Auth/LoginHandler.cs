@@ -123,58 +123,60 @@ public static class LoginHandler
             }
             
             // hash verification last
-            if (performHashVerification is true)
+            if (performHashVerification is true && Options.AuthenticationOptions?.HashColumnName is not null)
             {
-                if (Options.AuthenticationOptions?.HashColumnName is not null &&
-                    Options.AuthenticationOptions.PasswordHasher is not null &&
-                    Options.AuthenticationOptions?.PasswordParameterNameContains is not null)
+                int hashOrdinal = -1;
+                for (int i = 0; i < reader!.FieldCount; i++)
                 {
-                    for (int i = 0; i < reader!.FieldCount; i++)
+                    if (string.Equals(reader.GetName(i), Options.AuthenticationOptions.HashColumnName, StringComparison.OrdinalIgnoreCase))
                     {
-                        if (string.Equals(reader.GetName(i), Options.AuthenticationOptions.HashColumnName, StringComparison.OrdinalIgnoreCase))
+                        hashOrdinal = i;
+                        break;
+                    }
+                }
+
+                // A hash column in the login result means the password MUST be verified here. Every case in
+                // which the verification cannot run - no stored hash (NULL), no password value (missing, JSON
+                // null), no parameter matching PasswordParameterNameContains, no PasswordHasher configured -
+                // fails the login. Previously these cases skipped the check and signed the user in.
+                if (hashOrdinal >= 0)
+                {
+                    verificationPerformed = true;
+                    string? hash = reader!.IsDBNull(hashOrdinal) ? null : reader.GetValue(hashOrdinal).ToString();
+                    string? pass = null;
+                    var foundPasswordParameter = false;
+                    var passwordParameterNameContains = Options.AuthenticationOptions.PasswordParameterNameContains;
+                    if (passwordParameterNameContains is not null)
+                    {
+                        for (var j = 0; j < command.Parameters.Count; j++)
                         {
-                            if (reader?.IsDBNull(i) is false)
+                            var parameter = command.Parameters[j];
+                            var name = (parameter as NpgsqlRestParameter)?.ActualName;
+                            if (name is not null && name.Contains(passwordParameterNameContains, StringComparison.OrdinalIgnoreCase))
                             {
-                                var hash = reader?.GetValue(i).ToString();
-                                if (hash is not null)
-                                {
-                                    // find the password parameter
-                                    var foundPasswordParameter = false;
-                                    for (var j = 0; j < command.Parameters.Count; j++)
-                                    {
-                                        var parameter = command.Parameters[j];
-                                        var name = (parameter as NpgsqlRestParameter)?.ActualName;
-                                        if (name is not null && name.Contains(Options.AuthenticationOptions.PasswordParameterNameContains, // found password parameter
-                                            StringComparison.OrdinalIgnoreCase))
-                                        {
-                                            foundPasswordParameter = true;
-                                            var pass = parameter?.Value?.ToString();
-                                            if (pass is not null && parameter?.Value != DBNull.Value)
-                                            {
-                                                verificationPerformed = true;
-                                                if (Options.AuthenticationOptions.PasswordHasher?.VerifyHashedPassword(hash, pass) is false)
-                                                {
-                                                    Logger?.VerifyPasswordFailed(tracePath, userId, userName);
-                                                    await Results.Problem(
-                                                        type: null,
-                                                        statusCode: (int)HttpStatusCode.NotFound,
-                                                        title: "Not Found",
-                                                        detail: null).ExecuteAsync(context);
-                                                    verificationFailed = true;
-                                                }
-                                            }
-                                            break;
-                                        }
-                                    }
-                                    if (foundPasswordParameter is false)
-                                    {
-                                        Logger?.CantFindPasswordParameter(tracePath,
-                                            command.Parameters.Select(p => (p as NpgsqlRestParameter)?.ActualName)?.ToArray(),
-                                            Options.AuthenticationOptions.PasswordParameterNameContains);
-                                    }
-                                }
+                                foundPasswordParameter = true;
+                                pass = parameter.Value is null || parameter.Value == DBNull.Value ? null : parameter.Value.ToString();
+                                break;
                             }
                         }
+                    }
+                    if (foundPasswordParameter is false)
+                    {
+                        Logger?.CantFindPasswordParameter(tracePath,
+                            command.Parameters.Select(p => (p as NpgsqlRestParameter)?.ActualName)?.ToArray(),
+                            passwordParameterNameContains ?? "");
+                    }
+
+                    var hasher = Options.AuthenticationOptions.PasswordHasher;
+                    if (hash is null || pass is null || hasher is null || hasher.VerifyHashedPassword(hash, pass) is false)
+                    {
+                        Logger?.VerifyPasswordFailed(tracePath, userId, userName);
+                        await Results.Problem(
+                            type: null,
+                            statusCode: (int)HttpStatusCode.NotFound,
+                            title: "Not Found",
+                            detail: null).ExecuteAsync(context);
+                        verificationFailed = true;
                     }
                 }
             }

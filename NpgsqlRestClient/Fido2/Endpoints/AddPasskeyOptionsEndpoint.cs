@@ -209,25 +209,10 @@ public sealed class AddPasskeyOptionsEndpoint(PasskeyEndpointContext ctx)
                 writer.WriteRawValue(excludeCredentialsJson);
             }
 
-            // Inject userHandle into userContext so it's passed back to the completion endpoint
-            writer.WritePropertyName("userContext");
-            if (!string.IsNullOrEmpty(userContextJson))
-            {
-                using var doc = JsonDocument.Parse(userContextJson);
-                writer.WriteStartObject();
-                foreach (var prop in doc.RootElement.EnumerateObject())
-                {
-                    prop.WriteTo(writer);
-                }
-                writer.WriteString("userHandle", userHandle);
-                writer.WriteEndObject();
-            }
-            else
-            {
-                writer.WriteStartObject();
-                writer.WriteString("userHandle", userHandle);
-                writer.WriteEndObject();
-            }
+            // userContext (with the userHandle injected) is passed back by the client to the completion endpoint.
+            // It is sealed to this challenge and this signed-in user so it cannot be altered on the way back.
+            PasskeyUserContext.Write(writer, context, userContextJson, userHandle, challengeId,
+                PasskeyUserContext.GetBoundUserId(context, options.AuthenticationOptions));
 
             writer.WriteEndObject();
             await writer.FlushAsync(context.RequestAborted);

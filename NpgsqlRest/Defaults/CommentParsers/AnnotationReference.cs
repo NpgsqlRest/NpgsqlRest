@@ -49,8 +49,8 @@ internal static partial class DefaultCommentParser
         {
             ["name"] = "authorize",
             ["aliases"] = ToJsonArray(AuthorizeKey),
-            ["syntax"] = "authorize [role1, role2, ...]",
-            ["description"] = "Require authorization, optionally restricting to specific roles."
+            ["syntax"] = "authorize [role1, role2, user:name, id:user_id, ...]",
+            ["description"] = "Require authorization, optionally restricting access. Plain values are role names (role claim); user:name matches the user name claim and id:value the user id claim."
         });
 
         annotations.Add((JsonNode)new JsonObject
@@ -257,8 +257,8 @@ internal static partial class DefaultCommentParser
         {
             ["name"] = "sse_scope",
             ["aliases"] = ToJsonArray(SseEventsStreamingScopeKey),
-            ["syntax"] = "sse_scope [all|authorize|matching] [role1, role2, ...]",
-            ["description"] = "Set the broadcast scope for SSE events."
+            ["syntax"] = "sse_scope [all|authorize|matching] [role1, role2, user:name, id:user_id, ...]",
+            ["description"] = "Set the broadcast scope for SSE events. Authorize values: plain = role, user:name = user name claim, id:value = user id claim."
         });
 
         annotations.Add((JsonNode)new JsonObject

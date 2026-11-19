@@ -96,15 +96,20 @@ public class NpgsqlRestSseEventSource(RequestDelegate next)
                         scope = parsedScope;
                         if (scope == SseEventsScope.Authorize && words.Length > 1)
                         {
-                            // if info roles already exist, merge them with the new ones
-                            infoEventsRoles ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                            // Merge the hint roles into a per-event COPY. (They used to be added to the endpoint's
+                            // shared SseEventsRoles set: hint roles accumulated permanently, so later events reached
+                            // recipients meant only for earlier ones, and the set was mutated concurrently.)
+                            var merged = infoEventsRoles is null
+                                ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                                : new HashSet<string>(infoEventsRoles, StringComparer.OrdinalIgnoreCase);
                             foreach (var word in words[1..])
                             {
-                                if (infoEventsRoles.Contains(word) is false && string.IsNullOrWhiteSpace(word) is false)
+                                if (string.IsNullOrWhiteSpace(word) is false)
                                 {
-                                    infoEventsRoles.Add(word);
+                                    merged.Add(word);
                                 }
                             }
+                            infoEventsRoles = merged;
                         }
                     }
                     else
@@ -125,27 +130,10 @@ public class NpgsqlRestSseEventSource(RequestDelegate next)
                         continue; // Skip events for unauthorized users
                     }
 
-                    if (endpoint?.AuthorizeRoles is not null)
+                    if (endpoint?.AuthorizeRoles is not null &&
+                        RoutineEndpoint.MatchesAuthorizeList(endpoint.AuthorizeRoles, context.User, Options.AuthenticationOptions) is false)
                     {
-                        bool ok = false;
-                        foreach (var claim in context.User?.Claims ?? [])
-                        {
-                            if (
-                                string.Equals(claim.Type, Options.AuthenticationOptions.DefaultUserIdClaimType, StringComparison.Ordinal) ||
-                                string.Equals(claim.Type, Options.AuthenticationOptions.DefaultNameClaimType, StringComparison.Ordinal) ||
-                                string.Equals(claim.Type, Options.AuthenticationOptions.DefaultRoleClaimType, StringComparison.Ordinal))
-                            {
-                                if (endpoint?.AuthorizeRoles.Contains(claim.Value) is true)
-                                {
-                                    ok = true;
-                                    break;
-                                }
-                            }
-                        }
-                        if (ok is false)
-                        {
-                            continue;
-                        }
+                        continue;
                     }
                 }
                 else if (scope == SseEventsScope.Authorize)
@@ -155,31 +143,10 @@ public class NpgsqlRestSseEventSource(RequestDelegate next)
                         continue; // Skip events for unauthorized users
                     }
 
-                    if (infoEventsRoles is not null)
+                    if (infoEventsRoles is not null &&
+                        RoutineEndpoint.MatchesAuthorizeList(infoEventsRoles, context.User, Options.AuthenticationOptions) is false)
                     {
-                        bool ok = false;
-                        if (context.User?.Claims is not null)
-                        {
-                            foreach (var claim in context.User?.Claims!)
-                            {
-                                if (
-                                    string.Equals(claim.Type, Options.AuthenticationOptions.DefaultUserIdClaimType, StringComparison.Ordinal) ||
-                                    string.Equals(claim.Type, Options.AuthenticationOptions.DefaultNameClaimType, StringComparison.Ordinal) ||
-                                    string.Equals(claim.Type, Options.AuthenticationOptions.DefaultRoleClaimType, StringComparison.Ordinal)
-                                    )
-                                {
-                                    if (infoEventsRoles.Contains(claim.Value) is true)
-                                    {
-                                        ok = true;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        if (ok is false)
-                        {
-                            continue;
-                        }
+                        continue;
                     }
                 }
 

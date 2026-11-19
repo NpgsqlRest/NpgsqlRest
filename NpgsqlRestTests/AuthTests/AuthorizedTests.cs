@@ -21,19 +21,24 @@ public static partial class Database
         comment on function authorized_roles4() is 'authorize test_role1 test_role2 test_role3';
 
         create function authorized_by_name() returns text language sql as 'select ''by_name''';
-        comment on function authorized_by_name() is 'authorize user';
+        comment on function authorized_by_name() is 'authorize user:user';
 
         create function authorized_by_name_wrong() returns text language sql as 'select ''by_name_wrong''';
-        comment on function authorized_by_name_wrong() is 'authorize wrong_user';
+        comment on function authorized_by_name_wrong() is 'authorize user:wrong_user';
 
         create function authorized_by_userid() returns text language sql as 'select ''by_userid''';
-        comment on function authorized_by_userid() is 'authorize user123';
+        comment on function authorized_by_userid() is 'authorize id:user123';
 
         create function authorized_by_userid_wrong() returns text language sql as 'select ''by_userid_wrong''';
-        comment on function authorized_by_userid_wrong() is 'authorize wrong_id';
+        comment on function authorized_by_userid_wrong() is 'authorize id:wrong_id';
 
         create function authorized_mixed() returns text language sql as 'select ''mixed''';
-        comment on function authorized_mixed() is 'authorize wrong_role, user123';
+        comment on function authorized_mixed() is 'authorize wrong_role, id:user123';
+
+        -- security regression: a plain value is a ROLE only - the signed-in user is NAMED "user" (and has id
+        -- "user123") but has no such role, so these must be forbidden
+        create function authorized_plain_value_is_role_only() returns text language sql as 'select ''plain''';
+        comment on function authorized_plain_value_is_role_only() is 'authorize user, user123';
         """);
     }
 }
@@ -199,8 +204,23 @@ public class AuthorizedTests(TestFixture test)
 
         using var login = await client.GetAsync("/login");
 
-        // wrong_role doesn't match, but user123 matches user_id claim
+        // wrong_role doesn't match, but id:user123 matches user_id claim
         using var response = await client.PostAsync("/api/authorized-mixed/", null);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    // Security regression: plain authorize values are roles only. The user is NAMED "user" with id "user123",
+    // but has no role "user" / "user123" - previously the name/id claims matched the plain values and granted access
+    // (e.g. a user registering the user name "admin" passed "authorize admin").
+    [Fact]
+    public async Task Test_authorized_plain_value_does_not_match_user_name_or_id()
+    {
+        using var client = test.Application.CreateClient();
+        client.Timeout = TimeSpan.FromHours(1);
+
+        using var login = await client.GetAsync("/login");
+
+        using var response = await client.PostAsync("/api/authorized-plain-value-is-role-only/", null);
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 }

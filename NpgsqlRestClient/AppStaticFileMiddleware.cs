@@ -20,10 +20,10 @@ public class AppStaticFileMiddleware(RequestDelegate next, IWebHostEnvironment h
     private static string[]? _parsePatterns = default!;
     private static ILogger? _logger = default!;
 
-    private static readonly ConcurrentDictionary<string, bool> _pathInParsePattern = new();
-    private static ConcurrentDictionary<string, bool> _pathInAuthorizePattern = null!;
-    // New cache for parsed file contents
+    // Parsed-file template cache, keyed by the physical file (never by the raw request path, which a client can vary
+    // endlessly with "//" or case variants) and bounded in size.
     private static readonly ConcurrentDictionary<string, (byte[] Content, DateTimeOffset LastModified)> _parsedFileCache = new();
+    private const int MaxParsedFileCacheEntries = 1000;
     private static bool _cacheParsedFiles = true;
     private static IAntiforgery? _antiforgery;
     private static DefaultResponseParser? _parser;
@@ -71,7 +71,6 @@ public class AppStaticFileMiddleware(RequestDelegate next, IWebHostEnvironment h
         _checkAuthorize = authorizePaths is not null && authorizePaths.Length > 0;
         if (_checkAuthorize is true)
         {
-            _pathInAuthorizePattern = new();
             var dfo = new DefaultFilesOptions();
             _defaultFileNames = [.. dfo.DefaultFileNames];
         }
@@ -95,24 +94,30 @@ public class AppStaticFileMiddleware(RequestDelegate next, IWebHostEnvironment h
         }
 
         var pathString = path.ToString();
+        // Patterns (AuthorizePaths, ParsePatterns) are matched against the canonical web-root-relative path of the file
+        // that was actually found - not the raw request path. The file provider normalizes "//", "\" and similar
+        // variants, so matching the raw path let "//protected/page.html" bypass an AuthorizePaths "/protected/*" rule.
+        var matchPath = GetMatchPath(fileInfo, pathString, _hostingEnv.WebRootPath);
+        if (HasHiddenSegment(matchPath))
+        {
+            // dot-directories (.git, .svn, .vscode, ...) are never served; dotfiles are already excluded by the provider
+            await _next(context);
+            return;
+        }
         long length = fileInfo.Length;
         DateTimeOffset lastModified = fileInfo.LastModified.ToUniversalTime();
         bool isInParsePattern = false;
 
         if (_checkAuthorize is true)
         {
-            if (_pathInAuthorizePattern.TryGetValue(pathString, out bool isInAuthPattern) is false)
+            bool isInAuthPattern = false;
+            for (int i = 0; i < _authorizePaths?.Length; i++)
             {
-                isInAuthPattern = false;
-                for (int i = 0; i < _authorizePaths?.Length; i++)
+                if (Parser.IsPatternMatch(matchPath, _authorizePaths[i]))
                 {
-                    if (Parser.IsPatternMatch(pathString, _authorizePaths[i]))
-                    {
-                        isInAuthPattern = true;
-                        break;
-                    }
+                    isInAuthPattern = true;
+                    break;
                 }
-                _pathInAuthorizePattern.TryAdd(pathString, isInAuthPattern);
             }
             if (isInAuthPattern is true)
             {
@@ -148,25 +153,20 @@ public class AppStaticFileMiddleware(RequestDelegate next, IWebHostEnvironment h
 
         if (isGet)
         {
-            if (_pathInParsePattern.TryGetValue(pathString, out isInParsePattern) is false)
+            for (int i = 0; i < _parsePatterns?.Length; i++)
             {
-                isInParsePattern = false;
-                for (int i = 0; i < _parsePatterns?.Length; i++)
+                if (Parser.IsPatternMatch(matchPath, _parsePatterns[i]))
                 {
-                    if (Parser.IsPatternMatch(pathString, _parsePatterns[i]))
-                    {
-                        isInParsePattern = true;
-                        break;
-                    }
+                    isInParsePattern = true;
+                    break;
                 }
-                _pathInParsePattern.TryAdd(pathString, isInParsePattern);
             }
         }
 
         AntiforgeryTokenSet? tokenSet = null;
         if (_antiforgery is not null)
         {
-            if (pathString.EndsWith(".html") is true || pathString.EndsWith(".htm") is true)
+            if (matchPath.EndsWith(".html", StringComparison.OrdinalIgnoreCase) || matchPath.EndsWith(".htm", StringComparison.OrdinalIgnoreCase))
             {
                 tokenSet = _antiforgery.GetAndStoreTokens(context);
             }
@@ -234,7 +234,8 @@ public class AppStaticFileMiddleware(RequestDelegate next, IWebHostEnvironment h
                 }
 
                 // Check cache for parsed files
-                if (isInParsePattern && _cacheParsedFiles && _parsedFileCache.TryGetValue(pathString, out var cached) && cached.LastModified >= lastModified)
+                var cacheKey = fileInfo.PhysicalPath ?? matchPath;
+                if (isInParsePattern && _cacheParsedFiles && _parsedFileCache.TryGetValue(cacheKey, out var cached) && cached.LastModified >= lastModified)
                 {
                     buffer = cached.Content;
                 }
@@ -246,9 +247,9 @@ public class AppStaticFileMiddleware(RequestDelegate next, IWebHostEnvironment h
                     await fileStream.ReadExactlyAsync(buffer, context.RequestAborted);
 
                     // Cache the file content if enabled
-                    if (_cacheParsedFiles)
+                    if (_cacheParsedFiles && (_parsedFileCache.Count < MaxParsedFileCacheEntries || _parsedFileCache.ContainsKey(cacheKey)))
                     {
-                        _parsedFileCache[pathString] = (buffer, lastModified);
+                        _parsedFileCache[cacheKey] = (buffer, lastModified);
                     }
                 }
 
@@ -289,6 +290,41 @@ public class AppStaticFileMiddleware(RequestDelegate next, IWebHostEnvironment h
         }
 
         // HEAD request completes here
+    }
+
+    /// <summary>
+    /// "/" + the file's path relative to the web root, with "/" separators. Falls back to the request path with
+    /// repeated and backward slashes collapsed when the file has no physical path.
+    /// </summary>
+    internal static string GetMatchPath(IFileInfo fileInfo, string requestPath, string? webRootPath)
+    {
+        if (fileInfo.PhysicalPath is not null && string.IsNullOrEmpty(webRootPath) is false)
+        {
+            var relative = Path.GetRelativePath(Path.GetFullPath(webRootPath), Path.GetFullPath(fileInfo.PhysicalPath));
+            if (relative.StartsWith("..", StringComparison.Ordinal) is false && Path.IsPathRooted(relative) is false)
+            {
+                return string.Concat("/", relative.Replace('\\', '/'));
+            }
+        }
+        var normalized = requestPath.Replace('\\', '/');
+        while (normalized.Contains("//", StringComparison.Ordinal))
+        {
+            normalized = normalized.Replace("//", "/", StringComparison.Ordinal);
+        }
+        return normalized;
+    }
+
+    /// <summary>True when any path segment starts with "." (except ".well-known").</summary>
+    internal static bool HasHiddenSegment(string matchPath)
+    {
+        foreach (var segment in matchPath.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (segment[0] == '.' && string.Equals(segment, ".well-known", StringComparison.OrdinalIgnoreCase) is false)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static string GetOriginalRequestPath(string path)

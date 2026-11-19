@@ -476,16 +476,39 @@ public class PgConvertersTests
     }
 
     [Fact]
-    public void PgUnknownToJsonArray_InvalidInput_ReturnsOriginal()
+    public void PgUnknownToJsonArray_NonRecordInput_ReturnsJsonString()
     {
-        // Arrange - not starting with parenthesis
+        // Arrange - not a record (enum / domain text): written as an escaped JSON string, never raw
         ReadOnlySpan<char> input = "a,b,c";
 
         // Act
         var result = PgConverters.PgUnknownToJsonArray(ref input);
 
         // Assert
-        result.ToString().Should().Be("a,b,c");
+        result.ToString().Should().Be("\"a,b,c\"");
+    }
+
+    [Fact]
+    public void PgUnknownToJsonArray_NonRecordInputWithQuotes_IsEscaped()
+    {
+        // Arrange - a domain-over-text value trying to inject JSON keys
+        ReadOnlySpan<char> input = "x\",\"isAdmin\":true,\"y\":\"z";
+
+        // Act
+        var result = PgConverters.PgUnknownToJsonArray(ref input);
+
+        // Assert
+        result.ToString().Should().Be("\"x\\\",\\\"isAdmin\\\":true,\\\"y\\\":\\\"z\"");
+    }
+
+    [Fact]
+    public void PgUnknownToJsonArray_EmptyInput_ReturnsEmptyJsonString()
+    {
+        ReadOnlySpan<char> input = "";
+
+        var result = PgConverters.PgUnknownToJsonArray(ref input);
+
+        result.ToString().Should().Be("\"\"");
     }
 
     [Fact]

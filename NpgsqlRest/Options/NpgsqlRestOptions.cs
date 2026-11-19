@@ -275,7 +275,8 @@ public class NpgsqlRestOptions
     /// **Required for connection poolers in transaction mode** (PgBouncer transaction-pool, AWS RDS Proxy in transaction
     /// mode, Supabase Pooler) — without this, the backend can be reused across unrelated requests, allowing GUC state
     /// (and the routine call itself) to leak or split mid-request. Default is false to preserve existing behavior;
-    /// safe to leave off when using Npgsql's native pool only.
+    /// safe to leave off with Npgsql's native pool as long as connections are reset when returned to the pool
+    /// (the default; i.e. the connection string does not set "No Reset On Close").
     /// </summary>
     public bool WrapInTransaction { get; set; } = false;
 

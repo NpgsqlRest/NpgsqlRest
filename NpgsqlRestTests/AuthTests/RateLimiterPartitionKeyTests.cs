@@ -92,20 +92,26 @@ public class RateLimiterPartitionKeyTests
     }
 
     [Fact]
-    public void IpAddress_source_honors_x_forwarded_for_over_remote_ip()
+    public void IpAddress_source_ignores_client_supplied_forwarding_headers()
     {
-        // Reverse-proxy scenario: Connection.RemoteIpAddress is the proxy's address; the actual client
-        // IP is in X-Forwarded-For. ResolvePartitionKey delegates to GetClientIpAddress() which prefers
-        // the forwarded header, so per-client buckets work behind a load balancer.
+        // Security regression: X-Forwarded-For / X-Real-IP are client-controlled. Trusting them let an attacker
+        // pick a fresh "IP" on every request and bypass per-IP rate limits (e.g. the login throttle). Only
+        // Connection.RemoteIpAddress is used; behind a proxy the forwarded headers middleware (ForwardedHeaders)
+        // sets it from the trusted proxy's report.
         var partition = new RateLimitPartitionConfig
         {
             Sources = [new() { Type = RateLimitPartitionSourceType.IpAddress }]
         };
         var ctx = NewContext(
-            remoteIp: "10.0.0.1", // proxy
-            headers: new Dictionary<string, string> { { "X-Forwarded-For", "203.0.113.42, 10.0.0.1" } });
+            remoteIp: "198.51.100.7",
+            headers: new Dictionary<string, string>
+            {
+                { "X-Forwarded-For", "203.0.113.42" },
+                { "X-Real-IP", "203.0.113.43" },
+                { "REMOTE_ADDR", "203.0.113.44" },
+            });
 
-        Builder.ResolvePartitionKey(ctx, partition).Should().Be("203.0.113.42");
+        Builder.ResolvePartitionKey(ctx, partition).Should().Be("198.51.100.7");
     }
 
     [Fact]

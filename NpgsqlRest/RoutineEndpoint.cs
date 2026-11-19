@@ -243,8 +243,8 @@ public class RoutineEndpoint(
     }
 
     /// <summary>
-    /// True when <see cref="AuthorizeRoles"/> is unset, or <paramref name="user"/> has a user-id / name /
-    /// role claim whose value is one of the authorized roles.
+    /// True when <see cref="AuthorizeRoles"/> is unset, or <paramref name="user"/> matches one of its values
+    /// (see <see cref="MatchesAuthorizeList"/>).
     /// </summary>
     public bool HasAuthorizeRoleMatch(ClaimsPrincipal? user, NpgsqlRestAuthenticationOptions auth)
     {
@@ -252,12 +252,56 @@ public class RoutineEndpoint(
         {
             return true;
         }
+        return MatchesAuthorizeList(AuthorizeRoles, user, auth);
+    }
+
+    public const string AuthorizeUserNamePrefix = "user:";
+    public const string AuthorizeUserIdPrefix = "id:";
+
+    /// <summary>
+    /// Matches an authorize list (<c>authorize ...</c>, <c>sse_scope authorize ...</c>) against a user:
+    /// - a plain value is a role and matches only the role claim (<see cref="NpgsqlRestAuthenticationOptions.DefaultRoleClaimType"/>);
+    /// - <c>user:name</c> matches the user name claim (<see cref="NpgsqlRestAuthenticationOptions.DefaultNameClaimType"/>);
+    /// - <c>id:value</c> matches the user id claim (<see cref="NpgsqlRestAuthenticationOptions.DefaultUserIdClaimType"/>).
+    /// Plain values used to match all three claims, so a user who could choose a user name equal to a role name
+    /// (e.g. register as "admin") was granted that role.
+    /// </summary>
+    public static bool MatchesAuthorizeList(IReadOnlySet<string> values, ClaimsPrincipal? user, NpgsqlRestAuthenticationOptions auth)
+    {
         foreach (var claim in user?.Claims ?? [])
         {
-            if ((string.Equals(claim.Type, auth.DefaultUserIdClaimType, StringComparison.Ordinal) ||
-                 string.Equals(claim.Type, auth.DefaultNameClaimType, StringComparison.Ordinal) ||
-                 string.Equals(claim.Type, auth.DefaultRoleClaimType, StringComparison.Ordinal))
-                && AuthorizeRoles.Contains(claim.Value))
+            if (string.Equals(claim.Type, auth.DefaultRoleClaimType, StringComparison.Ordinal))
+            {
+                if (values.Contains(claim.Value))
+                {
+                    return true;
+                }
+            }
+            else if (string.Equals(claim.Type, auth.DefaultNameClaimType, StringComparison.Ordinal))
+            {
+                if (ContainsPrefixed(values, AuthorizeUserNamePrefix, claim.Value))
+                {
+                    return true;
+                }
+            }
+            else if (string.Equals(claim.Type, auth.DefaultUserIdClaimType, StringComparison.Ordinal))
+            {
+                if (ContainsPrefixed(values, AuthorizeUserIdPrefix, claim.Value))
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static bool ContainsPrefixed(IReadOnlySet<string> values, string prefix, string claimValue)
+    {
+        foreach (var value in values)
+        {
+            if (value.Length == prefix.Length + claimValue.Length &&
+                value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+                value.AsSpan(prefix.Length).Equals(claimValue, StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }

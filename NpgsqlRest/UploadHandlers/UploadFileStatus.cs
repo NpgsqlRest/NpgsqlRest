@@ -9,5 +9,9 @@ public enum UploadFileStatus
     NoNewLines,
     InvalidMimeType,
     Ignored,
-    Ok 
+    Ok,
+    /// <summary>
+    /// The target file name or path is not allowed (directory traversal or a path outside the upload directory).
+    /// </summary>
+    InvalidFileName
 }

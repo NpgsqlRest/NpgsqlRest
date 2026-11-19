@@ -217,25 +217,10 @@ public sealed class RegistrationOptionsEndpoint(PasskeyEndpointContext ctx)
             writer.WriteRawValue(excludeCredentialsJson);
         }
 
-        // Inject userHandle into userContext so it's passed back to the completion endpoint
-        writer.WritePropertyName("userContext");
-        if (!string.IsNullOrEmpty(userContextJson))
-        {
-            using var doc = JsonDocument.Parse(userContextJson);
-            writer.WriteStartObject();
-            foreach (var prop in doc.RootElement.EnumerateObject())
-            {
-                prop.WriteTo(writer);
-            }
-            writer.WriteString("userHandle", userHandle);
-            writer.WriteEndObject();
-        }
-        else
-        {
-            writer.WriteStartObject();
-            writer.WriteString("userHandle", userHandle);
-            writer.WriteEndObject();
-        }
+        // userContext (with the userHandle injected) is passed back by the client to the completion endpoint.
+        // It is sealed to this challenge so it cannot be altered on the way back (registration is typically
+        // anonymous, so the seal is not bound to a signed-in user here).
+        PasskeyUserContext.Write(writer, context, userContextJson, userHandle, challengeId, boundUserId: null);
 
         writer.WriteEndObject();
         await writer.FlushAsync(context.RequestAborted);

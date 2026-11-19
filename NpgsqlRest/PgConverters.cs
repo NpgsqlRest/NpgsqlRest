@@ -36,6 +36,25 @@ public static class PgConverters
         Justification = "Serializes only string type that have AOT friendly TypeInfoResolver")]
     public static string SerializeString(string value) => JsonSerializer.Serialize(value, PlainTextSerializerOptions);
 
+    // Escapes HTML-sensitive characters (< > & ' " +) as \uXXXX while keeping other Unicode text as-is: the result is
+    // a valid JSON/JavaScript string literal that is also safe inside an HTML <script> block or HTML text.
+    private static readonly JsonSerializerOptions HtmlSafeSerializerOptions = new()
+    {
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.Create(System.Text.Unicode.UnicodeRanges.All),
+        TypeInfoResolver = new NpgsqlRestSerializerContext()
+    };
+
+    /// <summary>
+    /// JSON string literal safe to embed in HTML (including inside &lt;script&gt;), used for values templated into
+    /// static HTML pages. Unlike <see cref="SerializeString(string)"/> it escapes &lt;, &gt;, &amp; and quotes, so a
+    /// value such as "&lt;/script&gt;&lt;img onerror=...&gt;" cannot break out of the surrounding markup.
+    /// </summary>
+    [UnconditionalSuppressMessage("Aot", "IL2026:RequiresUnreferencedCode",
+        Justification = "Serializes only string type that have AOT friendly TypeInfoResolver")]
+    [UnconditionalSuppressMessage("Aot", "IL3050:RequiresDynamic",
+        Justification = "Serializes only string type that have AOT friendly TypeInfoResolver")]
+    public static string SerializeStringHtmlSafe(string value) => JsonSerializer.Serialize(value, HtmlSafeSerializerOptions);
+
     [UnconditionalSuppressMessage("Aot", "IL2026:RequiresUnreferencedCode",
     Justification = "Serializes only string type that have AOT friendly TypeInfoResolver")]
     [UnconditionalSuppressMessage("Aot", "IL3050:RequiresDynamic",
@@ -50,10 +69,12 @@ public static class PgConverters
 
     internal static ReadOnlySpan<char> PgUnknownToJsonArray(ref ReadOnlySpan<char> value)
     {
-        if (value[0] != Consts.OpenParenthesis || value[^1] != Consts.CloseParenthesis)
+        if (value.Length < 2 || value[0] != Consts.OpenParenthesis || value[^1] != Consts.CloseParenthesis)
         {
-            // should never happen
-            return value;
+            // Not a record: an enum, a domain, or another type without a specific mapping. Its text form is written
+            // as an escaped JSON string. (It used to be written raw: enums produced invalid JSON, domains over text
+            // let stored text inject JSON, and an empty value threw.)
+            return SerializeString(ref value);
         }
 
         var len = value.Length;
@@ -853,79 +874,104 @@ public static class PgConverters
         }
 
         int newLength = value.Length + 2 + quoteCount;
-        Span<char> result = stackalloc char[newLength];
-        result[0] = Consts.DoubleQuote;
-
-        if (quoteCount == 0)
+        // Stack buffer only for small values: the length comes from data (a stored text value), and a large stackalloc
+        // overflows the thread stack, which terminates the process (StackOverflow cannot be caught).
+        char[]? rented = null;
+        Span<char> result = newLength <= MaxStackAllocChars
+            ? stackalloc char[newLength]
+            : (rented = ArrayPool<char>.Shared.Rent(newLength)).AsSpan(0, newLength);
+        try
         {
-            // Fast path: no quotes to escape, just copy
-            value.CopyTo(result.Slice(1));
-            result[newLength - 1] = Consts.DoubleQuote;
-            return new string(result);
-        }
+            result[0] = Consts.DoubleQuote;
 
-        // Slow path: need to escape quotes
-        int currentPos = 1;
-        remaining = value;
-        while (true)
-        {
-            int idx = remaining.IndexOfAny(QuoteSearchValue);
-            if (idx == -1)
+            if (quoteCount == 0)
             {
-                // Copy remaining and finish
-                remaining.CopyTo(result.Slice(currentPos));
-                currentPos += remaining.Length;
-                break;
+                // Fast path: no quotes to escape, just copy
+                value.CopyTo(result.Slice(1));
+                result[newLength - 1] = Consts.DoubleQuote;
+                return new string(result);
             }
 
-            // Copy up to the quote
-            remaining.Slice(0, idx).CopyTo(result.Slice(currentPos));
-            currentPos += idx;
+            // Slow path: need to escape quotes
+            int currentPos = 1;
+            remaining = value;
+            while (true)
+            {
+                int idx = remaining.IndexOfAny(QuoteSearchValue);
+                if (idx == -1)
+                {
+                    // Copy remaining and finish
+                    remaining.CopyTo(result.Slice(currentPos));
+                    currentPos += remaining.Length;
+                    break;
+                }
 
-            // Escape the quote
-            result[currentPos++] = Consts.DoubleQuote;
-            result[currentPos++] = Consts.DoubleQuote;
+                // Copy up to the quote
+                remaining.Slice(0, idx).CopyTo(result.Slice(currentPos));
+                currentPos += idx;
 
-            remaining = remaining.Slice(idx + 1);
+                // Escape the quote
+                result[currentPos++] = Consts.DoubleQuote;
+                result[currentPos++] = Consts.DoubleQuote;
+
+                remaining = remaining.Slice(idx + 1);
+            }
+
+            result[currentPos] = Consts.DoubleQuote;
+            return new string(result);
         }
-
-        result[currentPos] = Consts.DoubleQuote;
-        return new string(result);
+        finally
+        {
+            if (rented is not null)
+            {
+                ArrayPool<char>.Shared.Return(rented);
+            }
+        }
     }
+
+    /// <summary>
+    /// Largest buffer (in chars) the quote helpers allocate on the stack; longer values use a pooled array.
+    /// </summary>
+    private const int MaxStackAllocChars = 512;
 
     internal static string QuoteDateTime(ref ReadOnlySpan<char> value)
     {
         int newLength = value.Length + 2;
-        Span<char> result = stackalloc char[newLength];
-        result[0] = Consts.DoubleQuote;
-        int currentPos = 1;
-        for (int i = 0; i < value.Length; i++)
+        char[]? rented = null;
+        Span<char> result = newLength <= MaxStackAllocChars
+            ? stackalloc char[newLength]
+            : (rented = ArrayPool<char>.Shared.Rent(newLength)).AsSpan(0, newLength);
+        try
         {
-            if (value[i] == Consts.Space)
+            result[0] = Consts.DoubleQuote;
+            int currentPos = 1;
+            for (int i = 0; i < value.Length; i++)
             {
-                result[currentPos++] = 'T';
+                if (value[i] == Consts.Space)
+                {
+                    result[currentPos++] = 'T';
+                }
+                else
+                {
+                    result[currentPos++] = value[i];
+                }
             }
-            else
+            result[currentPos] = Consts.DoubleQuote;
+            return new string(result);
+        }
+        finally
+        {
+            if (rented is not null)
             {
-                result[currentPos++] = value[i];
+                ArrayPool<char>.Shared.Return(rented);
             }
         }
-        result[currentPos] = Consts.DoubleQuote;
-        return new string(result);
     }
 
     internal static string Quote(ref ReadOnlySpan<char> value)
     {
-        int newLength = value.Length + 2;
-        Span<char> result = stackalloc char[newLength];
-        result[0] = Consts.DoubleQuote;
-        int currentPos = 1;
-        for (int i = 0; i < value.Length; i++)
-        {
-            result[currentPos++] = value[i];
-        }
-        result[currentPos] = Consts.DoubleQuote;
-        return new string(result);
+        // No intermediate buffer needed: the quoted string is built directly.
+        return string.Concat("\"", value, "\"");
     }
 
     public static int PgCountParams(this string sql)

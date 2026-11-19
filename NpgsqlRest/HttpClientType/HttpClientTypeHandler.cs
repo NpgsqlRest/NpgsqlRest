@@ -8,7 +8,9 @@ namespace NpgsqlRest.HttpClientType;
 
 public class HttpClientTypeHandler(HttpTypeDefinition definition, Dictionary<string, string>.AlternateLookup<ReadOnlySpan<char>>? replacements = null)
 {
-    private static readonly HttpClient SharedClient = new()
+    // UseCookies = false: the client is shared by all users. With the default cookie container, a cookie that an
+    // upstream sets for one user's request was stored and sent with every later request - for every user.
+    private static readonly HttpClient SharedClient = new(new SocketsHttpHandler { UseCookies = false })
     {
         Timeout = Timeout.InfiniteTimeSpan // We handle timeout per-request
     };

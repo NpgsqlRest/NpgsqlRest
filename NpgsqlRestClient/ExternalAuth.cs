@@ -491,12 +491,31 @@ public class ExternalAuth
             if (analyticsData) {{
                 signinUrl += "?analyticsData=" + encodeURIComponent(JSON.stringify(analyticsData));
             }}
+            // return_to comes from the query string: only a same-origin path is accepted ("/page?x=1#y").
+            // Anything else - absolute or protocol-relative URLs ("https://evil", "//evil", "/\evil"),
+            // "javascript:" and other schemes, control characters - is ignored (falls back to redirectTo),
+            // so the link can be used neither for script injection nor as an open redirect.
+            function safeReturnTo(value) {{
+                if (typeof value !== "string" || value.length === 0 || value[0] !== "/" || value[1] === "/" || value[1] === "\\") {{
+                    return null;
+                }}
+                if (/[\u0000-\u001F\u007F]/.test(value)) {{
+                    return null;
+                }}
+                try {{
+                    var url = new URL(value, window.location.origin);
+                    return url.origin === window.location.origin ? url.pathname + url.search + url.hash : null;
+                }} catch (e) {{
+                    return null;
+                }}
+            }}
             var params = paramsToObject(window.location.search);
             var keys = Object.keys(params);
             if (!params.error && !params.state) {{
-                if (params[returnToPathQueryStringKey]) {{
-                    sessionStorage.setItem(returnToKey, params[returnToPathQueryStringKey]);
-                    delete params[returnToPathQueryStringKey];
+                var requestedReturnTo = safeReturnTo(params[returnToPathQueryStringKey]);
+                delete params[returnToPathQueryStringKey];
+                if (requestedReturnTo) {{
+                    sessionStorage.setItem(returnToKey, requestedReturnTo);
                 }} else {{
                     sessionStorage.removeItem(returnToKey);
                 }}
@@ -508,7 +527,7 @@ public class ExternalAuth
                 var state = sessionStorage.getItem(stateKey);
                 params = Object.assign(params, JSON.parse(sessionStorage.getItem(paramsKey) == null ? {{}} : sessionStorage.getItem(paramsKey)));
                 sessionStorage.removeItem(stateKey);
-                var returnTo = sessionStorage.getItem(returnToKey) || redirectTo;
+                var returnTo = safeReturnTo(sessionStorage.getItem(returnToKey)) || redirectTo;
                 if (!params.error && params.state !== state) {{
                     params.error = "Invalid state code received from external provider " + externalType + ".";
                 }}

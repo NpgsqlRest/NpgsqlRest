@@ -32,13 +32,18 @@ public class ProxyOptions
 
     /// <summary>
     /// Headers to exclude from forwarding to the proxy target.
-    /// Default excludes Host, Content-Length, and Transfer-Encoding.
+    /// Default excludes Host, Content-Length, Transfer-Encoding and the caller's credentials (Cookie, Authorization,
+    /// Proxy-Authorization), so a user's session cookie or bearer token is not sent to the upstream host - which may be
+    /// a third party. Remove Authorization from this list to forward bearer tokens to a trusted internal service.
     /// </summary>
     public HashSet<string> ExcludeHeaders { get; set; } = new(StringComparer.OrdinalIgnoreCase)
     {
         "Host",
         "Content-Length",
-        "Transfer-Encoding"
+        "Transfer-Encoding",
+        "Cookie",
+        "Authorization",
+        "Proxy-Authorization"
     };
 
     /// <summary>
@@ -53,7 +58,8 @@ public class ProxyOptions
     public HashSet<string> ExcludeResponseHeaders { get; set; } = new(StringComparer.OrdinalIgnoreCase)
     {
         "Transfer-Encoding",
-        "Content-Length"
+        "Content-Length",
+        "Set-Cookie"
     };
 
     /// <summary>

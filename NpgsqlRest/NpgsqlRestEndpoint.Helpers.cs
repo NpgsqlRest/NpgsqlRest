@@ -130,7 +130,7 @@ public partial class NpgsqlRestEndpoint
 
         if (endpoint.CommandTimeout.HasValue)
         {
-            command.CommandTimeout = endpoint.CommandTimeout.Value.Seconds;
+            command.CommandTimeout = ToCommandTimeoutSeconds(endpoint.CommandTimeout.Value);
         }
 
         if (Options.CommandCallbackAsync is not null)
@@ -168,6 +168,65 @@ public partial class NpgsqlRestEndpoint
                 Options.BeforeConnectionOpen(connection, endpoint, context);
             }
             await connection.OpenRetryAsync(Options.ConnectionRetryOptions, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Converts a timeout to Npgsql's CommandTimeout (whole seconds, 0 = no timeout). Rounds up, so sub-second
+    /// timeouts don't become 0 (= unlimited). It used TimeSpan.Seconds - the seconds *component* - which turned
+    /// "1 minute" into 0, i.e. no timeout at all, and "90 seconds" into 30.
+    /// </summary>
+    internal static int ToCommandTimeoutSeconds(TimeSpan timeout)
+    {
+        if (timeout <= TimeSpan.Zero)
+        {
+            return 0;
+        }
+        var seconds = Math.Ceiling(timeout.TotalSeconds);
+        return seconds >= int.MaxValue ? int.MaxValue : (int)seconds;
+    }
+
+    /// <summary>
+    /// Drops request-supplied values for claim-bound user parameters (claim-mapped and the user-claims JSON parameter)
+    /// from the query string and the JSON body. Used for anonymous callers of user_params endpoints, so the request
+    /// cannot impersonate a user; the routine then sees the parameter as not provided. Allocates only when a request
+    /// actually supplies such a parameter in the query string.
+    /// </summary>
+    private static void RemoveClientSuppliedUserParameters(
+        Routine routine,
+        ref IQueryCollection? queryCollection,
+        Dictionary<string, JsonNode?>? bodyDict)
+    {
+        Dictionary<string, Microsoft.Extensions.Primitives.StringValues>? filteredQuery = null;
+        foreach (var parameter in routine.Parameters)
+        {
+            if (parameter.IsFromUserClaims is false)
+            {
+                continue;
+            }
+            if (queryCollection is not null &&
+                (queryCollection.ContainsKey(parameter.ConvertedName) || queryCollection.ContainsKey(parameter.ActualName)))
+            {
+                if (filteredQuery is null)
+                {
+                    filteredQuery = new(queryCollection.Count, StringComparer.OrdinalIgnoreCase);
+                    foreach (var kv in queryCollection)
+                    {
+                        filteredQuery[kv.Key] = kv.Value;
+                    }
+                }
+                filteredQuery.Remove(parameter.ConvertedName);
+                filteredQuery.Remove(parameter.ActualName);
+            }
+            if (bodyDict is not null)
+            {
+                bodyDict.Remove(parameter.ConvertedName);
+                bodyDict.Remove(parameter.ActualName);
+            }
+        }
+        if (filteredQuery is not null)
+        {
+            queryCollection = new Microsoft.AspNetCore.Http.QueryCollection(filteredQuery);
         }
     }
 

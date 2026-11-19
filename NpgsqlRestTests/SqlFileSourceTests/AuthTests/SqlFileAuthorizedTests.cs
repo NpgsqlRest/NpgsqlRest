@@ -36,31 +36,31 @@ public static partial class SqlFiles
 
         // Authorized by user name — matches "user"
         File.WriteAllText(Path.Combine(Dir, "sf_authorized_by_name.sql"), """
-            -- @authorize user
+            -- @authorize user:user
             select 'by_name' as result;
             """);
 
         // Authorized by user name — wrong name
         File.WriteAllText(Path.Combine(Dir, "sf_authorized_by_name_wrong.sql"), """
-            -- @authorize wrong_user
+            -- @authorize user:wrong_user
             select 'by_name_wrong' as result;
             """);
 
         // Authorized by user ID — matches "user123"
         File.WriteAllText(Path.Combine(Dir, "sf_authorized_by_userid.sql"), """
-            -- @authorize user123
+            -- @authorize id:user123
             select 'by_userid' as result;
             """);
 
         // Authorized by user ID — wrong ID
         File.WriteAllText(Path.Combine(Dir, "sf_authorized_by_userid_wrong.sql"), """
-            -- @authorize wrong_id
+            -- @authorize id:wrong_id
             select 'by_userid_wrong' as result;
             """);
 
         // Authorized mixed — wrong role but matching user ID
         File.WriteAllText(Path.Combine(Dir, "sf_authorized_mixed.sql"), """
-            -- @authorize wrong_role, user123
+            -- @authorize wrong_role, id:user123
             select 'mixed' as result;
             """);
 

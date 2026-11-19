@@ -38,6 +38,27 @@ public class ResponseParserEnvVarTests
     private static string Parse(DefaultResponseParser parser, string input, HttpContext ctx) =>
         parser.Parse(input.AsSpan(), ctx, tokenSet: null).ToString();
 
+    // Security regression: claim values (from login rows / OAuth profiles - data users can influence) are templated
+    // into static HTML, including inside <script>. They must not be able to close the script block or inject markup.
+    [Fact]
+    public void ClaimValue_CannotBreakOutOfScriptOrMarkup()
+    {
+        var parser = Parser(claims: new() { ["user_name"] = null });
+        var ctx = WithClaims(("user_name", "</script><img src=x onerror=alert(1)>"));
+
+        Parse(parser, "<script>var user = {user_name};</script>", ctx)
+            .Should().Be("<script>var user = \"\\u003C/script\\u003E\\u003Cimg src=x onerror=alert(1)\\u003E\";</script>");
+    }
+
+    [Fact]
+    public void ClaimValue_NonAsciiTextIsKept_HtmlSensitiveCharactersEscaped()
+    {
+        var parser = Parser(claims: new() { ["user_name"] = null });
+        var ctx = WithClaims(("user_name", "José & O'Brien \"Ž\""));
+
+        Parse(parser, "{user_name}", ctx).Should().Be("\"José \\u0026 O\\u0027Brien \\u0022Ž\\u0022\"");
+    }
+
     [Fact]
     public void EmptyAvailableEnvVars_PassesContentThrough()
     {
@@ -92,8 +113,8 @@ public class ResponseParserEnvVarTests
         try
         {
             var parser = Parser(envVars: new() { [name] = null });
-            // " -> \" and \ -> \\ , so it stays a single well-formed JS string literal
-            Parse(parser, $"v: {{{name}}};", Anonymous()).Should().Be("v: \"a\\\"b\\\\c\";");
+            // " -> " (HTML-safe form of \") and \ -> \\ , so it stays a single well-formed JS string literal
+            Parse(parser, $"v: {{{name}}};", Anonymous()).Should().Be("v: \"a\\u0022b\\\\c\";");
         }
         finally
         {

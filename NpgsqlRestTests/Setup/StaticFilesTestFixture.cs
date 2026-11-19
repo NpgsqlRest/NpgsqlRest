@@ -31,6 +31,7 @@ public class StaticFilesTestFixture : IDisposable
     public HttpClient Client => _client;
     public HttpClient AuthenticatedClient => _authenticatedClient;
     public string ServerAddress { get; }
+    public string WebRootPath => _webRootPath;
 
     /// <summary>
     /// Test claim values for authenticated user

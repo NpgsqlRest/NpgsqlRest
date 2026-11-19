@@ -318,6 +318,15 @@ public partial class NpgsqlRestEndpoint(
                 }
             }
 
+            // Claim-bound user parameters (user_params) are filled by the server: for signed-in callers the claim
+            // always wins (see the parameter loops). Anonymous callers must not be able to supply them either -
+            // otherwise ?userId=1 would impersonate user 1 on an endpoint that allows anonymous access. Their
+            // request values are dropped, so the routine sees "not provided" (its default, else NULL).
+            if (endpoint.UseUserParameters && context.User?.Identity?.IsAuthenticated is not true)
+            {
+                RemoveClientSuppliedUserParameters(routine, ref queryCollection, bodyDict);
+            }
+
             // start query string parameters
             if (endpoint.RequestParamType == RequestParamType.QueryString)
             {
@@ -1919,22 +1928,24 @@ public partial class NpgsqlRestEndpoint(
                             cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(context.Request.GetClientIpAddressDbParam()));
                             batch.BatchCommands.Add(cmd);
                         }
-                        if (context.User?.Identity?.IsAuthenticated is true && Options.AuthenticationOptions.ClaimsJsonContextKey is not null)
+                        // Every claim context key is set on every user_context request - for anonymous requests to
+                        // NULL. Session-level settings (no transaction) survive on a pooled connection when the
+                        // connection is not reset on close (NoResetOnClose), so skipping them for anonymous requests
+                        // would let an anonymous request run with the previous request's user identity.
+                        var isAuthenticated = context.User?.Identity?.IsAuthenticated is true;
+                        if (Options.AuthenticationOptions.ClaimsJsonContextKey is not null)
                         {
                             var cmd = new NpgsqlBatchCommand(setContextSql);
                             cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(Options.AuthenticationOptions.ClaimsJsonContextKey));
-                            cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(claimsDict?.GetUserClaimsDbParam() ?? DBNull.Value));
+                            cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(isAuthenticated ? claimsDict?.GetUserClaimsDbParam() ?? DBNull.Value : DBNull.Value));
                             batch.BatchCommands.Add(cmd);
                         }
-                        if (context.User?.Identity?.IsAuthenticated is true)
+                        foreach (var mapping in Options.AuthenticationOptions.ContextKeyClaimsMapping)
                         {
-                            foreach (var mapping in Options.AuthenticationOptions.ContextKeyClaimsMapping)
-                            {
-                                var cmd = new NpgsqlBatchCommand(setContextSql);
-                                cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(mapping.Key));
-                                cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(claimsDict!.GetClaimDbContextParam(mapping.Value)));
-                                batch.BatchCommands.Add(cmd);
-                            }
+                            var cmd = new NpgsqlBatchCommand(setContextSql);
+                            cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(mapping.Key));
+                            cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(isAuthenticated ? claimsDict!.GetClaimDbContextParam(mapping.Value) : DBNull.Value));
+                            batch.BatchCommands.Add(cmd);
                         }
                     }
 
@@ -2105,7 +2116,7 @@ public partial class NpgsqlRestEndpoint(
                         await using var mcCmd = new NpgsqlCommand(currentCmd.Statement, connection);
                         if (endpoint.CommandTimeout.HasValue)
                         {
-                            mcCmd.CommandTimeout = endpoint.CommandTimeout.Value.Seconds;
+                            mcCmd.CommandTimeout = ToCommandTimeoutSeconds(endpoint.CommandTimeout.Value);
                         }
                         for (int pi = 0; pi < Math.Min(currentCmd.ParamCount, command.Parameters.Count); pi++)
                         {
@@ -2139,7 +2150,7 @@ public partial class NpgsqlRestEndpoint(
                     await using var mcCmd = new NpgsqlCommand(currentCmd.Statement, connection);
                     if (endpoint.CommandTimeout.HasValue)
                     {
-                        mcCmd.CommandTimeout = endpoint.CommandTimeout.Value.Seconds;
+                        mcCmd.CommandTimeout = ToCommandTimeoutSeconds(endpoint.CommandTimeout.Value);
                     }
                     // Bind parameters that this statement uses
                     for (int pi = 0; pi < Math.Min(currentCmd.ParamCount, command.Parameters.Count); pi++)

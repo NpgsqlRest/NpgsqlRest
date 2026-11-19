@@ -1354,6 +1354,10 @@ public class Builder
             return;
         }
 
+        // The passkey options/completion round trip seals userContext with Data Protection (PasskeyUserContext).
+        // AddDataProtection is idempotent; authentication registers it too, this makes it independent of that.
+        Instance.Services.AddDataProtection();
+
         PasskeyConfig = new PasskeyConfig
         {
             Enabled = true,
@@ -1743,8 +1747,10 @@ public class Builder
         
         // Connection doesn't participate in ambient TransactionScope
         connectionStringBuilder.Enlist = false;
-        // Connection doesn't have to have reset on close
-        connectionStringBuilder.NoResetOnClose = true;
+        // NoResetOnClose is NOT forced (it used to be): without the reset, session-level state such as the
+        // user_context / request_headers settings (set_config(..., false)) survives on the pooled connection and
+        // is visible to the next request that gets it. Npgsql's reset is sent together with the next command, so
+        // it costs no extra round trip. It can still be set explicitly in the connection string.
 
         connectionString = connectionStringBuilder.ConnectionString;
 

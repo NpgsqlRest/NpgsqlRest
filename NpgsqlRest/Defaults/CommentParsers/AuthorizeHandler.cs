@@ -26,6 +26,17 @@ internal static partial class DefaultCommentParser
         {
             endpoint.AuthorizeRoles = [.. wordsLower[1..]];
             CommentLogger?.CommentSetAuthRoles(description, endpoint.AuthorizeRoles);
+            // Since 3.22.0 plain values are roles only; user names and ids need the user: / id: prefix.
+            // A plain number or GUID was almost certainly meant as a user id - point that out.
+            foreach (var value in endpoint.AuthorizeRoles)
+            {
+                if (long.TryParse(value, out _) || Guid.TryParse(value, out _))
+                {
+                    CommentLogger?.LogWarning(
+                        "{description}: authorize value \"{value}\" is matched against the role claim only. To authorize a user id write \"{prefix}{value}\" (and \"{namePrefix}name\" for a user name).",
+                        description, value, RoutineEndpoint.AuthorizeUserIdPrefix, value, RoutineEndpoint.AuthorizeUserNamePrefix);
+                }
+            }
         }
         else
         {

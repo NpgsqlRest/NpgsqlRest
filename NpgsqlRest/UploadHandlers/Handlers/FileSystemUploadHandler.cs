@@ -94,7 +94,16 @@ public class FileSystemUploadHandler() : BaseUploadHandler, IUploadHandler
                 Type, IncludedMimeTypePatterns, ExcludedMimeTypePatterns, BufferSize, basePath, useUniqueFileName, newFileName, createPathIfNotExists, checkText, checkImage, allowedImage, testBufferSize, nonPrintableThreshold);
         }
 
-        if (createPathIfNotExists is true && Directory.Exists(basePath) is false)
+        // The upload directory and the configured file name may be templated from request values (custom parameters
+        // such as "file_system_path = {_path}"), so neither may navigate with ".." - and every final file path must
+        // stay inside the upload directory (checked per file below).
+        var basePathIsSafe = HasNoParentSegments(basePath);
+        if (basePathIsSafe is false)
+        {
+            Logger?.LogWarning("Upload rejected: the upload path {path} contains \"..\" segments", basePath);
+        }
+
+        if (basePathIsSafe && createPathIfNotExists is true && Directory.Exists(basePath) is false)
         {
             Directory.CreateDirectory(basePath);
         }
@@ -112,14 +121,9 @@ public class FileSystemUploadHandler() : BaseUploadHandler, IUploadHandler
             {
                 result.Append(',');
             }
-            string fileName = newFileName ?? formFile.FileName;
-            if (useUniqueFileName)
-            {
-                string extension = Path.GetExtension(fileName);
-                fileName = $"{Guid.NewGuid()}{extension}";
-            }
-
-            var currentFilePath = Path.Combine(basePath, fileName);
+            var currentFilePath = basePathIsSafe
+                ? ResolveSafeFilePath(basePath, newFileName, formFile.FileName, useUniqueFileName)
+                : null;
 
             // Build the result JSON
             if (Type is not null)
@@ -142,7 +146,11 @@ public class FileSystemUploadHandler() : BaseUploadHandler, IUploadHandler
             result.Append(SerializeString(currentFilePath));
 
             UploadFileStatus status = UploadFileStatus.Ok;
-            if (StopAfterFirstSuccess is true && SkipFileNames.Contains(formFile.FileName, StringComparer.OrdinalIgnoreCase))
+            if (currentFilePath is null)
+            {
+                status = UploadFileStatus.InvalidFileName;
+            }
+            if (status == UploadFileStatus.Ok && StopAfterFirstSuccess is true && SkipFileNames.Contains(formFile.FileName, StringComparer.OrdinalIgnoreCase))
             {
                 status = UploadFileStatus.Ignored;
             }
@@ -180,7 +188,7 @@ public class FileSystemUploadHandler() : BaseUploadHandler, IUploadHandler
                 SkipFileNames.Add(formFile.FileName);
             }
 
-            using (var fileStream = new FileStream(currentFilePath, FileMode.Create))
+            using (var fileStream = new FileStream(currentFilePath!, FileMode.Create))
             {
                 byte[] buffer = new byte[BufferSize];
                 int bytesRead;
@@ -191,7 +199,7 @@ public class FileSystemUploadHandler() : BaseUploadHandler, IUploadHandler
                     await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
                 }
             }
-            _uploadedFiles[i] = currentFilePath;
+            _uploadedFiles[i] = currentFilePath!;
 
             if (Options.UploadOptions.LogUploadEvent)
             {
@@ -202,6 +210,68 @@ public class FileSystemUploadHandler() : BaseUploadHandler, IUploadHandler
 
         result.Append(']');
         return result.ToString();
+    }
+
+    /// <summary>
+    /// The path to write an uploaded file to (<paramref name="basePath"/> combined with the file name, in the same form
+    /// as before), or null when the name is not allowed.
+    /// - a generated unique name keeps only the extension (never a directory part);
+    /// - a configured name (the "file" parameter, possibly templated) must be relative and must not contain ".." segments;
+    /// - the client-supplied name (multipart Content-Disposition) is reduced to its last segment, with both / and \\
+    ///   treated as separators.
+    /// The resulting full path must be inside <paramref name="basePath"/>.
+    /// </summary>
+    internal static string? ResolveSafeFilePath(string basePath, string? configuredFileName, string? clientFileName, bool useUniqueFileName)
+    {
+        string? relative;
+        if (useUniqueFileName)
+        {
+            var source = LastSegment(configuredFileName ?? clientFileName);
+            var extension = source is null ? "" : Path.GetExtension(source);
+            relative = string.Concat(Guid.NewGuid().ToString(), extension);
+        }
+        else if (configuredFileName is not null)
+        {
+            var normalized = configuredFileName.Replace('\\', '/');
+            relative = Path.IsPathRooted(normalized) || normalized.StartsWith('/') || HasNoParentSegments(normalized) is false
+                ? null
+                : normalized;
+        }
+        else
+        {
+            relative = LastSegment(clientFileName);
+        }
+        if (string.IsNullOrWhiteSpace(relative) || relative is "." or "..")
+        {
+            return null;
+        }
+        var filePath = Path.Combine(basePath, relative);
+        var fullBasePath = Path.GetFullPath(basePath);
+        var root = Path.EndsInDirectorySeparator(fullBasePath) ? fullBasePath : string.Concat(fullBasePath, Path.DirectorySeparatorChar.ToString());
+        return Path.GetFullPath(filePath).StartsWith(root, StringComparison.Ordinal) ? filePath : null;
+    }
+
+    private static string? LastSegment(string? name)
+    {
+        if (name is null)
+        {
+            return null;
+        }
+        var normalized = name.Replace('\\', '/');
+        var slash = normalized.LastIndexOf('/');
+        return slash < 0 ? normalized : normalized[(slash + 1)..];
+    }
+
+    private static bool HasNoParentSegments(string path)
+    {
+        foreach (var segment in path.Replace('\\', '/').Split('/'))
+        {
+            if (segment == "..")
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     public void OnError(NpgsqlConnection? connection, HttpContext context, Exception? exception)

@@ -54,10 +54,9 @@ public enum RateLimitPartitionSourceType
     /// <summary>Resolve from <c>HttpContext.User.FindFirst(Name)?.Value</c>. Returns null if claim missing.</summary>
     Claim,
     /// <summary>
-    /// Resolve from the client IP via <c>HttpRequest.GetClientIpAddress()</c>: checks
-    /// <c>X-Forwarded-For</c> (leftmost address) first, then <c>X-Real-IP</c> /
-    /// <c>HTTP_X_FORWARDED_FOR</c> / <c>REMOTE_ADDR</c>, finally falling back to
-    /// <c>Connection.RemoteIpAddress</c>. Returns null if no source yields a value.
+    /// Resolve from the client IP: <c>Connection.RemoteIpAddress</c>. Client-sent headers such as
+    /// <c>X-Forwarded-For</c> are not trusted directly; behind a reverse proxy enable <c>ForwardedHeaders</c>
+    /// so the address reported by the trusted proxy becomes <c>RemoteIpAddress</c>. Returns null if unknown.
     /// </summary>
     IpAddress,
     /// <summary>Resolve from <c>HttpContext.Request.Headers[Name]</c>. Returns null if header missing.</summary>
