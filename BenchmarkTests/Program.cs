@@ -17,6 +17,13 @@ if (args.Contains("--pgconv-only"))
     return;
 }
 
+// Self-contained end-to-end endpoint benchmarks (starts its own server; needs PostgreSQL on localhost:5432)
+if (args.Contains("--endpoints") || args.Contains("-e"))
+{
+    BenchmarkRunner.Run<EndpointBenchmarks>();
+    return;
+}
+
 // Default: run in-process benchmarks if no arguments provided
 if (!runHttpBenchmarks && !runInProcessBenchmarks && !runAll)
 {
@@ -82,6 +89,11 @@ Options:
   -h, --http        Run HTTP endpoint benchmarks only
                     Requires NpgsqlRestTests server running on localhost:5000
                     Start with: dotnet run --project NpgsqlRestTests/Setup
+
+  -e, --endpoints   Run the self-contained endpoint benchmarks only
+                    Full HTTP round trips against an in-process server it starts itself
+                    Requires PostgreSQL on localhost:5432 (creates/drops npgsql_rest_benchmark)
+                    Use it as a before/after yardstick for upgrades
 
   -a, --all         Run all benchmarks (in-process + HTTP)
 

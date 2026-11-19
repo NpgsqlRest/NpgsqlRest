@@ -11,7 +11,7 @@
 
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
-    <PackageReference Include="Npgsql" Version="10.0.3" />
+    <!-- Npgsql comes transitively from the NpgsqlRest project: no direct pin, so benchmarks always measure the Npgsql version NpgsqlRest ships with -->
   </ItemGroup>
 
   <ItemGroup>
