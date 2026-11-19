@@ -75,7 +75,31 @@ public static class NpgsqlRestBuilder
             hasStreamingEvents
             ) = Build(builder, defaultStrategy);
 
-        Options.ConnectionResetRequired = RequestsLeaveSessionState(entries);
+        // Which endpoints send their request context together with the routine, local to that one batch (overloads
+        // are endpoints too: a request resolves to one of them by its parameters).
+        foreach (var entry in entries)
+        {
+            entry.Endpoint.ContextInRoutineBatch = RequestContextBatch.CanUse(entry.Endpoint);
+        }
+        foreach (var entry in overloads.Values)
+        {
+            entry.Endpoint.ContextInRoutineBatch = RequestContextBatch.CanUse(entry.Endpoint);
+        }
+        if (RequestContextBatch.IsSupported is false)
+        {
+            foreach (var entry in entries)
+            {
+                if (RequestContextBatch.Qualifies(entry.Endpoint))
+                {
+                    // NpgsqlRest works the same, only slower: say why, once.
+                    Logger?.LogInformation(
+                        "The request context (user_context, request_headers context) is sent to PostgreSQL in a separate round trip before each routine, and pooled connections have to be reset after it: Npgsql {NpgsqlVersion} does not return the results of a batch as text.",
+                        typeof(NpgsqlBatch).Assembly.GetName().Version);
+                    break;
+                }
+            }
+        }
+        Options.ConnectionResetRequired = RequestsLeaveSessionState(entries, overloads);
 
         if (entries.Count == 0)
         {
@@ -180,7 +204,7 @@ public static class NpgsqlRestBuilder
             }
         }
 
-        WarnIfRequestContextCanOutliveRequest(entries);
+        WarnIfRequestContextCanOutliveRequest(entries, overloads);
 
         // Register internal handlers for self-referencing calls (bypass HTTP)
         InternalRequestHandler.SetEndpointHandlers(internalHandlers);
@@ -191,10 +215,12 @@ public static class NpgsqlRestBuilder
     /// <summary>
     /// True when a request can leave session-level settings on its connection (see
     /// <see cref="NpgsqlRestOptions.ConnectionResetRequired"/>). These are all the places where NpgsqlRest runs
-    /// set_config(..., false): the request context (SetRequestContextAsync) and the upload metadata key (UploadAsync).
+    /// set_config(..., false): the request context when it is set by a separate batch (SetRequestContextAsync; not
+    /// when it is sent with the routine, local to that batch, see RequestContextBatch) and the upload metadata key
+    /// (UploadAsync).
     /// BeforeRoutineCommands are the application's own SQL, typically set_config calls, so they count as well.
     /// </summary>
-    private static bool RequestsLeaveSessionState(List<NpgsqlRestMetadataEntry> entries)
+    private static bool RequestsLeaveSessionState(List<NpgsqlRestMetadataEntry> entries, FrozenDictionary<string, NpgsqlRestMetadataEntry> overloads)
     {
         if (Options.WrapInTransaction)
         {
@@ -212,12 +238,23 @@ public static class NpgsqlRestBuilder
         var headersContextWrites = Options.RequestHeadersContextKey is not null;
         var uploadContextWrites = Options.UploadOptions.UseDefaultUploadMetadataContextKey
             && Options.UploadOptions.DefaultUploadMetadataContextKey is not null;
+        bool LeavesSessionState(RoutineEndpoint endpoint)
+        {
+            var setsContext = (endpoint.UserContext && userContextWrites)
+                || (endpoint.RequestHeadersMode == RequestHeadersMode.Context && headersContextWrites);
+            return (setsContext && endpoint.ContextInRoutineBatch is false) || (endpoint.Upload && uploadContextWrites);
+        }
+
         foreach (var entry in entries)
         {
-            var endpoint = entry.Endpoint;
-            if ((endpoint.UserContext && userContextWrites)
-                || (endpoint.RequestHeadersMode == RequestHeadersMode.Context && headersContextWrites)
-                || (endpoint.Upload && uploadContextWrites))
+            if (LeavesSessionState(entry.Endpoint))
+            {
+                return true;
+            }
+        }
+        foreach (var entry in overloads.Values)
+        {
+            if (LeavesSessionState(entry.Endpoint))
             {
                 return true;
             }
@@ -226,23 +263,39 @@ public static class NpgsqlRestBuilder
     }
 
     /// <summary>
-    /// user_context / request_headers context values are session-level settings (set_config(..., false)) unless the
-    /// request runs in a transaction. With "No Reset On Close" the pooled connection keeps them, so the next request
-    /// on that connection - including endpoints that never set a context - can read the previous caller's identity.
+    /// user_context / request_headers context values are session-level settings (set_config(..., false)) for the
+    /// endpoints that cannot send them together with the routine (see RequestContextBatch), unless the request runs
+    /// in a transaction. With "No Reset On Close" the pooled connection keeps them, so the next request on that
+    /// connection - including endpoints that never set a context - can read the previous caller's identity.
     /// </summary>
-    private static void WarnIfRequestContextCanOutliveRequest(List<NpgsqlRestMetadataEntry> entries)
+    private static void WarnIfRequestContextCanOutliveRequest(List<NpgsqlRestMetadataEntry> entries, FrozenDictionary<string, NpgsqlRestMetadataEntry> overloads)
     {
         if (Options.WrapInTransaction)
         {
             return;
         }
+        // Endpoints whose context is sent with the routine (RequestContextBatch) leave nothing on the connection.
+        static bool SetsSessionContext(RoutineEndpoint endpoint) =>
+            (endpoint.UserContext || endpoint.RequestHeadersMode == RequestHeadersMode.Context) && endpoint.ContextInRoutineBatch is false;
+
         var usesContext = false;
         foreach (var entry in entries)
         {
-            if (entry.Endpoint.UserContext || entry.Endpoint.RequestHeadersMode == RequestHeadersMode.Context)
+            if (SetsSessionContext(entry.Endpoint))
             {
                 usesContext = true;
                 break;
+            }
+        }
+        if (usesContext is false)
+        {
+            foreach (var entry in overloads.Values)
+            {
+                if (SetsSessionContext(entry.Endpoint))
+                {
+                    usesContext = true;
+                    break;
+                }
             }
         }
         if (usesContext is false)
@@ -259,8 +312,9 @@ public static class NpgsqlRestBuilder
             if (new NpgsqlConnectionStringBuilder(connectionString).NoResetOnClose)
             {
                 Logger?.LogWarning(
-                    "The connection string sets \"No Reset On Close\" and endpoints use user_context or request_headers context. " +
-                    "Context values are session settings that stay on the pooled connection, so the next request using that connection " +
+                    "The connection string sets \"No Reset On Close\" and endpoints set user_context or request_headers context at session level " +
+                    "(procedures, upload, login and logout endpoints, SQL files that are not a single query or data change, or any endpoint with a command callback). " +
+                    "Those values stay on the pooled connection, so the next request using that connection " +
                     "can read the previous caller's values (for example request.user_id in an RLS policy). Remove \"No Reset On Close\" " +
                     "or enable WrapInTransaction.");
             }

@@ -58,7 +58,8 @@ public enum RequestHeadersMode
     /// </summary>
     Ignore,
     /// <summary>
-    /// Send all request headers as json object to PostgreSQL by executing set_config('context.headers', headers, false) before routine call.
+    /// Send all request headers as a JSON string to PostgreSQL, in the setting named by RequestHeadersContextKey
+    /// (request.headers by default), set with set_config just before the routine runs.
     /// </summary>
     Context,
     /// <summary>

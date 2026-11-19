@@ -65,7 +65,7 @@ public static class NpgsqlRetryExtensions
         {
             return command.ExecuteNonQueryAsync(cancellationToken);
         }
-        return ExecuteNonQueryRetryLoopAsync(command, strategy, cancellationToken, logger, errorCodePolicy, firstFailure: null);
+        return ExecuteNonQueryRetryLoopAsync(command, null, strategy, cancellationToken, logger, errorCodePolicy, firstFailure: null);
     }
 
     /// <summary>
@@ -73,16 +73,22 @@ public static class NpgsqlRetryExtensions
     /// continues after that attempt failed, handling the failure exactly as the retrying method handles one - error
     /// code mapping, timeout mapping, retries with their delays, logging.
     /// </summary>
+    /// <remarks>
+    /// contextBatch: when the request context is sent with the routine (see RequestContextBatch), the batch that the
+    /// first attempt executed, and that the next attempts execute, in place of the command.
+    /// </remarks>
     internal static Task<int> ExecuteNonQueryAfterFailureAsync(
         this NpgsqlCommand command,
         Exception firstFailure,
         RetryStrategy strategy,
         CancellationToken cancellationToken,
-        string? errorCodePolicy)
-        => ExecuteNonQueryRetryLoopAsync(command, strategy, cancellationToken, null, errorCodePolicy, firstFailure);
+        string? errorCodePolicy,
+        NpgsqlBatch? contextBatch = null)
+        => ExecuteNonQueryRetryLoopAsync(command, contextBatch, strategy, cancellationToken, null, errorCodePolicy, firstFailure);
 
     private static async Task<int> ExecuteNonQueryRetryLoopAsync(
         NpgsqlCommand command,
+        NpgsqlBatch? contextBatch,
         RetryStrategy strategy,
         CancellationToken cancellationToken,
         ILogger? logger,
@@ -101,7 +107,9 @@ public static class NpgsqlRetryExtensions
                     // The caller already made this attempt: its failure goes through the handlers below.
                     System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(firstFailure);
                 }
-                return await command.ExecuteNonQueryAsync(cancellationToken);
+                return contextBatch is null
+                    ? await command.ExecuteNonQueryAsync(cancellationToken)
+                    : await contextBatch.ExecuteNonQueryAsync(cancellationToken);
             }
             catch (PostgresException ex) when (errorCodePolicy is not null && errorCodePolicy.TryGetErrorCodeMapping(ex.SqlState, out var statusCodeMapping))
             {
@@ -270,7 +278,32 @@ public static class NpgsqlRetryExtensions
         {
             return command.ExecuteReaderAsync(behavior, cancellationToken);
         }
-        return ExecuteReaderRetryLoopAsync(command, behavior, strategy, cancellationToken, logger, errorCodePolicy, firstFailure: null);
+        return ExecuteReaderRetryLoopAsync(command, null, behavior, strategy, cancellationToken, logger, errorCodePolicy, firstFailure: null);
+    }
+
+    /// <summary>
+    /// Executes a routine and returns the reader on the routine's result: through <paramref name="contextBatch"/> when
+    /// the request context is sent with the routine (see RequestContextBatch), otherwise through the command.
+    /// </summary>
+    internal static async Task<NpgsqlDataReader> ExecuteRoutineReaderWithRetryAsync(
+        this NpgsqlCommand command,
+        NpgsqlBatch? contextBatch,
+        CommandBehavior behavior,
+        RetryStrategy? strategy,
+        CancellationToken cancellationToken,
+        string? errorCodePolicy)
+    {
+        if (strategy == null || strategy.RetrySequenceSeconds.Length == 0)
+        {
+            if (contextBatch is null)
+            {
+                return await command.ExecuteReaderAsync(behavior, cancellationToken);
+            }
+            var reader = await contextBatch.ExecuteReaderAsync(behavior, cancellationToken);
+            await SkipContextResultAsync(reader, cancellationToken);
+            return reader;
+        }
+        return await ExecuteReaderRetryLoopAsync(command, contextBatch, behavior, strategy, cancellationToken, null, errorCodePolicy, firstFailure: null);
     }
 
     /// <summary>
@@ -278,17 +311,53 @@ public static class NpgsqlRetryExtensions
     /// continues after that attempt failed, handling the failure exactly as the retrying method handles one - error
     /// code mapping, timeout mapping, retries with their delays, logging.
     /// </summary>
+    /// <remarks>
+    /// contextBatch: when the request context is sent with the routine (see RequestContextBatch), the batch that the
+    /// first attempt executed, and that the next attempts execute, in place of the command. The reader is returned on
+    /// the routine's result.
+    /// </remarks>
     internal static Task<NpgsqlDataReader> ExecuteReaderAfterFailureAsync(
         this NpgsqlCommand command,
         Exception firstFailure,
         CommandBehavior behavior,
         RetryStrategy strategy,
         CancellationToken cancellationToken,
-        string? errorCodePolicy)
-        => ExecuteReaderRetryLoopAsync(command, behavior, strategy, cancellationToken, null, errorCodePolicy, firstFailure);
+        string? errorCodePolicy,
+        NpgsqlBatch? contextBatch = null)
+        => ExecuteReaderRetryLoopAsync(command, contextBatch, behavior, strategy, cancellationToken, null, errorCodePolicy, firstFailure);
+
+    /// <summary>
+    /// Moves the reader of a context batch (see RequestContextBatch) past the context statement's result, to the
+    /// routine's. This is where the routine's own errors arrive, so it is part of the attempt to execute the routine.
+    /// If it fails, the reader is closed - the batch can then be executed again, and the connection used - and the
+    /// failure is rethrown.
+    /// </summary>
+    internal static async ValueTask SkipContextResultAsync(NpgsqlDataReader reader, CancellationToken cancellationToken)
+    {
+        try
+        {
+            for (var i = 0; i < RequestContextBatch.LeadingResultSets; i++)
+            {
+                await reader.NextResultAsync(cancellationToken);
+            }
+        }
+        catch
+        {
+            try
+            {
+                await reader.DisposeAsync();
+            }
+            catch
+            {
+                // the failure being reported is the one above
+            }
+            throw;
+        }
+    }
 
     private static async Task<NpgsqlDataReader> ExecuteReaderRetryLoopAsync(
         NpgsqlCommand command,
+        NpgsqlBatch? contextBatch,
         CommandBehavior behavior,
         RetryStrategy strategy,
         CancellationToken cancellationToken,
@@ -313,7 +382,13 @@ public static class NpgsqlRetryExtensions
                     // The caller already made this attempt: its failure goes through the handlers below.
                     System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(firstFailure);
                 }
-                return await command.ExecuteReaderAsync(behavior, cancellationToken);
+                if (contextBatch is null)
+                {
+                    return await command.ExecuteReaderAsync(behavior, cancellationToken);
+                }
+                var reader = await contextBatch.ExecuteReaderAsync(behavior, cancellationToken);
+                await SkipContextResultAsync(reader, cancellationToken);
+                return reader;
             }
             catch (PostgresException ex) when (errorCodePolicy is not null && errorCodePolicy.TryGetErrorCodeMapping(ex.SqlState, out var statusCodeMapping))
             {

@@ -252,7 +252,7 @@ public class NpgsqlRestOptions
     /// <summary>
     /// Configure how to send request headers to PostgreSQL routines execution:
     /// - `Ignore` (default) don't send any request headers to routines.
-    /// - `Context` sets a context variable for the current session `context.headers` containing JSON string with current request headers. This executes `set_config('context.headers', headers, false)` before any routine executions.
+    /// - `Context` passes the request headers to the routine as a JSON string in the PostgreSQL setting named by `RequestHeadersContextKey` (`request.headers` by default), set with `set_config` just before the routine runs. Read it with `current_setting('request.headers', true)`.
     /// - `Parameter` sends request headers to the routine parameter defined with the `RequestHeadersParameterName` option. Parameter with this name must exist, must be one of the JSON or text types and must have the default value defined.
     ///
     /// This option for individual endpoints can be changed with the `EndpointCreated` function callback, or by using comment annotations.
@@ -283,10 +283,16 @@ public class NpgsqlRestOptions
     /// <summary>
     /// Set by UseNpgsqlRest when the endpoints are built (read it afterwards): true when a request can leave
     /// session-level settings on its database connection, so pooled connections have to be reset when they return to
-    /// the pool (Npgsql does that unless the connection string sets "No Reset On Close"). Without
-    /// <see cref="WrapInTransaction"/>, that is the case when an endpoint uses `user_context` or
-    /// `request_headers context`, when an upload endpoint sets the upload metadata context key, or when
-    /// <see cref="BeforeRoutineCommands"/> are configured.
+    /// the pool (Npgsql does that unless the connection string sets "No Reset On Close").
+    ///
+    /// The request context (`user_context`, `request_headers context`) of functions, tables, views and SQL files with
+    /// a single query or data change is sent to PostgreSQL together with the routine, as settings local to that one
+    /// transaction, and leaves nothing behind. Without <see cref="WrapInTransaction"/>, the flag is true when the
+    /// context is used by an endpoint that cannot do that - a procedure, an upload, login or logout endpoint, a SQL
+    /// file with several statements or with a statement that is not a query or data change, a routine returning a
+    /// single bytea value - or by any endpoint when <see cref="CommandCallbackAsync"/> is set; when an upload endpoint
+    /// sets the upload metadata context key; and when <see cref="BeforeRoutineCommands"/> are configured.
+    ///
     /// False when nothing NpgsqlRest does stays on a connection after the request - with WrapInTransaction every
     /// setting is local to the request's transaction. Such an application can skip the reset, and what the reset
     /// costs PostgreSQL on every request. Session state left behind by your own SQL is not covered by this flag.

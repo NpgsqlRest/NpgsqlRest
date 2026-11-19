@@ -1006,6 +1006,30 @@ public partial class NpgsqlRestEndpoint(
         bool willRunBeforeRoutineCommands = Options.BeforeRoutineCommands.Length > 0;
         if (willSetHeadersContext || willSetUserContext || willRunBeforeRoutineCommands || Options.WrapInTransaction)
         {
+            // The keys and values this request passes to PostgreSQL - the same whichever way they are sent.
+            List<(string Key, object? Value)>? contextPairs = null;
+            if (willSetHeadersContext || willSetUserContext || willRunBeforeRoutineCommands)
+            {
+                contextPairs = CollectRequestContext(s, willSetHeadersContext);
+                claimsDict = s.claimsDict;
+            }
+
+            // ContextInRoutineBatch was decided when the endpoints were built, from these same options; they are
+            // checked again because options are mutable and all three change what has to run on the connection.
+            if (contextPairs is { Count: > 0 }
+                && endpoint.ContextInRoutineBatch
+                && transaction is null
+                && willRunBeforeRoutineCommands is false
+                && Options.WrapInTransaction is false
+                && Options.CommandCallbackAsync is null)
+            {
+                // The settings go to PostgreSQL together with the routine, local to that one batch: no round trip
+                // here (the connection is not even opened yet), and nothing stays on the connection afterwards.
+                // See RequestContextBatch.
+                s.contextWithRoutine = true;
+                return;
+            }
+
             if (connection.State != ConnectionState.Open)
             {
                 if (Options.BeforeConnectionOpen is not null)
@@ -1026,44 +1050,12 @@ public partial class NpgsqlRestEndpoint(
             {
                 await using var batch = NpgsqlRestBatch.Create(connection);
 
-                if (willSetHeadersContext)
+                foreach (var (key, value) in contextPairs!)
                 {
                     var cmd = new NpgsqlBatchCommand(setContextSql);
-                    cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(Options.RequestHeadersContextKey));
-                    cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(headers));
+                    cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(key));
+                    cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(value));
                     batch.BatchCommands.Add(cmd);
-                }
-
-                if (endpoint.UserContext is true)
-                {
-                    claimsDict = s.claimsDict ??= context.User.BuildClaimsDictionary(Options.AuthenticationOptions);
-
-                    if (Options.AuthenticationOptions.IpAddressContextKey is not null)
-                    {
-                        var cmd = new NpgsqlBatchCommand(setContextSql);
-                        cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(Options.AuthenticationOptions.IpAddressContextKey));
-                        cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(context.Request.GetClientIpAddressDbParam()));
-                        batch.BatchCommands.Add(cmd);
-                    }
-                    // Every claim context key is set on every user_context request - for anonymous requests to
-                    // NULL. Session-level settings (no transaction) survive on a pooled connection when the
-                    // connection is not reset on close (NoResetOnClose), so skipping them for anonymous requests
-                    // would let an anonymous request run with the previous request's user identity.
-                    var isAuthenticated = context.User?.Identity?.IsAuthenticated is true;
-                    if (Options.AuthenticationOptions.ClaimsJsonContextKey is not null)
-                    {
-                        var cmd = new NpgsqlBatchCommand(setContextSql);
-                        cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(Options.AuthenticationOptions.ClaimsJsonContextKey));
-                        cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(isAuthenticated ? claimsDict?.GetUserClaimsDbParam() ?? DBNull.Value : DBNull.Value));
-                        batch.BatchCommands.Add(cmd);
-                    }
-                    foreach (var mapping in Options.AuthenticationOptions.ContextKeyClaimsMapping)
-                    {
-                        var cmd = new NpgsqlBatchCommand(setContextSql);
-                        cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(mapping.Key));
-                        cmd.Parameters.Add(NpgsqlRestParameter.CreateTextParam(isAuthenticated ? claimsDict!.GetClaimDbContextParam(mapping.Value) : DBNull.Value));
-                        batch.BatchCommands.Add(cmd);
-                    }
                 }
 
                 if (willRunBeforeRoutineCommands)
@@ -1102,6 +1094,59 @@ public partial class NpgsqlRestEndpoint(
             }
         }
     }
+
+    /// <summary>
+    /// The request context as setting names and values: the request headers (request_headers context) and, for
+    /// user_context endpoints, the client IP address, the claims JSON and the mapped claims.
+    /// </summary>
+    private static List<(string Key, object? Value)> CollectRequestContext(RequestState s, bool headersContext)
+    {
+        var pairs = s.contextPairs ??= new(8);
+        pairs.Clear();
+
+        var context = s.context;
+        var auth = Options.AuthenticationOptions;
+
+        if (headersContext)
+        {
+            pairs.Add((Options.RequestHeadersContextKey, s.headers));
+        }
+
+        if (s.endpoint.UserContext is true)
+        {
+            var claimsDict = s.claimsDict ??= context.User.BuildClaimsDictionary(auth);
+
+            if (auth.IpAddressContextKey is not null)
+            {
+                pairs.Add((auth.IpAddressContextKey, context.Request.GetClientIpAddressDbParam()));
+            }
+            // Every claim context key is set on every user_context request - for anonymous requests to NULL. With
+            // session-level settings (the batch below, no transaction) and a connection that is not reset on close,
+            // skipping them for anonymous requests would let an anonymous request run with the previous request's
+            // user identity.
+            var isAuthenticated = context.User?.Identity?.IsAuthenticated is true;
+            if (auth.ClaimsJsonContextKey is not null)
+            {
+                pairs.Add((auth.ClaimsJsonContextKey, isAuthenticated ? claimsDict?.GetUserClaimsDbParam() ?? DBNull.Value : DBNull.Value));
+            }
+            foreach (var mapping in auth.ContextKeyClaimsMapping)
+            {
+                pairs.Add((mapping.Key, isAuthenticated ? claimsDict!.GetClaimDbContextParam(mapping.Value) : DBNull.Value));
+            }
+        }
+        return pairs;
+    }
+
+    /// <summary>
+    /// For a request whose context is sent with its routine: creates the batch that carries both (see
+    /// RequestContextBatch). Called when the routine is about to run - after PrepareCommand, which gives the command
+    /// its text and timeout. The batch is disposed with the command (DisposeCommandAsync).
+    /// </summary>
+    private static NpgsqlBatch CreateContextBatch(RequestState s) =>
+        s.contextBatch = RequestContextBatch.Create(
+            s.connection!,
+            s.command,
+            System.Runtime.InteropServices.CollectionsMarshal.AsSpan(s.contextPairs));
 
     /// <summary>Upload endpoints: runs the upload handler and passes its metadata to the routine.</summary>
     [System.Runtime.CompilerServices.AsyncMethodBuilder(typeof(System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder))]
@@ -1454,6 +1499,12 @@ public partial class NpgsqlRestEndpoint(
 
     private static ValueTask DisposeCommandAsync(RequestState s)
     {
+        var contextBatch = s.contextBatch;
+        if (contextBatch is not null)
+        {
+            s.contextBatch = null;
+            contextBatch.Dispose();
+        }
         var command = s.command;
         if (command is null)
         {
@@ -1709,9 +1760,21 @@ public partial class NpgsqlRestEndpoint(
         // The first attempt is made here rather than in the retrying method, so that one async method less waits on
         // the database with every request. If it fails, the retrying method takes over and handles the failure
         // exactly as if it had made the attempt itself (error mapping, retries, logging).
+        if (s.contextWithRoutine)
+        {
+            CreateContextBatch(s);
+        }
         try
         {
-            await s.command.ExecuteNonQueryAsync(s.cancellationToken);
+            if (s.contextBatch is { } contextBatch)
+            {
+                // the request context and the routine, in one round trip (see RequestContextBatch)
+                await contextBatch.ExecuteNonQueryAsync(s.cancellationToken);
+            }
+            else
+            {
+                await s.command.ExecuteNonQueryAsync(s.cancellationToken);
+            }
         }
         catch (Exception firstFailure) when (Retries(s.endpoint))
         {
@@ -1719,7 +1782,8 @@ public partial class NpgsqlRestEndpoint(
                 firstFailure,
                 s.endpoint.RetryStrategy!,
                 s.cancellationToken,
-                s.endpoint.ErrorCodePolicy ?? Options.ErrorHandlingOptions.DefaultErrorCodePolicy);
+                s.endpoint.ErrorCodePolicy ?? Options.ErrorHandlingOptions.DefaultErrorCodePolicy,
+                s.contextBatch);
         }
         s.context.Response.StatusCode = (int)HttpStatusCode.NoContent;
     }
@@ -1747,10 +1811,25 @@ public partial class NpgsqlRestEndpoint(
         {
             s.cancellationToken.ThrowIfCancellationRequested();
         }
+        if (s.contextWithRoutine)
+        {
+            CreateContextBatch(s);
+        }
         NpgsqlDataReader reader;
         try
         {
-            reader = await s.command.ExecuteReaderAsync(CommandBehavior.SequentialAccess, s.cancellationToken);
+            if (s.contextBatch is { } contextBatch)
+            {
+                // The request context and the routine, in one round trip (see RequestContextBatch). The first result
+                // is the context statement's; the routine's result - and its errors - come next, so moving there is
+                // part of the attempt.
+                reader = await contextBatch.ExecuteReaderAsync(CommandBehavior.SequentialAccess, s.cancellationToken);
+                await NpgsqlRetryExtensions.SkipContextResultAsync(reader, s.cancellationToken);
+            }
+            else
+            {
+                reader = await s.command.ExecuteReaderAsync(CommandBehavior.SequentialAccess, s.cancellationToken);
+            }
         }
         catch (Exception firstFailure) when (Retries(s.endpoint))
         {
@@ -1759,7 +1838,8 @@ public partial class NpgsqlRestEndpoint(
                 CommandBehavior.SequentialAccess,
                 s.endpoint.RetryStrategy!,
                 s.cancellationToken,
-                s.endpoint.ErrorCodePolicy ?? Options.ErrorHandlingOptions.DefaultErrorCodePolicy);
+                s.endpoint.ErrorCodePolicy ?? Options.ErrorHandlingOptions.DefaultErrorCodePolicy,
+                s.contextBatch);
         }
         await WriteScalarAsync(s, reader);
     }
@@ -1898,6 +1978,9 @@ public partial class NpgsqlRestEndpoint(
         var cacheKeyString = s.cacheKeyString;
         var cacheTtlOverride = s.cacheTtlOverride;
         var cancellationToken = s.cancellationToken;
+        // The request context, when it is sent with the routine (see RequestContextBatch) - a copy, because the list
+        // belongs to the pooled request state.
+        (string Key, object? Value)[]? requestContext = s.contextWithRoutine ? s.contextPairs!.ToArray() : null;
         TypeDescriptor descriptor = s.routine.ColumnsTypeDescriptor[0];
 
         object? valueResult;
@@ -1918,11 +2001,13 @@ public partial class NpgsqlRestEndpoint(
                         throw new CacheFactoryAbortException(CacheFactoryAbortReason.ResponseAlreadyWritten);
                     }
 
-                    await using var reader = await command.ExecuteReaderWithRetryAsync(
+                    await using var contextBatch = requestContext is null ? null : RequestContextBatch.Create(connection, command, requestContext);
+                    await using var reader = await command.ExecuteRoutineReaderWithRetryAsync(
+                        contextBatch,
                         CommandBehavior.SequentialAccess,
                         endpoint.RetryStrategy,
                         ct,
-                        errorCodePolicy: endpoint.ErrorCodePolicy ?? Options.ErrorHandlingOptions.DefaultErrorCodePolicy);
+                        endpoint.ErrorCodePolicy ?? Options.ErrorHandlingOptions.DefaultErrorCodePolicy);
                     if (shouldLog)
                     {
                         NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", command.CommandText);
@@ -2112,9 +2197,22 @@ public partial class NpgsqlRestEndpoint(
                 {
                     s.cancellationToken.ThrowIfCancellationRequested();
                 }
+                if (s.contextWithRoutine)
+                {
+                    CreateContextBatch(s);
+                }
                 try
                 {
-                    reader = await s.command.ExecuteReaderAsync(CommandBehavior.SequentialAccess, s.cancellationToken);
+                    if (s.contextBatch is { } contextBatch)
+                    {
+                        // the request context and the routine, in one round trip (see RenderScalarAsync)
+                        reader = await contextBatch.ExecuteReaderAsync(CommandBehavior.SequentialAccess, s.cancellationToken);
+                        await NpgsqlRetryExtensions.SkipContextResultAsync(reader, s.cancellationToken);
+                    }
+                    else
+                    {
+                        reader = await s.command.ExecuteReaderAsync(CommandBehavior.SequentialAccess, s.cancellationToken);
+                    }
                 }
                 catch (Exception firstFailure) when (Retries(s.endpoint))
                 {
@@ -2123,7 +2221,8 @@ public partial class NpgsqlRestEndpoint(
                         CommandBehavior.SequentialAccess,
                         s.endpoint.RetryStrategy!,
                         s.cancellationToken,
-                        s.endpoint.ErrorCodePolicy ?? Options.ErrorHandlingOptions.DefaultErrorCodePolicy);
+                        s.endpoint.ErrorCodePolicy ?? Options.ErrorHandlingOptions.DefaultErrorCodePolicy,
+                        s.contextBatch);
                 }
                 if (s.shouldLog)
                 {
@@ -3719,8 +3818,15 @@ public partial class NpgsqlRestEndpoint(
         public bool bypassCache;
         public TimeSpan? cacheTtlOverride;
 
+        // The request context (contextPairs) is sent with the routine, as one batch (see RequestContextBatch) ...
+        public bool contextWithRoutine;
+        // ... which is this one, from the moment the routine is about to run. Disposed with the command.
+        public NpgsqlBatch? contextBatch;
+
         // Reused across requests (not part of a request's state): renders rows, see RowRenderer.
         public RowRenderer? rowRenderer;
+        // Reused across requests: the context setting names and values of the request being served.
+        public List<(string Key, object? Value)>? contextPairs;
 
         private const int MaxPoolSize = 128;
         private static readonly RequestState?[] Pool = new RequestState?[MaxPoolSize];
@@ -3799,6 +3905,9 @@ public partial class NpgsqlRestEndpoint(
             cacheKeyString = null;
             bypassCache = false;
             cacheTtlOverride = null;
+            contextWithRoutine = false;
+            contextBatch = null;
+            contextPairs?.Clear();
         }
     }
 

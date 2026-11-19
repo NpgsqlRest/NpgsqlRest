@@ -640,11 +640,13 @@ if (testMode)
 UseNpgsqlRestAndPickDataSources();
 
 // Builds the endpoints, then picks the data sources requests run on. Connections are reset between requests only
-// when a request can leave session-level settings on them: an endpoint with user_context or request_headers context,
-// an upload metadata context key, or BeforeRoutineCommands - and no WrapInTransaction, which makes all of them local
-// to the request's transaction. UseNpgsqlRest works that out from the endpoints it builds
-// (options.ConnectionResetRequired). Without such endpoints nothing can leak, and skipping the reset saves
-// PostgreSQL work on every request. A connection string that sets "No Reset On Close" itself is not affected.
+// when a request can leave session-level settings on them: user_context or request_headers context on an endpoint
+// that cannot send its context together with the routine (a procedure, an upload, login or logout endpoint, a SQL
+// file that is not a single query or data change), an upload metadata context key, or BeforeRoutineCommands - and no
+// WrapInTransaction, which makes all of them local to the request's transaction. UseNpgsqlRest works that out from
+// the endpoints it builds (options.ConnectionResetRequired). Without such endpoints nothing can leak, and skipping
+// the reset saves PostgreSQL work on every request. A connection string that sets "No Reset On Close" itself is not
+// affected.
 void UseNpgsqlRestAndPickDataSources()
 {
     // Discovery, and the library's "No Reset On Close" warning, use the data sources as configured.
@@ -665,7 +667,7 @@ void UseNpgsqlRestAndPickDataSources()
     }
     else if (options.ConnectionResetRequired)
     {
-        builder.ClientLogger?.LogDebug("Connections are reset between requests: endpoints leave session-level settings on them (user_context, request_headers context, upload metadata context or BeforeRoutineCommands, without WrapInTransaction).");
+        builder.ClientLogger?.LogDebug("Connections are reset between requests: endpoints leave session-level settings on them (user_context or request_headers context on a procedure, upload, login or logout endpoint or a multi-statement SQL file, an upload metadata context key, or BeforeRoutineCommands - without WrapInTransaction).");
     }
     else
     {

@@ -115,6 +115,13 @@ public class RoutineEndpoint(
     public string[]? UploadHandlers { get; set; } = uploadHandlers;
     public Dictionary<string, string>? CustomParameters { get; set; } = customParameters;
     public bool UserContext { get; set; } = userContext;
+
+    /// <summary>
+    /// Set when the endpoints are built: true when this endpoint's request context is sent to PostgreSQL together
+    /// with its routine, local to that one batch (see <see cref="RequestContextBatch"/>); false when it is set by a
+    /// separate batch before the routine, at session level.
+    /// </summary>
+    internal bool ContextInRoutineBatch { get; set; }
     public bool UseUserParameters { get; set; } = userParameters;
     public PostgresNoticeLevels? SseEventNoticeLevel { get; set; } = null;
     public string? SseEventsPath { get; set; } = sseEventsPath;

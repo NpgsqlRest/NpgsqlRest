@@ -67,8 +67,20 @@ public class EndpointBenchmarks
         from generate_series(1, _count) as i
         $$;
 
+        -- The same text value, with the request context (user_context): the IP address and the three default user
+        -- keys are passed to PostgreSQL as settings (NULL for the user keys: the benchmark's requests are anonymous).
+        create function benchmark_get_text_context()
+        returns text
+        language sql
+        stable
+        as $$
+        select 'Hello, ' || coalesce(nullif(current_setting('request.user_name', true), ''), 'World') || '!'
+        $$;
+
         comment on function benchmark_get_text() is 'HTTP GET';
         comment on function benchmark_get_rows(int) is 'HTTP GET';
+        comment on function benchmark_get_text_context() is 'HTTP GET
+        user_context';
         """;
 
     private const int RowCount = 100;
@@ -147,6 +159,17 @@ public class EndpointBenchmarks
     }
 
     /// <summary>
+    /// The text value again, from an endpoint with user_context: four context settings are sent to PostgreSQL with
+    /// the request. Compared with GetText, this is what the request context costs.
+    /// </summary>
+    [Benchmark]
+    public async Task<string> GetTextUserContext()
+    {
+        using var response = await _client.GetAsync("/api/benchmark-get-text-context");
+        return await response.Content.ReadAsStringAsync();
+    }
+
+    /// <summary>
     /// Reference: the HTTP stack alone (HttpClient -> Kestrel -> routing -> RequestDelegate), same response text,
     /// no NpgsqlRest, no database. Separates platform (ASP.NET Core / runtime) cost from NpgsqlRest cost.
     /// </summary>
@@ -213,6 +236,15 @@ public class EndpointBenchmarks
             if (!response.IsSuccessStatusCode || body != "Hello, World!")
             {
                 throw new InvalidOperationException($"benchmark-get-text: unexpected response {(int)response.StatusCode}: {body}");
+            }
+        }
+
+        using (var response = _client.GetAsync("/api/benchmark-get-text-context").GetAwaiter().GetResult())
+        {
+            var body = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            if (!response.IsSuccessStatusCode || body != "Hello, World!")
+            {
+                throw new InvalidOperationException($"benchmark-get-text-context: unexpected response {(int)response.StatusCode}: {body}");
             }
         }
 
