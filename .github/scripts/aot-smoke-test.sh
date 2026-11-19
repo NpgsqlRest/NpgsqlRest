@@ -25,6 +25,13 @@ create function smoke_echo(_value text) returns text language sql as $$ select '
 create function smoke_void() returns void language sql as $$ select 1 $$;
 create function smoke_secret() returns text language sql stable as $$ select 'secret' $$;
 create function smoke_big() returns text language sql stable as $$ select repeat('x', 200000) $$;
+-- The request context is sent together with the routine, in a batch with text results (RequestContextBatch).
+create function smoke_context(_p text) returns table (p text, ip text, header text, flag boolean, n numeric) language sql as $$
+  select _p, current_setting('request.ip_address', true),
+    (select value from json_each_text(current_setting('request.headers', true)::json) where lower(key) = 'x-smoke'), true, 1.50 $$;
+create function smoke_context_void() returns void language sql as $$ select current_setting('request.ip_address') $$;
+create function smoke_context_left() returns text language sql as $$
+  select coalesce(nullif(current_setting('request.ip_address', true), ''), 'nothing') $$;
 comment on function smoke_text() is 'HTTP GET';
 comment on function smoke_rows(int) is 'HTTP GET';
 comment on function smoke_echo(text) is 'HTTP POST';
@@ -32,6 +39,12 @@ comment on function smoke_void() is 'HTTP POST';
 comment on function smoke_secret() is 'HTTP GET
 authorize';
 comment on function smoke_big() is 'HTTP GET';
+comment on function smoke_context(text) is 'HTTP GET
+user_context
+request_headers context';
+comment on function smoke_context_void() is 'HTTP POST
+user_context';
+comment on function smoke_context_left() is 'HTTP GET';
 SQL
 
 # The default configuration requires authorization on every endpoint; smoke_secret keeps its own `authorize`.
@@ -69,6 +82,15 @@ check "GET gzip"            '[200]' "$(curl -s --compressed -H 'Accept-Encoding:
 # Responses that are sent in several pieces: a value larger than 64 KB, and more rows than fit in 16 KB.
 check "GET large scalar"    '200000 [200]' "$(curl -s -o /dev/null -w '%{size_download} [%{http_code}]' "$B/api/smoke-big")"
 check "GET 2000 rows"       '2000' "$(curl -s "$B/api/smoke-rows?count=2000" | grep -o '"id":' | wc -l | tr -d ' ')"
+# The request context and the routine in one round trip; values are read as text and nothing stays on the connection
+# (which is not reset here: no endpoint leaves session-level settings).
+check "GET user_context"    '[{"p":"x","ip":"127.0.0.1","header":"smoke header","flag":true,"n":1.50}] [200]' \
+                            "$(curl -s -w ' [%{http_code}]' -H 'X-Smoke: smoke header' "$B/api/smoke-context?p=x")"
+check "POST user_context, void" '[204]' "$(curl -s -o /dev/null -w '[%{http_code}]' -X POST "$B/api/smoke-context-void")"
+check "context is gone after the request" 'nothing nothing nothing nothing nothing nothing nothing nothing' \
+  "$(for _ in 1 2 3 4 5 6 7 8; do curl -s "$B/api/smoke-context-left"; echo; done | tr '\n' ' ' | sed 's/ $//')"
+check "200 parallel requests with context" '200' \
+  "$(seq 1 200 | xargs -P 20 -I{} curl -s -H 'X-Smoke: smoke header' "$B/api/smoke-context?p={}" | grep -o '"ip":"127.0.0.1","header":"smoke header"' | wc -l | tr -d ' ')"
 check "200 parallel requests" '200' \
   "$(seq 1 200 | xargs -P 20 -I{} curl -s -o /dev/null -w '%{http_code}\n' "$B/api/smoke-rows?count=10" | grep -c '^200$')"
 kill -0 "$PID" 2>/dev/null || { echo "FAIL: server died"; cat "$LOG"; exit 1; }
