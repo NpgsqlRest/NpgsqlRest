@@ -9,7 +9,7 @@ NPGSQLREST_BENCHMARK_CONNECTION="Host=localhost;Port=55432;Database=postgres;Use
 
 The starting point is branch `3.22.0` with the security fixes applied, before any performance change. Each row adds one change to the previous row and is a single full run.
 
-This document has three parts; the numbers quoted in the changelog are those of **round 3** (3.22.0 against the released 3.21.0 on .NET 10). **Round 1** (the sections up to "How the JIT verdict was checked") is the first set of changes, committed as `9d63171`. **Round 2** continues from there to the final request pipeline and compares it with the start of the performance work (`5befe76`, on .NET 11). **Round 3** compares the release with 3.21.0 on .NET 10, which also uncovered what resetting connections costs. Two statements in round 1 turned out to be wrong and are corrected in round 2: that methods with a pooling async builder stay classic when Runtime Async is on, and the ApacheBench numbers for the native AOT build.
+This document has four parts; the numbers quoted in the changelog are those of **round 3** (3.22.0 against the released 3.21.0 on .NET 10) and, for endpoints with a request context, **round 4** at the end. **Round 1** (the sections up to "How the JIT verdict was checked") is the first set of changes, committed as `9d63171`. **Round 2** continues from there to the final request pipeline and compares it with the start of the performance work (`5befe76`, on .NET 11). **Round 3** compares the release with 3.21.0 on .NET 10, which also uncovered what resetting connections costs. Two statements in round 1 turned out to be wrong and are corrected in round 2: that methods with a pooling async builder stay classic when Runtime Async is on, and the ApacheBench numbers for the native AOT build.
 
 ## Results
 
@@ -291,3 +291,117 @@ Native AOT binary (osx-arm64): 35,343,856 bytes for 3.21.0, 36,255,760 for 3.22.
 
 Verification of the final state: 3,013 tests pass on .NET 11 and on .NET 10 (`-p:NpgsqlRestTestFramework=net10.0`); both final AOT executables pass `.github/scripts/aot-smoke-test.sh`.
 
+
+# Round 4: the request context is sent with the routine
+
+Recorded 2026-11-19, same machine and container. This round is about endpoints with `user_context` / `request_headers context`, which rounds 1-3 did not load at all.
+
+## What changed
+
+Up to here, a request to such an endpoint made two round trips to PostgreSQL: a batch of `select set_config($1,$2,false)` statements (one per setting), then the routine. The settings were session-level, so they stayed on the pooled connection, and that is what made the connection reset of round 3 necessary for every application with a context endpoint.
+
+Now, for functions, tables, views and SQL files with a single query or data-changing statement, the settings and the routine are one `NpgsqlBatch` of two statements: `select set_config($1,$2,true) is null,set_config($3,$4,true) is null,...` and the unchanged routine statement. One round trip, one transaction, settings local to it, nothing left on the connection, so no reset (`NpgsqlRestOptions.ConnectionResetRequired` is false for such endpoints). Code: `NpgsqlRest/RequestContextBatch.cs`.
+
+Two things about the design that are not obvious from the code:
+
+- **Why a batch and not one command with several statements.** A single `NpgsqlCommand` with `;`-separated statements needs Npgsql's SQL rewriting and named parameters. The client (and the test suite) run with `Npgsql.EnableSqlRewriting` off, on purpose, so that Npgsql never parses or reinterprets SQL. With it off, named parameters throw and several statements in one command are rejected by PostgreSQL. A batch is the supported way to send several statements with positional parameters, and the routine's statement does not have to be touched.
+- **Text results for a batch.** Rendering reads every value in PostgreSQL's text format (`AllResultTypesAreUnknown`). `NpgsqlBatch` has that switch only as an internal property in Npgsql 10.0.3 (public API is on Npgsql's backlog, npgsql/npgsql#3922). It is set through an `UnsafeAccessor`, which works in JIT, trimmed and native AOT builds. `RequestContextBatch.IsSupported` probes it once; without it the old two-step path is used. A unit test fails if an Npgsql upgrade removes the member.
+
+Not eligible (they keep the session-level context, and an application that has one keeps the reset): procedures, multi-statement SQL files, SQL files whose statement is not a query or data change, upload, login and logout endpoints, a routine returning a single `bytea` value; and every endpoint with `WrapInTransaction` (already local), `BeforeRoutineCommands` or `CommandCallbackAsync`.
+
+## What PostgreSQL receives
+
+Statement log (`log_statement = 'all'`) for one request of a signed-in user to `who_am_i(_greeting text)` with `user_context`, pool of one connection:
+
+| Build | Statements |
+|---|---|
+| 3.21.0 | 4 x `select set_config($1,$2,false)` (one batch), then `select public.who_am_i(_greeting=>$1)`; no reset |
+| 3.22.0 before this round | the reset (`SET SESSION AUTHORIZATION DEFAULT;RESET ALL;CLOSE ALL;UNLISTEN *;SELECT pg_advisory_unlock_all();DISCARD SEQUENCES;DISCARD TEMP`), 4 x `select set_config($1,$2,false)`, then the routine |
+| 3.22.0 | `select set_config($1,$2,true) is null,set_config($3,$4,true) is null,set_config($5,$6,true) is null,set_config($7,$8,true) is null` and the routine, in one batch; no reset |
+
+A cache hit on an endpoint with `user_context` and `cached` (client started with `CacheOptions:Enabled=true`): 3.21.0 sent the four `set_config` statements for every hit, 3.22.0 before this round the reset and the four statements, 3.22.0 sends nothing.
+
+## Load test
+
+Method as in round 3 (HTTP/1.1 keep-alive client; sequential response time at 1 connection, throughput at 32, CPU per request at 8), with these differences:
+
+- The client is started with `--Auth:CookieAuth=true`; the load generator logs in once through a `login` function and sends the cookie with every request. Every request to a context endpoint therefore carries four settings (IP address, user id, user name, roles).
+- Endpoints: `ctx_text()` (short text value built from `request.user_name`), `ctx_plpgsql(_id int)` (the five-query PL/pgSQL function of round 3, reading `request.user_id`), `ctx_rows(_count int)` with 100 rows (the rows of round 3, with the user id in the jsonb column), all with `user_context`; and `benchmark_get_text()` without context, in the same application.
+- PostgreSQL CPU per request is the container's cgroup `cpu.stat` `usage_usec` delta divided by the number of requests.
+- Six builds, three rounds, the order rotating by one with every round. "3.22.0 before" is commit `3810e6e` (round 3's final build): the reset that keeps plans, and two round trips.
+
+Averages, with the three rounds in brackets. Response times and CPU are in µs.
+
+**JIT**
+
+| | 3.21.0 (.NET 10) | 3.22.0 before (reset, two round trips) | 3.22.0 (one round trip, no reset) |
+|---|---:|---:|---:|
+| **Requests per second** (32 connections) | | | |
+| Text value, `user_context` | 21,070 (21,022 / 21,168 / 21,020) | 19,018 (19,025 / 18,960 / 19,070) | 35,704 (34,379 / 36,389 / 36,345) |
+| PL/pgSQL function, `user_context` | 19,314 (19,162 / 19,497 / 19,283) | 17,126 (17,038 / 17,560 / 16,780) | 30,094 (29,936 / 30,038 / 30,307) |
+| 100 rows, `user_context` | 11,710 (11,919 / 11,531 / 11,681) | 12,577 (12,921 / 12,232 / 12,578) | 17,803 (17,259 / 17,813 / 18,337) |
+| Text value without context, same application | 39,429 (40,201 / 39,245 / 38,842) | 33,812 (33,893 / 33,609 / 33,935) | 38,048 (37,376 / 38,398 / 38,371) |
+| **Response time**, one request at a time | | | |
+| Text value, `user_context` | 334.6 (335.4 / 335.1 / 333.4) | 366.7 (367.4 / 366.9 / 365.7) | 217.2 (219.7 / 215.7 / 216.3) |
+| PL/pgSQL function, `user_context` | 399.3 (402.7 / 400.2 / 395.0) | 427.4 (426.5 / 427.8 / 427.8) | 282.1 (283.4 / 279.7 / 283.1) |
+| 100 rows, `user_context` | 648.1 (649.1 / 655.9 / 639.4) | 655.7 (654.4 / 661.0 / 651.7) | 521.2 (525.4 / 520.0 / 518.3) |
+| Text value without context, same application | 186.1 (188.4 / 180.4 / 189.5) | 208.6 (210.7 / 205.7 / 209.4) | 199.1 (197.5 / 199.4 / 200.3) |
+| **Server CPU per request** (8 connections) | | | |
+| Text value, `user_context` | 320.1 (319.4 / 319.9 / 320.9) | 264.8 (262.9 / 265.0 / 266.4) | 166.0 (166.9 / 164.0 / 167.1) |
+| 100 rows, `user_context` | 650.0 (639.1 / 660.0 / 651.0) | 399.1 (395.1 / 400.5 / 401.8) | 312.7 (315.4 / 312.2 / 310.5) |
+| **PostgreSQL CPU per request** (8 connections) | | | |
+| Text value, `user_context` | 96.7 (97.2 / 96.5 / 96.3) | 119.9 (121.1 / 118.1 / 120.6) | 60.0 (59.7 / 60.8 / 59.6) |
+| 100 rows, `user_context` | 361.6 (355.3 / 363.7 / 365.7) | 365.7 (365.7 / 364.1 / 367.3) | 300.3 (299.5 / 304.6 / 296.8) |
+| Process memory after the load, MB | 308 | 171 | 173 |
+| Failed requests | 0 | 0 | 0 |
+
+**Native AOT**
+
+| | 3.21.0 (.NET 10) | 3.22.0 before (reset, two round trips) | 3.22.0 (one round trip, no reset) |
+|---|---:|---:|---:|
+| **Requests per second** (32 connections) | | | |
+| Text value, `user_context` | 21,209 (21,218 / 21,092 / 21,317) | 18,125 (18,254 / 17,982 / 18,139) | 35,570 (35,484 / 35,846 / 35,379) |
+| PL/pgSQL function, `user_context` | 18,789 (18,784 / 18,510 / 19,074) | 16,712 (16,692 / 16,938 / 16,506) | 28,532 (28,712 / 29,311 / 27,574) |
+| 100 rows, `user_context` | 11,591 (11,662 / 11,532 / 11,580) | 11,741 (11,623 / 11,584 / 12,017) | 16,376 (15,991 / 16,586 / 16,551) |
+| Text value without context, same application | 38,108 (37,173 / 38,086 / 39,065) | 32,759 (32,850 / 32,705 / 32,721) | 37,094 (37,192 / 37,772 / 36,319) |
+| **Response time**, one request at a time | | | |
+| Text value, `user_context` | 336.8 (334.5 / 339.4 / 336.6) | 371.8 (376.7 / 366.7 / 372.0) | 217.7 (218.0 / 217.2 / 218.0) |
+| PL/pgSQL function, `user_context` | 397.7 (397.6 / 394.9 / 400.6) | 431.8 (433.0 / 432.2 / 430.3) | 280.8 (281.2 / 281.5 / 279.6) |
+| 100 rows, `user_context` | 690.9 (733.1 / 683.5 / 656.0) | 699.2 (695.4 / 715.5 / 686.6) | 544.7 (545.4 / 554.9 / 533.9) |
+| Text value without context, same application | 188.7 (189.7 / 186.5 / 189.9) | 206.6 (207.5 / 206.9 / 205.4) | 198.7 (198.2 / 199.5 / 198.4) |
+| **Server CPU per request** (8 connections) | | | |
+| Text value, `user_context` | 254.5 (257.1 / 250.0 / 256.5) | 275.4 (276.0 / 275.9 / 274.4) | 172.4 (172.8 / 172.6 / 171.9) |
+| 100 rows, `user_context` | 606.6 (610.8 / 609.5 / 599.6) | 460.1 (459.2 / 460.1 / 461.1) | 366.0 (366.1 / 367.2 / 364.6) |
+| **PostgreSQL CPU per request** (8 connections) | | | |
+| Text value, `user_context` | 97.0 (100.1 / 95.5 / 95.4) | 121.4 (122.5 / 120.7 / 121.1) | 59.6 (60.3 / 59.4 / 59.1) |
+| 100 rows, `user_context` | 371.1 (379.6 / 366.5 / 367.1) | 375.3 (373.6 / 374.3 / 377.9) | 305.9 (307.0 / 306.1 / 304.7) |
+| Process memory after the load, MB | 206 | 79 | 81 |
+| Failed requests | 0 | 0 | 0 |
+
+Reading:
+
+- The three context endpoints lose one round trip: 117-127 µs of response time in JIT, 117-146 µs in AOT, against 3.21.0. Against the build before this round the difference is larger (135-155 µs), because that build also paid for the reset.
+- The build before this round was *slower* than 3.21.0 for context endpoints under load (19,018 against 21,070 text requests per second in JIT): same two round trips, plus the reset that 3.21.0 never did. That state was never released.
+- An endpoint without context in the same application: 3.21.0 39,429 / 38,108 requests per second (JIT / AOT), before this round 33,812 / 32,759 (the reset applies to every endpoint of an application that has a context endpoint), now 38,048 / 37,094.
+- PostgreSQL's own CPU for the small request: 97 µs in 3.21.0, 120-121 µs with the reset, 60 µs now.
+
+The login cookie itself, on the endpoint without context (AOT, two rounds, µs at one connection, without / with the cookie): 3.21.0 182.6 / 190.3 and 182.2 / 191.4; 3.22.0 code on .NET 10 186.5 / 193.1 and 185.0 / 199.4; 3.22.0 on .NET 11 191.9 / 202.7 and 196.6 / 201.9. The cookie costs about 8 µs in every build; what differs between the builds is the small-request cost of .NET 11 measured in round 3.
+
+## JIT: BenchmarkDotNet, before and after
+
+`GetTextUserContext` was added to the endpoint benchmarks in this round: the text value from an endpoint with `user_context`, requested anonymously, so four settings are sent (the IP address, and NULL for the three user keys). The benchmark file was copied into a worktree of `3810e6e` for the "before" run. One run each, mean time and allocation per request:
+
+| | GetText | GetRows100 | GetTextUserContext | HttpOnly | NpgsqlOnly |
+|---|---|---|---|---|---|
+| 3.22.0 before this round (`3810e6e`) | 182.61 µs, 4.91 KB | 396.37 µs, 50.92 KB | 333.81 µs, 10.17 KB | 39.90 µs, 3.03 KB | 131.64 µs, 1.58 KB |
+| 3.22.0 | 179.22 µs, 4.90 KB | 398.37 µs, 50.91 KB | 207.11 µs, 8.76 KB | 39.31 µs, 3.03 KB | 131.59 µs, 1.56 KB |
+
+The context request is 127 µs faster, one `NpgsqlOnly` round trip, and allocates 1.4 KB less. It still costs 28 µs and 3.9 KB more than `GetText`: the batch, its two batch commands and the eight text parameters of four settings. Nothing else moved, as expected: endpoints without context run the same code as before.
+
+In this benchmark the library opens connections from a plain connection string, so Npgsql resets them with `DISCARD ALL` in both runs; the client's reset rule is not involved.
+
+## Verification
+
+3,076 tests pass on .NET 11, on .NET 10 (`-p:NpgsqlRestTestFramework=net10.0`) and with Runtime Async (`-p:NpgsqlRestRuntimeAsync=true`). The native AOT executable (36,272,336 bytes, no new trim or AOT warnings) passes `.github/scripts/aot-smoke-test.sh`, which now also calls endpoints with `user_context` and `request_headers context` and checks that nothing of the context is left on the connection.
+
+The fallback was checked by forcing `RequestContextBatch.IsSupported` to false for one run of the whole suite: the 16 tests that assert the new behavior failed (nothing left on a never-reset connection, the reset no longer required, the Npgsql member present) and all the others passed, so the old two-step path still works as before.
