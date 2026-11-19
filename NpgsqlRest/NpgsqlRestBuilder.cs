@@ -75,6 +75,8 @@ public static class NpgsqlRestBuilder
             hasStreamingEvents
             ) = Build(builder, defaultStrategy);
 
+        Options.ConnectionResetRequired = RequestsLeaveSessionState(entries);
+
         if (entries.Count == 0)
         {
             return builder;
@@ -184,6 +186,43 @@ public static class NpgsqlRestBuilder
         InternalRequestHandler.SetEndpointHandlers(internalHandlers);
 
         return builder;
+    }
+
+    /// <summary>
+    /// True when a request can leave session-level settings on its connection (see
+    /// <see cref="NpgsqlRestOptions.ConnectionResetRequired"/>). These are all the places where NpgsqlRest runs
+    /// set_config(..., false): the request context (SetRequestContextAsync) and the upload metadata key (UploadAsync).
+    /// BeforeRoutineCommands are the application's own SQL, typically set_config calls, so they count as well.
+    /// </summary>
+    private static bool RequestsLeaveSessionState(List<NpgsqlRestMetadataEntry> entries)
+    {
+        if (Options.WrapInTransaction)
+        {
+            // every set_config NpgsqlRest issues is local to the request's transaction
+            return false;
+        }
+        if (Options.BeforeRoutineCommands.Length > 0)
+        {
+            return true;
+        }
+        var auth = Options.AuthenticationOptions;
+        var userContextWrites = auth.IpAddressContextKey is not null
+            || auth.ClaimsJsonContextKey is not null
+            || auth.ContextKeyClaimsMapping.Count > 0;
+        var headersContextWrites = Options.RequestHeadersContextKey is not null;
+        var uploadContextWrites = Options.UploadOptions.UseDefaultUploadMetadataContextKey
+            && Options.UploadOptions.DefaultUploadMetadataContextKey is not null;
+        foreach (var entry in entries)
+        {
+            var endpoint = entry.Endpoint;
+            if ((endpoint.UserContext && userContextWrites)
+                || (endpoint.RequestHeadersMode == RequestHeadersMode.Context && headersContextWrites)
+                || (endpoint.Upload && uploadContextWrites))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     /// <summary>

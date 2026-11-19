@@ -281,6 +281,19 @@ public class NpgsqlRestOptions
     public bool WrapInTransaction { get; set; } = false;
 
     /// <summary>
+    /// Set by UseNpgsqlRest when the endpoints are built (read it afterwards): true when a request can leave
+    /// session-level settings on its database connection, so pooled connections have to be reset when they return to
+    /// the pool (Npgsql does that unless the connection string sets "No Reset On Close"). Without
+    /// <see cref="WrapInTransaction"/>, that is the case when an endpoint uses `user_context` or
+    /// `request_headers context`, when an upload endpoint sets the upload metadata context key, or when
+    /// <see cref="BeforeRoutineCommands"/> are configured.
+    /// False when nothing NpgsqlRest does stays on a connection after the request - with WrapInTransaction every
+    /// setting is local to the request's transaction. Such an application can skip the reset, and what the reset
+    /// costs PostgreSQL on every request. Session state left behind by your own SQL is not covered by this flag.
+    /// </summary>
+    public bool ConnectionResetRequired { get; internal set; }
+
+    /// <summary>
     /// Controls how JSON datetime strings are interpreted when bound to `timestamp`, `timestamptz`, `time`, or `timetz`
     /// parameters. When true (the default, since 3.16.0), `Z`- and offset-bearing strings are converted to UTC and naive
     /// strings (no offset, no `Z`) are assumed UTC — making stored values identical regardless of the host process's

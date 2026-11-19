@@ -500,14 +500,22 @@ await using var dataSource = builder.BuildMainDataSource(connectionString);
 // so cleanup must dispose each distinct instance once and never the main one (owned by the
 // enclosing `await using`).
 var dataSources = builder.BuildDataSources(connectionString, dataSource);
-if (dataSources.Count > 0)
+
+// The same data sources in a second variant that does not reset connections when they return to the pool. Requests
+// use it when nothing a request does can stay on its connection, which is known only once the endpoints are built
+// (see UseNpgsqlRestAndPickDataSources below). A connection string that sets "No Reset On Close" itself keeps its
+// setting in both variants. A data source opens connections only when used, so the unused variant costs nothing.
+await using var dataSourceNoReset = builder.BuildMainDataSource(connectionString, skipConnectionReset: true);
+var dataSourcesNoReset = builder.BuildDataSources(connectionString, dataSourceNoReset, skipConnectionReset: true);
+
+if (dataSources.Count > 0 || dataSourcesNoReset.Count > 0)
 {
     // Register disposal of additional data sources
     app.Lifetime.ApplicationStopping.Register(() =>
     {
-        foreach (var ds in dataSources.Values.Distinct())
+        foreach (var ds in dataSources.Values.Concat(dataSourcesNoReset.Values).Distinct())
         {
-            if (ReferenceEquals(ds, dataSource) is false)
+            if (ReferenceEquals(ds, dataSource) is false && ReferenceEquals(ds, dataSourceNoReset) is false)
             {
                 ds.Dispose();
             }
@@ -629,7 +637,41 @@ if (testMode)
     }
 }
 
-app.UseNpgsqlRest(options);
+UseNpgsqlRestAndPickDataSources();
+
+// Builds the endpoints, then picks the data sources requests run on. Connections are reset between requests only
+// when a request can leave session-level settings on them: an endpoint with user_context or request_headers context,
+// an upload metadata context key, or BeforeRoutineCommands - and no WrapInTransaction, which makes all of them local
+// to the request's transaction. UseNpgsqlRest works that out from the endpoints it builds
+// (options.ConnectionResetRequired). Without such endpoints nothing can leak, and skipping the reset saves
+// PostgreSQL work on every request. A connection string that sets "No Reset On Close" itself is not affected.
+void UseNpgsqlRestAndPickDataSources()
+{
+    // Discovery, and the library's "No Reset On Close" warning, use the data sources as configured.
+    options.DataSource = dataSource;
+    options.DataSources = dataSources.Count > 0 ? dataSources : null;
+
+    app.UseNpgsqlRest(options);
+
+    if (options.ConnectionResetRequired is false)
+    {
+        options.DataSource = dataSourceNoReset;
+        options.DataSources = dataSourcesNoReset.Count > 0 ? dataSourcesNoReset : null;
+    }
+
+    if (Builder.IsConnectionResetConfigured(connectionString))
+    {
+        builder.ClientLogger?.LogDebug("Connection reset between requests is set by \"No Reset On Close\" in the connection string.");
+    }
+    else if (options.ConnectionResetRequired)
+    {
+        builder.ClientLogger?.LogDebug("Connections are reset between requests: endpoints leave session-level settings on them (user_context, request_headers context, upload metadata context or BeforeRoutineCommands, without WrapInTransaction).");
+    }
+    else
+    {
+        builder.ClientLogger?.LogDebug("Connections are not reset between requests: no endpoint leaves session-level settings on them. Add \"No Reset On Close=false\" to the connection string to reset them anyway.");
+    }
+}
 
 if (endpointsMode)
 {
@@ -662,7 +704,7 @@ if (testMode)
             endpointPattern,
             () =>
             {
-                app.UseNpgsqlRest(options);
+                UseNpgsqlRestAndPickDataSources();
                 return EndpointCapture.Endpoints;
             });
     }

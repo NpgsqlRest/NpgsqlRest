@@ -1749,10 +1749,9 @@ public class Builder
         
         // Connection doesn't participate in ambient TransactionScope
         connectionStringBuilder.Enlist = false;
-        // NoResetOnClose is NOT forced (it used to be): without the reset, session-level state such as the
-        // user_context / request_headers settings (set_config(..., false)) survives on the pooled connection and
-        // is visible to the next request that gets it. Npgsql's reset is sent together with the next command, so
-        // it costs no extra round trip. It can still be set explicitly in the connection string.
+        // "No Reset On Close" is not set here (it used to be forced to true). Whether connections are reset between
+        // requests is decided when the data sources are built and the endpoints are known: see CreateDataSourceBuilder
+        // and Program.cs (options.ConnectionResetRequired). A value given in the connection string always wins.
 
         connectionString = connectionStringBuilder.ConnectionString;
 
@@ -3054,13 +3053,16 @@ public class Builder
     }
 
     /// <summary>
-    /// Builds data sources dictionary for multi-host connections. The main data source instance
+    /// Builds the data sources dictionary for the named connections. The main data source instance
     /// (built by <see cref="BuildMainDataSource"/>, owned by the caller) is registered under the main
     /// connection's real name - and under the legacy "_default" alias when multi-host - so a request
     /// routed to the main name shares the exact same pool as unrouted requests. Entries that reference
     /// the main instance must NOT be disposed by the caller's cleanup (the main is owned elsewhere).
     /// </summary>
-    public Dictionary<string, NpgsqlDataSource> BuildDataSources(string mainConnectionString, NpgsqlDataSource mainDataSource)
+    /// <param name="mainConnectionString">The main connection string.</param>
+    /// <param name="mainDataSource">The main data source.</param>
+    /// <param name="skipConnectionReset">Build the variant that does not reset connections (see CreateDataSourceBuilder).</param>
+    public Dictionary<string, NpgsqlDataSource> BuildDataSources(string mainConnectionString, NpgsqlDataSource mainDataSource, bool skipConnectionReset = false)
     {
         // Case-insensitive like IConfiguration keys, so a lowercased annotation name still matches.
         var result = new Dictionary<string, NpgsqlDataSource>(StringComparer.OrdinalIgnoreCase);
@@ -3087,16 +3089,31 @@ public class Builder
                     continue;
                 }
 
-                var (connStr, _) = BuildConnection(section.Key, section.Value!, isMain: false, skipRetryOpts: true);
-                if (connStr is null || !IsMultiHostConnectionString(connStr))
+                // Built (and logged) once; the second variant of the data sources reuses the strings.
+                if (_namedConnectionStrings.TryGetValue(section.Key, out var connStr) is false)
                 {
+                    (connStr, _) = BuildConnection(section.Key, section.Value!, isMain: false, skipRetryOpts: true);
+                    _namedConnectionStrings[section.Key] = connStr;
+                }
+                if (connStr is null)
+                {
+                    continue;
+                }
+                if (!IsMultiHostConnectionString(connStr))
+                {
+                    // Single host: a data source as well, so that requests routed to this connection get the same
+                    // connection reset as the main one (see CreateDataSourceBuilder) rather than Npgsql's default.
+                    result[section.Key] = CreateDataSourceBuilder(connStr, skipConnectionReset).Build();
                     continue;
                 }
 
                 var target = GetTargetSessionAttribute(section.Key);
-                var multiHost = new NpgsqlDataSourceBuilder(connStr).BuildMultiHost();
+                var multiHost = CreateDataSourceBuilder(connStr, skipConnectionReset).BuildMultiHost();
                 result[section.Key] = multiHost.WithTargetSession(target);
-                ClientLogger?.LogDebug("Built multi-host data source for connection '{ConnectionName}' with target session '{TargetSession}'", section.Key, target);
+                if (skipConnectionReset is false)
+                {
+                    ClientLogger?.LogDebug("Built multi-host data source for connection '{ConnectionName}' with target session '{TargetSession}'", section.Key, target);
+                }
             }
         }
 
@@ -3248,20 +3265,88 @@ public class Builder
         return TimeSpan.TryParse(raw, out var ts) ? ts : def;
     }
 
+    private readonly Dictionary<string, string?> _namedConnectionStrings = new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>
     /// Builds the main data source (handles both single-host and multi-host).
     /// </summary>
-    public NpgsqlDataSource BuildMainDataSource(string connectionString)
+    /// <param name="connectionString">The main connection string.</param>
+    /// <param name="skipConnectionReset">Build the variant that does not reset connections (see CreateDataSourceBuilder).</param>
+    public NpgsqlDataSource BuildMainDataSource(string connectionString, bool skipConnectionReset = false)
     {
         if (IsMultiHostConnectionString(connectionString))
         {
             var target = GetTargetSessionAttribute(ConnectionName);
-            var multiHost = new NpgsqlDataSourceBuilder(connectionString).BuildMultiHost();
-            ClientLogger?.LogDebug("Using multi-host data source with target session '{TargetSession}'", target);
+            var multiHost = CreateDataSourceBuilder(connectionString, skipConnectionReset).BuildMultiHost();
+            if (skipConnectionReset is false)
+            {
+                ClientLogger?.LogDebug("Using multi-host data source with target session '{TargetSession}'", target);
+            }
             return multiHost.WithTargetSession(target);
         }
-        return new NpgsqlDataSourceBuilder(connectionString).Build();
+        return CreateDataSourceBuilder(connectionString, skipConnectionReset).Build();
     }
+
+    /// <summary>
+    /// True when the connection string says itself whether connections are reset ("No Reset On Close" is present,
+    /// with either value). Then that is what happens, whatever the endpoints need.
+    /// </summary>
+    public static bool IsConnectionResetConfigured(string connectionString)
+    {
+        foreach (var key in new NpgsqlConnectionStringBuilder(connectionString).Keys)
+        {
+            if (string.Equals(key, "No Reset On Close", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// The data source builder for a connection string. Two things about resetting connections are decided here.
+    ///
+    /// Whether to reset. Npgsql resets a connection's session state when it goes back to the pool, so nothing a
+    /// request leaves on its connection - user_context settings, SET ROLE, temp tables, advisory locks - reaches the
+    /// next request. That costs PostgreSQL work on every request, and it is only needed when a request can leave such
+    /// state behind (NpgsqlRestOptions.ConnectionResetRequired, known once the endpoints are built). The data sources
+    /// are therefore built in two variants and Program.cs picks one: with the reset, and - with
+    /// <paramref name="skipConnectionReset"/> - without it. A connection string that sets "No Reset On Close" itself
+    /// is left as it is in both.
+    ///
+    /// How to reset. By default Npgsql's reset is DISCARD ALL, which also discards the cached plans of every PL/pgSQL
+    /// function the session has run: each request then plans those statements again. When a connection has prepared
+    /// statements, Npgsql resets it with the individual commands instead (SET SESSION AUTHORIZATION DEFAULT,
+    /// RESET ALL, CLOSE ALL, UNLISTEN *, advisory locks, DISCARD SEQUENCES, DISCARD TEMP) and leaves plans alone. So
+    /// one trivial statement is prepared on every new physical connection: the same reset, without the re-planning.
+    /// It is never executed.
+    /// </summary>
+    private static NpgsqlDataSourceBuilder CreateDataSourceBuilder(string connectionString, bool skipConnectionReset)
+    {
+        var builder = new NpgsqlDataSourceBuilder(connectionString);
+        var settings = builder.ConnectionStringBuilder;
+        if (skipConnectionReset && IsConnectionResetConfigured(connectionString) is false)
+        {
+            settings.NoResetOnClose = true;
+        }
+        if (settings.NoResetOnClose is false && settings.Pooling && settings.Multiplexing is false)
+        {
+            builder.UsePhysicalConnectionInitializer(
+                static connection =>
+                {
+                    using var command = new NpgsqlCommand(KeepPlansStatement, connection);
+                    command.Prepare();
+                },
+                static async connection =>
+                {
+                    await using var command = new NpgsqlCommand(KeepPlansStatement, connection);
+                    await command.PrepareAsync();
+                });
+        }
+        return builder;
+    }
+
+    private const string KeepPlansStatement = "select 1";
 
     public ValidationOptions BuildValidationOptions()
     {
