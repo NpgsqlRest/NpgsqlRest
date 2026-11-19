@@ -4,48 +4,50 @@ using NpgsqlTypes;
 namespace NpgsqlRest;
 
 /// <summary>
-/// Shared JSON value formatting for column values.
-/// Used by both single-command and multi-command rendering paths
-/// to guarantee identical output for the same column types.
+/// JSON value formatting for column values, used by the row renderer for single-statement and multi-statement
+/// results alike, so the same column types always produce the same output.
 /// </summary>
 internal static class JsonValueFormatter
 {
     /// <summary>
-    /// Format a single column value into the output buffer as JSON.
-    /// Handles: null, arrays, array-of-composites, numeric, boolean, JSON, datetime, text with escaping.
+    /// Formats a single column value into the output buffer as JSON: null, arrays, arrays of composite types, numbers,
+    /// booleans, JSON, date/time values, and text with escaping. The value is the UTF-8 text PostgreSQL sent (every
+    /// column is in text format, see AllResultTypesAreUnknown) and the output is UTF-8, so no string is created for it.
     /// </summary>
-    /// <param name="raw">Raw string value from PostgreSQL (via AllResultTypesAreUnknown)</param>
-    /// <param name="value">The original object value (for DBNull check)</param>
+    /// <param name="raw">The value as UTF-8 text</param>
+    /// <param name="isNull">True for SQL NULL</param>
     /// <param name="descriptor">Type descriptor for this column</param>
-    /// <param name="outputBuffer">StringBuilder to write formatted value to</param>
+    /// <param name="output">Buffer to write the formatted value to</param>
     /// <param name="routineArrayCompositeInfo">Array composite dictionary from Routine, or null</param>
     /// <param name="columnIndex">Column index for array composite lookup</param>
-    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    /// <param name="charBuffer">Pooled scratch for the converters that still work on text</param>
     public static void FormatValue(
-        ReadOnlySpan<char> raw,
-        object value,
+        ReadOnlySpan<byte> raw,
+        bool isNull,
         TypeDescriptor descriptor,
-        StringBuilder outputBuffer,
+        Utf8Buffer output,
         Dictionary<int, (string[] FieldNames, TypeDescriptor[] FieldDescriptors)>? routineArrayCompositeInfo,
-        int columnIndex)
+        int columnIndex,
+        ref char[]? charBuffer)
     {
-        if (value == DBNull.Value)
+        if (isNull)
         {
-            outputBuffer.Append(Consts.Null);
+            output.Append(Consts.Utf8Null);
             return;
         }
 
         if (descriptor.IsArray)
         {
-            // Check if this is an array of composite types
             if (routineArrayCompositeInfo is not null &&
                 routineArrayCompositeInfo.TryGetValue(columnIndex, out var arrayCompositeInfo))
             {
-                outputBuffer.Append(PgCompositeArrayToJsonArray(raw, arrayCompositeInfo.FieldNames, arrayCompositeInfo.FieldDescriptors));
+                // Array of composite types: converted as text
+                var chars = PgUtf8Converters.DecodeChars(raw, ref charBuffer);
+                output.Append(PgCompositeArrayToJsonArray(chars, arrayCompositeInfo.FieldNames, arrayCompositeInfo.FieldDescriptors));
             }
             else
             {
-                outputBuffer.Append(PgArrayToJsonArray(raw, descriptor));
+                PgUtf8Converters.AppendPgArrayAsJson(output, raw, descriptor);
             }
             return;
         }
@@ -54,23 +56,23 @@ internal static class JsonValueFormatter
         {
             if ((descriptor.Category & TypeCategory.Boolean) != 0)
             {
-                if (raw.Length == 1 && raw[0] == 't')
+                if (raw.Length == 1 && raw[0] == (byte)'t')
                 {
-                    outputBuffer.Append(Consts.True);
+                    output.Append("true"u8);
                 }
-                else if (raw.Length == 1 && raw[0] == 'f')
+                else if (raw.Length == 1 && raw[0] == (byte)'f')
                 {
-                    outputBuffer.Append(Consts.False);
+                    output.Append("false"u8);
                 }
                 else
                 {
-                    outputBuffer.Append(raw);
+                    output.Append(raw);
                 }
             }
             else
             {
                 // numeric and json passthrough
-                outputBuffer.Append(raw);
+                output.Append(raw);
             }
             return;
         }
@@ -78,19 +80,28 @@ internal static class JsonValueFormatter
         // Text and other types
         if (descriptor.ActualDbType == NpgsqlDbType.Unknown)
         {
-            outputBuffer.Append(PgUnknownToJsonArray(ref raw));
+            if (raw.Length < 2 || raw[0] != (byte)Consts.OpenParenthesis || raw[^1] != (byte)Consts.CloseParenthesis)
+            {
+                // Not a record: an enum, a domain, or another type without a specific mapping - an escaped JSON string
+                PgUtf8Converters.AppendJsonString(output, raw);
+            }
+            else
+            {
+                var chars = PgUtf8Converters.DecodeChars(raw, ref charBuffer);
+                output.Append(PgUnknownToJsonArray(ref chars));
+            }
         }
         else if (descriptor.NeedsEscape)
         {
-            outputBuffer.Append(SerializeString(ref raw));
+            PgUtf8Converters.AppendJsonString(output, raw);
         }
         else if ((descriptor.Category & TypeCategory.DateTime) != 0)
         {
-            outputBuffer.Append(QuoteDateTime(ref raw));
+            PgUtf8Converters.AppendQuotedDateTime(output, raw);
         }
         else
         {
-            outputBuffer.Append(Quote(ref raw));
+            PgUtf8Converters.AppendQuoted(output, raw);
         }
     }
 }

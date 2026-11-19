@@ -424,16 +424,6 @@ public partial class NpgsqlRestEndpoint
         return paramName is not null && endpoint.ProxyResponseParameterNames.Contains(paramName);
     }
 
-    private static void WriteStringBuilderToWriter(StringBuilder row, PipeWriter writer)
-    {
-        foreach (ReadOnlyMemory<char> chunk in row.GetChunks())
-        {
-            var buffer = writer.GetSpan(Encoding.UTF8.GetMaxByteCount(chunk.Length));
-            int bytesWritten = Encoding.UTF8.GetBytes(chunk.Span, buffer);
-            writer.Advance(bytesWritten);
-        }
-    }
-
     private async ValueTask ReturnErrorAsync(
         string message,
         bool log, HttpContext context,

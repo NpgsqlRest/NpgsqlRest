@@ -54,7 +54,7 @@ public static class NpgsqlRetryExtensions
         }
     }
 
-    public static async Task<int> ExecuteNonQueryWithRetryAsync(
+    public static Task<int> ExecuteNonQueryWithRetryAsync(
         this NpgsqlCommand command,
         RetryStrategy? strategy,
         CancellationToken cancellationToken = default,
@@ -63,8 +63,32 @@ public static class NpgsqlRetryExtensions
     {
         if (strategy == null || strategy.RetrySequenceSeconds.Length == 0)
         {
-            return await command.ExecuteNonQueryAsync(cancellationToken);
+            return command.ExecuteNonQueryAsync(cancellationToken);
         }
+        return ExecuteNonQueryRetryLoopAsync(command, strategy, cancellationToken, logger, errorCodePolicy, firstFailure: null);
+    }
+
+    /// <summary>
+    /// For a caller that made the first attempt itself (so that no extra async method waits on the database with it):
+    /// continues after that attempt failed, handling the failure exactly as the retrying method handles one - error
+    /// code mapping, timeout mapping, retries with their delays, logging.
+    /// </summary>
+    internal static Task<int> ExecuteNonQueryAfterFailureAsync(
+        this NpgsqlCommand command,
+        Exception firstFailure,
+        RetryStrategy strategy,
+        CancellationToken cancellationToken,
+        string? errorCodePolicy)
+        => ExecuteNonQueryRetryLoopAsync(command, strategy, cancellationToken, null, errorCodePolicy, firstFailure);
+
+    private static async Task<int> ExecuteNonQueryRetryLoopAsync(
+        NpgsqlCommand command,
+        RetryStrategy strategy,
+        CancellationToken cancellationToken,
+        ILogger? logger,
+        string? errorCodePolicy,
+        Exception? firstFailure)
+    {
         var maxRetries = strategy.RetrySequenceSeconds.Length;
         List<Exception>? exceptionsEncountered = null; // allocated on the first failure only
 
@@ -72,6 +96,11 @@ public static class NpgsqlRetryExtensions
         {
             try
             {
+                if (attempt == 0 && firstFailure is not null)
+                {
+                    // The caller already made this attempt: its failure goes through the handlers below.
+                    System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(firstFailure);
+                }
                 return await command.ExecuteNonQueryAsync(cancellationToken);
             }
             catch (PostgresException ex) when (errorCodePolicy is not null && errorCodePolicy.TryGetErrorCodeMapping(ex.SqlState, out var statusCodeMapping))
@@ -229,7 +258,7 @@ public static class NpgsqlRetryExtensions
         throw new InvalidOperationException("This should never be reached");
     }
     
-    public static async Task<NpgsqlDataReader> ExecuteReaderWithRetryAsync(
+    public static Task<NpgsqlDataReader> ExecuteReaderWithRetryAsync(
         this NpgsqlCommand command,
         CommandBehavior behavior, 
         RetryStrategy? strategy, 
@@ -239,17 +268,51 @@ public static class NpgsqlRetryExtensions
     {
         if (strategy == null || strategy.RetrySequenceSeconds.Length == 0)
         {
-            return await command.ExecuteReaderAsync(behavior, cancellationToken);
+            return command.ExecuteReaderAsync(behavior, cancellationToken);
         }
+        return ExecuteReaderRetryLoopAsync(command, behavior, strategy, cancellationToken, logger, errorCodePolicy, firstFailure: null);
+    }
+
+    /// <summary>
+    /// For a caller that made the first attempt itself (so that no extra async method waits on the database with it):
+    /// continues after that attempt failed, handling the failure exactly as the retrying method handles one - error
+    /// code mapping, timeout mapping, retries with their delays, logging.
+    /// </summary>
+    internal static Task<NpgsqlDataReader> ExecuteReaderAfterFailureAsync(
+        this NpgsqlCommand command,
+        Exception firstFailure,
+        CommandBehavior behavior,
+        RetryStrategy strategy,
+        CancellationToken cancellationToken,
+        string? errorCodePolicy)
+        => ExecuteReaderRetryLoopAsync(command, behavior, strategy, cancellationToken, null, errorCodePolicy, firstFailure);
+
+    private static async Task<NpgsqlDataReader> ExecuteReaderRetryLoopAsync(
+        NpgsqlCommand command,
+        CommandBehavior behavior,
+        RetryStrategy strategy,
+        CancellationToken cancellationToken,
+        ILogger? logger,
+        string? errorCodePolicy,
+        Exception? firstFailure)
+    {
         var maxRetries = strategy.RetrySequenceSeconds.Length;
         List<Exception>? exceptionsEncountered = null; // allocated on the first failure only
         
         for (var attempt = 0; attempt <= maxRetries; attempt++)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            if (attempt > 0 || firstFailure is null)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+            }
 
             try
             {
+                if (attempt == 0 && firstFailure is not null)
+                {
+                    // The caller already made this attempt: its failure goes through the handlers below.
+                    System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(firstFailure);
+                }
                 return await command.ExecuteReaderAsync(behavior, cancellationToken);
             }
             catch (PostgresException ex) when (errorCodePolicy is not null && errorCodePolicy.TryGetErrorCodeMapping(ex.SqlState, out var statusCodeMapping))

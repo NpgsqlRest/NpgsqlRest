@@ -132,6 +132,18 @@ public static class NpgsqlRestBuilder
             // time (AOT-safe), and two parameters so it is not a RequestDelegate: MapMethods returns a RouteHandlerBuilder.
             var routeBuilder = builder.MapMethods(endpoint.Path, [methodStr], handler.HandleRequestAsync);
 
+            // The generated route handler only forwards (HttpContext, RequestAborted) to the method above, through one
+            // more async method per request. When the endpoint has no endpoint filters - they are the only other thing
+            // that wrapper runs - the endpoint calls the handler directly. Decided last (Finally), so filters added by
+            // RouteHandlerCreated or by a route group are seen.
+            routeBuilder.Finally(endpointBuilder =>
+            {
+                if (endpointBuilder.FilterFactories.Count == 0)
+                {
+                    endpointBuilder.RequestDelegate = handler.HandleDirectAsync;
+                }
+            });
+
             if (endpoint.RateLimiterPolicy is not null || options.DefaultRateLimitingPolicy is not null)
             {
                 var policy = endpoint.RateLimiterPolicy ?? options.DefaultRateLimitingPolicy!;

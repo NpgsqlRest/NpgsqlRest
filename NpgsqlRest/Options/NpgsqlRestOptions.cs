@@ -336,15 +336,26 @@ public class NpgsqlRestOptions
     public QueryStringNullHandling QueryStringNullHandling { get; set; } = QueryStringNullHandling.Ignore;
 
     /// <summary>
-    /// The number of rows to buffer in the string builder before sending the response. The default is 25.
+    /// The number of rows to collect before they can be sent to the client. The default is 25.
     /// This applies to rows in JSON object array when returning records from the database.
     /// Set to 0 to disable buffering and write a response for each row.
     /// Set to 1 to buffer the entire array (all rows).
+    /// Every this many rows, the collected rows are sent if they amount to at least <see cref="ResponseBufferBytes"/>.
     /// Notes: 
     /// - Disabling buffering can have a slight negative impact on performance since buffering is far less expensive than writing to the response stream.
     /// - Setting higher values can have a negative impact on memory usage, especially when returning large datasets.
     /// </summary>
     public ulong BufferRows { get; set; } = 25;
+
+    /// <summary>
+    /// The number of bytes of rows to collect before sending them to the client. The default is 16384 (16 KB).
+    /// Checked every <see cref="BufferRows"/> rows: rows are sent once at least this much is collected, and at the
+    /// end. A response smaller than this is therefore sent in one piece - one network write instead of one per
+    /// <see cref="BufferRows"/> rows - and, if the query fails part-way, the client gets an error response instead of
+    /// a truncated one. Set to 0 to send after every <see cref="BufferRows"/> rows regardless of size (the behavior
+    /// before 3.22.0). Not used when BufferRows is 0 (every row is sent) or 1 (all rows are buffered).
+    /// </summary>
+    public int ResponseBufferBytes { get; set; } = 16 * 1024;
 
     /// <summary>
     /// Default Authentication Options
