@@ -21,7 +21,10 @@ internal static class StringBuilderPool
     public static StringBuilder Rent()
     {
         StringBuilder? sb = null;
-        int currentIndex = Interlocked.Decrement(ref _index);
+        // _index is the top occupied slot: take the slot it pointed to BEFORE the decrement. (This used to read the
+        // slot below the top, so the most recently returned builder was never reused - with one pooled builder every
+        // Rent missed and allocated.)
+        int currentIndex = Interlocked.Decrement(ref _index) + 1;
 
         if (currentIndex >= 0 && currentIndex < MaxPoolSize)
         {

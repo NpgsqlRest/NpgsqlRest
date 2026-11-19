@@ -6,6 +6,7 @@ using NpgsqlTypes;
 
 namespace NpgsqlRest.HttpClientType;
 
+/// <param name="definition">The HTTP type definition (request template).</param>
 /// <param name="replacements">Raw placeholder values (headers, body).</param>
 /// <param name="urlReplacements">Placeholder values for the URL: request-derived values percent-encoded (falls back to
 /// <paramref name="replacements"/> when null).</param>

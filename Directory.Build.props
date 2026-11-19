@@ -23,12 +23,15 @@
 
   <!--
     .NET 11 Runtime Async (<Features>$(Features);runtime-async=on</Features>) is deliberately NOT enabled.
-    Measured on .NET 11.0.0 (see BenchmarkTests/Baselines/EndpointBenchmarks-3.22.0-net11.md):
-    - the NativeAOT client binary built with it crashes on the first request (SIGBUS), JIT builds work;
-    - the request handler (NpgsqlRestEndpoint.InvokeAsync, one very large async method) gets ~13.7 KB
-      continuation frames per suspension instead of one ~0.8 KB state machine box (+7..12 KB per request).
-    Re-evaluate after the request handler is split into small methods, and only together with an AOT smoke
-    test that serves real requests (not just printing the version).
+    Measured on .NET 11.0.0 (see BenchmarkTests/Baselines/EndpointBenchmarks-3.22.0-perf.md):
+    - With the original single ~3,400-line request handler: the NativeAOT client crashed on the first request
+      (SIGBUS) and each suspension saved ~13.7 KB continuation frames (+7..12 KB per request).
+    - With the handler split into small methods (3.22.0): AOT works (real requests, 500 in parallel), and the
+      cost per request is normal - but it allocates ~0.65 KB/request MORE than the current classic build, whose
+      request methods use PoolingAsyncValueTaskMethodBuilder (pooled state machines; methods with a custom
+      builder are compiled classically even when runtime-async is on), at equal latency.
+    Re-evaluate when it beats the pooled classic build, and only together with an AOT smoke test that serves
+    real requests (not just printing the version).
     Note: <UseRuntimeAsync>false</UseRuntimeAsync> is not implemented by SDK 11.0.100; to opt a project out,
     remove runtime-async=on from $(Features).
   -->

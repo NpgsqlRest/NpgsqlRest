@@ -143,7 +143,7 @@ public class FileSystemUploadHandler() : BaseUploadHandler, IUploadHandler
             result.Append(",\"size\":");
             result.Append(formFile.Length);
             result.Append(",\"filePath\":");
-            result.Append(SerializeString(currentFilePath));
+            result.Append(currentFilePath is null ? Consts.Null : SerializeString(currentFilePath));
 
             UploadFileStatus status = UploadFileStatus.Ok;
             if (currentFilePath is null)

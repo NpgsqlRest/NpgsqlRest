@@ -111,7 +111,17 @@ public partial class NpgsqlRestEndpoint(
         }
     }
 
-    public async Task InvokeAsync(HttpContext context, IServiceProvider serviceProvider, CancellationToken cancellationToken = default)
+    public Task InvokeAsync(HttpContext context, IServiceProvider? serviceProvider, CancellationToken cancellationToken = default)
+        => InvokeCoreAsync(context, serviceProvider, cancellationToken).AsTask();
+
+    /// <summary>Route handler (see NpgsqlRestBuilder): the service provider is resolved from the request only when needed.</summary>
+    internal Task HandleRequestAsync(HttpContext context, CancellationToken cancellationToken)
+        => InvokeCoreAsync(context, null, cancellationToken).AsTask();
+
+    // Pooled builder: the request's state machine box (several hundred bytes) is reused across requests instead of being
+    // allocated whenever the request waits on I/O. AsTask() above only allocates a small Task in that case.
+    [System.Runtime.CompilerServices.AsyncMethodBuilder(typeof(System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder))]
+    private async ValueTask InvokeCoreAsync(HttpContext context, IServiceProvider? serviceProvider, CancellationToken cancellationToken)
     {
         // ASP.NET Core's antiforgery middleware (UseAntiforgery) only *records* a failed token validation in
         // IAntiforgeryValidationFeature and continues - rejecting the request is left to the endpoint (MVC and
@@ -145,8 +155,6 @@ public partial class NpgsqlRestEndpoint(
         // Per-request connection notice handler; detached in the finally so it never accumulates on a
         // reused connection (e.g. ServiceProviderMode=NpgsqlConnection / the SQL test runner's ambient connection).
         NoticeEventHandler? noticeHandler = null;
-        // Held (when non-null) for the streaming records/sets cache path; released in the outer finally.
-        RecordCacheGate? recordCacheGate = null;
         IUploadHandler? uploadHandler = null;
         var shouldLog = Options.LogCommands && Logger != null;
 
@@ -154,12 +162,6 @@ public partial class NpgsqlRestEndpoint(
         StringBuilder? cmdLog = null;
         StringBuilder? cacheKeys = null;
         StringBuilder? commandTextBuilder = null;
-        StringBuilder? rowBuilder = null;
-        StringBuilder? compositeFieldBuffer = null;
-        // Multi-command per-iteration builders — set to null after each iteration's Return,
-        // so outer finally won't double-return; if iteration throws, finally still cleans up.
-        StringBuilder? mcRowBuilder = null;
-        StringBuilder? mcCompositeBuffer = null;
 
         // proxy_out: capture function output into a buffer instead of writing to the real response
         MemoryStream? proxyOutBuffer = null;
@@ -171,9 +173,12 @@ public partial class NpgsqlRestEndpoint(
             context.Response.Body = proxyOutBuffer;
         }
 
+        // The response's own pipe: Response.BodyWriter. (Wrapping Response.Body in a new StreamPipeWriter allocated a
+        // writer per request and copied every byte once more through the stream into the same pipe.) BodyWriter stays
+        // consistent with Response.Body when middleware replaces it (e.g. response compression).
         var writer = proxyOutBuffer is not null
             ? PipeWriter.Create(context.Response.Body, new StreamPipeWriterOptions(leaveOpen: true))
-            : PipeWriter.Create(context.Response.Body);
+            : context.Response.BodyWriter;
         try
         {
             if (Options.AmbientConnectionAccessor?.Invoke() is { } ambientConnection)
@@ -202,6 +207,7 @@ public partial class NpgsqlRestEndpoint(
             }
             else if (Options.ServiceProviderMode != ServiceProviderObject.None)
             {
+                serviceProvider ??= context.RequestServices;
                 if (serviceProvider is null)
                 {
                     await ReturnErrorAsync($"ServiceProvider must be provided when ServiceProviderMode is set to {Options.ServiceProviderMode}.", true, context, cancellationToken);
@@ -408,1174 +414,53 @@ public partial class NpgsqlRestEndpoint(
                 RemoveClientSuppliedUserParameters(routine, ref queryCollection, bodyDict);
             }
 
-            // start query string parameters
-            if (endpoint.RequestParamType == RequestParamType.QueryString)
+            // parameter binding (query string or JSON body); may resolve an overload
+            if (endpoint.RequestParamType == RequestParamType.QueryString || endpoint.RequestParamType == RequestParamType.BodyJson)
             {
-                // Early-return guard: queryCollection is non-null for the rest of this block (later
-                // dereferences use `!` where the compiler's flow analysis loses the narrowing).
-                if (queryCollection is null)
+                var binding = new ParameterBinding
                 {
-                    shouldCommit = false;
-                    uploadHandler?.OnError(connection, context, null);
-                    context.Response.StatusCode = StatusCodes.Status404NotFound;
-                    await context.Response.CompleteAsync();
+                    context = context,
+                    command = command,
+                    connection = connection,
+                    cmdLog = cmdLog,
+                    shouldLog = shouldLog,
+                    cacheKeys = cacheKeys,
+                    customHttpTypes = customHttpTypes,
+                    uploadHandler = uploadHandler,
+                    queryCollection = queryCollection,
+                    bodyDict = bodyDict,
+                    body = body,
+                    jsonObj = jsonObj,
+                    cancellationToken = cancellationToken,
+                    routine = routine,
+                    endpoint = endpoint,
+                    formatter = formatter,
+                    hasNulls = hasNulls,
+                    paramIndex = paramIndex,
+                    commandTextBuilder = commandTextBuilder,
+                    claimsDict = claimsDict,
+                    headers = headers,
+                    shouldCommit = shouldCommit,
+                    uploadMetaParamIndex = uploadMetaParamIndex,
+                };
+                var bound = endpoint.RequestParamType == RequestParamType.QueryString
+                    ? await BindQueryStringParametersAsync(binding)
+                    : await BindBodyParametersAsync(binding);
+                routine = binding.routine;
+                endpoint = binding.endpoint;
+                formatter = binding.formatter;
+                hasNulls = binding.hasNulls;
+                paramIndex = binding.paramIndex;
+                commandTextBuilder = binding.commandTextBuilder;
+                claimsDict = binding.claimsDict;
+                headers = binding.headers;
+                shouldCommit = binding.shouldCommit;
+                uploadMetaParamIndex = binding.uploadMetaParamIndex;
+                if (bound is false)
+                {
                     return;
                 }
-
-                // Account for path parameters when counting query string parameters
-                var pathParamCount = endpoint.PathParameters?.Length ?? 0;
-                if (queryCollection.Count + pathParamCount != routine.ParamCount && overloads.Count > 0)
-                {
-                    if (overloads.TryGetValue(string.Concat(entry.Key, queryCollection.Count + pathParamCount), out var overload))
-                    {
-                        routine = overload.Endpoint.Routine;
-                        endpoint = overload.Endpoint;
-                        formatter = overload.Formatter;
-                        if (formatter.IsFormattable is false)
-                        {
-                            // Reinitialize commandTextBuilder for the new routine
-                            commandTextBuilder?.Clear();
-                            if (commandTextBuilder is null)
-                            {
-                                commandTextBuilder = StringBuilderPool.Rent(routine.Expression.Length + routine.ParamCount * 16);
-                            }
-                            commandTextBuilder.Append(routine.Expression);
-                        }
-                    }
-                }
-
-                for (int i = 0; i < routine.Parameters.Length; i++)
-                {
-                    var parameter = routine.Parameters[i].NpgsqlRestParameterMemberwiseClone();
-
-                    // Resolved parameter: skip HTTP filling, set to DBNull.Value placeholder.
-                    // The actual value will be resolved via SQL expression after the parameter loop.
-                    if (endpoint.ResolvedParameterExpressions is not null &&
-                        (endpoint.ResolvedParameterExpressions.ContainsKey(parameter.ActualName) ||
-                         endpoint.ResolvedParameterExpressions.ContainsKey(parameter.ConvertedName)))
-                    {
-                        parameter.Value = DBNull.Value;
-                        if (Options.HttpClientOptions.Enabled)
-                        {
-                            if (parameter.TypeDescriptor.CustomType is not null)
-                            {
-                                if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
-                                {
-                                    customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
-                                }
-                            }
-                        }
-                        if (!parameter.IsVirtual) command.Parameters.Add(parameter);
-                        hasNulls = true;
-                        if (formatter.IsFormattable is false)
-                        {
-                            if (formatter.RefContext)
-                            {
-                                commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex, context));
-                                if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
-                                {
-                                    return;
-                                }
-                            }
-                            else
-                            {
-                                commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex));
-                            }
-                        }
-                        paramIndex++;
-                        if (shouldLog && Options.LogCommandParameters)
-                        {
-                            cmdLog!.Append("-- $").Append(paramIndex).Append(' ')
-                                .Append(parameter.TypeDescriptor.OriginalType)
-                                .Append(" = (resolved)").AppendLine();
-                        }
-                        continue;
-                    }
-
-                    if (parameter.HashOf is not null)
-                    {
-                        var hashValueQueryCollection = queryCollection!.TryGetValue(parameter.HashOf.ConvertedName, out var hashQsValue) ? hashQsValue.ToString() : null;
-                        if (string.IsNullOrEmpty(hashValueQueryCollection) is true)
-                        {
-                            parameter.Value = DBNull.Value;
-                        }
-                        else
-                        {
-                            parameter.Value = Options.AuthenticationOptions.PasswordHasher?.HashPassword(hashValueQueryCollection) as object ?? DBNull.Value;
-                        }
-                    }
-                    if (endpoint.UseUserParameters is true)
-                    {
-                        if (parameter.IsFromUserClaims is true && claimsDict is null)
-                        {
-                            claimsDict = context.User.BuildClaimsDictionary(Options.AuthenticationOptions);
-                        }
-                        
-                        if (parameter.IsIpAddress is true)
-                        {
-                            parameter.Value = context.Request.GetClientIpAddressDbParam();
-                        }
-                        else if (context.User?.Identity?.IsAuthenticated is true && Options.AuthenticationOptions.ParameterNameClaimsMapping.TryGetValue(parameter.ActualName, out var claimType))
-                        {
-                            // Claim auto-bind always wins (security routines depend on it). If the
-                            // request also supplied a value, it would otherwise be silently dropped —
-                            // surface that as a WARN so a parameter naming collision is visible.
-                            if (queryCollection is not null
-                                && (queryCollection.ContainsKey(parameter.ConvertedName) || queryCollection.ContainsKey(parameter.ActualName)))
-                            {
-                                Logger?.ClaimMappedParamReceivedRequestValue(
-                                    endpoint.Path, parameter.ActualName, "query", claimType);
-                            }
-                            parameter.Value = claimsDict!.GetClaimDbParam(claimType);
-                        }
-                        else if (context.User?.Identity?.IsAuthenticated is true && parameter.IsUserClaims is true)
-                        {
-                            parameter.Value = claimsDict?.GetUserClaimsDbParam() ?? DBNull.Value;
-                        }
-                    }
-                    if (parameter.IsUploadMetadata is true)
-                    {
-                        //uploadMetaParamIndex = i;
-                        uploadMetaParamIndex = command.Parameters.Count; // the last one added
-                        parameter.Value = DBNull.Value;
-                    }
-
-                    // body parameter
-                    if (parameter.Value is null && endpoint.IsBodyParameter(parameter))
-                    {
-                        if (body is null)
-                        {
-                            parameter.ParamType = ParamType.BodyParam;
-                            parameter.Value = DBNull.Value;
-                            hasNulls = true;
-
-                            if (Options.ValidateParameters is not null)
-                            {
-                                Options.ValidateParameters(new ParameterValidationValues(
-                                    context,
-                                    routine,
-                                    parameter));
-                                if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
-                                {
-                                    return;
-                                }
-                            }
-                            if (Options.ValidateParametersAsync is not null)
-                            {
-                                await Options.ValidateParametersAsync(new ParameterValidationValues(
-                                    context,
-                                    routine,
-                                    parameter));
-                                if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
-                                {
-                                    return;
-                                }
-                            }
-                            if (endpoint.Cached is true && endpoint.CachedParams is not null)
-                            {
-                                if (endpoint.CachedParams.Contains(parameter.ConvertedName) || endpoint.CachedParams.Contains(parameter.ActualName))
-                                {
-                                    parameter.AppendCacheKey(cacheKeys);
-                                }
-                            }
-
-                            if (Options.HttpClientOptions.Enabled)
-                            {
-                                if (parameter.TypeDescriptor.CustomType is not null)
-                                {
-                                    if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
-                                    {
-                                        customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
-                                    }
-                                }
-                            }
-                            if (!parameter.IsVirtual) command.Parameters.Add(parameter);
-
-                            if (hasNulls is false && parameter.Value == DBNull.Value)
-                            {
-                                hasNulls = true;
-                            }
-
-                            if (formatter.IsFormattable is false)
-                            {
-                                if (formatter.RefContext)
-                                {
-                                    commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex, context));
-                                    if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
-                                    {
-                                        return;
-                                    }
-                                }
-                                else
-                                {
-                                    commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex));
-                                }
-                            }
-                            paramIndex++;
-                            if (shouldLog && Options.LogCommandParameters)
-                            {
-                                var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
-                                    "***" :
-                                    FormatParameterForLog(parameter);
-                                cmdLog!.Append("-- $").Append(paramIndex).Append(' ')
-                                    .Append(parameter.TypeDescriptor.OriginalType)
-                                    .Append(" = ").AppendLine(p);
-                            }
-                        }
-                        else
-                        {
-                            StringValues bodyStringValues = body;
-                            if (TryParseParameter(parameter, ref bodyStringValues, endpoint.QueryStringNullHandling))
-                            {
-                                parameter.ParamType = ParamType.BodyParam;
-                                hasNulls = false;
-
-                                if (Options.ValidateParameters is not null)
-                                {
-                                    Options.ValidateParameters(new ParameterValidationValues(
-                                        context,
-                                        routine,
-                                        parameter));
-                                    if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
-                                    {
-                                        return;
-                                    }
-                                }
-                                if (Options.ValidateParametersAsync is not null)
-                                {
-                                    await Options.ValidateParametersAsync(new ParameterValidationValues(
-                                        context,
-                                        routine,
-                                        parameter));
-                                    if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
-                                    {
-                                        return;
-                                    }
-                                }
-                                if (endpoint.Cached is true && endpoint.CachedParams is not null)
-                                {
-                                    if (endpoint.CachedParams.Contains(parameter.ConvertedName) || endpoint.CachedParams.Contains(parameter.ActualName))
-                                    {
-                                        parameter.AppendCacheKey(cacheKeys);
-                                    }
-                                }
-                                
-                                if (Options.HttpClientOptions.Enabled)
-                                {
-                                    if (parameter.TypeDescriptor.CustomType is not null)
-                                    {
-                                        if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
-                                        {
-                                            customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
-                                        }
-                                    }
-                                }
-                                if (!parameter.IsVirtual) command.Parameters.Add(parameter);
-                                if (hasNulls is false && parameter.Value == DBNull.Value)
-                                {
-                                    hasNulls = true;
-                                }
-
-                                if (formatter.IsFormattable is false)
-                                {
-                                    if (formatter.RefContext)
-                                    {
-                                        commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex, context));
-                                        if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
-                                        {
-                                            return;
-                                        }
-                                    }
-                                    else
-                                    {
-                                        commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex));
-                                    }
-                                }
-                                paramIndex++;
-                                if (shouldLog && Options.LogCommandParameters)
-                                {
-                                    var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
-                                        "***" :
-                                        FormatParameterForLog(parameter);
-                                    cmdLog!.Append("-- $").Append(paramIndex).Append(' ')
-                                        .Append(parameter.TypeDescriptor.OriginalType)
-                                        .Append(" = ").AppendLine(p);
-                                }
-                            }
-                        }
-                        continue;
-                    }
-
-                    // header parameter
-                    if (parameter.Value is null &&
-                        endpoint.RequestHeadersMode == RequestHeadersMode.Parameter &&
-                        parameter.TypeDescriptor.HasDefault is true &&
-                        (
-                        string.Equals(endpoint.RequestHeadersParameterName, parameter.ConvertedName, StringComparison.Ordinal) ||
-                        string.Equals(endpoint.RequestHeadersParameterName, parameter.ActualName, StringComparison.Ordinal)
-                        )
-                    )
-                    {
-                        if (queryCollection!.ContainsKey(parameter.ConvertedName) is false)
-                        {
-                            if (headers is null)
-                            {
-                                SearializeHeader(Options, context, ref headers);
-                            }
-                            parameter.ParamType = ParamType.HeaderParam;
-                            parameter.Value = headers;
-
-                            if (Options.ValidateParameters is not null)
-                            {
-                                Options.ValidateParameters(new ParameterValidationValues(
-                                    context,
-                                    routine,
-                                    parameter));
-                                if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
-                                {
-                                    return;
-                                }
-                            }
-                            if (Options.ValidateParametersAsync is not null)
-                            {
-                                await Options.ValidateParametersAsync(new ParameterValidationValues(
-                                    context,
-                                    routine,
-                                    parameter));
-                                if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
-                                {
-                                    return;
-                                }
-                            }
-                            if (endpoint.Cached is true && endpoint.CachedParams is not null)
-                            {
-                                if (endpoint.CachedParams.Contains(parameter.ConvertedName) || endpoint.CachedParams.Contains(parameter.ActualName))
-                                {
-                                    parameter.AppendCacheKey(cacheKeys);
-                                }
-                            }
-                            
-                            if (Options.HttpClientOptions.Enabled)
-                            {
-                                if (parameter.TypeDescriptor.CustomType is not null)
-                                {
-                                    if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
-                                    {
-                                        customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
-                                    }
-                                }
-                            }
-                            if (!parameter.IsVirtual) command.Parameters.Add(parameter);
-
-                            if (hasNulls is false && parameter.Value == DBNull.Value)
-                            {
-                                hasNulls = true;
-                            }
-
-                            if (formatter.IsFormattable is false)
-                            {
-                                if (formatter.RefContext)
-                                {
-                                    commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex, context));
-                                    if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
-                                    {
-                                        return;
-                                    }
-                                }
-                                else
-                                {
-                                    commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex));
-                                }
-                            }
-                            paramIndex++;
-                            if (shouldLog && Options.LogCommandParameters)
-                            {
-                                var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
-                                    "***" :
-                                    FormatParameterForLog(parameter);
-                                cmdLog!.Append("-- $").Append(paramIndex).Append(' ')
-                                    .Append(parameter.TypeDescriptor.OriginalType)
-                                    .Append(" = ").AppendLine(p);
-                            }
-
-                            continue;
-                        }
-                    }
-
-                    // path parameter - extract from RouteValues
-                    if (parameter.Value is null && endpoint.HasPathParameters)
-                    {
-                        // Use optimized O(1) lookup via HashSet
-                        string? matchedPathParam = endpoint.FindMatchingPathParameter(parameter.ConvertedName, parameter.ActualName);
-
-                        // Try to get route value using the path parameter name from the template
-                        if (matchedPathParam is not null && context.Request.RouteValues.TryGetValue(matchedPathParam, out var routeValue))
-                        {
-                            StringValues pathStringValues = routeValue?.ToString() ?? "";
-                            if (TryParseParameter(parameter, ref pathStringValues, endpoint.QueryStringNullHandling))
-                            {
-                                parameter.ParamType = ParamType.PathParam;
-                                parameter.QueryStringValues = pathStringValues;
-
-                                if (Options.ValidateParameters is not null)
-                                {
-                                    Options.ValidateParameters(new ParameterValidationValues(
-                                        context,
-                                        routine,
-                                        parameter));
-                                    if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
-                                    {
-                                        return;
-                                    }
-                                }
-                                if (Options.ValidateParametersAsync is not null)
-                                {
-                                    await Options.ValidateParametersAsync(new ParameterValidationValues(
-                                        context,
-                                        routine,
-                                        parameter));
-                                    if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
-                                    {
-                                        return;
-                                    }
-                                }
-                                if (endpoint.Cached is true && endpoint.CachedParams is not null)
-                                {
-                                    if (endpoint.CachedParams.Contains(parameter.ConvertedName) || endpoint.CachedParams.Contains(parameter.ActualName))
-                                    {
-                                        parameter.AppendCacheKey(cacheKeys);
-                                    }
-                                }
-
-                                if (Options.HttpClientOptions.Enabled)
-                                {
-                                    if (parameter.TypeDescriptor.CustomType is not null)
-                                    {
-                                        if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
-                                        {
-                                            customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
-                                        }
-                                    }
-                                }
-                                if (!parameter.IsVirtual) command.Parameters.Add(parameter);
-
-                                if (hasNulls is false && parameter.Value == DBNull.Value)
-                                {
-                                    hasNulls = true;
-                                }
-
-                                if (formatter.IsFormattable is false)
-                                {
-                                    if (formatter.RefContext)
-                                    {
-                                        commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex, context));
-                                        if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
-                                        {
-                                            return;
-                                        }
-                                    }
-                                    else
-                                    {
-                                        commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex));
-                                    }
-                                }
-                                paramIndex++;
-                                if (shouldLog && Options.LogCommandParameters)
-                                {
-                                    var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
-                                        "***" :
-                                        FormatParameterForLog(parameter);
-                                    cmdLog!.Append("-- $").Append(paramIndex).Append(' ')
-                                        .Append(parameter.TypeDescriptor.OriginalType)
-                                        .Append(" = ").AppendLine(p);
-                                }
-
-                                continue;
-                            }
-                        }
-                    }
-
-                    if (queryCollection!.TryGetValue(parameter.ConvertedName, out var qsValue) is false)
-                    {
-                        if (parameter.Value is null)
-                        {
-                            if (Options.ValidateParameters is not null)
-                            {
-                                Options.ValidateParameters(new ParameterValidationValues(
-                                    context,
-                                    routine,
-                                    parameter));
-                                if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
-                                {
-                                    return;
-                                }
-                            }
-                            if (Options.ValidateParametersAsync is not null)
-                            {
-                                await Options.ValidateParametersAsync(new ParameterValidationValues(
-                                    context,
-                                    routine,
-                                    parameter));
-                                if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
-                                {
-                                    return;
-                                }
-                            }
-                            if (parameter.Value is null)
-                            {
-                                if (parameter.TypeDescriptor.CustomType is not null)
-                                {
-                                    parameter.Value = DBNull.Value;
-                                }
-                                else if (IsProxyResponseParameter(endpoint, parameter))
-                                {
-                                    // Proxy response parameter - set placeholder value and fall through to add it
-                                    parameter.Value = DBNull.Value;
-                                    parameter.ParamType = ParamType.QueryString;
-                                }
-                                else if (parameter.TypeDescriptor.HasDefault is false)
-                                {
-                                    shouldCommit = false;
-                                    uploadHandler?.OnError(connection, context, null);
-                                    context.Response.StatusCode = StatusCodes.Status404NotFound;
-                                    await context.Response.CompleteAsync();
-                                    return;
-                                }
-                                else if (parameter.DefaultValue is not null)
-                                {
-                                    // Explicit default value (SQL file annotation) — bind it
-                                    parameter.Value = parameter.DefaultValue;
-                                    parameter.ParamType = ParamType.QueryString;
-                                }
-                                else
-                                {
-                                    continue;
-                                }
-                            }
-                        }
-                    }
-
-                    if (parameter.Value is null && TryParseParameter(parameter, ref qsValue, endpoint.QueryStringNullHandling) is false)
-                    {
-                        // Check if this is a proxy response parameter - it will be filled in later
-                        if (IsProxyResponseParameter(endpoint, parameter))
-                        {
-                            parameter.Value = DBNull.Value;
-                            parameter.ParamType = ParamType.QueryString;
-                            // Don't skip - fall through to add the parameter
-                        }
-                        else if (parameter.TypeDescriptor.HasDefault is false)
-                        {
-                            shouldCommit = false;
-                            uploadHandler?.OnError(connection, context, null);
-                            context.Response.StatusCode = StatusCodes.Status404NotFound;
-                            await context.Response.CompleteAsync();
-                            return;
-                        }
-                        else if (parameter.DefaultValue is not null)
-                        {
-                            parameter.Value = parameter.DefaultValue;
-                            parameter.ParamType = ParamType.QueryString;
-                        }
-                        else
-                        {
-                            continue;
-                        }
-                    }
-
-                    parameter.ParamType = ParamType.QueryString;
-                    parameter.QueryStringValues = qsValue;
-                    if (Options.ValidateParameters is not null)
-                    {
-                        Options.ValidateParameters(new ParameterValidationValues(
-                            context,
-                            routine,
-                            parameter));
-                        if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
-                        {
-                            return;
-                        }
-                    }
-                    if (Options.ValidateParametersAsync is not null)
-                    {
-                        await Options.ValidateParametersAsync(new ParameterValidationValues(
-                            context,
-                            routine,
-                            parameter));
-                        if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
-                        {
-                            return;
-                        }
-                    }
-                    if (endpoint.Cached is true && endpoint.CachedParams is not null)
-                    {
-                        if (endpoint.CachedParams.Contains(parameter.ConvertedName) || endpoint.CachedParams.Contains(parameter.ActualName))
-                        {
-                            parameter.AppendCacheKey(cacheKeys);
-                        }
-                    }
-
-                    if (Options.HttpClientOptions.Enabled)
-                    {
-                        if (parameter.TypeDescriptor.CustomType is not null)
-                        {
-                            if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
-                            {
-                                customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
-                            }
-                        }
-                    }
-                    command.Parameters.Add(parameter);
-
-                    if (hasNulls is false && parameter.Value == DBNull.Value)
-                    {
-                        hasNulls = true;
-                    }
-
-                    if (formatter.IsFormattable is false)
-                    {
-                        if (formatter.RefContext)
-                        {
-                            commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex, context));
-                            if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
-                            {
-                                return;
-                            }
-                        }
-                        else
-                        {
-                            commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex));
-                        }
-                    }
-                    paramIndex++;
-                    if (shouldLog && Options.LogCommandParameters)
-                    {
-                        var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
-                            "***" :
-                            FormatParameterForLog(parameter);
-                        cmdLog!.Append("-- $").Append(paramIndex).Append(' ')
-                            .Append(parameter.TypeDescriptor.OriginalType)
-                            .Append(" = ").AppendLine(p);
-                    }
-                }
-
-                // Skip query string validation for passthrough proxy endpoints - query will be forwarded as-is
-                if (!(endpoint.IsProxy && Options.ProxyOptions.Enabled && !endpoint.HasProxyResponseParameters))
-                {
-                    foreach (var queryKey in queryCollection!.Keys)
-                    {
-                        if (routine.ParamsHash.Contains(queryKey) is false)
-                        {
-                            shouldCommit = false;
-                            uploadHandler?.OnError(connection, context, null);
-                            context.Response.StatusCode = StatusCodes.Status404NotFound;
-                            await context.Response.CompleteAsync();
-                            return;
-                        }
-                    }
-                }
-            } // end of query string parameters
-            // start json body parameters
-            else if (endpoint.RequestParamType == RequestParamType.BodyJson)
-            {
-                // Early-return guard: bodyDict is non-null for the rest of this block (later
-                // dereferences use `!` where the compiler's flow analysis loses the narrowing).
-                if (bodyDict is null)
-                {
-                    // Body was present but is not a parseable JSON object - this is a client error,
-                    // not a routing miss (parse failures are logged above via CouldNotParseJson).
-                    shouldCommit = false;
-                    uploadHandler?.OnError(connection, context, null);
-                    context.Response.StatusCode = StatusCodes.Status400BadRequest;
-                    await context.Response.CompleteAsync();
-                    return;
-                }
-
-                // Account for path parameters when counting body parameters
-                var pathParamCount = endpoint.PathParameters?.Length ?? 0;
-                var expectedBodyParamCount = routine.ParamCount - pathParamCount;
-                if (bodyDict.Count != expectedBodyParamCount && overloads.Count > 0)
-                {
-                    if (overloads.TryGetValue(string.Concat(entry.Key, bodyDict.Count + pathParamCount), out var overload))
-                    {
-                        routine = overload.Endpoint.Routine;
-                        endpoint = overload.Endpoint;
-                        formatter = overload.Formatter;
-                        if (formatter.IsFormattable is false)
-                        {
-                            // Reinitialize commandTextBuilder for the new routine
-                            commandTextBuilder?.Clear();
-                            if (commandTextBuilder is null)
-                            {
-                                commandTextBuilder = StringBuilderPool.Rent(routine.Expression.Length + routine.ParamCount * 16);
-                            }
-                            commandTextBuilder.Append(routine.Expression);
-                        }
-                    }
-                }
-
-                for (int i = 0; i < routine.Parameters.Length; i++)
-                {
-                    var parameter = routine.Parameters[i].NpgsqlRestParameterMemberwiseClone();
-
-                    // Resolved parameter: skip HTTP filling, set to DBNull.Value placeholder.
-                    // The actual value will be resolved via SQL expression after the parameter loop.
-                    if (endpoint.ResolvedParameterExpressions is not null &&
-                        (endpoint.ResolvedParameterExpressions.ContainsKey(parameter.ActualName) ||
-                         endpoint.ResolvedParameterExpressions.ContainsKey(parameter.ConvertedName)))
-                    {
-                        parameter.Value = DBNull.Value;
-                        if (Options.HttpClientOptions.Enabled)
-                        {
-                            if (parameter.TypeDescriptor.CustomType is not null)
-                            {
-                                if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
-                                {
-                                    customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
-                                }
-                            }
-                        }
-                        if (!parameter.IsVirtual) command.Parameters.Add(parameter);
-                        hasNulls = true;
-                        if (formatter.IsFormattable is false)
-                        {
-                            if (formatter.RefContext)
-                            {
-                                commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex, context));
-                                if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
-                                {
-                                    return;
-                                }
-                            }
-                            else
-                            {
-                                commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex));
-                            }
-                        }
-                        paramIndex++;
-                        if (shouldLog && Options.LogCommandParameters)
-                        {
-                            cmdLog!.Append("-- $").Append(paramIndex).Append(' ')
-                                .Append(parameter.TypeDescriptor.OriginalType)
-                                .Append(" = (resolved)").AppendLine();
-                        }
-                        continue;
-                    }
-
-                    if (parameter.HashOf is not null)
-                    {
-                        var hashValueBodyDict = bodyDict!.GetValueOrDefault(parameter.HashOf.ConvertedName)?.ToString();
-                        if (string.IsNullOrEmpty(hashValueBodyDict) is true)
-                        {
-                            parameter.Value = DBNull.Value;
-                        }
-                        else
-                        {
-                            parameter.Value = Options.AuthenticationOptions.PasswordHasher?.HashPassword(hashValueBodyDict) as object ?? DBNull.Value;
-                        }
-                    }
-                    if (endpoint.UseUserParameters is true)
-                    {
-                        if (parameter.IsFromUserClaims is true && claimsDict is null)
-                        {
-                            claimsDict = context.User.BuildClaimsDictionary(Options.AuthenticationOptions);
-                        }
-                        if (parameter.IsIpAddress is true)
-                        {
-                            parameter.Value = context.Request.GetClientIpAddressDbParam();
-                        }
-                        else if (context.User?.Identity?.IsAuthenticated is true && Options.AuthenticationOptions.ParameterNameClaimsMapping.TryGetValue(parameter.ActualName, out var claimType))
-                        {
-                            // Claim auto-bind always wins (security routines depend on it). If the
-                            // request also supplied a value, it would otherwise be silently dropped —
-                            // surface that as a WARN so a parameter naming collision is visible.
-                            if (bodyDict is not null
-                                && (bodyDict.ContainsKey(parameter.ConvertedName) || bodyDict.ContainsKey(parameter.ActualName)))
-                            {
-                                Logger?.ClaimMappedParamReceivedRequestValue(
-                                    endpoint.Path, parameter.ActualName, "body", claimType);
-                            }
-                            parameter.Value = claimsDict!.GetClaimDbParam(claimType);
-                        }
-                        else if (context.User?.Identity?.IsAuthenticated is true && parameter.IsUserClaims is true)
-                        {
-                            parameter.Value = claimsDict?.GetUserClaimsDbParam() ?? DBNull.Value;
-                        }
-                    }
-                    if (parameter.IsUploadMetadata is true)
-                    {
-                        uploadMetaParamIndex = command.Parameters.Count; // the last one added
-                        parameter.Value = DBNull.Value;
-                    }
-
-                    // header parameter
-                    if (parameter.Value is null &&
-                        endpoint.RequestHeadersMode == RequestHeadersMode.Parameter &&
-                        parameter.TypeDescriptor.HasDefault is true &&
-                    (
-                        string.Equals(endpoint.RequestHeadersParameterName, parameter.ConvertedName, StringComparison.Ordinal) ||
-                        string.Equals(endpoint.RequestHeadersParameterName, parameter.ActualName, StringComparison.Ordinal)
-                        )
-                    )
-                    {
-                        if (bodyDict!.ContainsKey(parameter.ConvertedName) is false)
-                        {
-                            if (headers is null)
-                            {
-                                SearializeHeader(Options, context, ref headers);
-                            }
-                            parameter.ParamType = ParamType.HeaderParam;
-                            parameter.Value = headers;
-
-                            if (Options.ValidateParameters is not null)
-                            {
-                                Options.ValidateParameters(new ParameterValidationValues(
-                                    context,
-                                    routine,
-                                    parameter));
-                                if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
-                                {
-                                    return;
-                                }
-                            }
-                            if (Options.ValidateParametersAsync is not null)
-                            {
-                                await Options.ValidateParametersAsync(new ParameterValidationValues(
-                                    context,
-                                    routine,
-                                    parameter));
-                                if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
-                                {
-                                    return;
-                                }
-                            }
-                            if (endpoint.Cached is true && endpoint.CachedParams is not null)
-                            {
-                                if (endpoint.CachedParams.Contains(parameter.ConvertedName) || endpoint.CachedParams.Contains(parameter.ActualName))
-                                {
-                                    parameter.AppendCacheKey(cacheKeys);
-                                }
-                            }
-
-                            if (Options.HttpClientOptions.Enabled)
-                            {
-                                if (parameter.TypeDescriptor.CustomType is not null)
-                                {
-                                    if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
-                                    {
-                                        customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
-                                    }
-                                }
-                            }
-                            if (!parameter.IsVirtual) command.Parameters.Add(parameter);
-
-                            if (hasNulls is false && parameter.Value == DBNull.Value)
-                            {
-                                hasNulls = true;
-                            }
-
-                            if (formatter.IsFormattable is false)
-                            {
-                                if (formatter.RefContext)
-                                {
-                                    commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex, context));
-                                    if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
-                                    {
-                                        return;
-                                    }
-                                }
-                                else
-                                {
-                                    commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex));
-                                }
-                            }
-                            paramIndex++;
-                            if (shouldLog && Options.LogCommandParameters)
-                            {
-                                var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
-                                    "***" :
-                                    FormatParameterForLog(parameter);
-                                cmdLog!.Append("-- $").Append(paramIndex).Append(' ')
-                                    .Append(parameter.TypeDescriptor.OriginalType)
-                                    .Append(" = ").AppendLine(p);
-                            }
-
-                            continue;
-                        }
-                    }
-
-                    // path parameter - extract from RouteValues (for JSON body mode)
-                    if (parameter.Value is null && endpoint.HasPathParameters)
-                    {
-                        // Use optimized O(1) lookup via HashSet
-                        string? matchedPathParam = endpoint.FindMatchingPathParameter(parameter.ConvertedName, parameter.ActualName);
-
-                        // Try to get route value using the path parameter name from the template
-                        if (matchedPathParam is not null && context.Request.RouteValues.TryGetValue(matchedPathParam, out var routeValue))
-                        {
-                            StringValues pathStringValues = routeValue?.ToString() ?? "";
-                            if (TryParseParameter(parameter, ref pathStringValues, endpoint.QueryStringNullHandling))
-                            {
-                                parameter.ParamType = ParamType.PathParam;
-                                parameter.QueryStringValues = pathStringValues;
-
-                                if (Options.ValidateParameters is not null)
-                                {
-                                    Options.ValidateParameters(new ParameterValidationValues(
-                                        context,
-                                        routine,
-                                        parameter));
-                                    if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
-                                    {
-                                        return;
-                                    }
-                                }
-                                if (Options.ValidateParametersAsync is not null)
-                                {
-                                    await Options.ValidateParametersAsync(new ParameterValidationValues(
-                                        context,
-                                        routine,
-                                        parameter));
-                                    if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
-                                    {
-                                        return;
-                                    }
-                                }
-                                if (endpoint.Cached is true && endpoint.CachedParams is not null)
-                                {
-                                    if (endpoint.CachedParams.Contains(parameter.ConvertedName) || endpoint.CachedParams.Contains(parameter.ActualName))
-                                    {
-                                        parameter.AppendCacheKey(cacheKeys);
-                                    }
-                                }
-
-                                if (Options.HttpClientOptions.Enabled)
-                                {
-                                    if (parameter.TypeDescriptor.CustomType is not null)
-                                    {
-                                        if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
-                                        {
-                                            customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
-                                        }
-                                    }
-                                }
-                                if (!parameter.IsVirtual) command.Parameters.Add(parameter);
-
-                                if (hasNulls is false && parameter.Value == DBNull.Value)
-                                {
-                                    hasNulls = true;
-                                }
-
-                                if (formatter.IsFormattable is false)
-                                {
-                                    if (formatter.RefContext)
-                                    {
-                                        commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex, context));
-                                        if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
-                                        {
-                                            return;
-                                        }
-                                    }
-                                    else
-                                    {
-                                        commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex));
-                                    }
-                                }
-                                paramIndex++;
-                                if (shouldLog && Options.LogCommandParameters)
-                                {
-                                    var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
-                                        "***" :
-                                        FormatParameterForLog(parameter);
-                                    cmdLog!.Append("-- $").Append(paramIndex).Append(' ')
-                                        .Append(parameter.TypeDescriptor.OriginalType)
-                                        .Append(" = ").AppendLine(p);
-                                }
-
-                                continue;
-                            }
-                        }
-                    }
-
-                    if (bodyDict!.TryGetValue(parameter.ConvertedName, out var value) is false)
-                    {
-                        if (parameter.Value is null)
-                        {
-                            if (Options.ValidateParameters is not null)
-                            {
-                                Options.ValidateParameters(new ParameterValidationValues(
-                                    context,
-                                    routine,
-                                    parameter));
-                                if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
-                                {
-                                    return;
-                                }
-                            }
-                            if (Options.ValidateParametersAsync is not null)
-                            {
-                                await Options.ValidateParametersAsync(new ParameterValidationValues(
-                                    context,
-                                    routine,
-                                    parameter));
-                                if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
-                                {
-                                    return;
-                                }
-                            }
-                            if (parameter.Value is null)
-                            {
-                                if (parameter.TypeDescriptor.CustomType is not null)
-                                {
-                                    parameter.Value = DBNull.Value;
-                                }
-                                else if (IsProxyResponseParameter(endpoint, parameter))
-                                {
-                                    // Proxy response parameter - set placeholder value and fall through to add it
-                                    parameter.Value = DBNull.Value;
-                                    parameter.ParamType = ParamType.BodyJson;
-                                }
-                                else if (parameter.TypeDescriptor.HasDefault is false)
-                                {
-                                    shouldCommit = false;
-                                    uploadHandler?.OnError(connection, context, null);
-                                    context.Response.StatusCode = StatusCodes.Status404NotFound;
-                                    await context.Response.CompleteAsync();
-                                    return;
-                                }
-                                else if (parameter.DefaultValue is not null)
-                                {
-                                    // Explicit default value (SQL file annotation) — bind it
-                                    parameter.Value = parameter.DefaultValue;
-                                    parameter.ParamType = ParamType.BodyJson;
-                                }
-                                else
-                                {
-                                    continue;
-                                }
-                            }
-                        }
-                    }
-
-                    if (parameter.Value is null && TryParseParameter(parameter, value) is false)
-                    {
-                        // Check if this is a proxy response parameter - it will be filled in later
-                        if (IsProxyResponseParameter(endpoint, parameter))
-                        {
-                            parameter.Value = DBNull.Value;
-                            parameter.ParamType = ParamType.BodyJson;
-                            // Don't skip - fall through to add the parameter
-                        }
-                        else if (parameter.TypeDescriptor.HasDefault is false)
-                        {
-                            shouldCommit = false;
-                            uploadHandler?.OnError(connection, context, null);
-                            context.Response.StatusCode = StatusCodes.Status404NotFound;
-                            await context.Response.CompleteAsync();
-                            return;
-                        }
-                        else if (parameter.DefaultValue is not null)
-                        {
-                            parameter.Value = parameter.DefaultValue;
-                            parameter.ParamType = ParamType.BodyJson;
-                        }
-                        else
-                        {
-                            continue;
-                        }
-                    }
-                    parameter.ParamType = ParamType.BodyJson;
-                    parameter.JsonBodyNode = value;
-                    if (Options.ValidateParameters is not null)
-                    {
-                        Options.ValidateParameters(new ParameterValidationValues(
-                            context,
-                            routine,
-                            parameter));
-                        if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
-                        {
-                            return;
-                        }
-                    }
-                    if (Options.ValidateParametersAsync is not null)
-                    {
-                        await Options.ValidateParametersAsync(new ParameterValidationValues(
-                            context,
-                            routine,
-                            parameter));
-                        if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
-                        {
-                            return;
-                        }
-                    }
-                    if (endpoint.Cached is true && endpoint.CachedParams is not null)
-                    {
-                        if (endpoint.CachedParams.Contains(parameter.ConvertedName) || endpoint.CachedParams.Contains(parameter.ActualName))
-                        {
-                            parameter.AppendCacheKey(cacheKeys);
-                        }
-                    }
-
-                    if (Options.HttpClientOptions.Enabled)
-                    {
-                        if (parameter.TypeDescriptor.CustomType is not null)
-                        {
-                            if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
-                            {
-                                customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
-                            }
-                        }
-                    }
-                    command.Parameters.Add(parameter);
-
-                    if (hasNulls is false && parameter.Value == DBNull.Value)
-                    {
-                        hasNulls = true;
-                    }
-
-                    if (formatter.IsFormattable is false)
-                    {
-                        if (formatter.RefContext)
-                        {
-                            commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex, context));
-                            if (context.Response.HasStarted || context.Response.StatusCode != (int)HttpStatusCode.OK)
-                            {
-                                return;
-                            }
-                        }
-                        else
-                        {
-                            commandTextBuilder!.Append(formatter.AppendCommandParameter(parameter, paramIndex));
-                        }
-                    }
-                    paramIndex++;
-                    if (shouldLog && Options.LogCommandParameters)
-                    {
-                        var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && endpoint.IsAuth ?
-                            "***" :
-                            FormatParameterForLog(parameter);
-                        cmdLog!.Append("-- $").Append(paramIndex).Append(' ')
-                            .Append(parameter.TypeDescriptor.OriginalType)
-                            .Append(" = ").AppendLine(p);
-                    }
-                }
-
-                // Skip body validation for passthrough proxy endpoints - body will be forwarded as-is
-                if (!(endpoint.IsProxy && Options.ProxyOptions.Enabled && !endpoint.HasProxyResponseParameters))
-                {
-                    foreach (var bodyKey in bodyDict!.Keys)
-                    {
-                        if (routine.ParamsHash.Contains(bodyKey) is false)
-                        {
-                            shouldCommit = false;
-                            uploadHandler?.OnError(connection, context, null);
-                            context.Response.StatusCode = StatusCodes.Status404NotFound;
-                            await context.Response.CompleteAsync();
-                            return;
-                        }
-                    }
-                }
-            } // end of json body parameters
+            }
 
             if (hasNulls && routine.IsStrict)
             {
@@ -2202,68 +1087,238 @@ public partial class NpgsqlRestEndpoint(
             // Multi-command rendering: execute each statement separately, build JSON object
             if (routine.IsMultiCommand && routine.MultiCommandInfo is not null)
             {
-                await OpenConnectionAsync(connection, context, endpoint, cancellationToken);
+                await RenderMultiCommandAsync(context, endpoint, routine, connection, command, writer, cmdLog, shouldLog, cancellationToken);
+                return;
+            }
 
-                if (shouldLog)
+            await RenderResultAsync(context, endpoint, routine, connection, command, commandText, writer, cmdLog, shouldLog,
+                resolvedCache, cacheKeyString, bypassCache, cacheTtlOverride, customParameters, cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            if (exception is NpgsqlToHttpException npgsqlToHttpException)
+            {
+                if (context.Response.HasStarted is false)
                 {
-                    if (routine.LogCommandText)
+                    await Results.Problem(
+                        type: npgsqlToHttpException.Mapping.Type,
+                        statusCode: npgsqlToHttpException.Mapping.StatusCode,
+                        title: npgsqlToHttpException.Mapping.Title ?? exception.Message,
+                        detail: npgsqlToHttpException.SqlState).ExecuteAsync(context);
+                }
+                else
+                {
+                    context.Response.StatusCode = npgsqlToHttpException.Mapping.StatusCode;
+                }
+            }
+            else if (exception is PostgresException postgresEx)
+            {
+                // An error raised by PostgreSQL (RAISE EXCEPTION, constraint violations, ...): its message is part of
+                // the routine's contract with the client.
+                if (context.Response.HasStarted is false)
+                {
+                    await Results.Problem(
+                        type: null,
+                        statusCode: 500,
+                        title: postgresEx.Message,
+                        detail: postgresEx.SqlState).ExecuteAsync(context);
+                }
+                else
+                {
+                    context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
+                }
+            }
+            else if (exception is NpgsqlException)
+            {
+                // A client-side Npgsql failure (connection, timeout, I/O): its message describes the infrastructure
+                // (hosts, ports, pool state) and is logged below, not returned.
+                if (context.Response.HasStarted is false)
+                {
+                    await Results.Problem(
+                        type: null,
+                        statusCode: 500,
+                        title: "Internal Server Error",
+                        detail: null).ExecuteAsync(context);
+                }
+                else
+                {
+                    context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
+                }
+            }
+            else
+            {
+                if (context.Response.HasStarted is false)
+                {
+                    // The exception message is logged below, not returned: it describes server internals.
+                    await Results.Problem(
+                        type: null, // remove RFC URL
+                        statusCode: 500,
+                        title: "Internal Server Error",
+                        detail: null).ExecuteAsync(context);
+                }
+                else
+                {
+                    context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
+                }
+            }
+
+            if (endpoint.Upload is true)
+            {
+                uploadHandler?.OnError(connection, context, exception);
+            }
+
+            if (context.Response.StatusCode == 400)
+            {
+                if (shouldLog && cmdLog is not null)
+                {
+                    Logger?.LogWarning("Client error (400) executing command: {commandText} mapped to endpoint: {Url}: {message}{NewLine}{cmdLog}", commandText, endpoint.Path, exception.Message, Environment.NewLine, cmdLog.ToString());
+                }
+                else
+                {
+                    Logger?.LogWarning("Client error (400) executing command: {commandText} mapped to endpoint: {Url}: {message}", commandText, endpoint.Path, exception.Message);
+                }
+            }
+            else if (context.Response.StatusCode != 200 && context.Response.StatusCode != 205)
+            {
+                if (shouldLog && cmdLog is not null)
+                {
+                    Logger?.LogError(exception, "Error executing command: {commandText} mapped to endpoint: {Url}{NewLine}{cmdLog}", commandText, endpoint.Path, Environment.NewLine, cmdLog.ToString());
+                }
+                else
+                {
+                    Logger?.LogError(exception, "Error executing command: {commandText} mapped to endpoint: {Url}", commandText, endpoint.Path);
+                }
+            }
+        }
+        finally
+        {
+            await writer.CompleteAsync();
+
+            // proxy_out: capture buffered function output and forward to upstream proxy
+            if (proxyOutBuffer is not null && proxyOutOriginalBody is not null)
+            {
+                try
+                {
+                    // Only forward to proxy if the function executed successfully (no error status)
+                    if (context.Response.StatusCode >= 200 && context.Response.StatusCode < 400)
                     {
-                        var allSql = string.Join(";\n", routine.MultiCommandInfo.Select(c => c.Statement));
-                        NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", allSql);
+                        // Extract bytes directly — avoid string allocation and double UTF-8 conversion
+                        var functionBodyBytes = proxyOutBuffer.Length > 0
+                            ? proxyOutBuffer.ToArray()
+                            : [];
+
+                        // Restore original response body and reset response state
+                        context.Response.Body = proxyOutOriginalBody;
+                        context.Response.Headers.Clear();
+                        context.Response.StatusCode = 200;
+
+                        var proxyResponse = await Proxy.ProxyRequestHandler.InvokeOutAsync(
+                            context, endpoint, functionBodyBytes, cancellationToken);
+                        await Proxy.ProxyRequestHandler.WriteResponseAsync(
+                            context, proxyResponse, Options.ProxyOptions, cancellationToken);
                     }
                     else
                     {
-                        NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "",
-                            string.Concat(routine.SimpleDefinition, " (", routine.MultiCommandInfo.Length.ToString(), " statements)"));
+                        // Function errored — restore original body and copy error content through
+                        proxyOutBuffer.Position = 0;
+                        context.Response.Body = proxyOutOriginalBody;
+                        await proxyOutBuffer.CopyToAsync(proxyOutOriginalBody, cancellationToken);
                     }
                 }
-
-                // Void multi-command: execute all statements, return 204
-                if (endpoint.Void)
+                finally
                 {
-                    for (int cmdIndex = 0; cmdIndex < routine.MultiCommandInfo.Length; cmdIndex++)
+                    proxyOutBuffer.Dispose();
+                }
+            }
+
+            await context.Response.CompleteAsync();
+            if (transaction is not null)
+            {
+                if (connection is not null && connection.State == ConnectionState.Open)
+                {
+                    if (shouldCommit)
                     {
-                        var currentCmd = routine.MultiCommandInfo[cmdIndex];
-                        await using var mcCmd = new NpgsqlCommand(currentCmd.Statement, connection);
-                        if (endpoint.CommandTimeout.HasValue)
-                        {
-                            mcCmd.CommandTimeout = ToCommandTimeoutSeconds(endpoint.CommandTimeout.Value);
-                        }
-                        for (int pi = 0; pi < Math.Min(currentCmd.ParamCount, command.Parameters.Count); pi++)
-                        {
-                            var srcParam = command.Parameters[pi];
-                            mcCmd.Parameters.Add(new NpgsqlParameter
-                            {
-                                NpgsqlDbType = srcParam.NpgsqlDbType,
-                                Value = srcParam.Value ?? DBNull.Value
-                            });
-                        }
-                        await mcCmd.ExecuteNonQueryWithRetryAsync(
-                            endpoint.RetryStrategy,
-                            cancellationToken,
-                            errorCodePolicy: endpoint.ErrorCodePolicy ?? Options.ErrorHandlingOptions.DefaultErrorCodePolicy);
+                        await transaction.CommitAsync(cancellationToken);
                     }
-                    context.Response.StatusCode = (int)HttpStatusCode.NoContent;
-                    return;
                 }
+            }
+            // Detach the per-request notice handler so it can't accumulate (and re-log) on a reused
+            // connection that this request did not dispose.
+            if (connection is not null && noticeHandler is not null)
+            {
+                connection.Notice -= noticeHandler;
+            }
+            if (connection is not null && shouldDispose is true)
+            {
+                await connection.DisposeAsync();
+            }
 
-                context.Response.ContentType = Application.Json;
+            // Return pooled StringBuilders
+            if (cmdLog is not null)
+            {
+                StringBuilderPool.Return(cmdLog);
+            }
+            if (cacheKeys is not null)
+            {
+                StringBuilderPool.Return(cacheKeys);
+            }
+            if (commandTextBuilder is not null)
+            {
+                StringBuilderPool.Return(commandTextBuilder);
+            }
+        }
+    }
 
-                // Write opening {
-                writer.Write(Consts.Utf8OpenBrace);
+    /// <summary>
+    /// Multi-command routines (SQL files with several statements): executes each statement and writes one JSON object
+    /// with a property per statement. Split out of InvokeAsync to keep the request state machine small.
+    /// </summary>
+    // Pooled builder: the state machine box is reused instead of allocated each time the method waits on I/O.
+    [System.Runtime.CompilerServices.AsyncMethodBuilder(typeof(System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder))]
+    private async ValueTask RenderMultiCommandAsync(
+        HttpContext context,
+        RoutineEndpoint endpoint,
+        Routine routine,
+        NpgsqlConnection connection,
+        NpgsqlCommand command,
+        PipeWriter writer,
+        StringBuilder? cmdLog,
+        bool shouldLog,
+        CancellationToken cancellationToken)
+    {
+        // Per-iteration builders - set to null after each iteration's Return, so the finally won't double-return.
+        StringBuilder? mcRowBuilder = null;
+        StringBuilder? mcCompositeBuffer = null;
+        try
+        {
+            var multiCommandInfo = routine.MultiCommandInfo!; // checked by the caller
+            await OpenConnectionAsync(connection, context, endpoint, cancellationToken);
 
-                bool firstResultWritten = false;
-                for (int cmdIndex = 0; cmdIndex < routine.MultiCommandInfo.Length; cmdIndex++)
+            if (shouldLog)
+            {
+                if (routine.LogCommandText)
                 {
-                    var currentCmd = routine.MultiCommandInfo[cmdIndex];
+                    var allSql = string.Join(";\n", multiCommandInfo.Select(c => c.Statement));
+                    NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "", allSql);
+                }
+                else
+                {
+                    NpgsqlRestLogger.LogEndpoint(endpoint, cmdLog?.ToString() ?? "",
+                        string.Concat(routine.SimpleDefinition, " (", multiCommandInfo.Length.ToString(), " statements)"));
+                }
+            }
 
-                    // Build a command for this statement
+            // Void multi-command: execute all statements, return 204
+            if (endpoint.Void)
+            {
+                for (int cmdIndex = 0; cmdIndex < multiCommandInfo.Length; cmdIndex++)
+                {
+                    var currentCmd = multiCommandInfo[cmdIndex];
                     await using var mcCmd = new NpgsqlCommand(currentCmd.Statement, connection);
                     if (endpoint.CommandTimeout.HasValue)
                     {
                         mcCmd.CommandTimeout = ToCommandTimeoutSeconds(endpoint.CommandTimeout.Value);
                     }
-                    // Bind parameters that this statement uses
                     for (int pi = 0; pi < Math.Min(currentCmd.ParamCount, command.Parameters.Count); pi++)
                     {
                         var srcParam = command.Parameters[pi];
@@ -2273,307 +1328,383 @@ public partial class NpgsqlRestEndpoint(
                             Value = srcParam.Value ?? DBNull.Value
                         });
                     }
+                    await mcCmd.ExecuteNonQueryWithRetryAsync(
+                        endpoint.RetryStrategy,
+                        cancellationToken,
+                        errorCodePolicy: endpoint.ErrorCodePolicy ?? Options.ErrorHandlingOptions.DefaultErrorCodePolicy);
+                }
+                context.Response.StatusCode = (int)HttpStatusCode.NoContent;
+                return;
+            }
 
-                    // Skipped commands: execute for side effects, no result key
-                    if (currentCmd.IsSkipped)
+            context.Response.ContentType = Application.Json;
+
+            // Write opening {
+            writer.Write(Consts.Utf8OpenBrace);
+
+            bool firstResultWritten = false;
+            for (int cmdIndex = 0; cmdIndex < multiCommandInfo.Length; cmdIndex++)
+            {
+                var currentCmd = multiCommandInfo[cmdIndex];
+
+                // Build a command for this statement
+                await using var mcCmd = new NpgsqlCommand(currentCmd.Statement, connection);
+                if (endpoint.CommandTimeout.HasValue)
+                {
+                    mcCmd.CommandTimeout = ToCommandTimeoutSeconds(endpoint.CommandTimeout.Value);
+                }
+                // Bind parameters that this statement uses
+                for (int pi = 0; pi < Math.Min(currentCmd.ParamCount, command.Parameters.Count); pi++)
+                {
+                    var srcParam = command.Parameters[pi];
+                    mcCmd.Parameters.Add(new NpgsqlParameter
                     {
-                        await mcCmd.ExecuteNonQueryWithRetryAsync(
-                            endpoint.RetryStrategy,
-                            cancellationToken,
-                            errorCodePolicy: endpoint.ErrorCodePolicy ?? Options.ErrorHandlingOptions.DefaultErrorCodePolicy);
-                        continue;
+                        NpgsqlDbType = srcParam.NpgsqlDbType,
+                        Value = srcParam.Value ?? DBNull.Value
+                    });
+                }
+
+                // Skipped commands: execute for side effects, no result key
+                if (currentCmd.IsSkipped)
+                {
+                    await mcCmd.ExecuteNonQueryWithRetryAsync(
+                        endpoint.RetryStrategy,
+                        cancellationToken,
+                        errorCodePolicy: endpoint.ErrorCodePolicy ?? Options.ErrorHandlingOptions.DefaultErrorCodePolicy);
+                    continue;
+                }
+
+                // Write comma between results
+                if (firstResultWritten)
+                {
+                    writer.Write(Consts.Utf8Comma);
+                }
+                firstResultWritten = true;
+
+                // Write "resultName":
+                var keyJson = string.Concat(currentCmd.JsonName, ":");
+                writer.Advance(Encoding.UTF8.GetBytes(keyJson.AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(keyJson.Length))));
+
+                if (currentCmd.ColumnCount == 0)
+                {
+                    // Void command — execute and write rows affected count
+                    var rowsAffected = await mcCmd.ExecuteNonQueryWithRetryAsync(
+                        endpoint.RetryStrategy,
+                        cancellationToken,
+                        errorCodePolicy: endpoint.ErrorCodePolicy ?? Options.ErrorHandlingOptions.DefaultErrorCodePolicy);
+                    var rowsStr = rowsAffected.ToString();
+                    writer.Advance(Encoding.UTF8.GetBytes(rowsStr.AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(rowsStr.Length))));
+                }
+                else
+                {
+                    // Query command — read result set as JSON array (or object if @single)
+                    // AllResultTypesAreUnknown forces all values to string — same as single-command path
+                    mcCmd.AllResultTypesAreUnknown = true;
+                    await using var mcReader = await mcCmd.ExecuteReaderWithRetryAsync(
+                        endpoint.RetryStrategy,
+                        cancellationToken,
+                        errorCodePolicy: endpoint.ErrorCodePolicy ?? Options.ErrorHandlingOptions.DefaultErrorCodePolicy);
+
+                    if (!currentCmd.IsSingle)
+                    {
+                        writer.Write(Consts.Utf8OpenBracket);
                     }
+                    bool mcFirstRow = true;
+                    mcRowBuilder = StringBuilderPool.Rent(512);
+                    var mcBufferRows = endpoint.BufferRows ?? Options.BufferRows;
+                    ulong mcRowCount = 0;
 
-                    // Write comma between results
-                    if (firstResultWritten)
+                    // Note: response caching for multi-command is not yet supported
+                    // (cache key infrastructure is in the single-command path)
+
+                    // Nested composite column support (per-command)
+                    Dictionary<int, (string CompositeColumnName, string FieldName, bool IsFirstField, bool IsLastField, int FieldCount, string JsonCompositeColumnName, string JsonFieldName)>? mcNestedMap = null;
+                    if (endpoint.NestedJsonForCompositeTypes == true && routine.CompositeColumnInfo is not null)
                     {
-                        writer.Write(Consts.Utf8Comma);
-                    }
-                    firstResultWritten = true;
-
-                    // Write "resultName":
-                    var keyJson = string.Concat(currentCmd.JsonName, ":");
-                    writer.Advance(Encoding.UTF8.GetBytes(keyJson.AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(keyJson.Length))));
-
-                    if (currentCmd.ColumnCount == 0)
-                    {
-                        // Void command — execute and write rows affected count
-                        var rowsAffected = await mcCmd.ExecuteNonQueryWithRetryAsync(
-                            endpoint.RetryStrategy,
-                            cancellationToken,
-                            errorCodePolicy: endpoint.ErrorCodePolicy ?? Options.ErrorHandlingOptions.DefaultErrorCodePolicy);
-                        var rowsStr = rowsAffected.ToString();
-                        writer.Advance(Encoding.UTF8.GetBytes(rowsStr.AsSpan(), writer.GetSpan(Encoding.UTF8.GetMaxByteCount(rowsStr.Length))));
-                    }
-                    else
-                    {
-                        // Query command — read result set as JSON array (or object if @single)
-                        // AllResultTypesAreUnknown forces all values to string — same as single-command path
-                        mcCmd.AllResultTypesAreUnknown = true;
-                        await using var mcReader = await mcCmd.ExecuteReaderWithRetryAsync(
-                            endpoint.RetryStrategy,
-                            cancellationToken,
-                            errorCodePolicy: endpoint.ErrorCodePolicy ?? Options.ErrorHandlingOptions.DefaultErrorCodePolicy);
-
-                        if (!currentCmd.IsSingle)
+                        mcNestedMap = new();
+                        foreach (var (_, ci) in routine.CompositeColumnInfo)
                         {
-                            writer.Write(Consts.Utf8OpenBracket);
-                        }
-                        bool mcFirstRow = true;
-                        mcRowBuilder = StringBuilderPool.Rent(512);
-                        var mcBufferRows = endpoint.BufferRows ?? Options.BufferRows;
-                        ulong mcRowCount = 0;
-
-                        // Note: response caching for multi-command is not yet supported
-                        // (cache key infrastructure is in the single-command path)
-
-                        // Nested composite column support (per-command)
-                        Dictionary<int, (string CompositeColumnName, string FieldName, bool IsFirstField, bool IsLastField, int FieldCount, string JsonCompositeColumnName, string JsonFieldName)>? mcNestedMap = null;
-                        if (endpoint.NestedJsonForCompositeTypes == true && routine.CompositeColumnInfo is not null)
-                        {
-                            mcNestedMap = new();
-                            foreach (var (_, ci) in routine.CompositeColumnInfo)
+                            var indices = ci.ExpandedColumnIndices;
+                            for (int fi = 0; fi < indices.Length; fi++)
                             {
-                                var indices = ci.ExpandedColumnIndices;
-                                for (int fi = 0; fi < indices.Length; fi++)
+                                if (indices[fi] < currentCmd.ColumnCount)
                                 {
-                                    if (indices[fi] < currentCmd.ColumnCount)
-                                    {
-                                        mcNestedMap[indices[fi]] = (ci.ConvertedColumnName, ci.FieldNames[fi], fi == 0, fi == indices.Length - 1, indices.Length, PgConverters.SerializeString(ci.ConvertedColumnName), PgConverters.SerializeString(ci.FieldNames[fi]));
-                                    }
+                                    mcNestedMap[indices[fi]] = (ci.ConvertedColumnName, ci.FieldNames[fi], fi == 0, fi == indices.Length - 1, indices.Length, PgConverters.SerializeString(ci.ConvertedColumnName), PgConverters.SerializeString(ci.FieldNames[fi]));
                                 }
                             }
-                            if (mcNestedMap.Count == 0) mcNestedMap = null;
                         }
-                        mcCompositeBuffer = mcNestedMap is not null ? StringBuilderPool.Rent(256) : null;
-                        bool mcCompositeHasValue = false;
-                        string? mcCurrentCompName = null;
-                        string? mcCurrentJsonCompName = null;
+                        if (mcNestedMap.Count == 0) mcNestedMap = null;
+                    }
+                    mcCompositeBuffer = mcNestedMap is not null ? StringBuilderPool.Rent(256) : null;
+                    bool mcCompositeHasValue = false;
+                    string? mcCurrentCompName = null;
+                    string? mcCurrentJsonCompName = null;
 
-                        while (await mcReader.ReadAsync(cancellationToken))
+                    while (await mcReader.ReadAsync(cancellationToken))
+                    {
+                        mcRowCount++;
+                        if (!mcFirstRow)
                         {
-                            mcRowCount++;
-                            if (!mcFirstRow)
+                            mcRowBuilder.Append(Consts.Comma);
+                        }
+                        mcFirstRow = false;
+
+                        for (int col = 0; col < currentCmd.ColumnCount; col++)
+                        {
+                            object value = mcReader.GetValue(col);
+                            var raw = (value == DBNull.Value ? "" : (string)value).AsSpan();
+
+                            // Decrypt if needed
+                            if (value != DBNull.Value &&
+                                Options.AuthenticationOptions.DefaultDataProtector is not null &&
+                                (endpoint.DecryptAllColumns ||
+                                 (endpoint.DecryptColumns is not null &&
+                                  col < currentCmd.ColumnNames.Length &&
+                                  endpoint.DecryptColumns.Contains(currentCmd.ColumnNames[col]))))
                             {
-                                mcRowBuilder.Append(Consts.Comma);
+                                try
+                                {
+                                    raw = Options.AuthenticationOptions.DefaultDataProtector.Unprotect((string)value).AsSpan();
+                                }
+                                catch (Exception decryptEx)
+                                {
+                                    Logger?.DecryptColumnFailed(decryptEx.Message);
+                                }
                             }
-                            mcFirstRow = false;
 
-                            for (int col = 0; col < currentCmd.ColumnCount; col++)
+                            var mcDescriptor = currentCmd.ColumnTypeDescriptors[col];
+
+                            // SQL file composite type column in multi-command
+                            if (mcDescriptor.IsCompositeType &&
+                                mcDescriptor.CompositeFieldNames is not null &&
+                                mcDescriptor.CompositeFieldDescriptors is not null)
                             {
-                                object value = mcReader.GetValue(col);
-                                var raw = (value == DBNull.Value ? "" : (string)value).AsSpan();
-
-                                // Decrypt if needed
-                                if (value != DBNull.Value &&
-                                    Options.AuthenticationOptions.DefaultDataProtector is not null &&
-                                    (endpoint.DecryptAllColumns ||
-                                     (endpoint.DecryptColumns is not null &&
-                                      col < currentCmd.ColumnNames.Length &&
-                                      endpoint.DecryptColumns.Contains(currentCmd.ColumnNames[col]))))
+                                if (currentCmd.ReturnsUnnamedSet == false && col == 0)
                                 {
-                                    try
-                                    {
-                                        raw = Options.AuthenticationOptions.DefaultDataProtector.Unprotect((string)value).AsSpan();
-                                    }
-                                    catch (Exception decryptEx)
-                                    {
-                                        Logger?.DecryptColumnFailed(decryptEx.Message);
-                                    }
+                                    mcRowBuilder.Append(Consts.OpenBrace);
                                 }
 
-                                var mcDescriptor = currentCmd.ColumnTypeDescriptors[col];
-
-                                // SQL file composite type column in multi-command
-                                if (mcDescriptor.IsCompositeType &&
-                                    mcDescriptor.CompositeFieldNames is not null &&
-                                    mcDescriptor.CompositeFieldDescriptors is not null)
+                                if (endpoint.NestedJsonForCompositeTypes == true)
                                 {
-                                    if (currentCmd.ReturnsUnnamedSet == false && col == 0)
-                                    {
-                                        mcRowBuilder.Append(Consts.OpenBrace);
-                                    }
-
-                                    if (endpoint.NestedJsonForCompositeTypes == true)
-                                    {
-                                        if (currentCmd.ReturnsUnnamedSet == false)
-                                        {
-                                            mcRowBuilder.Append(currentCmd.JsonColumnNames[col]);
-                                            mcRowBuilder.Append(Consts.Colon);
-                                        }
-                                        if (value == DBNull.Value)
-                                        {
-                                            mcRowBuilder.Append(Consts.Null);
-                                        }
-                                        else
-                                        {
-                                            mcRowBuilder.Append(PgTupleToJsonObject(
-                                                raw,
-                                                mcDescriptor.CompositeFieldNames,
-                                                mcDescriptor.CompositeFieldDescriptors));
-                                        }
-                                    }
-                                    else
-                                    {
-                                        // Flat mode: splice fields inline
-                                        if (value == DBNull.Value)
-                                        {
-                                            for (int fi = 0; fi < mcDescriptor.CompositeFieldNames.Length; fi++)
-                                            {
-                                                if (fi > 0) mcRowBuilder.Append(Consts.Comma);
-                                                mcRowBuilder.Append(PgConverters.SerializeString(mcDescriptor.CompositeFieldNames[fi]));
-                                                mcRowBuilder.Append(Consts.Colon);
-                                                mcRowBuilder.Append(Consts.Null);
-                                            }
-                                        }
-                                        else
-                                        {
-                                            var compositeJsonObj = PgTupleToJsonObject(
-                                                raw,
-                                                mcDescriptor.CompositeFieldNames,
-                                                mcDescriptor.CompositeFieldDescriptors);
-                                            if (compositeJsonObj.Length >= 2 && compositeJsonObj[0] == '{' && compositeJsonObj[compositeJsonObj.Length - 1] == '}')
-                                            {
-                                                mcRowBuilder.Append(compositeJsonObj[1..^1]);
-                                            }
-                                            else
-                                            {
-                                                mcRowBuilder.Append(compositeJsonObj);
-                                            }
-                                        }
-                                    }
-
-                                    if (currentCmd.ReturnsUnnamedSet == false && col == currentCmd.ColumnCount - 1)
-                                    {
-                                        mcRowBuilder.Append(Consts.CloseBrace);
-                                    }
-                                    if (col < currentCmd.ColumnCount - 1)
-                                    {
-                                        mcRowBuilder.Append(Consts.Comma);
-                                    }
-                                }
-                                else
-                                {
-                                // Determine output buffer and handle composite nesting
-                                (string CompositeColumnName, string FieldName, bool IsFirstField, bool IsLastField, int FieldCount, string JsonCompositeColumnName, string JsonFieldName) mcCompMapping = default;
-                                bool mcIsInComposite = mcNestedMap is not null && mcNestedMap.TryGetValue(col, out mcCompMapping);
-                                StringBuilder mcOutput = (mcIsInComposite && mcCompositeBuffer is not null) ? mcCompositeBuffer : mcRowBuilder;
-
-                                // Column name / structure
-                                if (currentCmd.ReturnsUnnamedSet == false)
-                                {
-                                    if (col == 0) mcRowBuilder.Append(Consts.OpenBrace);
-
-                                    if (mcIsInComposite)
-                                    {
-                                        if (mcCompMapping.IsFirstField)
-                                        {
-                                            mcCompositeBuffer!.Clear();
-                                            mcCompositeHasValue = false;
-                                            mcCurrentCompName = mcCompMapping.CompositeColumnName;
-                                            mcCurrentJsonCompName = mcCompMapping.JsonCompositeColumnName;
-                                        }
-                                        mcOutput.Append(mcCompMapping.JsonFieldName);
-                                        mcOutput.Append(Consts.Colon);
-                                    }
-                                    else
+                                    if (currentCmd.ReturnsUnnamedSet == false)
                                     {
                                         mcRowBuilder.Append(currentCmd.JsonColumnNames[col]);
                                         mcRowBuilder.Append(Consts.Colon);
                                     }
-                                }
-
-                                // Value formatting — shared with single-command path
-                                JsonValueFormatter.FormatValue(
-                                    raw, value,
-                                    mcDescriptor,
-                                    mcOutput,
-                                    routine.ArrayCompositeColumnInfo,
-                                    col);
-
-                                if (mcIsInComposite && value != DBNull.Value) mcCompositeHasValue = true;
-
-                                // Composite field closing
-                                if (mcIsInComposite && mcCompMapping.IsLastField)
-                                {
-                                    mcRowBuilder.Append(mcCurrentJsonCompName!);
-                                    mcRowBuilder.Append(Consts.Colon);
-                                    if (mcCompositeHasValue)
-                                    {
-                                        mcRowBuilder.Append(Consts.OpenBrace);
-                                        mcRowBuilder.Append(mcCompositeBuffer);
-                                        mcRowBuilder.Append(Consts.CloseBrace);
-                                    }
-                                    else
+                                    if (value == DBNull.Value)
                                     {
                                         mcRowBuilder.Append(Consts.Null);
                                     }
+                                    else
+                                    {
+                                        mcRowBuilder.Append(PgTupleToJsonObject(
+                                            raw,
+                                            mcDescriptor.CompositeFieldNames,
+                                            mcDescriptor.CompositeFieldDescriptors));
+                                    }
                                 }
-                                else if (mcIsInComposite)
+                                else
                                 {
-                                    mcOutput.Append(Consts.Comma);
+                                    // Flat mode: splice fields inline
+                                    if (value == DBNull.Value)
+                                    {
+                                        for (int fi = 0; fi < mcDescriptor.CompositeFieldNames.Length; fi++)
+                                        {
+                                            if (fi > 0) mcRowBuilder.Append(Consts.Comma);
+                                            mcRowBuilder.Append(PgConverters.SerializeString(mcDescriptor.CompositeFieldNames[fi]));
+                                            mcRowBuilder.Append(Consts.Colon);
+                                            mcRowBuilder.Append(Consts.Null);
+                                        }
+                                    }
+                                    else
+                                    {
+                                        var compositeJsonObj = PgTupleToJsonObject(
+                                            raw,
+                                            mcDescriptor.CompositeFieldNames,
+                                            mcDescriptor.CompositeFieldDescriptors);
+                                        if (compositeJsonObj.Length >= 2 && compositeJsonObj[0] == '{' && compositeJsonObj[compositeJsonObj.Length - 1] == '}')
+                                        {
+                                            mcRowBuilder.Append(compositeJsonObj[1..^1]);
+                                        }
+                                        else
+                                        {
+                                            mcRowBuilder.Append(compositeJsonObj);
+                                        }
+                                    }
                                 }
 
-                                // Close brace and commas
                                 if (currentCmd.ReturnsUnnamedSet == false && col == currentCmd.ColumnCount - 1)
                                 {
                                     mcRowBuilder.Append(Consts.CloseBrace);
                                 }
-                                if (!mcIsInComposite && col < currentCmd.ColumnCount - 1)
+                                if (col < currentCmd.ColumnCount - 1)
                                 {
                                     mcRowBuilder.Append(Consts.Comma);
                                 }
-                                else if (mcIsInComposite && mcCompMapping.IsLastField && col < currentCmd.ColumnCount - 1)
+                            }
+                            else
+                            {
+                            // Determine output buffer and handle composite nesting
+                            (string CompositeColumnName, string FieldName, bool IsFirstField, bool IsLastField, int FieldCount, string JsonCompositeColumnName, string JsonFieldName) mcCompMapping = default;
+                            bool mcIsInComposite = mcNestedMap is not null && mcNestedMap.TryGetValue(col, out mcCompMapping);
+                            StringBuilder mcOutput = (mcIsInComposite && mcCompositeBuffer is not null) ? mcCompositeBuffer : mcRowBuilder;
+
+                            // Column name / structure
+                            if (currentCmd.ReturnsUnnamedSet == false)
+                            {
+                                if (col == 0) mcRowBuilder.Append(Consts.OpenBrace);
+
+                                if (mcIsInComposite)
                                 {
-                                    mcRowBuilder.Append(Consts.Comma);
+                                    if (mcCompMapping.IsFirstField)
+                                    {
+                                        mcCompositeBuffer!.Clear();
+                                        mcCompositeHasValue = false;
+                                        mcCurrentCompName = mcCompMapping.CompositeColumnName;
+                                        mcCurrentJsonCompName = mcCompMapping.JsonCompositeColumnName;
+                                    }
+                                    mcOutput.Append(mcCompMapping.JsonFieldName);
+                                    mcOutput.Append(Consts.Colon);
                                 }
-                                } // end non-composite mc else
+                                else
+                                {
+                                    mcRowBuilder.Append(currentCmd.JsonColumnNames[col]);
+                                    mcRowBuilder.Append(Consts.Colon);
+                                }
                             }
 
-                            if (currentCmd.IsSingle)
+                            // Value formatting — shared with single-command path
+                            JsonValueFormatter.FormatValue(
+                                raw, value,
+                                mcDescriptor,
+                                mcOutput,
+                                routine.ArrayCompositeColumnInfo,
+                                col);
+
+                            if (mcIsInComposite && value != DBNull.Value) mcCompositeHasValue = true;
+
+                            // Composite field closing
+                            if (mcIsInComposite && mcCompMapping.IsLastField)
                             {
-                                break;
+                                mcRowBuilder.Append(mcCurrentJsonCompName!);
+                                mcRowBuilder.Append(Consts.Colon);
+                                if (mcCompositeHasValue)
+                                {
+                                    mcRowBuilder.Append(Consts.OpenBrace);
+                                    mcRowBuilder.Append(mcCompositeBuffer);
+                                    mcRowBuilder.Append(Consts.CloseBrace);
+                                }
+                                else
+                                {
+                                    mcRowBuilder.Append(Consts.Null);
+                                }
+                            }
+                            else if (mcIsInComposite)
+                            {
+                                mcOutput.Append(Consts.Comma);
                             }
 
-                            // Buffer rows flush
-                            if (mcBufferRows > 0 && mcRowCount % mcBufferRows == 0)
+                            // Close brace and commas
+                            if (currentCmd.ReturnsUnnamedSet == false && col == currentCmd.ColumnCount - 1)
                             {
-                                WriteStringBuilderToWriter(mcRowBuilder, writer);
-                                await writer.FlushAsync(cancellationToken);
+                                mcRowBuilder.Append(Consts.CloseBrace);
                             }
+                            if (!mcIsInComposite && col < currentCmd.ColumnCount - 1)
+                            {
+                                mcRowBuilder.Append(Consts.Comma);
+                            }
+                            else if (mcIsInComposite && mcCompMapping.IsLastField && col < currentCmd.ColumnCount - 1)
+                            {
+                                mcRowBuilder.Append(Consts.Comma);
+                            }
+                            } // end non-composite mc else
                         }
 
-                        if (currentCmd.IsSingle && mcRowCount == 0)
+                        if (currentCmd.IsSingle)
                         {
-                            // Empty result with @single — write null
-                            writer.Write(Consts.Utf8Null);
+                            break;
                         }
 
-                        if (mcRowBuilder.Length > 0)
+                        // Buffer rows flush
+                        if (mcBufferRows > 0 && mcRowCount % mcBufferRows == 0)
                         {
                             WriteStringBuilderToWriter(mcRowBuilder, writer);
-                        }
-                        StringBuilderPool.Return(mcRowBuilder);
-                        mcRowBuilder = null;
-                        if (mcCompositeBuffer is not null)
-                        {
-                            StringBuilderPool.Return(mcCompositeBuffer);
-                            mcCompositeBuffer = null;
-                        }
-
-                        if (!currentCmd.IsSingle)
-                        {
-                            writer.Write(Consts.Utf8CloseBracket);
+                            await writer.FlushAsync(cancellationToken);
                         }
                     }
-                }
 
-                // Write closing }
-                writer.Write(Consts.Utf8CloseBrace);
-                await writer.FlushAsync(cancellationToken);
-                return;
+                    if (currentCmd.IsSingle && mcRowCount == 0)
+                    {
+                        // Empty result with @single — write null
+                        writer.Write(Consts.Utf8Null);
+                    }
+
+                    if (mcRowBuilder.Length > 0)
+                    {
+                        WriteStringBuilderToWriter(mcRowBuilder, writer);
+                    }
+                    StringBuilderPool.Return(mcRowBuilder);
+                    mcRowBuilder = null;
+                    if (mcCompositeBuffer is not null)
+                    {
+                        StringBuilderPool.Return(mcCompositeBuffer);
+                        mcCompositeBuffer = null;
+                    }
+
+                    if (!currentCmd.IsSingle)
+                    {
+                        writer.Write(Consts.Utf8CloseBracket);
+                    }
+                }
             }
 
+            // Write closing }
+            writer.Write(Consts.Utf8CloseBrace);
+            await writer.FlushAsync(cancellationToken);
+        }
+        finally
+        {
+            if (mcRowBuilder is not null)
+            {
+                StringBuilderPool.Return(mcRowBuilder);
+            }
+            if (mcCompositeBuffer is not null)
+            {
+                StringBuilderPool.Return(mcCompositeBuffer);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Executes a single-command routine and writes its result: no content for void routines, a scalar value, or rows
+    /// (JSON, raw/CSV or a table format), with response caching. Split out of InvokeAsync to keep the request state
+    /// machine small.
+    /// </summary>
+    // Pooled builder: the state machine box is reused instead of allocated each time the method waits on I/O.
+    [System.Runtime.CompilerServices.AsyncMethodBuilder(typeof(System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder))]
+    private async ValueTask RenderResultAsync(
+        HttpContext context,
+        RoutineEndpoint endpoint,
+        Routine routine,
+        NpgsqlConnection connection,
+        NpgsqlCommand command,
+        string commandText,
+        PipeWriter writer,
+        StringBuilder? cmdLog,
+        bool shouldLog,
+        IRoutineCache? resolvedCache,
+        string? cacheKeyString,
+        bool bypassCache,
+        TimeSpan? cacheTtlOverride,
+        Dictionary<string, string>? customParameters,
+        CancellationToken cancellationToken)
+    {
+        StringBuilder? rowBuilder = null;
+        StringBuilder? compositeFieldBuffer = null;
+        // Held (when non-null) for the streaming records/sets cache path; released in the finally.
+        RecordCacheGate? recordCacheGate = null;
+        try
+        {
             if (routine.IsVoid || endpoint.Void)
             {
                 if (await PrepareCommand(connection, command, commandText, context, endpoint, true, cancellationToken) is false)
@@ -3365,182 +2496,11 @@ public partial class NpgsqlRestEndpoint(
                 } // end if (routine.ReturnsRecord == true)
             } // end if (routine.IsVoid is false)
         }
-        catch (Exception exception)
-        {
-            if (exception is NpgsqlToHttpException npgsqlToHttpException)
-            {
-                if (context.Response.HasStarted is false)
-                {
-                    await Results.Problem(
-                        type: npgsqlToHttpException.Mapping.Type,
-                        statusCode: npgsqlToHttpException.Mapping.StatusCode,
-                        title: npgsqlToHttpException.Mapping.Title ?? exception.Message,
-                        detail: npgsqlToHttpException.SqlState).ExecuteAsync(context);
-                }
-                else
-                {
-                    context.Response.StatusCode = npgsqlToHttpException.Mapping.StatusCode;
-                }
-            }
-            else if (exception is PostgresException postgresEx)
-            {
-                // An error raised by PostgreSQL (RAISE EXCEPTION, constraint violations, ...): its message is part of
-                // the routine's contract with the client.
-                if (context.Response.HasStarted is false)
-                {
-                    await Results.Problem(
-                        type: null,
-                        statusCode: 500,
-                        title: postgresEx.Message,
-                        detail: postgresEx.SqlState).ExecuteAsync(context);
-                }
-                else
-                {
-                    context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
-                }
-            }
-            else if (exception is NpgsqlException)
-            {
-                // A client-side Npgsql failure (connection, timeout, I/O): its message describes the infrastructure
-                // (hosts, ports, pool state) and is logged below, not returned.
-                if (context.Response.HasStarted is false)
-                {
-                    await Results.Problem(
-                        type: null,
-                        statusCode: 500,
-                        title: "Internal Server Error",
-                        detail: null).ExecuteAsync(context);
-                }
-                else
-                {
-                    context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
-                }
-            }
-            else
-            {
-                if (context.Response.HasStarted is false)
-                {
-                    // The exception message is logged below, not returned: it describes server internals.
-                    await Results.Problem(
-                        type: null, // remove RFC URL
-                        statusCode: 500,
-                        title: "Internal Server Error",
-                        detail: null).ExecuteAsync(context);
-                }
-                else
-                {
-                    context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
-                }
-            }
-
-            if (endpoint.Upload is true)
-            {
-                uploadHandler?.OnError(connection, context, exception);
-            }
-
-            if (context.Response.StatusCode == 400)
-            {
-                if (shouldLog && cmdLog is not null)
-                {
-                    Logger?.LogWarning("Client error (400) executing command: {commandText} mapped to endpoint: {Url}: {message}{NewLine}{cmdLog}", commandText, endpoint.Path, exception.Message, Environment.NewLine, cmdLog.ToString());
-                }
-                else
-                {
-                    Logger?.LogWarning("Client error (400) executing command: {commandText} mapped to endpoint: {Url}: {message}", commandText, endpoint.Path, exception.Message);
-                }
-            }
-            else if (context.Response.StatusCode != 200 && context.Response.StatusCode != 205)
-            {
-                if (shouldLog && cmdLog is not null)
-                {
-                    Logger?.LogError(exception, "Error executing command: {commandText} mapped to endpoint: {Url}{NewLine}{cmdLog}", commandText, endpoint.Path, Environment.NewLine, cmdLog.ToString());
-                }
-                else
-                {
-                    Logger?.LogError(exception, "Error executing command: {commandText} mapped to endpoint: {Url}", commandText, endpoint.Path);
-                }
-            }
-        }
         finally
         {
             // Release the records/sets stampede gate (if this request acquired it) so the next waiter
-            // for this key can proceed — by now the cache is either populated or the response was over-limit.
+            // for this key can proceed - by now the cache is either populated or the response was over-limit.
             recordCacheGate?.Leave();
-
-            await writer.CompleteAsync();
-
-            // proxy_out: capture buffered function output and forward to upstream proxy
-            if (proxyOutBuffer is not null && proxyOutOriginalBody is not null)
-            {
-                try
-                {
-                    // Only forward to proxy if the function executed successfully (no error status)
-                    if (context.Response.StatusCode >= 200 && context.Response.StatusCode < 400)
-                    {
-                        // Extract bytes directly — avoid string allocation and double UTF-8 conversion
-                        var functionBodyBytes = proxyOutBuffer.Length > 0
-                            ? proxyOutBuffer.ToArray()
-                            : [];
-
-                        // Restore original response body and reset response state
-                        context.Response.Body = proxyOutOriginalBody;
-                        context.Response.Headers.Clear();
-                        context.Response.StatusCode = 200;
-
-                        var proxyResponse = await Proxy.ProxyRequestHandler.InvokeOutAsync(
-                            context, endpoint, functionBodyBytes, cancellationToken);
-                        await Proxy.ProxyRequestHandler.WriteResponseAsync(
-                            context, proxyResponse, Options.ProxyOptions, cancellationToken);
-                    }
-                    else
-                    {
-                        // Function errored — restore original body and copy error content through
-                        proxyOutBuffer.Position = 0;
-                        context.Response.Body = proxyOutOriginalBody;
-                        await proxyOutBuffer.CopyToAsync(proxyOutOriginalBody, cancellationToken);
-                    }
-                }
-                finally
-                {
-                    proxyOutBuffer.Dispose();
-                }
-            }
-
-            await context.Response.CompleteAsync();
-            if (transaction is not null)
-            {
-                if (connection is not null && connection.State == ConnectionState.Open)
-                {
-                    if (shouldCommit)
-                    {
-                        await transaction.CommitAsync(cancellationToken);
-                    }
-                }
-            }
-            // Detach the per-request notice handler so it can't accumulate (and re-log) on a reused
-            // connection that this request did not dispose.
-            if (connection is not null && noticeHandler is not null)
-            {
-                connection.Notice -= noticeHandler;
-            }
-            if (connection is not null && shouldDispose is true)
-            {
-                await connection.DisposeAsync();
-            }
-
-            // Return pooled StringBuilders
-            if (cmdLog is not null)
-            {
-                StringBuilderPool.Return(cmdLog);
-            }
-            if (cacheKeys is not null)
-            {
-                StringBuilderPool.Return(cacheKeys);
-            }
-            if (commandTextBuilder is not null)
-            {
-                StringBuilderPool.Return(commandTextBuilder);
-            }
             if (rowBuilder is not null)
             {
                 StringBuilderPool.Return(rowBuilder);
@@ -3549,14 +2509,1220 @@ public partial class NpgsqlRestEndpoint(
             {
                 StringBuilderPool.Return(compositeFieldBuffer);
             }
-            if (mcRowBuilder is not null)
+        }
+    }
+
+    /// <summary>
+    /// Binds the routine parameters from the query string (and path, claims, headers, uploads, resolved values).
+    /// Returns false when the request is finished (a response was written). Split out of InvokeAsync to keep the
+    /// request state machine small; reads and updates the shared request state in <paramref name="b"/>.
+    /// </summary>
+    [System.Runtime.CompilerServices.AsyncMethodBuilder(typeof(System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder<>))]
+    private async ValueTask<bool> BindQueryStringParametersAsync(ParameterBinding b)
+    {
+        // Early-return guard: queryCollection is non-null for the rest of this block (later
+        // dereferences use `!` where the compiler's flow analysis loses the narrowing).
+        if (b.queryCollection is null)
+        {
+            b.shouldCommit = false;
+            b.uploadHandler?.OnError(b.connection, b.context, null);
+            b.context.Response.StatusCode = StatusCodes.Status404NotFound;
+            await b.context.Response.CompleteAsync();
+            return false;
+        }
+
+        // Account for path parameters when counting query string parameters
+        var pathParamCount = b.endpoint.PathParameters?.Length ?? 0;
+        if (b.queryCollection.Count + pathParamCount != b.routine.ParamCount && overloads.Count > 0)
+        {
+            if (overloads.TryGetValue(string.Concat(entry.Key, b.queryCollection.Count + pathParamCount), out var overload))
             {
-                StringBuilderPool.Return(mcRowBuilder);
-            }
-            if (mcCompositeBuffer is not null)
-            {
-                StringBuilderPool.Return(mcCompositeBuffer);
+                b.routine = overload.Endpoint.Routine;
+                b.endpoint = overload.Endpoint;
+                b.formatter = overload.Formatter;
+                if (b.formatter.IsFormattable is false)
+                {
+                    // Reinitialize commandTextBuilder for the new routine
+                    b.commandTextBuilder?.Clear();
+                    if (b.commandTextBuilder is null)
+                    {
+                        b.commandTextBuilder = StringBuilderPool.Rent(b.routine.Expression.Length + b.routine.ParamCount * 16);
+                    }
+                    b.commandTextBuilder.Append(b.routine.Expression);
+                }
             }
         }
+
+        for (int i = 0; i < b.routine.Parameters.Length; i++)
+        {
+            var parameter = b.routine.Parameters[i].NpgsqlRestParameterMemberwiseClone();
+
+            // Resolved parameter: skip HTTP filling, set to DBNull.Value placeholder.
+            // The actual value will be resolved via SQL expression after the parameter loop.
+            if (b.endpoint.ResolvedParameterExpressions is not null &&
+                (b.endpoint.ResolvedParameterExpressions.ContainsKey(parameter.ActualName) ||
+                 b.endpoint.ResolvedParameterExpressions.ContainsKey(parameter.ConvertedName)))
+            {
+                parameter.Value = DBNull.Value;
+                if (Options.HttpClientOptions.Enabled)
+                {
+                    if (parameter.TypeDescriptor.CustomType is not null)
+                    {
+                        if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
+                        {
+                            b.customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
+                        }
+                    }
+                }
+                if (!parameter.IsVirtual) b.command.Parameters.Add(parameter);
+                b.hasNulls = true;
+                if (b.formatter.IsFormattable is false)
+                {
+                    if (b.formatter.RefContext)
+                    {
+                        b.commandTextBuilder!.Append(b.formatter.AppendCommandParameter(parameter, b.paramIndex, b.context));
+                        if (b.context.Response.HasStarted || b.context.Response.StatusCode != (int)HttpStatusCode.OK)
+                        {
+                            return false;
+                        }
+                    }
+                    else
+                    {
+                        b.commandTextBuilder!.Append(b.formatter.AppendCommandParameter(parameter, b.paramIndex));
+                    }
+                }
+                b.paramIndex++;
+                if (b.shouldLog && Options.LogCommandParameters)
+                {
+                    b.cmdLog!.Append("-- $").Append(b.paramIndex).Append(' ')
+                        .Append(parameter.TypeDescriptor.OriginalType)
+                        .Append(" = (resolved)").AppendLine();
+                }
+                continue;
+            }
+
+            if (parameter.HashOf is not null)
+            {
+                var hashValueQueryCollection = b.queryCollection!.TryGetValue(parameter.HashOf.ConvertedName, out var hashQsValue) ? hashQsValue.ToString() : null;
+                if (string.IsNullOrEmpty(hashValueQueryCollection) is true)
+                {
+                    parameter.Value = DBNull.Value;
+                }
+                else
+                {
+                    parameter.Value = Options.AuthenticationOptions.PasswordHasher?.HashPassword(hashValueQueryCollection) as object ?? DBNull.Value;
+                }
+            }
+            if (b.endpoint.UseUserParameters is true)
+            {
+                if (parameter.IsFromUserClaims is true && b.claimsDict is null)
+                {
+                    b.claimsDict = b.context.User.BuildClaimsDictionary(Options.AuthenticationOptions);
+                }
+
+                if (parameter.IsIpAddress is true)
+                {
+                    parameter.Value = b.context.Request.GetClientIpAddressDbParam();
+                }
+                else if (b.context.User?.Identity?.IsAuthenticated is true && Options.AuthenticationOptions.ParameterNameClaimsMapping.TryGetValue(parameter.ActualName, out var claimType))
+                {
+                    // Claim auto-bind always wins (security routines depend on it). If the
+                    // request also supplied a value, it would otherwise be silently dropped —
+                    // surface that as a WARN so a parameter naming collision is visible.
+                    if (b.queryCollection is not null
+                        && (b.queryCollection.ContainsKey(parameter.ConvertedName) || b.queryCollection.ContainsKey(parameter.ActualName)))
+                    {
+                        Logger?.ClaimMappedParamReceivedRequestValue(
+                            b.endpoint.Path, parameter.ActualName, "query", claimType);
+                    }
+                    parameter.Value = b.claimsDict!.GetClaimDbParam(claimType);
+                }
+                else if (b.context.User?.Identity?.IsAuthenticated is true && parameter.IsUserClaims is true)
+                {
+                    parameter.Value = b.claimsDict?.GetUserClaimsDbParam() ?? DBNull.Value;
+                }
+            }
+            if (parameter.IsUploadMetadata is true)
+            {
+                //uploadMetaParamIndex = i;
+                b.uploadMetaParamIndex = b.command.Parameters.Count; // the last one added
+                parameter.Value = DBNull.Value;
+            }
+
+            // body parameter
+            if (parameter.Value is null && b.endpoint.IsBodyParameter(parameter))
+            {
+                if (b.body is null)
+                {
+                    parameter.ParamType = ParamType.BodyParam;
+                    parameter.Value = DBNull.Value;
+                    b.hasNulls = true;
+
+                    if (Options.ValidateParameters is not null)
+                    {
+                        Options.ValidateParameters(new ParameterValidationValues(
+                            b.context,
+                            b.routine,
+                            parameter));
+                        if (b.context.Response.HasStarted || b.context.Response.StatusCode != (int)HttpStatusCode.OK)
+                        {
+                            return false;
+                        }
+                    }
+                    if (Options.ValidateParametersAsync is not null)
+                    {
+                        await Options.ValidateParametersAsync(new ParameterValidationValues(
+                            b.context,
+                            b.routine,
+                            parameter));
+                        if (b.context.Response.HasStarted || b.context.Response.StatusCode != (int)HttpStatusCode.OK)
+                        {
+                            return false;
+                        }
+                    }
+                    if (b.endpoint.Cached is true && b.endpoint.CachedParams is not null)
+                    {
+                        if (b.endpoint.CachedParams.Contains(parameter.ConvertedName) || b.endpoint.CachedParams.Contains(parameter.ActualName))
+                        {
+                            parameter.AppendCacheKey(b.cacheKeys);
+                        }
+                    }
+
+                    if (Options.HttpClientOptions.Enabled)
+                    {
+                        if (parameter.TypeDescriptor.CustomType is not null)
+                        {
+                            if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
+                            {
+                                b.customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
+                            }
+                        }
+                    }
+                    if (!parameter.IsVirtual) b.command.Parameters.Add(parameter);
+
+                    if (b.hasNulls is false && parameter.Value == DBNull.Value)
+                    {
+                        b.hasNulls = true;
+                    }
+
+                    if (b.formatter.IsFormattable is false)
+                    {
+                        if (b.formatter.RefContext)
+                        {
+                            b.commandTextBuilder!.Append(b.formatter.AppendCommandParameter(parameter, b.paramIndex, b.context));
+                            if (b.context.Response.HasStarted || b.context.Response.StatusCode != (int)HttpStatusCode.OK)
+                            {
+                                return false;
+                            }
+                        }
+                        else
+                        {
+                            b.commandTextBuilder!.Append(b.formatter.AppendCommandParameter(parameter, b.paramIndex));
+                        }
+                    }
+                    b.paramIndex++;
+                    if (b.shouldLog && Options.LogCommandParameters)
+                    {
+                        var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && b.endpoint.IsAuth ?
+                            "***" :
+                            FormatParameterForLog(parameter);
+                        b.cmdLog!.Append("-- $").Append(b.paramIndex).Append(' ')
+                            .Append(parameter.TypeDescriptor.OriginalType)
+                            .Append(" = ").AppendLine(p);
+                    }
+                }
+                else
+                {
+                    StringValues bodyStringValues = b.body;
+                    if (TryParseParameter(parameter, ref bodyStringValues, b.endpoint.QueryStringNullHandling))
+                    {
+                        parameter.ParamType = ParamType.BodyParam;
+                        b.hasNulls = false;
+
+                        if (Options.ValidateParameters is not null)
+                        {
+                            Options.ValidateParameters(new ParameterValidationValues(
+                                b.context,
+                                b.routine,
+                                parameter));
+                            if (b.context.Response.HasStarted || b.context.Response.StatusCode != (int)HttpStatusCode.OK)
+                            {
+                                return false;
+                            }
+                        }
+                        if (Options.ValidateParametersAsync is not null)
+                        {
+                            await Options.ValidateParametersAsync(new ParameterValidationValues(
+                                b.context,
+                                b.routine,
+                                parameter));
+                            if (b.context.Response.HasStarted || b.context.Response.StatusCode != (int)HttpStatusCode.OK)
+                            {
+                                return false;
+                            }
+                        }
+                        if (b.endpoint.Cached is true && b.endpoint.CachedParams is not null)
+                        {
+                            if (b.endpoint.CachedParams.Contains(parameter.ConvertedName) || b.endpoint.CachedParams.Contains(parameter.ActualName))
+                            {
+                                parameter.AppendCacheKey(b.cacheKeys);
+                            }
+                        }
+
+                        if (Options.HttpClientOptions.Enabled)
+                        {
+                            if (parameter.TypeDescriptor.CustomType is not null)
+                            {
+                                if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
+                                {
+                                    b.customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
+                                }
+                            }
+                        }
+                        if (!parameter.IsVirtual) b.command.Parameters.Add(parameter);
+                        if (b.hasNulls is false && parameter.Value == DBNull.Value)
+                        {
+                            b.hasNulls = true;
+                        }
+
+                        if (b.formatter.IsFormattable is false)
+                        {
+                            if (b.formatter.RefContext)
+                            {
+                                b.commandTextBuilder!.Append(b.formatter.AppendCommandParameter(parameter, b.paramIndex, b.context));
+                                if (b.context.Response.HasStarted || b.context.Response.StatusCode != (int)HttpStatusCode.OK)
+                                {
+                                    return false;
+                                }
+                            }
+                            else
+                            {
+                                b.commandTextBuilder!.Append(b.formatter.AppendCommandParameter(parameter, b.paramIndex));
+                            }
+                        }
+                        b.paramIndex++;
+                        if (b.shouldLog && Options.LogCommandParameters)
+                        {
+                            var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && b.endpoint.IsAuth ?
+                                "***" :
+                                FormatParameterForLog(parameter);
+                            b.cmdLog!.Append("-- $").Append(b.paramIndex).Append(' ')
+                                .Append(parameter.TypeDescriptor.OriginalType)
+                                .Append(" = ").AppendLine(p);
+                        }
+                    }
+                }
+                continue;
+            }
+
+            // header parameter
+            if (parameter.Value is null &&
+                b.endpoint.RequestHeadersMode == RequestHeadersMode.Parameter &&
+                parameter.TypeDescriptor.HasDefault is true &&
+                (
+                string.Equals(b.endpoint.RequestHeadersParameterName, parameter.ConvertedName, StringComparison.Ordinal) ||
+                string.Equals(b.endpoint.RequestHeadersParameterName, parameter.ActualName, StringComparison.Ordinal)
+                )
+            )
+            {
+                if (b.queryCollection!.ContainsKey(parameter.ConvertedName) is false)
+                {
+                    if (b.headers is null)
+                    {
+                        SearializeHeader(Options, b.context, ref b.headers);
+                    }
+                    parameter.ParamType = ParamType.HeaderParam;
+                    parameter.Value = b.headers;
+
+                    if (Options.ValidateParameters is not null)
+                    {
+                        Options.ValidateParameters(new ParameterValidationValues(
+                            b.context,
+                            b.routine,
+                            parameter));
+                        if (b.context.Response.HasStarted || b.context.Response.StatusCode != (int)HttpStatusCode.OK)
+                        {
+                            return false;
+                        }
+                    }
+                    if (Options.ValidateParametersAsync is not null)
+                    {
+                        await Options.ValidateParametersAsync(new ParameterValidationValues(
+                            b.context,
+                            b.routine,
+                            parameter));
+                        if (b.context.Response.HasStarted || b.context.Response.StatusCode != (int)HttpStatusCode.OK)
+                        {
+                            return false;
+                        }
+                    }
+                    if (b.endpoint.Cached is true && b.endpoint.CachedParams is not null)
+                    {
+                        if (b.endpoint.CachedParams.Contains(parameter.ConvertedName) || b.endpoint.CachedParams.Contains(parameter.ActualName))
+                        {
+                            parameter.AppendCacheKey(b.cacheKeys);
+                        }
+                    }
+
+                    if (Options.HttpClientOptions.Enabled)
+                    {
+                        if (parameter.TypeDescriptor.CustomType is not null)
+                        {
+                            if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
+                            {
+                                b.customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
+                            }
+                        }
+                    }
+                    if (!parameter.IsVirtual) b.command.Parameters.Add(parameter);
+
+                    if (b.hasNulls is false && parameter.Value == DBNull.Value)
+                    {
+                        b.hasNulls = true;
+                    }
+
+                    if (b.formatter.IsFormattable is false)
+                    {
+                        if (b.formatter.RefContext)
+                        {
+                            b.commandTextBuilder!.Append(b.formatter.AppendCommandParameter(parameter, b.paramIndex, b.context));
+                            if (b.context.Response.HasStarted || b.context.Response.StatusCode != (int)HttpStatusCode.OK)
+                            {
+                                return false;
+                            }
+                        }
+                        else
+                        {
+                            b.commandTextBuilder!.Append(b.formatter.AppendCommandParameter(parameter, b.paramIndex));
+                        }
+                    }
+                    b.paramIndex++;
+                    if (b.shouldLog && Options.LogCommandParameters)
+                    {
+                        var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && b.endpoint.IsAuth ?
+                            "***" :
+                            FormatParameterForLog(parameter);
+                        b.cmdLog!.Append("-- $").Append(b.paramIndex).Append(' ')
+                            .Append(parameter.TypeDescriptor.OriginalType)
+                            .Append(" = ").AppendLine(p);
+                    }
+
+                    continue;
+                }
+            }
+
+            // path parameter - extract from RouteValues
+            if (parameter.Value is null && b.endpoint.HasPathParameters)
+            {
+                // Use optimized O(1) lookup via HashSet
+                string? matchedPathParam = b.endpoint.FindMatchingPathParameter(parameter.ConvertedName, parameter.ActualName);
+
+                // Try to get route value using the path parameter name from the template
+                if (matchedPathParam is not null && b.context.Request.RouteValues.TryGetValue(matchedPathParam, out var routeValue))
+                {
+                    StringValues pathStringValues = routeValue?.ToString() ?? "";
+                    if (TryParseParameter(parameter, ref pathStringValues, b.endpoint.QueryStringNullHandling))
+                    {
+                        parameter.ParamType = ParamType.PathParam;
+                        parameter.QueryStringValues = pathStringValues;
+
+                        if (Options.ValidateParameters is not null)
+                        {
+                            Options.ValidateParameters(new ParameterValidationValues(
+                                b.context,
+                                b.routine,
+                                parameter));
+                            if (b.context.Response.HasStarted || b.context.Response.StatusCode != (int)HttpStatusCode.OK)
+                            {
+                                return false;
+                            }
+                        }
+                        if (Options.ValidateParametersAsync is not null)
+                        {
+                            await Options.ValidateParametersAsync(new ParameterValidationValues(
+                                b.context,
+                                b.routine,
+                                parameter));
+                            if (b.context.Response.HasStarted || b.context.Response.StatusCode != (int)HttpStatusCode.OK)
+                            {
+                                return false;
+                            }
+                        }
+                        if (b.endpoint.Cached is true && b.endpoint.CachedParams is not null)
+                        {
+                            if (b.endpoint.CachedParams.Contains(parameter.ConvertedName) || b.endpoint.CachedParams.Contains(parameter.ActualName))
+                            {
+                                parameter.AppendCacheKey(b.cacheKeys);
+                            }
+                        }
+
+                        if (Options.HttpClientOptions.Enabled)
+                        {
+                            if (parameter.TypeDescriptor.CustomType is not null)
+                            {
+                                if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
+                                {
+                                    b.customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
+                                }
+                            }
+                        }
+                        if (!parameter.IsVirtual) b.command.Parameters.Add(parameter);
+
+                        if (b.hasNulls is false && parameter.Value == DBNull.Value)
+                        {
+                            b.hasNulls = true;
+                        }
+
+                        if (b.formatter.IsFormattable is false)
+                        {
+                            if (b.formatter.RefContext)
+                            {
+                                b.commandTextBuilder!.Append(b.formatter.AppendCommandParameter(parameter, b.paramIndex, b.context));
+                                if (b.context.Response.HasStarted || b.context.Response.StatusCode != (int)HttpStatusCode.OK)
+                                {
+                                    return false;
+                                }
+                            }
+                            else
+                            {
+                                b.commandTextBuilder!.Append(b.formatter.AppendCommandParameter(parameter, b.paramIndex));
+                            }
+                        }
+                        b.paramIndex++;
+                        if (b.shouldLog && Options.LogCommandParameters)
+                        {
+                            var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && b.endpoint.IsAuth ?
+                                "***" :
+                                FormatParameterForLog(parameter);
+                            b.cmdLog!.Append("-- $").Append(b.paramIndex).Append(' ')
+                                .Append(parameter.TypeDescriptor.OriginalType)
+                                .Append(" = ").AppendLine(p);
+                        }
+
+                        continue;
+                    }
+                }
+            }
+
+            if (b.queryCollection!.TryGetValue(parameter.ConvertedName, out var qsValue) is false)
+            {
+                if (parameter.Value is null)
+                {
+                    if (Options.ValidateParameters is not null)
+                    {
+                        Options.ValidateParameters(new ParameterValidationValues(
+                            b.context,
+                            b.routine,
+                            parameter));
+                        if (b.context.Response.HasStarted || b.context.Response.StatusCode != (int)HttpStatusCode.OK)
+                        {
+                            return false;
+                        }
+                    }
+                    if (Options.ValidateParametersAsync is not null)
+                    {
+                        await Options.ValidateParametersAsync(new ParameterValidationValues(
+                            b.context,
+                            b.routine,
+                            parameter));
+                        if (b.context.Response.HasStarted || b.context.Response.StatusCode != (int)HttpStatusCode.OK)
+                        {
+                            return false;
+                        }
+                    }
+                    if (parameter.Value is null)
+                    {
+                        if (parameter.TypeDescriptor.CustomType is not null)
+                        {
+                            parameter.Value = DBNull.Value;
+                        }
+                        else if (IsProxyResponseParameter(b.endpoint, parameter))
+                        {
+                            // Proxy response parameter - set placeholder value and fall through to add it
+                            parameter.Value = DBNull.Value;
+                            parameter.ParamType = ParamType.QueryString;
+                        }
+                        else if (parameter.TypeDescriptor.HasDefault is false)
+                        {
+                            b.shouldCommit = false;
+                            b.uploadHandler?.OnError(b.connection, b.context, null);
+                            b.context.Response.StatusCode = StatusCodes.Status404NotFound;
+                            await b.context.Response.CompleteAsync();
+                            return false;
+                        }
+                        else if (parameter.DefaultValue is not null)
+                        {
+                            // Explicit default value (SQL file annotation) — bind it
+                            parameter.Value = parameter.DefaultValue;
+                            parameter.ParamType = ParamType.QueryString;
+                        }
+                        else
+                        {
+                            continue;
+                        }
+                    }
+                }
+            }
+
+            if (parameter.Value is null && TryParseParameter(parameter, ref qsValue, b.endpoint.QueryStringNullHandling) is false)
+            {
+                // Check if this is a proxy response parameter - it will be filled in later
+                if (IsProxyResponseParameter(b.endpoint, parameter))
+                {
+                    parameter.Value = DBNull.Value;
+                    parameter.ParamType = ParamType.QueryString;
+                    // Don't skip - fall through to add the parameter
+                }
+                else if (parameter.TypeDescriptor.HasDefault is false)
+                {
+                    b.shouldCommit = false;
+                    b.uploadHandler?.OnError(b.connection, b.context, null);
+                    b.context.Response.StatusCode = StatusCodes.Status404NotFound;
+                    await b.context.Response.CompleteAsync();
+                    return false;
+                }
+                else if (parameter.DefaultValue is not null)
+                {
+                    parameter.Value = parameter.DefaultValue;
+                    parameter.ParamType = ParamType.QueryString;
+                }
+                else
+                {
+                    continue;
+                }
+            }
+
+            parameter.ParamType = ParamType.QueryString;
+            parameter.QueryStringValues = qsValue;
+            if (Options.ValidateParameters is not null)
+            {
+                Options.ValidateParameters(new ParameterValidationValues(
+                    b.context,
+                    b.routine,
+                    parameter));
+                if (b.context.Response.HasStarted || b.context.Response.StatusCode != (int)HttpStatusCode.OK)
+                {
+                    return false;
+                }
+            }
+            if (Options.ValidateParametersAsync is not null)
+            {
+                await Options.ValidateParametersAsync(new ParameterValidationValues(
+                    b.context,
+                    b.routine,
+                    parameter));
+                if (b.context.Response.HasStarted || b.context.Response.StatusCode != (int)HttpStatusCode.OK)
+                {
+                    return false;
+                }
+            }
+            if (b.endpoint.Cached is true && b.endpoint.CachedParams is not null)
+            {
+                if (b.endpoint.CachedParams.Contains(parameter.ConvertedName) || b.endpoint.CachedParams.Contains(parameter.ActualName))
+                {
+                    parameter.AppendCacheKey(b.cacheKeys);
+                }
+            }
+
+            if (Options.HttpClientOptions.Enabled)
+            {
+                if (parameter.TypeDescriptor.CustomType is not null)
+                {
+                    if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
+                    {
+                        b.customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
+                    }
+                }
+            }
+            b.command.Parameters.Add(parameter);
+
+            if (b.hasNulls is false && parameter.Value == DBNull.Value)
+            {
+                b.hasNulls = true;
+            }
+
+            if (b.formatter.IsFormattable is false)
+            {
+                if (b.formatter.RefContext)
+                {
+                    b.commandTextBuilder!.Append(b.formatter.AppendCommandParameter(parameter, b.paramIndex, b.context));
+                    if (b.context.Response.HasStarted || b.context.Response.StatusCode != (int)HttpStatusCode.OK)
+                    {
+                        return false;
+                    }
+                }
+                else
+                {
+                    b.commandTextBuilder!.Append(b.formatter.AppendCommandParameter(parameter, b.paramIndex));
+                }
+            }
+            b.paramIndex++;
+            if (b.shouldLog && Options.LogCommandParameters)
+            {
+                var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && b.endpoint.IsAuth ?
+                    "***" :
+                    FormatParameterForLog(parameter);
+                b.cmdLog!.Append("-- $").Append(b.paramIndex).Append(' ')
+                    .Append(parameter.TypeDescriptor.OriginalType)
+                    .Append(" = ").AppendLine(p);
+            }
+        }
+
+        // Skip query string validation for passthrough proxy endpoints - query will be forwarded as-is
+        if (!(b.endpoint.IsProxy && Options.ProxyOptions.Enabled && !b.endpoint.HasProxyResponseParameters))
+        {
+            foreach (var queryKey in b.queryCollection!.Keys)
+            {
+                if (b.routine.ParamsHash.Contains(queryKey) is false)
+                {
+                    b.shouldCommit = false;
+                    b.uploadHandler?.OnError(b.connection, b.context, null);
+                    b.context.Response.StatusCode = StatusCodes.Status404NotFound;
+                    await b.context.Response.CompleteAsync();
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Binds the routine parameters from the JSON body (and path, claims, headers, uploads, resolved values).
+    /// Returns false when the request is finished (a response was written). Split out of InvokeAsync to keep the
+    /// request state machine small; reads and updates the shared request state in <paramref name="b"/>.
+    /// </summary>
+    [System.Runtime.CompilerServices.AsyncMethodBuilder(typeof(System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder<>))]
+    private async ValueTask<bool> BindBodyParametersAsync(ParameterBinding b)
+    {
+        // Early-return guard: bodyDict is non-null for the rest of this block (later
+        // dereferences use `!` where the compiler's flow analysis loses the narrowing).
+        if (b.bodyDict is null)
+        {
+            // Body was present but is not a parseable JSON object - this is a client error,
+            // not a routing miss (parse failures are logged above via CouldNotParseJson).
+            b.shouldCommit = false;
+            b.uploadHandler?.OnError(b.connection, b.context, null);
+            b.context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await b.context.Response.CompleteAsync();
+            return false;
+        }
+
+        // Account for path parameters when counting body parameters
+        var pathParamCount = b.endpoint.PathParameters?.Length ?? 0;
+        var expectedBodyParamCount = b.routine.ParamCount - pathParamCount;
+        if (b.bodyDict.Count != expectedBodyParamCount && overloads.Count > 0)
+        {
+            if (overloads.TryGetValue(string.Concat(entry.Key, b.bodyDict.Count + pathParamCount), out var overload))
+            {
+                b.routine = overload.Endpoint.Routine;
+                b.endpoint = overload.Endpoint;
+                b.formatter = overload.Formatter;
+                if (b.formatter.IsFormattable is false)
+                {
+                    // Reinitialize commandTextBuilder for the new routine
+                    b.commandTextBuilder?.Clear();
+                    if (b.commandTextBuilder is null)
+                    {
+                        b.commandTextBuilder = StringBuilderPool.Rent(b.routine.Expression.Length + b.routine.ParamCount * 16);
+                    }
+                    b.commandTextBuilder.Append(b.routine.Expression);
+                }
+            }
+        }
+
+        for (int i = 0; i < b.routine.Parameters.Length; i++)
+        {
+            var parameter = b.routine.Parameters[i].NpgsqlRestParameterMemberwiseClone();
+
+            // Resolved parameter: skip HTTP filling, set to DBNull.Value placeholder.
+            // The actual value will be resolved via SQL expression after the parameter loop.
+            if (b.endpoint.ResolvedParameterExpressions is not null &&
+                (b.endpoint.ResolvedParameterExpressions.ContainsKey(parameter.ActualName) ||
+                 b.endpoint.ResolvedParameterExpressions.ContainsKey(parameter.ConvertedName)))
+            {
+                parameter.Value = DBNull.Value;
+                if (Options.HttpClientOptions.Enabled)
+                {
+                    if (parameter.TypeDescriptor.CustomType is not null)
+                    {
+                        if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
+                        {
+                            b.customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
+                        }
+                    }
+                }
+                if (!parameter.IsVirtual) b.command.Parameters.Add(parameter);
+                b.hasNulls = true;
+                if (b.formatter.IsFormattable is false)
+                {
+                    if (b.formatter.RefContext)
+                    {
+                        b.commandTextBuilder!.Append(b.formatter.AppendCommandParameter(parameter, b.paramIndex, b.context));
+                        if (b.context.Response.HasStarted || b.context.Response.StatusCode != (int)HttpStatusCode.OK)
+                        {
+                            return false;
+                        }
+                    }
+                    else
+                    {
+                        b.commandTextBuilder!.Append(b.formatter.AppendCommandParameter(parameter, b.paramIndex));
+                    }
+                }
+                b.paramIndex++;
+                if (b.shouldLog && Options.LogCommandParameters)
+                {
+                    b.cmdLog!.Append("-- $").Append(b.paramIndex).Append(' ')
+                        .Append(parameter.TypeDescriptor.OriginalType)
+                        .Append(" = (resolved)").AppendLine();
+                }
+                continue;
+            }
+
+            if (parameter.HashOf is not null)
+            {
+                var hashValueBodyDict = b.bodyDict!.GetValueOrDefault(parameter.HashOf.ConvertedName)?.ToString();
+                if (string.IsNullOrEmpty(hashValueBodyDict) is true)
+                {
+                    parameter.Value = DBNull.Value;
+                }
+                else
+                {
+                    parameter.Value = Options.AuthenticationOptions.PasswordHasher?.HashPassword(hashValueBodyDict) as object ?? DBNull.Value;
+                }
+            }
+            if (b.endpoint.UseUserParameters is true)
+            {
+                if (parameter.IsFromUserClaims is true && b.claimsDict is null)
+                {
+                    b.claimsDict = b.context.User.BuildClaimsDictionary(Options.AuthenticationOptions);
+                }
+                if (parameter.IsIpAddress is true)
+                {
+                    parameter.Value = b.context.Request.GetClientIpAddressDbParam();
+                }
+                else if (b.context.User?.Identity?.IsAuthenticated is true && Options.AuthenticationOptions.ParameterNameClaimsMapping.TryGetValue(parameter.ActualName, out var claimType))
+                {
+                    // Claim auto-bind always wins (security routines depend on it). If the
+                    // request also supplied a value, it would otherwise be silently dropped —
+                    // surface that as a WARN so a parameter naming collision is visible.
+                    if (b.bodyDict is not null
+                        && (b.bodyDict.ContainsKey(parameter.ConvertedName) || b.bodyDict.ContainsKey(parameter.ActualName)))
+                    {
+                        Logger?.ClaimMappedParamReceivedRequestValue(
+                            b.endpoint.Path, parameter.ActualName, "body", claimType);
+                    }
+                    parameter.Value = b.claimsDict!.GetClaimDbParam(claimType);
+                }
+                else if (b.context.User?.Identity?.IsAuthenticated is true && parameter.IsUserClaims is true)
+                {
+                    parameter.Value = b.claimsDict?.GetUserClaimsDbParam() ?? DBNull.Value;
+                }
+            }
+            if (parameter.IsUploadMetadata is true)
+            {
+                b.uploadMetaParamIndex = b.command.Parameters.Count; // the last one added
+                parameter.Value = DBNull.Value;
+            }
+
+            // header parameter
+            if (parameter.Value is null &&
+                b.endpoint.RequestHeadersMode == RequestHeadersMode.Parameter &&
+                parameter.TypeDescriptor.HasDefault is true &&
+            (
+                string.Equals(b.endpoint.RequestHeadersParameterName, parameter.ConvertedName, StringComparison.Ordinal) ||
+                string.Equals(b.endpoint.RequestHeadersParameterName, parameter.ActualName, StringComparison.Ordinal)
+                )
+            )
+            {
+                if (b.bodyDict!.ContainsKey(parameter.ConvertedName) is false)
+                {
+                    if (b.headers is null)
+                    {
+                        SearializeHeader(Options, b.context, ref b.headers);
+                    }
+                    parameter.ParamType = ParamType.HeaderParam;
+                    parameter.Value = b.headers;
+
+                    if (Options.ValidateParameters is not null)
+                    {
+                        Options.ValidateParameters(new ParameterValidationValues(
+                            b.context,
+                            b.routine,
+                            parameter));
+                        if (b.context.Response.HasStarted || b.context.Response.StatusCode != (int)HttpStatusCode.OK)
+                        {
+                            return false;
+                        }
+                    }
+                    if (Options.ValidateParametersAsync is not null)
+                    {
+                        await Options.ValidateParametersAsync(new ParameterValidationValues(
+                            b.context,
+                            b.routine,
+                            parameter));
+                        if (b.context.Response.HasStarted || b.context.Response.StatusCode != (int)HttpStatusCode.OK)
+                        {
+                            return false;
+                        }
+                    }
+                    if (b.endpoint.Cached is true && b.endpoint.CachedParams is not null)
+                    {
+                        if (b.endpoint.CachedParams.Contains(parameter.ConvertedName) || b.endpoint.CachedParams.Contains(parameter.ActualName))
+                        {
+                            parameter.AppendCacheKey(b.cacheKeys);
+                        }
+                    }
+
+                    if (Options.HttpClientOptions.Enabled)
+                    {
+                        if (parameter.TypeDescriptor.CustomType is not null)
+                        {
+                            if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
+                            {
+                                b.customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
+                            }
+                        }
+                    }
+                    if (!parameter.IsVirtual) b.command.Parameters.Add(parameter);
+
+                    if (b.hasNulls is false && parameter.Value == DBNull.Value)
+                    {
+                        b.hasNulls = true;
+                    }
+
+                    if (b.formatter.IsFormattable is false)
+                    {
+                        if (b.formatter.RefContext)
+                        {
+                            b.commandTextBuilder!.Append(b.formatter.AppendCommandParameter(parameter, b.paramIndex, b.context));
+                            if (b.context.Response.HasStarted || b.context.Response.StatusCode != (int)HttpStatusCode.OK)
+                            {
+                                return false;
+                            }
+                        }
+                        else
+                        {
+                            b.commandTextBuilder!.Append(b.formatter.AppendCommandParameter(parameter, b.paramIndex));
+                        }
+                    }
+                    b.paramIndex++;
+                    if (b.shouldLog && Options.LogCommandParameters)
+                    {
+                        var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && b.endpoint.IsAuth ?
+                            "***" :
+                            FormatParameterForLog(parameter);
+                        b.cmdLog!.Append("-- $").Append(b.paramIndex).Append(' ')
+                            .Append(parameter.TypeDescriptor.OriginalType)
+                            .Append(" = ").AppendLine(p);
+                    }
+
+                    continue;
+                }
+            }
+
+            // path parameter - extract from RouteValues (for JSON body mode)
+            if (parameter.Value is null && b.endpoint.HasPathParameters)
+            {
+                // Use optimized O(1) lookup via HashSet
+                string? matchedPathParam = b.endpoint.FindMatchingPathParameter(parameter.ConvertedName, parameter.ActualName);
+
+                // Try to get route value using the path parameter name from the template
+                if (matchedPathParam is not null && b.context.Request.RouteValues.TryGetValue(matchedPathParam, out var routeValue))
+                {
+                    StringValues pathStringValues = routeValue?.ToString() ?? "";
+                    if (TryParseParameter(parameter, ref pathStringValues, b.endpoint.QueryStringNullHandling))
+                    {
+                        parameter.ParamType = ParamType.PathParam;
+                        parameter.QueryStringValues = pathStringValues;
+
+                        if (Options.ValidateParameters is not null)
+                        {
+                            Options.ValidateParameters(new ParameterValidationValues(
+                                b.context,
+                                b.routine,
+                                parameter));
+                            if (b.context.Response.HasStarted || b.context.Response.StatusCode != (int)HttpStatusCode.OK)
+                            {
+                                return false;
+                            }
+                        }
+                        if (Options.ValidateParametersAsync is not null)
+                        {
+                            await Options.ValidateParametersAsync(new ParameterValidationValues(
+                                b.context,
+                                b.routine,
+                                parameter));
+                            if (b.context.Response.HasStarted || b.context.Response.StatusCode != (int)HttpStatusCode.OK)
+                            {
+                                return false;
+                            }
+                        }
+                        if (b.endpoint.Cached is true && b.endpoint.CachedParams is not null)
+                        {
+                            if (b.endpoint.CachedParams.Contains(parameter.ConvertedName) || b.endpoint.CachedParams.Contains(parameter.ActualName))
+                            {
+                                parameter.AppendCacheKey(b.cacheKeys);
+                            }
+                        }
+
+                        if (Options.HttpClientOptions.Enabled)
+                        {
+                            if (parameter.TypeDescriptor.CustomType is not null)
+                            {
+                                if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
+                                {
+                                    b.customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
+                                }
+                            }
+                        }
+                        if (!parameter.IsVirtual) b.command.Parameters.Add(parameter);
+
+                        if (b.hasNulls is false && parameter.Value == DBNull.Value)
+                        {
+                            b.hasNulls = true;
+                        }
+
+                        if (b.formatter.IsFormattable is false)
+                        {
+                            if (b.formatter.RefContext)
+                            {
+                                b.commandTextBuilder!.Append(b.formatter.AppendCommandParameter(parameter, b.paramIndex, b.context));
+                                if (b.context.Response.HasStarted || b.context.Response.StatusCode != (int)HttpStatusCode.OK)
+                                {
+                                    return false;
+                                }
+                            }
+                            else
+                            {
+                                b.commandTextBuilder!.Append(b.formatter.AppendCommandParameter(parameter, b.paramIndex));
+                            }
+                        }
+                        b.paramIndex++;
+                        if (b.shouldLog && Options.LogCommandParameters)
+                        {
+                            var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && b.endpoint.IsAuth ?
+                                "***" :
+                                FormatParameterForLog(parameter);
+                            b.cmdLog!.Append("-- $").Append(b.paramIndex).Append(' ')
+                                .Append(parameter.TypeDescriptor.OriginalType)
+                                .Append(" = ").AppendLine(p);
+                        }
+
+                        continue;
+                    }
+                }
+            }
+
+            if (b.bodyDict!.TryGetValue(parameter.ConvertedName, out var value) is false)
+            {
+                if (parameter.Value is null)
+                {
+                    if (Options.ValidateParameters is not null)
+                    {
+                        Options.ValidateParameters(new ParameterValidationValues(
+                            b.context,
+                            b.routine,
+                            parameter));
+                        if (b.context.Response.HasStarted || b.context.Response.StatusCode != (int)HttpStatusCode.OK)
+                        {
+                            return false;
+                        }
+                    }
+                    if (Options.ValidateParametersAsync is not null)
+                    {
+                        await Options.ValidateParametersAsync(new ParameterValidationValues(
+                            b.context,
+                            b.routine,
+                            parameter));
+                        if (b.context.Response.HasStarted || b.context.Response.StatusCode != (int)HttpStatusCode.OK)
+                        {
+                            return false;
+                        }
+                    }
+                    if (parameter.Value is null)
+                    {
+                        if (parameter.TypeDescriptor.CustomType is not null)
+                        {
+                            parameter.Value = DBNull.Value;
+                        }
+                        else if (IsProxyResponseParameter(b.endpoint, parameter))
+                        {
+                            // Proxy response parameter - set placeholder value and fall through to add it
+                            parameter.Value = DBNull.Value;
+                            parameter.ParamType = ParamType.BodyJson;
+                        }
+                        else if (parameter.TypeDescriptor.HasDefault is false)
+                        {
+                            b.shouldCommit = false;
+                            b.uploadHandler?.OnError(b.connection, b.context, null);
+                            b.context.Response.StatusCode = StatusCodes.Status404NotFound;
+                            await b.context.Response.CompleteAsync();
+                            return false;
+                        }
+                        else if (parameter.DefaultValue is not null)
+                        {
+                            // Explicit default value (SQL file annotation) — bind it
+                            parameter.Value = parameter.DefaultValue;
+                            parameter.ParamType = ParamType.BodyJson;
+                        }
+                        else
+                        {
+                            continue;
+                        }
+                    }
+                }
+            }
+
+            if (parameter.Value is null && TryParseParameter(parameter, value) is false)
+            {
+                // Check if this is a proxy response parameter - it will be filled in later
+                if (IsProxyResponseParameter(b.endpoint, parameter))
+                {
+                    parameter.Value = DBNull.Value;
+                    parameter.ParamType = ParamType.BodyJson;
+                    // Don't skip - fall through to add the parameter
+                }
+                else if (parameter.TypeDescriptor.HasDefault is false)
+                {
+                    b.shouldCommit = false;
+                    b.uploadHandler?.OnError(b.connection, b.context, null);
+                    b.context.Response.StatusCode = StatusCodes.Status404NotFound;
+                    await b.context.Response.CompleteAsync();
+                    return false;
+                }
+                else if (parameter.DefaultValue is not null)
+                {
+                    parameter.Value = parameter.DefaultValue;
+                    parameter.ParamType = ParamType.BodyJson;
+                }
+                else
+                {
+                    continue;
+                }
+            }
+            parameter.ParamType = ParamType.BodyJson;
+            parameter.JsonBodyNode = value;
+            if (Options.ValidateParameters is not null)
+            {
+                Options.ValidateParameters(new ParameterValidationValues(
+                    b.context,
+                    b.routine,
+                    parameter));
+                if (b.context.Response.HasStarted || b.context.Response.StatusCode != (int)HttpStatusCode.OK)
+                {
+                    return false;
+                }
+            }
+            if (Options.ValidateParametersAsync is not null)
+            {
+                await Options.ValidateParametersAsync(new ParameterValidationValues(
+                    b.context,
+                    b.routine,
+                    parameter));
+                if (b.context.Response.HasStarted || b.context.Response.StatusCode != (int)HttpStatusCode.OK)
+                {
+                    return false;
+                }
+            }
+            if (b.endpoint.Cached is true && b.endpoint.CachedParams is not null)
+            {
+                if (b.endpoint.CachedParams.Contains(parameter.ConvertedName) || b.endpoint.CachedParams.Contains(parameter.ActualName))
+                {
+                    parameter.AppendCacheKey(b.cacheKeys);
+                }
+            }
+
+            if (Options.HttpClientOptions.Enabled)
+            {
+                if (parameter.TypeDescriptor.CustomType is not null)
+                {
+                    if (HttpClientTypes.Definitions.ContainsKey(parameter.TypeDescriptor.CustomType))
+                    {
+                        b.customHttpTypes.Add(parameter.TypeDescriptor.CustomType);
+                    }
+                }
+            }
+            b.command.Parameters.Add(parameter);
+
+            if (b.hasNulls is false && parameter.Value == DBNull.Value)
+            {
+                b.hasNulls = true;
+            }
+
+            if (b.formatter.IsFormattable is false)
+            {
+                if (b.formatter.RefContext)
+                {
+                    b.commandTextBuilder!.Append(b.formatter.AppendCommandParameter(parameter, b.paramIndex, b.context));
+                    if (b.context.Response.HasStarted || b.context.Response.StatusCode != (int)HttpStatusCode.OK)
+                    {
+                        return false;
+                    }
+                }
+                else
+                {
+                    b.commandTextBuilder!.Append(b.formatter.AppendCommandParameter(parameter, b.paramIndex));
+                }
+            }
+            b.paramIndex++;
+            if (b.shouldLog && Options.LogCommandParameters)
+            {
+                var p = Options.AuthenticationOptions.ObfuscateAuthParameterLogValues && b.endpoint.IsAuth ?
+                    "***" :
+                    FormatParameterForLog(parameter);
+                b.cmdLog!.Append("-- $").Append(b.paramIndex).Append(' ')
+                    .Append(parameter.TypeDescriptor.OriginalType)
+                    .Append(" = ").AppendLine(p);
+            }
+        }
+
+        // Skip body validation for passthrough proxy endpoints - body will be forwarded as-is
+        if (!(b.endpoint.IsProxy && Options.ProxyOptions.Enabled && !b.endpoint.HasProxyResponseParameters))
+        {
+            foreach (var bodyKey in b.bodyDict!.Keys)
+            {
+                if (b.routine.ParamsHash.Contains(bodyKey) is false)
+                {
+                    b.shouldCommit = false;
+                    b.uploadHandler?.OnError(b.connection, b.context, null);
+                    b.context.Response.StatusCode = StatusCodes.Status404NotFound;
+                    await b.context.Response.CompleteAsync();
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Request state shared between InvokeAsync and the parameter-binding methods. Field names mirror InvokeAsync's
+    /// locals; the binding may switch to an overload (routine, endpoint, formatter) and updates the command state,
+    /// which InvokeAsync copies back after the call.
+    /// </summary>
+    private sealed class ParameterBinding
+    {
+        public HttpContext context = default!;
+        public NpgsqlCommand command = default!;
+        public NpgsqlConnection? connection = default!;
+        public StringBuilder? cmdLog = default!;
+        public bool shouldLog = default!;
+        public StringBuilder? cacheKeys = default!;
+        public List<string> customHttpTypes = default!;
+        public IUploadHandler? uploadHandler = default!;
+        public IQueryCollection? queryCollection = default!;
+        public Dictionary<string, JsonNode?>? bodyDict = default!;
+        public string? body = default!;
+        public JsonObject? jsonObj = default!;
+        public CancellationToken cancellationToken = default!;
+        public Routine routine = default!;
+        public RoutineEndpoint endpoint = default!;
+        public IRoutineSourceParameterFormatter formatter = default!;
+        public bool hasNulls = default!;
+        public int paramIndex = default!;
+        public StringBuilder? commandTextBuilder = default!;
+        public Dictionary<string, object?>? claimsDict = default!;
+        public string? headers = default!;
+        public bool shouldCommit = default!;
+        public int uploadMetaParamIndex = default!;
     }
 }

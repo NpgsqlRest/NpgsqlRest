@@ -18,7 +18,7 @@ public static class NpgsqlRetryExtensions
             return;
         }
         var maxRetries = strategy.RetrySequenceSeconds.Length;
-        var exceptionsEncountered = new List<Exception>(maxRetries);
+        List<Exception>? exceptionsEncountered = null; // allocated on the first failure only
         
         for (var attempt = 0; attempt <= maxRetries; attempt++)
         {
@@ -29,7 +29,7 @@ public static class NpgsqlRetryExtensions
             }
             catch (Exception ex) when (ShouldRetryOn(ex, strategy))
             {
-                exceptionsEncountered.Add(ex);
+                (exceptionsEncountered ??= new(maxRetries)).Add(ex);
 
                 if (attempt < maxRetries)
                 {
@@ -66,7 +66,7 @@ public static class NpgsqlRetryExtensions
             return await command.ExecuteNonQueryAsync(cancellationToken);
         }
         var maxRetries = strategy.RetrySequenceSeconds.Length;
-        var exceptionsEncountered = new List<Exception>(maxRetries);
+        List<Exception>? exceptionsEncountered = null; // allocated on the first failure only
 
         for (var attempt = 0; attempt <= maxRetries; attempt++)
         {
@@ -87,7 +87,7 @@ public static class NpgsqlRetryExtensions
             }
             catch (Exception ex) when (ShouldRetryOn(ex, strategy) && !cancellationToken.IsCancellationRequested)
             {
-                exceptionsEncountered.Add(ex);
+                (exceptionsEncountered ??= new(maxRetries)).Add(ex);
                 if (attempt < maxRetries)
                 {
                     var delaySec = strategy.RetrySequenceSeconds[exceptionsEncountered.Count - 1];
@@ -126,7 +126,7 @@ public static class NpgsqlRetryExtensions
             return command.ExecuteReader();
         }
         var maxRetries = strategy.RetrySequenceSeconds.Length;
-        var exceptionsEncountered = new List<Exception>(maxRetries);
+        List<Exception>? exceptionsEncountered = null; // allocated on the first failure only
         
         for (var attempt = 0; attempt <= maxRetries; attempt++)
         {
@@ -136,7 +136,7 @@ public static class NpgsqlRetryExtensions
             }
             catch (Exception ex) when (ShouldRetryOn(ex, strategy))
             {
-                exceptionsEncountered.Add(ex);
+                (exceptionsEncountered ??= new(maxRetries)).Add(ex);
                 if (attempt < maxRetries)
                 {
                     var delaySec = strategy.RetrySequenceSeconds[exceptionsEncountered.Count - 1];
@@ -179,7 +179,7 @@ public static class NpgsqlRetryExtensions
             return await command.ExecuteReaderAsync(cancellationToken);
         }
         var maxRetries = strategy.RetrySequenceSeconds.Length;
-        var exceptionsEncountered = new List<Exception>(maxRetries);
+        List<Exception>? exceptionsEncountered = null; // allocated on the first failure only
         
         for (var attempt = 0; attempt <= maxRetries; attempt++)
         {
@@ -200,7 +200,7 @@ public static class NpgsqlRetryExtensions
             }
             catch (Exception ex) when (ShouldRetryOn(ex, strategy) && !cancellationToken.IsCancellationRequested)
             {
-                exceptionsEncountered.Add(ex);
+                (exceptionsEncountered ??= new(maxRetries)).Add(ex);
                 if (attempt < maxRetries)
                 {
                     var delaySec = strategy.RetrySequenceSeconds[exceptionsEncountered.Count - 1];
@@ -242,7 +242,7 @@ public static class NpgsqlRetryExtensions
             return await command.ExecuteReaderAsync(behavior, cancellationToken);
         }
         var maxRetries = strategy.RetrySequenceSeconds.Length;
-        var exceptionsEncountered = new List<Exception>(maxRetries);
+        List<Exception>? exceptionsEncountered = null; // allocated on the first failure only
         
         for (var attempt = 0; attempt <= maxRetries; attempt++)
         {
@@ -265,7 +265,7 @@ public static class NpgsqlRetryExtensions
             }
             catch (Exception ex) when (ShouldRetryOn(ex, strategy) && !cancellationToken.IsCancellationRequested)
             {
-                exceptionsEncountered.Add(ex);
+                (exceptionsEncountered ??= new(maxRetries)).Add(ex);
 
                 if (attempt < maxRetries)
                 {
@@ -308,7 +308,7 @@ public static class NpgsqlRetryExtensions
             return await command.ExecuteScalarAsync(cancellationToken);
         }
         var maxRetries = strategy.RetrySequenceSeconds.Length;
-        var exceptionsEncountered = new List<Exception>(maxRetries);
+        List<Exception>? exceptionsEncountered = null; // allocated on the first failure only
         
         for (var attempt = 0; attempt <= maxRetries; attempt++)
         {
@@ -329,7 +329,7 @@ public static class NpgsqlRetryExtensions
             }
             catch (Exception ex) when (ShouldRetryOn(ex, strategy) && !cancellationToken.IsCancellationRequested)
             {
-                exceptionsEncountered.Add(ex);
+                (exceptionsEncountered ??= new(maxRetries)).Add(ex);
                 if (attempt < maxRetries)
                 {
                     var delaySec = strategy.RetrySequenceSeconds[exceptionsEncountered.Count - 1];
@@ -372,7 +372,7 @@ public static class NpgsqlRetryExtensions
             return;
         }
         var maxRetries = strategy.RetrySequenceSeconds.Length;
-        var exceptionsEncountered = new List<Exception>(maxRetries);
+        List<Exception>? exceptionsEncountered = null; // allocated on the first failure only
         
         for (var attempt = 0; attempt <= maxRetries; attempt++)
         {
@@ -394,7 +394,7 @@ public static class NpgsqlRetryExtensions
             }
             catch (Exception ex) when (ShouldRetryOn(ex, strategy) && !cancellationToken.IsCancellationRequested)
             {
-                exceptionsEncountered.Add(ex);
+                (exceptionsEncountered ??= new(maxRetries)).Add(ex);
                 if (attempt < maxRetries)
                 {
                     var delaySec = strategy.RetrySequenceSeconds[exceptionsEncountered.Count - 1];
@@ -447,7 +447,7 @@ public static class NpgsqlRetryExtensions
             return await batch.ExecuteReaderAsync(behavior, cancellationToken);
         }
         var maxRetries = strategy.RetrySequenceSeconds.Length;
-        var exceptionsEncountered = new List<Exception>(maxRetries);
+        List<Exception>? exceptionsEncountered = null; // allocated on the first failure only
 
         for (var attempt = 0; attempt <= maxRetries; attempt++)
         {
@@ -470,7 +470,7 @@ public static class NpgsqlRetryExtensions
             }
             catch (Exception ex) when (ShouldRetryOn(ex, strategy) && !cancellationToken.IsCancellationRequested)
             {
-                exceptionsEncountered.Add(ex);
+                (exceptionsEncountered ??= new(maxRetries)).Add(ex);
 
                 if (attempt < maxRetries)
                 {

@@ -17,7 +17,7 @@ public static class NpgsqlConnectionRetryExtensions
             return;
         }
         var maxRetries = settings.Strategy.RetrySequenceSeconds.Length;
-        var exceptionsEncountered = new List<Exception>(maxRetries);
+        List<Exception>? exceptionsEncountered = null; // allocated on the first failure only
         
         for (var attempt = 0; attempt <= maxRetries; attempt++)
         {
@@ -28,7 +28,7 @@ public static class NpgsqlConnectionRetryExtensions
             }
             catch (Exception ex) when (ShouldRetryOn(ex, settings))
             {
-                exceptionsEncountered.Add(ex);
+                (exceptionsEncountered ??= new(maxRetries)).Add(ex);
 
                 if (attempt < maxRetries)
                 {
@@ -76,7 +76,7 @@ public static class NpgsqlConnectionRetryExtensions
             return;
         }
         var maxRetries = settings.Strategy.RetrySequenceSeconds.Length;
-        var exceptionsEncountered = new List<Exception>(maxRetries);
+        List<Exception>? exceptionsEncountered = null; // allocated on the first failure only
 
         for (var attempt = 0; attempt <= maxRetries; attempt++)
         {
@@ -89,7 +89,7 @@ public static class NpgsqlConnectionRetryExtensions
             }
             catch (Exception ex) when (ShouldRetryOn(ex, settings) && !cancellationToken.IsCancellationRequested)
             {
-                exceptionsEncountered.Add(ex);
+                (exceptionsEncountered ??= new(maxRetries)).Add(ex);
 
                 if (attempt < maxRetries)
                 {

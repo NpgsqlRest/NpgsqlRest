@@ -125,7 +125,12 @@ public static class NpgsqlRestBuilder
                 continue;
             }
 
-            var routeBuilder = builder.MapMethods(endpoint.Path, [methodStr], handler.InvokeAsync);
+            // The route handler binds only HttpContext and CancellationToken: binding an IServiceProvider parameter made
+            // ASP.NET resolve context.RequestServices - creating and disposing a DI scope - on every request, although the
+            // provider is needed only with ServiceProviderMode (and is then taken from RequestServices on demand).
+            // A method group (not a lambda or delegate variable) so the Request Delegate Generator binds it at compile
+            // time (AOT-safe), and two parameters so it is not a RequestDelegate: MapMethods returns a RouteHandlerBuilder.
+            var routeBuilder = builder.MapMethods(endpoint.Path, [methodStr], handler.HandleRequestAsync);
 
             if (endpoint.RateLimiterPolicy is not null || options.DefaultRateLimitingPolicy is not null)
             {
