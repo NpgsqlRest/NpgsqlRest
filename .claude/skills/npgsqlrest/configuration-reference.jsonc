@@ -2455,7 +2455,7 @@
       // The default column name in the data reader which will be used to read the value of the hash of the password. 
       // If this column is present, the value will be used to verify the password from the password parameter. 
       // Password parameter is the first parameter which name contains the value of PasswordParameterNameContains. 
-      // If verification fails, the login will fail and the HTTP Status Code will be set to 404 Not Found.
+      // If verification fails, the login will fail with 401 Unauthorized (the same response as when no record is returned).
       //
       "HashColumnName": "hash",
       //
@@ -2556,7 +2556,7 @@
       // - If "StatusColumnName" is present in the returned record, it must be either boolean (true for success, false for failure) or numeric (HTTP Status Code, 200 for success, anything else for failure). If not present, the success is when the endpoint returns any records.
       // - If "SchemeColumnName" is present in the returned record, it must be text value that defines the authentication scheme to use for the login.
       // - If "BodyColumnName" is present in the returned record, it must be text value that defines the message to return to the client as response body where possible. This only works for authentication that doesn't write response body (cookie authentication).
-      // - If "HashColumnName" is present in the returned record, it must be text value that defines the hash of the password. Password parameter is the first parameter which name contains the value of PasswordParameterNameContains option. If verification fails, the login will fail and the HTTP Status Code will be set to 404 Not Found.
+      // - If "HashColumnName" is present in the returned record, it must be text value that defines the hash of the password. Password parameter is the first parameter which name contains the value of PasswordParameterNameContains option. If verification fails, the login will fail with 401 Unauthorized (the same response as when no record is returned).
       //
       "LoginPath": null,
       //

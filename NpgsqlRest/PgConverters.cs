@@ -254,7 +254,10 @@ public static class PgConverters
 
                 char currentChar = value[i];
 
-                if (currentChar == Consts.DoubleQuote && (i == 1 || value[i - 1] != Consts.Backslash))
+                // Escapes (\\ and \") are consumed by the backslash branch below (backslash is a scan delimiter), so a quote
+                // that reaches here is never escaped. (A look-back at the previous character used to treat the closing
+                // quote of an element ending in a backslash - "a\\" - as escaped and merged the following elements.)
+                if (currentChar == Consts.DoubleQuote)
                 {
                     // Check for doubled quote "" which is PostgreSQL's escape for a literal quote
                     if (insideQuotes && i + 1 < len && value[i + 1] == Consts.DoubleQuote)

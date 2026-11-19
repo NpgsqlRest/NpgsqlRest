@@ -13,32 +13,59 @@ namespace NpgsqlRest;
 
 public partial class NpgsqlRestEndpoint
 {
-    // Authorization is checked before the request is processed (body parsing, password hashing, validation,
-    // encryption) whenever the outcome cannot depend on overload resolution:
-    // - anonymous callers are rejected upfront when this endpoint and every overload of it require authorization;
-    // - roles are checked upfront when the endpoint has no overloads.
-    // The check after parameter processing still runs for the endpoint the request finally resolves to.
-    private readonly bool _rejectAnonymousUpfront = RequiresAuthorizationForAll(entry, overloads);
+    // Authentication and authorization happen before the request is processed (body parsing, password hashing,
+    // validation, encryption) whenever the outcome cannot depend on overload resolution (one path, several routines
+    // told apart by parameter count). Otherwise they run once the request has resolved to its routine.
+    // - Basic Auth runs upfront when this endpoint and every overload use it, else after overload resolution
+    //   (the global BasicAuth option applies to every endpoint and always runs upfront).
+    // - Anonymous callers are rejected upfront when every overload requires authorization and Basic Auth
+    //   credentials (if any overload uses them) have already been processed by then.
+    // - Roles are checked upfront when the endpoint has no overloads.
+    // The authorization check after parameter processing still runs for the endpoint the request resolves to.
+    private readonly bool _basicAuthUpfront = AllInGroup(entry, overloads, UsesBasicAuth);
+    private readonly bool _rejectAnonymousUpfront =
+        AllInGroup(entry, overloads, RequiresAuthorization) &&
+        (AllInGroup(entry, overloads, UsesBasicAuth) || AnyInGroup(entry, overloads, UsesBasicAuth) is false);
     private readonly bool _checkRolesUpfront =
         entry.Endpoint.Login is false && entry.Endpoint.AuthorizeRoles is not null && HasNoOverloads(entry, overloads);
+
+    private static bool UsesBasicAuth(RoutineEndpoint endpoint) => endpoint.BasicAuth?.Enabled is true;
 
     private static bool RequiresAuthorization(RoutineEndpoint endpoint) =>
         endpoint.Login is false && (endpoint.RequiresAuthorization || endpoint.AuthorizeRoles is not null);
 
-    private static bool RequiresAuthorizationForAll(NpgsqlRestMetadataEntry entry, FrozenDictionary<string, NpgsqlRestMetadataEntry> overloads)
+    /// <summary>True when the predicate holds for this endpoint and every overload of its path.</summary>
+    private static bool AllInGroup(NpgsqlRestMetadataEntry entry, FrozenDictionary<string, NpgsqlRestMetadataEntry> overloads, Func<RoutineEndpoint, bool> predicate)
     {
-        if (RequiresAuthorization(entry.Endpoint) is false)
+        if (predicate(entry.Endpoint) is false)
         {
             return false;
         }
         foreach (var overload in overloads.Values)
         {
-            if (string.Equals(overload.Key, entry.Key, StringComparison.Ordinal) && RequiresAuthorization(overload.Endpoint) is false)
+            if (string.Equals(overload.Key, entry.Key, StringComparison.Ordinal) && predicate(overload.Endpoint) is false)
             {
                 return false;
             }
         }
         return true;
+    }
+
+    /// <summary>True when the predicate holds for this endpoint or any overload of its path.</summary>
+    private static bool AnyInGroup(NpgsqlRestMetadataEntry entry, FrozenDictionary<string, NpgsqlRestMetadataEntry> overloads, Func<RoutineEndpoint, bool> predicate)
+    {
+        if (predicate(entry.Endpoint))
+        {
+            return true;
+        }
+        foreach (var overload in overloads.Values)
+        {
+            if (string.Equals(overload.Key, entry.Key, StringComparison.Ordinal) && predicate(overload.Endpoint))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static bool HasNoOverloads(NpgsqlRestMetadataEntry entry, FrozenDictionary<string, NpgsqlRestMetadataEntry> overloads)

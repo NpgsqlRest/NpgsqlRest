@@ -215,14 +215,16 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
         var pathItem = _paths[path] as JsonObject;
         var operation = new JsonObject();
 
-        // Add operation summary and description
-        if (!string.IsNullOrEmpty(endpoint.Routine.Comment))
+        // Add operation summary and description from the comment's prose lines only. The raw comment also holds
+        // the annotations - basic_auth credentials, challenge/row command SQL, proxy hosts, connection names - and the
+        // OpenAPI document is typically public, so annotation lines are never published.
+        var prose = endpoint.UnhandledCommentLines?.Where(l => string.IsNullOrWhiteSpace(l) is false).ToArray();
+        if (prose is { Length: > 0 })
         {
-            var lines = endpoint.Routine.Comment.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-            operation["summary"] = lines[0].Trim();
-            if (lines.Length > 1)
+            operation["summary"] = prose[0].Trim();
+            if (prose.Length > 1)
             {
-                operation["description"] = string.Join("\n", lines.Skip(1).Select(l => l.Trim()));
+                operation["description"] = string.Join("\n", prose.Skip(1).Select(l => l.Trim()));
             }
         }
         else

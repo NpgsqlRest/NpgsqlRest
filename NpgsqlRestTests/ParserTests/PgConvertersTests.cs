@@ -4,6 +4,21 @@ public class PgConvertersTests
 {
     #region PgArrayToJsonArray Tests
 
+    /// <summary>
+    /// Regression: an element ending in a backslash is sent by PostgreSQL as "a\\" - its closing quote follows an
+    /// (escaped) backslash. That quote used to be taken as escaped itself, so the rest of the array was mis-parsed.
+    /// </summary>
+    [Fact]
+    public void PgArrayToJsonArray_ElementEndingInBackslash_KeepsElementBoundaries()
+    {
+        var descriptor = new TypeDescriptor("text[]");
+        ReadOnlySpan<char> input = "{\"a\\\\\",\"b,c\",\"d\\\"e\"}"; // {"a\\","b,c","d\"e"}
+
+        var result = PgConverters.PgArrayToJsonArray(input, descriptor);
+
+        result.ToString().Should().Be("[\"a\\\\\",\"b,c\",\"d\\\"e\"]"); // ["a\\","b,c","d\"e"]
+    }
+
     [Fact]
     public void PgArrayToJsonArray_EmptyArray_ReturnsEmptyJsonArray()
     {

@@ -256,7 +256,43 @@ public partial class Mcp
             }
         }
         var self = $"{context.Request.Scheme}://{context.Request.Host}";
-        return string.Equals(origin, self, StringComparison.OrdinalIgnoreCase);
+        if (string.Equals(origin, self, StringComparison.OrdinalIgnoreCase) is false)
+        {
+            return false;
+        }
+        // Origin equal to the request's own Host is not proof of same-origin: in a DNS-rebinding attack the attacker's
+        // page reaches this server under the attacker's host name, so Origin and Host match by construction. Trust it
+        // only for host names an attacker cannot serve a page from: loopback names, IP literals, and the host names this
+        // server is bound to. Other names must be listed in AllowedOrigins.
+        var host = context.Request.Host.Host;
+        return IsLoopbackOrIpLiteral(host) || IsBoundHostName(context, host);
+    }
+
+    private static bool IsLoopbackOrIpLiteral(string host) =>
+        string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase) ||
+        host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase) ||
+        System.Net.IPAddress.TryParse(host.Trim('[', ']'), out _);
+
+    private static bool IsBoundHostName(HttpContext context, string host)
+    {
+        var addresses = context.RequestServices
+            .GetService<Microsoft.AspNetCore.Hosting.Server.IServer>()?
+            .Features.Get<Microsoft.AspNetCore.Hosting.Server.Features.IServerAddressesFeature>()?
+            .Addresses;
+        if (addresses is null)
+        {
+            return false;
+        }
+        foreach (var address in addresses)
+        {
+            // wildcard bindings (http://*:80, http://+:80) don't parse and name no host
+            if (Uri.TryCreate(address, UriKind.Absolute, out var uri) &&
+                string.Equals(uri.Host, host, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     private async Task HandleAsync(HttpContext context)

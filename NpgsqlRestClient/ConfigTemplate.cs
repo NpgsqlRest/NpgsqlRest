@@ -2466,7 +2466,7 @@ public static partial class ConfigSchemaGenerator
           // The default column name in the data reader which will be used to read the value of the hash of the password. 
           // If this column is present, the value will be used to verify the password from the password parameter. 
           // Password parameter is the first parameter which name contains the value of PasswordParameterNameContains. 
-          // If verification fails, the login will fail and the HTTP Status Code will be set to 404 Not Found.
+          // If verification fails, the login will fail with 401 Unauthorized (the same response as when no record is returned).
           //
           "HashColumnName": "hash",
           //
@@ -2567,7 +2567,7 @@ public static partial class ConfigSchemaGenerator
           // - If "StatusColumnName" is present in the returned record, it must be either boolean (true for success, false for failure) or numeric (HTTP Status Code, 200 for success, anything else for failure). If not present, the success is when the endpoint returns any records.
           // - If "SchemeColumnName" is present in the returned record, it must be text value that defines the authentication scheme to use for the login.
           // - If "BodyColumnName" is present in the returned record, it must be text value that defines the message to return to the client as response body where possible. This only works for authentication that doesn't write response body (cookie authentication).
-          // - If "HashColumnName" is present in the returned record, it must be text value that defines the hash of the password. Password parameter is the first parameter which name contains the value of PasswordParameterNameContains option. If verification fails, the login will fail and the HTTP Status Code will be set to 404 Not Found.
+          // - If "HashColumnName" is present in the returned record, it must be text value that defines the hash of the password. Password parameter is the first parameter which name contains the value of PasswordParameterNameContains option. If verification fails, the login will fail with 401 Unauthorized (the same response as when no record is returned).
           //
           "LoginPath": null,
           //
@@ -2820,7 +2820,7 @@ public static partial class ConfigSchemaGenerator
           //
           "RateLimiterPolicy": null,
           //
-          // Allowed values of the HTTP Origin header (DNS-rebinding protection for the Streamable HTTP transport). A request whose Origin is present but matches neither this list nor the server's own origin is rejected with 403. Requests without an Origin header (e.g. server-to-server) are allowed. Empty = only same-origin browser requests pass.
+          // Allowed values of the HTTP Origin header (DNS-rebinding protection for the Streamable HTTP transport). A request whose Origin is present but matches neither this list nor the server's own origin is rejected with 403. The server's own origin counts only for localhost, IP addresses and the host names the server is bound to (Urls); a browser page served under any other host name must be listed here. Requests without an Origin header (e.g. server-to-server, desktop and IDE clients) are allowed.
           //
           "AllowedOrigins": [],
           //

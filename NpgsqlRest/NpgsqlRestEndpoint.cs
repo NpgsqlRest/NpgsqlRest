@@ -276,8 +276,11 @@ public partial class NpgsqlRestEndpoint(
                 connection.Notice += noticeHandler;
             }
             
-            if (Options.AuthenticationOptions.BasicAuth.Enabled is true || endpoint.BasicAuth?.Enabled is true)
+            // Basic Auth for the primary endpoint (see _basicAuthUpfront); remembered so it is not repeated below.
+            RoutineEndpoint? basicAuthCheckedFor = null;
+            if (Options.AuthenticationOptions.BasicAuth.Enabled is true || _basicAuthUpfront)
             {
+                basicAuthCheckedFor = endpoint;
                 if (Options.AuthenticationOptions.BasicAuth.ChallengeCommand is not null || endpoint.BasicAuth?.ChallengeCommand is not null)
                 {
                     await OpenConnectionAsync(connection, context, endpoint, cancellationToken);
@@ -1607,6 +1610,22 @@ public partial class NpgsqlRestEndpoint(
                     {
                         param.Value = protector.Protect(strValue);
                     }
+                }
+            }
+
+            // Basic Auth for the routine the request resolved to, when it was not done upfront for it: an overload with
+            // its own basic_auth (it used to run without credentials when the primary had none), or a path whose
+            // overloads do not all use Basic Auth (the public ones used to be challenged by the primary's).
+            if (ReferenceEquals(basicAuthCheckedFor, endpoint) is false && endpoint.BasicAuth?.Enabled is true)
+            {
+                if (endpoint.BasicAuth.ChallengeCommand is not null || Options.AuthenticationOptions.BasicAuth.ChallengeCommand is not null)
+                {
+                    await OpenConnectionAsync(connection, context, endpoint, cancellationToken);
+                }
+                await BasicAuthHandler.HandleAsync(context, endpoint, connection, cancellationToken);
+                if (context.Response.HasStarted is true)
+                {
+                    return;
                 }
             }
 
@@ -2996,6 +3015,16 @@ public partial class NpgsqlRestEndpoint(
                         rowBuilder.Append(columns);
                     }
 
+                    // A login endpoint's record reaches this path only with SerializeAuthEndpointsResponse on (after a
+                    // successful sign-in that wrote no response). Its password hash column is written as null: the
+                    // hash is needed for verification, never by the client.
+                    var hiddenColumnIndex = -1;
+                    if (endpoint.Login && Options.AuthenticationOptions.HashColumnName is not null)
+                    {
+                        hiddenColumnIndex = Array.FindIndex(activeColumnNames,
+                            c => string.Equals(c, Options.AuthenticationOptions.HashColumnName, StringComparison.OrdinalIgnoreCase));
+                    }
+
                     var bufferRows = endpoint.BufferRows ?? Options.BufferRows;
                     while (await reader.ReadAsync(cancellationToken))
                     {
@@ -3028,7 +3057,7 @@ public partial class NpgsqlRestEndpoint(
                             }
                             else
                             {
-                                object value = reader.GetValue(i);
+                                object value = i == hiddenColumnIndex ? DBNull.Value : reader.GetValue(i);
                                 // AllResultTypesAreUnknown = true always returns string, except for null
                                 var raw = (value == DBNull.Value ? "" : (string)value).AsSpan();
 
@@ -3353,15 +3382,34 @@ public partial class NpgsqlRestEndpoint(
                     context.Response.StatusCode = npgsqlToHttpException.Mapping.StatusCode;
                 }
             }
-            else if (exception is NpgsqlException npgsqlEx)
+            else if (exception is PostgresException postgresEx)
             {
+                // An error raised by PostgreSQL (RAISE EXCEPTION, constraint violations, ...): its message is part of
+                // the routine's contract with the client.
                 if (context.Response.HasStarted is false)
                 {
                     await Results.Problem(
                         type: null,
                         statusCode: 500,
-                        title: npgsqlEx.Message,
-                        detail: npgsqlEx.SqlState).ExecuteAsync(context);
+                        title: postgresEx.Message,
+                        detail: postgresEx.SqlState).ExecuteAsync(context);
+                }
+                else
+                {
+                    context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
+                }
+            }
+            else if (exception is NpgsqlException)
+            {
+                // A client-side Npgsql failure (connection, timeout, I/O): its message describes the infrastructure
+                // (hosts, ports, pool state) and is logged below, not returned.
+                if (context.Response.HasStarted is false)
+                {
+                    await Results.Problem(
+                        type: null,
+                        statusCode: 500,
+                        title: "Internal Server Error",
+                        detail: null).ExecuteAsync(context);
                 }
                 else
                 {
@@ -3372,11 +3420,12 @@ public partial class NpgsqlRestEndpoint(
             {
                 if (context.Response.HasStarted is false)
                 {
+                    // The exception message is logged below, not returned: it describes server internals.
                     await Results.Problem(
                         type: null, // remove RFC URL
                         statusCode: 500,
                         title: "Internal Server Error",
-                        detail: exception.Message).ExecuteAsync(context);
+                        detail: null).ExecuteAsync(context);
                 }
                 else
                 {

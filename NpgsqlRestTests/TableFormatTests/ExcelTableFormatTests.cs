@@ -21,6 +21,15 @@ HTTP GET
 @table_format = excel
 ';
 
+create function get_excel_table_named(_name text)
+returns table (id int)
+language sql as $$ select 1 $$;
+comment on function get_excel_table_named(text) is '
+HTTP GET
+@table_format = excel
+excel_file_name = report_{_name}
+';
+
 create function get_excel_table_nulls()
 returns table (id int, value text)
 language sql as $$
@@ -73,6 +82,22 @@ HTTP GET
 public class ExcelTableFormatTests(TestFixture test)
 {
     private const string ExcelContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+    /// <summary>
+    /// Security regression: a request value in excel_file_name cannot add Content-Disposition parameters. A quote used
+    /// to end the quoted filename, so filename*= could choose the saved file's name and extension.
+    /// </summary>
+    [Fact]
+    public async Task Test_excel_file_name_from_request_cannot_inject_header_parameters()
+    {
+        var name = Uri.EscapeDataString("x\"; filename*=UTF-8''evil.html; y=\"");
+        using var result = await test.Client.GetAsync($"/api/get-excel-table-named/?name={name}");
+
+        result.StatusCode.Should().Be(HttpStatusCode.OK);
+        result.Content.Headers.ContentDisposition!.ToString().Should().Be(
+            "attachment; filename=\"report_x_; filename*=UTF-8''evil.html; y=_.xlsx\"; filename*=UTF-8''report_x_%3B%20filename%2A%3DUTF-8%27%27evil.html%3B%20y%3D_.xlsx");
+        result.Content.Headers.ContentDisposition.FileNameStar.Should().Be("report_x_; filename*=UTF-8''evil.html; y=_.xlsx");
+    }
 
     [Fact]
     public async Task Test_excel_table_basic()

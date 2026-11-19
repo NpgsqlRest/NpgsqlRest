@@ -174,7 +174,7 @@ public class AuthPasswordLoginTests(TestFixture test)
 
         using var content = new StringContent($"{{\"pass\": \"{password}\", \"hashed\": \"{hashed}\"}}", Encoding.UTF8, "application/json");
         using var login = await client.PostAsync(requestUri: "/api/password-protected-login1/", content);
-        login.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        login.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
 
         using var connection = Database.CreateConnection();
         await connection.OpenAsync();
@@ -198,8 +198,8 @@ public class AuthPasswordLoginTests(TestFixture test)
 
         using var content = new StringContent("{\"pass\": null}", Encoding.UTF8, "application/json");
         using var login = await client.PostAsync(requestUri: "/api/password-protected-login2/", content);
-        login.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        (await login.Content.ReadAsStringAsync()).Should().Be("{\"title\":\"Not Found\",\"status\":404}");
+        login.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await login.Content.ReadAsStringAsync()).Should().Be("{\"title\":\"Unauthorized\",\"status\":401}");
         login.Headers.Contains("Set-Cookie").Should().BeFalse();
     }
 
@@ -211,8 +211,8 @@ public class AuthPasswordLoginTests(TestFixture test)
 
         using var content = new StringContent("{\"pass\": \"anything\"}", Encoding.UTF8, "application/json");
         using var login = await client.PostAsync(requestUri: "/api/password-protected-login-null-hash/", content);
-        login.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        (await login.Content.ReadAsStringAsync()).Should().Be("{\"title\":\"Not Found\",\"status\":404}");
+        login.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await login.Content.ReadAsStringAsync()).Should().Be("{\"title\":\"Unauthorized\",\"status\":401}");
         login.Headers.Contains("Set-Cookie").Should().BeFalse();
     }
 
@@ -224,8 +224,8 @@ public class AuthPasswordLoginTests(TestFixture test)
 
         using var content = new StringContent("{\"user\": \"admin\"}", Encoding.UTF8, "application/json");
         using var login = await client.PostAsync(requestUri: "/api/password-protected-login-default-pass/", content);
-        login.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        (await login.Content.ReadAsStringAsync()).Should().Be("{\"title\":\"Not Found\",\"status\":404}");
+        login.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await login.Content.ReadAsStringAsync()).Should().Be("{\"title\":\"Unauthorized\",\"status\":401}");
         login.Headers.Contains("Set-Cookie").Should().BeFalse();
     }
 
@@ -237,8 +237,8 @@ public class AuthPasswordLoginTests(TestFixture test)
 
         using var content = new StringContent("{\"secret\": \"MySecurePass123!\"}", Encoding.UTF8, "application/json");
         using var login = await client.PostAsync(requestUri: "/api/password-protected-login-no-pass-param/", content);
-        login.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        (await login.Content.ReadAsStringAsync()).Should().Be("{\"title\":\"Not Found\",\"status\":404}");
+        login.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await login.Content.ReadAsStringAsync()).Should().Be("{\"title\":\"Unauthorized\",\"status\":401}");
         login.Headers.Contains("Set-Cookie").Should().BeFalse();
     }
 }

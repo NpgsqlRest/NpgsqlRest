@@ -29,6 +29,20 @@ public class ExcelTableFormatHandler : ITableFormatHandler
     /// </summary>
     public string? NumericFormat { get; set; } = null;
 
+    /// <summary>Replaces characters that do not belong in a downloaded file name (control characters, path separators, quotes).</summary>
+    public static string SanitizeFileName(string fileName)
+    {
+        var chars = fileName.ToCharArray();
+        for (var i = 0; i < chars.Length; i++)
+        {
+            if (char.IsControl(chars[i]) || chars[i] is '"' or '/' or '\\')
+            {
+                chars[i] = '_';
+            }
+        }
+        return new string(chars);
+    }
+
     public async Task RenderAsync(
         NpgsqlDataReader reader,
         Routine routine,
@@ -54,7 +68,12 @@ public class ExcelTableFormatHandler : ITableFormatHandler
         {
             fileName += ".xlsx";
         }
-        context.Response.Headers["Content-Disposition"] = $"attachment; filename=\"{fileName}\"";
+        // excel_file_name may contain request values ({placeholders}). Built with the header type instead of string
+        // concatenation: a quote in the name used to end the quoted filename and let the caller append parameters such
+        // as filename*= (choosing the saved file's name and extension); control characters failed the response.
+        var disposition = new Microsoft.Net.Http.Headers.ContentDispositionHeaderValue("attachment");
+        disposition.SetHttpFileName(SanitizeFileName(fileName));
+        context.Response.Headers.ContentDisposition = disposition.ToString();
 
         var stream = writer.AsStream(leaveOpen: true);
         SpreadCheetahOptions? options = DateTimeFormat is not null

@@ -172,6 +172,65 @@ public class InstallSkillTests
         }
     }
 
+    /// <summary>
+    /// Security regression: the installer never writes through a symbolic link. A cloned repository could ship
+    /// .claude/skills/npgsqlrest/SKILL.md as a link to one of the user's files, which installing used to overwrite.
+    /// </summary>
+    [Fact]
+    public async Task InstallSkill_SymlinkedSkillFile_IsRefused()
+    {
+        var app = await StartSkillServerAsync(_ => true);
+        var workDir = TempDir();
+        var victim = Path.Combine(TempDir(), "victim.txt");
+        try
+        {
+            File.WriteAllText(victim, "precious");
+            var skillDir = Path.Combine(workDir, ".claude", "skills", "npgsqlrest");
+            Directory.CreateDirectory(skillDir);
+            File.CreateSymbolicLink(Path.Combine(skillDir, "SKILL.md"), victim);
+
+            var (stdout, stderr, exitCode) = await RunAsync(workDir,
+                new() { ["NPGSQLREST_SKILL_BASE_URL"] = app.Urls.First() }, "--install-skill");
+
+            exitCode.Should().Be(1, stdout);
+            // (path printed as the process resolves it - /private/var vs /var on macOS)
+            stderr.Should().Contain("Refusing to install: ").And.Contain("/.claude/skills/npgsqlrest/SKILL.md is a symbolic link.");
+            File.ReadAllText(victim).Should().Be("precious");
+        }
+        finally
+        {
+            await app.DisposeAsync();
+            Directory.Delete(workDir, recursive: true);
+            Directory.Delete(Path.GetDirectoryName(victim)!, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task InstallSkill_SymlinkedSkillFolder_IsRefused()
+    {
+        var app = await StartSkillServerAsync(_ => true);
+        var workDir = TempDir();
+        var victimDir = TempDir();
+        try
+        {
+            var skillsDir = Path.Combine(workDir, ".claude", "skills");
+            Directory.CreateDirectory(skillsDir);
+            Directory.CreateSymbolicLink(Path.Combine(skillsDir, "npgsqlrest"), victimDir);
+
+            var (stdout, _, exitCode) = await RunAsync(workDir,
+                new() { ["NPGSQLREST_SKILL_BASE_URL"] = app.Urls.First() }, "--install-skill");
+
+            exitCode.Should().Be(1, stdout);
+            Directory.GetFiles(victimDir).Should().BeEmpty();
+        }
+        finally
+        {
+            await app.DisposeAsync();
+            Directory.Delete(workDir, recursive: true);
+            Directory.Delete(victimDir, recursive: true);
+        }
+    }
+
     [Fact]
     public async Task InstallSkill_ServerUnreachable_FailsWithoutPartialFiles()
     {

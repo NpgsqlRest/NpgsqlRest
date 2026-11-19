@@ -26,11 +26,23 @@ public static class LoginHandler
         var verificationPerformed = false;
         var verificationFailed = false;
         
-        command.LogCommand(tracePath);
+        // Login and Basic Auth challenge commands carry the password: honor ObfuscateAuthParameterLogValues at Trace
+        // level too (the Trace command log used to print every parameter value).
+        command.LogCommand(tracePath, obfuscateValues: Options.AuthenticationOptions.ObfuscateAuthParameterLogValues);
         await using (NpgsqlDataReader reader = await command.ExecuteReaderWithRetryAsync(retryStrategy, cancellationToken))
         {
             if (await reader.ReadAsync(cancellationToken) is false)
             {
+                // Unknown user: when this login verifies passwords, spend the same work as a wrong password would
+                // (one hash verification), so response time does not tell whether the account exists.
+                if (performHashVerification is true &&
+                    Options.AuthenticationOptions?.HashColumnName is { } hashColumnName &&
+                    Options.AuthenticationOptions.PasswordHasher is { } dummyHasher &&
+                    HasColumn(reader, hashColumnName) &&
+                    FindPassword(command, out _) is { } attemptedPassword)
+                {
+                    dummyHasher.VerifyHashedPassword(GetDummyHash(dummyHasher), attemptedPassword);
+                }
                 await Results.Problem(
                     type: null,
                     statusCode: (int)HttpStatusCode.Unauthorized,
@@ -143,38 +155,24 @@ public static class LoginHandler
                 {
                     verificationPerformed = true;
                     string? hash = reader!.IsDBNull(hashOrdinal) ? null : reader.GetValue(hashOrdinal).ToString();
-                    string? pass = null;
-                    var foundPasswordParameter = false;
-                    var passwordParameterNameContains = Options.AuthenticationOptions.PasswordParameterNameContains;
-                    if (passwordParameterNameContains is not null)
-                    {
-                        for (var j = 0; j < command.Parameters.Count; j++)
-                        {
-                            var parameter = command.Parameters[j];
-                            var name = (parameter as NpgsqlRestParameter)?.ActualName;
-                            if (name is not null && name.Contains(passwordParameterNameContains, StringComparison.OrdinalIgnoreCase))
-                            {
-                                foundPasswordParameter = true;
-                                pass = parameter.Value is null || parameter.Value == DBNull.Value ? null : parameter.Value.ToString();
-                                break;
-                            }
-                        }
-                    }
+                    var pass = FindPassword(command, out var foundPasswordParameter);
                     if (foundPasswordParameter is false)
                     {
                         Logger?.CantFindPasswordParameter(tracePath,
                             command.Parameters.Select(p => (p as NpgsqlRestParameter)?.ActualName)?.ToArray(),
-                            passwordParameterNameContains ?? "");
+                            Options.AuthenticationOptions.PasswordParameterNameContains ?? "");
                     }
 
                     var hasher = Options.AuthenticationOptions.PasswordHasher;
                     if (hash is null || pass is null || hasher is null || hasher.VerifyHashedPassword(hash, pass) is false)
                     {
                         Logger?.VerifyPasswordFailed(tracePath, userId, userName);
+                        // Same response as an unknown user (no row): a different status (this used to be 404) told
+                        // callers which accounts exist.
                         await Results.Problem(
                             type: null,
-                            statusCode: (int)HttpStatusCode.NotFound,
-                            title: "Not Found",
+                            statusCode: (int)HttpStatusCode.Unauthorized,
+                            title: "Unauthorized",
                             detail: null).ExecuteAsync(context);
                         verificationFailed = true;
                     }
@@ -287,6 +285,55 @@ public static class LoginHandler
                 await context.Response.WriteAsync(body, cancellationToken);
             }
         }
+    }
+
+    private static bool HasColumn(NpgsqlDataReader reader, string name)
+    {
+        for (var i = 0; i < reader.FieldCount; i++)
+        {
+            if (string.Equals(reader.GetName(i), name, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>The value of the password parameter (name contains PasswordParameterNameContains), or null.</summary>
+    private static string? FindPassword(NpgsqlCommand command, out bool found)
+    {
+        found = false;
+        var passwordParameterNameContains = Options.AuthenticationOptions.PasswordParameterNameContains;
+        if (passwordParameterNameContains is null)
+        {
+            return null;
+        }
+        for (var j = 0; j < command.Parameters.Count; j++)
+        {
+            var parameter = command.Parameters[j];
+            var name = (parameter as NpgsqlRestParameter)?.ActualName;
+            if (name is not null && name.Contains(passwordParameterNameContains, StringComparison.OrdinalIgnoreCase))
+            {
+                found = true;
+                return parameter.Value is null || parameter.Value == DBNull.Value ? null : parameter.Value.ToString();
+            }
+        }
+        return null;
+    }
+
+    private static (IPasswordHasher Hasher, string Hash)? _dummyHash;
+
+    /// <summary>A hash of a random password, made once per hasher: verifying against it costs what a real check costs.</summary>
+    private static string GetDummyHash(IPasswordHasher hasher)
+    {
+        var current = _dummyHash;
+        if (current is { } d && ReferenceEquals(d.Hasher, hasher))
+        {
+            return d.Hash;
+        }
+        var hash = hasher.HashPassword(Guid.NewGuid().ToString("N"));
+        _dummyHash = (hasher, hash);
+        return hash;
     }
 
     private static (string? userName, string? userId) AddClaimFromReader(

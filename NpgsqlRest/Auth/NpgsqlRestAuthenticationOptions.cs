@@ -83,7 +83,7 @@ public class NpgsqlRestAuthenticationOptions
     /// The default column name in the data reader which will be used to read the value of the hash of the password.
     /// If this column is present, the value will be used to verify the password from the password parameter.
     /// Password parameter is the first parameter which name contains the value of PasswordParameterNameContains.
-    /// If verification fails, the login will fail and the HTTP Status Code will be set to 404 Not Found.
+    /// If verification fails, the login will fail with 401 Unauthorized (the same response as when no record is returned).
     /// </summary>
     public string HashColumnName { get; set; } = "hash";
 

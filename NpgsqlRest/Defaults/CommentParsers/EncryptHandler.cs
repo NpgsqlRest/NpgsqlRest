@@ -25,6 +25,13 @@ internal static partial class DefaultCommentParser
         int len,
         string description)
     {
+        // Without a data protector, encrypt is a no-op and the values reach the database in plain text.
+        if (Options.AuthenticationOptions.DefaultDataProtector is null)
+        {
+            Logger?.LogWarning(
+                "Comment annotation encrypt in {Description}: no data protector is configured (DataProtection), so the values are NOT encrypted and are stored as plain text.",
+                description);
+        }
         if (len == 1)
         {
             endpoint.EncryptAllParameters = true;

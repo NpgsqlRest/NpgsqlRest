@@ -5,11 +5,12 @@ public static partial class Log
     [LoggerMessage(Level = LogLevel.Error, Message = "Could not read a value from {commandText} mapped to {method} {path}")]
     public static partial void CouldNotReadCommand(this ILogger logger, string commandText, string method, string path);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not parse JSON body {body}, skipping path {path}.")]
-    public static partial void CouldNotParseJson(this ILogger logger, string body, string path);
+    // The body itself is never logged: it may carry credentials (a login with malformed JSON) and is client-sized.
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not parse JSON body ({length} characters), skipping path {path}. Error: {error}")]
+    private static partial void CouldNotParseJsonBody(this ILogger logger, int length, string path, string error);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not parse JSON body {body}, skipping path {path}. Error: {error}")]
-    public static partial void CouldNotParseJson(this ILogger logger, string body, string path, string error);
+    public static void CouldNotParseJson(this ILogger logger, string? body, string path, string error) =>
+        logger.CouldNotParseJsonBody(body?.Length ?? 0, path, error);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Endpoint {method} {url} changed request parameter type from body to query string because body will be used for parameter named \"{bodyParameterName}\".")]
     public static partial void EndpointTypeChangedBodyParam(this ILogger logger, string method, string url, string bodyParameterName);

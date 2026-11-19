@@ -33,6 +33,22 @@ public static class SkillInstaller
         }
     }
 
+    private static string? FindSymbolicLink(string targetDir, IEnumerable<string> files)
+    {
+        if (new DirectoryInfo(targetDir) is { Exists: true, LinkTarget: not null })
+        {
+            return targetDir;
+        }
+        foreach (var file in files)
+        {
+            if (new FileInfo(file) is { LinkTarget: not null })
+            {
+                return file;
+            }
+        }
+        return null;
+    }
+
     public static async Task<int> InstallAsync(bool global)
     {
         var targetRoot = global
@@ -82,6 +98,18 @@ public static class SkillInstaller
                     : $"Skill files for version branch '{gitRef}' are not available ({failure}); trying 'master'...");
                 Console.ResetColor();
                 continue;
+            }
+
+            // Never write through a symbolic link: a cloned repository could ship the skill folder or one of its
+            // files as a link to somewhere else (e.g. SKILL.md -> ~/.bashrc), which writing would overwrite.
+            // (.claude and .claude/skills may be links - dotfile managers commonly link ~/.claude.)
+            var link = FindSymbolicLink(targetDir, contents.Select(c => Path.Combine(targetDir, c.Name)));
+            if (link is not null)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.Error.WriteLine($"Refusing to install: {link} is a symbolic link. Remove it and run --install-skill again.");
+                Console.ResetColor();
+                return 1;
             }
 
             Directory.CreateDirectory(targetDir);

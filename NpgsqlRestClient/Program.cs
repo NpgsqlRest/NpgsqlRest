@@ -781,6 +781,12 @@ if (statsEnabled)
     var rateLimiterPolicy = config.GetConfigStr("RateLimiterPolicy", statsCfg);
     var outputFormat = config.GetConfigStr("OutputFormat", statsCfg) ?? "html";
     var schemaSimilarTo = config.GetConfigStr("SchemaSimilarTo", statsCfg);
+    if (statsRequireAuthorization is false && (statsAuthorizedRoles is null || statsAuthorizedRoles.Length == 0))
+    {
+        builder.ClientLogger?.LogWarning(
+            "Stats endpoints are enabled without authorization: anyone can read database statistics and current activity ({ActivityPath} returns other sessions' query texts, users and client addresses). Set Stats:RequireAuthorization or Stats:AuthorizedRoles outside development.",
+            activityPath);
+    }
 
     // Resolve connection string for stats endpoints
     var statsConnectionName = config.GetConfigStr("ConnectionName", statsCfg);

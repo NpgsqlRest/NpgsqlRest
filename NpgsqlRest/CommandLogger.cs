@@ -15,7 +15,8 @@ public static class CommandLogger
     /// <param name="command">The NpgsqlCommand to log.</param>
     /// <param name="logger">The logger to use.</param>
     /// <param name="name">The name/context of the operation (e.g., "PasskeyAuth.Login", "RoutineSource").</param>
-    public static void LogCommand(NpgsqlCommand command, ILogger? logger, string name)
+    /// <param name="obfuscateValues">Log parameter values as *** (commands that carry credentials, such as login).</param>
+    public static void LogCommand(NpgsqlCommand command, ILogger? logger, string name, bool obfuscateValues = false)
     {
         if (logger?.IsEnabled(LogLevel.Trace) != true)
         {
@@ -30,7 +31,7 @@ public static class CommandLogger
                 sb.Append('$');
                 sb.Append(i + 1);
                 sb.Append('=');
-                sb.AppendLine(PgConverters.SerializeDatbaseObject(command.Parameters[i].Value));
+                sb.AppendLine(obfuscateValues ? "***" : PgConverters.SerializeDatbaseObject(command.Parameters[i].Value));
             }
 
             sb.Append(command.CommandText);
@@ -48,8 +49,9 @@ public static class CommandLogger
     /// </summary>
     /// <param name="command">The NpgsqlCommand to log.</param>
     /// <param name="name">The name/context of the operation.</param>
-    public static void LogCommand(this NpgsqlCommand command, string name)
+    /// <param name="obfuscateValues">Log parameter values as *** (commands that carry credentials, such as login).</param>
+    public static void LogCommand(this NpgsqlCommand command, string name, bool obfuscateValues = false)
     {
-        LogCommand(command, NpgsqlRestOptions.Logger, name);
+        LogCommand(command, NpgsqlRestOptions.Logger, name, obfuscateValues);
     }
 }

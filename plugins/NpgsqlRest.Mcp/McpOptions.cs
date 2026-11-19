@@ -45,8 +45,11 @@ public class McpOptions
     /// <summary>
     /// Allowed values of the HTTP <c>Origin</c> header (DNS-rebinding protection, required by the
     /// Streamable HTTP transport). A request whose <c>Origin</c> is present but matches neither this
-    /// list nor the server's own origin is rejected with 403. Requests without an <c>Origin</c> header
-    /// (e.g. server-to-server) are allowed. Empty (default) = only same-origin browser requests pass.
+    /// list nor the server's own origin is rejected with 403. The server's own origin counts only for
+    /// localhost, IP addresses and the host names the server is bound to: under DNS rebinding the
+    /// attacker's host name would match the request's Host header. A browser page served under any other
+    /// host name must be listed here. Requests without an <c>Origin</c> header (e.g. server-to-server,
+    /// desktop and IDE clients) are allowed.
     /// </summary>
     public string[] AllowedOrigins { get; set; } = [];
 

@@ -183,6 +183,17 @@ public class McpProtocolTests(McpPluginTestFixture test)
     }
 
     [Fact]
+    public async Task A_dns_rebinding_request_is_forbidden()
+    {
+        // DNS rebinding: the attacker's page reaches this server under the attacker's host name, so Origin and Host
+        // match. That used to pass as "same origin".
+        using var request = Ping(origin: "http://rebind.example.com");
+        request.Headers.Host = "rebind.example.com";
+        using var response = await test.Client.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
     public async Task A_request_from_the_servers_own_origin_is_allowed()
     {
         var self = test.Client.BaseAddress!.GetLeftPart(UriPartial.Authority);
