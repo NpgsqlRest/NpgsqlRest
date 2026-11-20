@@ -980,6 +980,12 @@
     //
     "EnableForHttps": false,
     //
+    // Use Zstandard compression when supported by client (Accept-Encoding: zstd). It compresses about as well as
+    // Brotli for a fraction of the CPU time. Among the encodings a client accepts with equal preference, the
+    // order is Zstandard, Brotli, Gzip.
+    //
+    "UseZstandard": false,
+    //
     // Use Brotli compression algorithm when supported by client.
     //
     "UseBrotli": true,
@@ -991,6 +997,11 @@
     // Compression level: Optimal, Fastest, NoCompression, SmallestSize.
     //
     "CompressionLevel": "Optimal",
+    //
+    // Zstandard quality, from 1 (fastest) to 22 (smallest). When null, it follows CompressionLevel:
+    // Optimal is 3, Fastest is 1, SmallestSize is 19.
+    //
+    "ZstandardQuality": null,
     //
     // MIME types to include for compression.
     //
@@ -1858,6 +1869,12 @@
     "StatusMessage": "Too many requests. Please try again later.",
     "DefaultPolicy": null,
     //
+    // Send the Retry-After header with a rejected request: the number of seconds (rounded up) until the
+    // limiter will let a request through again. Fixed window, sliding window and token bucket policies know
+    // that time; a concurrency policy does not, so its rejections carry no such header.
+    //
+    "RetryAfterHeader": true,
+    //
     // Named rate-limiter policies. The object key is the policy name (referenced from endpoints via the
     // `rate_limiter_policy <name>` comment annotation, or used as `DefaultPolicy` above).
     //
@@ -2705,9 +2722,11 @@
       //
       "DocumentDescription": null,
       //
-      // OpenAPI specification version of the generated document: "3.0" or "3.1".
+      // OpenAPI specification version of the generated document: "3.0", "3.1" or "3.2".
       // "3.0" emits openapi: 3.0.3 (default, backward compatible),
-      // "3.1" emits openapi: 3.1.1 (JSON Schema 2020-12 alignment).
+      // "3.1" emits openapi: 3.1.1 (JSON Schema 2020-12 alignment),
+      // "3.2" emits openapi: 3.2.0 and documents HTTP QUERY endpoints, which earlier versions cannot describe
+      // (they are left out with a warning). Check that your tools read 3.2 before choosing it.
       // This is the spec version, not your API version (that is DocumentVersion).
       //
       "SpecVersion": "3.0",
