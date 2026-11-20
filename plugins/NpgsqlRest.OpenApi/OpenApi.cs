@@ -19,6 +19,7 @@ public static class OpenApiSpecVersions
 {
     public const string V30 = "3.0.3";
     public const string V31 = "3.1.1";
+    public const string V32 = "3.2.0";
 }
 
 public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
@@ -43,9 +44,14 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
         {
             return OpenApiSpecVersions.V31;
         }
+        if (string.Equals(value, "3.2", StringComparison.OrdinalIgnoreCase))
+        {
+            return OpenApiSpecVersions.V32;
+        }
         throw new ArgumentException(
             $"Invalid OpenApiOptions.SpecVersion value '{specVersion}'. " +
-            $"Valid values are \"3.0\" (emits openapi: {OpenApiSpecVersions.V30}) and \"3.1\" (emits openapi: {OpenApiSpecVersions.V31}).");
+            $"Valid values are \"3.0\" (emits openapi: {OpenApiSpecVersions.V30}), \"3.1\" (emits openapi: {OpenApiSpecVersions.V31}) " +
+            $"and \"3.2\" (emits openapi: {OpenApiSpecVersions.V32}).");
     }
 
     private IApplicationBuilder _builder = default!;
@@ -199,11 +205,11 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
 
         var path = endpoint.Path;
         // OpenAPI 3.0/3.1 path items only allow the fixed operation keys (get/put/post/delete/...);
-        // the QUERY method has no representation until OpenAPI 3.2. Skip those endpoints instead of
-        // emitting an invalid `query` key.
-        if (endpoint.Method == Method.QUERY)
+        // the QUERY method has its own key, `query`, from OpenAPI 3.2. In an earlier version those endpoints
+        // are skipped instead of emitting an invalid key.
+        if (endpoint.Method == Method.QUERY && _specVersion != OpenApiSpecVersions.V32)
         {
-            Logger?.LogWarning("OpenAPI: skipping {Method} {Path} - the QUERY method cannot be represented in OpenAPI {Version} (supported from OpenAPI 3.2).",
+            Logger?.LogWarning("OpenAPI: skipping {Method} {Path} - the QUERY method cannot be represented in OpenAPI {Version}. Set SpecVersion to \"3.2\" to document it.",
                 endpoint.Method, endpoint.Path, _specVersion);
             return;
         }

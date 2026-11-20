@@ -62,6 +62,8 @@ public class RateLimiterPerPolicyTests(RateLimiterPerPolicyTestFixture test)
         using var rejected = await client.GetAsync("/api/rlpm-login");
         rejected.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
         (await rejected.Content.ReadAsStringAsync()).Should().Be(RateLimiterPerPolicyTestFixture.LoginMessage);
+        // an NpgsqlRest endpoint gets the Retry-After header as well (10 minute window)
+        int.Parse(rejected.Headers.GetValues("Retry-After").Single()).Should().BeInRange(590, 600);
     }
 
     /// <summary>

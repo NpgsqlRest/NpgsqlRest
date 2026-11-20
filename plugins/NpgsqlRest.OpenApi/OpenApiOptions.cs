@@ -34,7 +34,9 @@ public class OpenApiOptions
 
     /// <summary>
     /// OpenAPI specification version of the generated document.
-    /// "3.0" emits openapi: 3.0.3, "3.1" emits openapi: 3.1.1.
+    /// "3.0" emits openapi: 3.0.3, "3.1" emits openapi: 3.1.1, "3.2" emits openapi: 3.2.0.
+    /// With "3.2", endpoints of the HTTP QUERY method are documented (as the "query" operation of their
+    /// path); earlier versions have no place for them, so they are left out with a warning.
     /// Default is "3.0" for backward compatibility.
     /// NOTE: this is the OpenAPI SPEC version, not the API version
     /// (see DocumentVersion for that).

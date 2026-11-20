@@ -401,9 +401,11 @@ public static class ConfigDefaults
         {
             ["Enabled"] = false,
             ["EnableForHttps"] = false,
+            ["UseZstandard"] = false,
             ["UseBrotli"] = true,
             ["UseGzipFallback"] = true,
             ["CompressionLevel"] = "Optimal",
+            ["ZstandardQuality"] = null,
             ["IncludeMimeTypes"] = CreateStringArray(
                 "text/plain", "text/css", "application/javascript", "text/javascript", "text/html",
                 "application/xml", "text/xml", "application/json", "text/json",
@@ -723,6 +725,7 @@ public static class ConfigDefaults
             ["StatusCode"] = 429,
             ["StatusMessage"] = "Too many requests. Please try again later.",
             ["DefaultPolicy"] = null,
+            ["RetryAfterHeader"] = true,
             ["Policies"] = policies
         };
     }

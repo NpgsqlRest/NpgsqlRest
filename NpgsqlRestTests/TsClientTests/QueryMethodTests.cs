@@ -10,7 +10,7 @@ create schema if not exists tsclient_test;
 -- The HTTP QUERY method (safe + idempotent, carries the query in the request body):
 -- parameters default to the JSON body, generators emit method QUERY with a body,
 -- ReactQuery hooks treat it as a query (useQuery), and OpenAPI 3.0/3.1 skips it
--- (no `query` path item key until OpenAPI 3.2).
+-- (no `query` path item key until OpenAPI 3.2; SpecVersion "3.2" documents it, see SpecVersion32Tests).
 create function tsclient_test.query_search(_q text, _top int default 3)
 returns text
 language sql

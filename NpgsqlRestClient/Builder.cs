@@ -1505,60 +1505,26 @@ public class Builder
             return false;
         }
 
+        var useZstandard = _config.GetConfigBool("UseZstandard", responseCompressionCfg, false);
         var useBrotli = _config.GetConfigBool("UseBrotli", responseCompressionCfg, true);
         var useGzipFallback = _config.GetConfigBool("UseGzipFallback", responseCompressionCfg, true);
-
-        if (useBrotli is false && useGzipFallback is false)
+        var zstandardQuality = _config.GetConfigInt("ZstandardQuality", responseCompressionCfg);
+        if (zstandardQuality is < 1 or > 22)
         {
-            return false;
+            Logger?.LogWarning("ResponseCompression:ZstandardQuality is {Quality}; it must be from 1 to 22. Using the quality that CompressionLevel stands for.", zstandardQuality);
+            zstandardQuality = null;
         }
 
-        Instance.Services.AddResponseCompression(options =>
-        {
-            options.EnableForHttps = _config.GetConfigBool("EnableForHttps", responseCompressionCfg, false); 
-            if (useBrotli is true)
-            {
-                options.Providers.Add<BrotliCompressionProvider>();
-            }
-            if (useGzipFallback is true)
-            {
-                options.Providers.Add<GzipCompressionProvider>();
-            }
-            options.MimeTypes = _config.GetConfigEnumerable("IncludeMimeTypes", responseCompressionCfg)?.ToArray() ?? [
-                "text/plain",
-                "text/css",
-                "application/javascript",
-                "text/javascript",
-                "text/html",
-                "application/xml",
-                "text/xml",
-                "application/json",
-                "text/json",
-                "image/svg+xml",
-                "font/woff",
-                "font/woff2",
-                "application/font-woff",
-                "application/font-woff2"];
-            options.ExcludedMimeTypes = _config.GetConfigEnumerable("ExcludeMimeTypes", responseCompressionCfg)?.ToArray() ?? [];
-        });
-
-        var level = _config.GetConfigEnum<CompressionLevel>("CompressionLevel", responseCompressionCfg);
-        if (useBrotli is true)
-        {
-            Instance.Services.Configure<BrotliCompressionProviderOptions>(options =>
-            {
-                options.Level = level;
-            });
-        }
-        if (useGzipFallback is true)
-        {
-            Instance.Services.Configure<GzipCompressionProviderOptions>(options =>
-            {
-                options.Level = level;
-            });
-        }
-
-        return true;
+        return ResponseCompressionSetup.Add(
+            Instance.Services,
+            enableForHttps: _config.GetConfigBool("EnableForHttps", responseCompressionCfg, false),
+            useZstandard: useZstandard,
+            useBrotli: useBrotli,
+            useGzip: useGzipFallback,
+            level: _config.GetConfigEnum<CompressionLevel>("CompressionLevel", responseCompressionCfg),
+            zstandardQuality: zstandardQuality,
+            mimeTypes: _config.GetConfigEnumerable("IncludeMimeTypes", responseCompressionCfg),
+            excludedMimeTypes: _config.GetConfigEnumerable("ExcludeMimeTypes", responseCompressionCfg));
     }
 
     public bool ConfigureAntiForgery()
@@ -2541,6 +2507,7 @@ public class Builder
         var defaultPolicy = _config.GetConfigStr("DefaultPolicy", rateLimiterCfg);
         var message = _config.GetConfigStr("StatusMessage", rateLimiterCfg);
         var globalStatusCode = _config.GetConfigInt("StatusCode", rateLimiterCfg) ?? 429;
+        var retryAfterHeader = _config.GetConfigBool("RetryAfterHeader", rateLimiterCfg, true);
         // Per-policy StatusCode/StatusMessage overrides, keyed by policy name (the dict key). The top-level
         // StatusCode/StatusMessage stay as the global defaults; an individual policy may override either one
         // independently. The override that applies to a rejected request is resolved at rejection time from
@@ -2736,18 +2703,59 @@ public class Builder
                 }
             }
 
-            // Install a single global OnRejected only when there is something to write or override: either a
-            // global StatusMessage, or at least one policy carrying its own StatusCode/StatusMessage. When
-            // neither is present, leaving OnRejected unset preserves the legacy empty-body rejection.
-            if (string.IsNullOrEmpty(message) is false || rejectionOverrides.Count > 0)
-            {
-                var overrides = rejectionOverrides.ToFrozenDictionary();
-                options.OnRejected = (context, cancellationToken) =>
-                    ApplyRateLimiterRejectionAsync(context.HttpContext, overrides, globalStatusCode, message, cancellationToken);
-            }
+            // One global OnRejected: it says when to come back (Retry-After) and applies the status code and
+            // message of the policy that rejected the request. With no message and no policy override it
+            // leaves the body empty, as the framework would.
+            var overrides = rejectionOverrides.ToFrozenDictionary();
+            options.OnRejected = (context, cancellationToken) =>
+                RateLimiterRejectedAsync(context, overrides, globalStatusCode, message, retryAfterHeader, cancellationToken);
         });
 
         return (defaultPolicy, true);
+    }
+
+    /// <summary>
+    /// What the client does for a request the rate limiter rejected: the Retry-After header when the limiter
+    /// knows when a permit will be available (<paramref name="retryAfterHeader"/>), then the status code and
+    /// message (<see cref="ApplyRateLimiterRejectionAsync"/>). Public so the test fixtures can drive the exact
+    /// production wiring.
+    /// </summary>
+    public static ValueTask RateLimiterRejectedAsync(
+        OnRejectedContext context,
+        FrozenDictionary<string, (int? StatusCode, string? Message)> overrides,
+        int globalStatusCode,
+        string? globalMessage,
+        bool retryAfterHeader,
+        CancellationToken cancellationToken)
+    {
+        if (retryAfterHeader)
+        {
+            ApplyRetryAfter(context.HttpContext, context.Lease);
+        }
+        return ApplyRateLimiterRejectionAsync(context.HttpContext, overrides, globalStatusCode, globalMessage, cancellationToken);
+    }
+
+    /// <summary>
+    /// Sets the Retry-After header, in whole seconds rounded up (at least 1), when the rejected lease says
+    /// when to retry. Fixed window, sliding window and token bucket limiters say; a concurrency limiter cannot
+    /// know when a running request will finish, so it sets nothing. Returns the seconds written.
+    /// </summary>
+    public static int? ApplyRetryAfter(Microsoft.AspNetCore.Http.HttpContext httpContext, System.Threading.RateLimiting.RateLimitLease lease)
+    {
+        if (lease.TryGetMetadata(System.Threading.RateLimiting.MetadataName.RetryAfter, out var retryAfter) is false)
+        {
+            return null;
+        }
+        var seconds = RetryAfterSeconds(retryAfter);
+        httpContext.Response.Headers.RetryAfter = seconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return seconds;
+    }
+
+    /// <summary>A wait as the Retry-After header carries it: whole seconds, rounded up, never less than 1.</summary>
+    public static int RetryAfterSeconds(TimeSpan retryAfter)
+    {
+        var seconds = Math.Ceiling(retryAfter.TotalSeconds);
+        return seconds < 1 ? 1 : seconds >= int.MaxValue ? int.MaxValue : (int)seconds;
     }
 
     /// <summary>

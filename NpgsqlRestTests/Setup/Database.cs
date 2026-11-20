@@ -12,7 +12,12 @@ public static partial class Database
     private const string Port = "5432";
     private const string Username = "postgres";
     private const string Password = "postgres";
-    private const string InitialConnectionString = $"Host={Host};Port={Port};Database=postgres;Username={Username};Password={Password}";
+    // Idle connections are closed after a few seconds (Npgsql keeps them for 5 minutes by default). The suite has
+    // many fixtures, each with a pool of its own that lives until the process ends; kept idle, they added up to
+    // 84 of PostgreSQL's default 100 connections, and a test that then needed a new physical connection (a
+    // connection of its own, or the one Npgsql opens to cancel a running command) failed whenever anything
+    // else was connected to the server.
+    private const string InitialConnectionString = $"Host={Host};Port={Port};Database=postgres;Username={Username};Password={Password};Connection Idle Lifetime=3;Connection Pruning Interval=1";
     private static readonly StringBuilder script = new();
     private static readonly object _createLock = new();
     private static volatile bool _created = false;

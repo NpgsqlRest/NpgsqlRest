@@ -55,8 +55,8 @@ public class RateLimiterPerPolicyTestFixture : IDisposable
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
             options.OnRejected = (context, cancellationToken) =>
-                Builder.ApplyRateLimiterRejectionAsync(
-                    context.HttpContext, overrides, StatusCodes.Status429TooManyRequests, GlobalMessage, cancellationToken);
+                Builder.RateLimiterRejectedAsync(
+                    context, overrides, StatusCodes.Status429TooManyRequests, GlobalMessage, retryAfterHeader: true, cancellationToken);
 
             foreach (var name in new[] { "rlpm-login", "rlpm-strict", "rlpm-inherit" })
             {

@@ -94,6 +94,11 @@ public class Program
     /// </summary>
     public static string OpenApi31OutputPath { get; } = Path.Combine(Path.GetTempPath(), "NpgsqlRestTests", "OpenApi31");
 
+    /// <summary>
+    /// Output path for OpenApi generated files with SpecVersion=3.2 (used by tests)
+    /// </summary>
+    public static string OpenApi32OutputPath { get; } = Path.Combine(Path.GetTempPath(), "NpgsqlRestTests", "OpenApi32");
+
     static async Task ValidateAsync(ParameterValidationValues p)
     {
         if (p.Routine.Name == "case_jsonpath_param" && p.Parameter.Value?.ToString() == "XXX")
@@ -438,6 +443,15 @@ public class Program
                     DocumentTitle = "NpgsqlRest Test API",
                     AddCurrentServer = false,
                     SpecVersion = "3.1"
+                }),
+                // The same once more with SpecVersion=3.2, where HTTP QUERY endpoints are documented
+                new OpenApi(new OpenApiOptions
+                {
+                    FileName = Path.Combine(OpenApi32OutputPath, "openapi.json"),
+                    FileOverwrite = true,
+                    DocumentTitle = "NpgsqlRest Test API",
+                    AddCurrentServer = false,
+                    SpecVersion = "3.2"
                 }),
             ],
             CommentsMode = CommentsMode.ParseAll,
