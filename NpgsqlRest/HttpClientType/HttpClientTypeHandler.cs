@@ -142,7 +142,10 @@ public class HttpClientTypeHandler(
             {
                 StatusCode = 408;
                 IsSuccess = false;
-                ErrorMessage = $"Request timed out after {EffectiveTimeout.TotalSeconds} seconds";
+                // invariant culture: the message is data returned to the routine ("0.3 seconds"), and must not depend
+                // on the regional settings of the server (a comma decimal separator gave "0,3 seconds")
+                ErrorMessage = string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                    $"Request timed out after {EffectiveTimeout.TotalSeconds} seconds");
                 if (attempt < maxRetries)
                 {
                     Logger?.LogWarning("HTTP client request to '{Url}' timed out, retrying after {Delay}ms",

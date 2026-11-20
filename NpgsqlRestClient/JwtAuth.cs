@@ -80,6 +80,23 @@ public class JwtTokenConfig
         }
     };
 
+    /// <summary>
+    /// Configures a JWT bearer scheme the way the npgsqlrest client registers it.
+    /// MapInboundClaims is off: by default the handler renames well-known claim types when it reads a token
+    /// ("roles" and "role" become ClaimTypes.Role, "email" becomes ClaimTypes.Email, "sub" becomes
+    /// ClaimTypes.NameIdentifier). The claims of a JWT sign-in then no longer had the names the login routine
+    /// returned, so a role claim named "roles" was not found: <c>authorize role</c> answered 403 and the claim
+    /// was NULL in user parameters and the user context. Cookie and bearer-token sign-ins keep the names, and
+    /// so does JWT now.
+    /// </summary>
+    public void ConfigureBearer(Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions options)
+    {
+        options.MapInboundClaims = false;
+        options.TokenValidationParameters = GetTokenValidationParameters();
+        options.SaveToken = true;
+        options.Events = CreateBearerEvents();
+    }
+
     public TokenValidationParameters GetTokenValidationParameters() => new()
     {
         ValidateIssuer = ValidateIssuer,
@@ -151,7 +168,9 @@ public class JwtTokenGenerator
 
     public ClaimsPrincipal? ValidateRefreshToken(string refreshToken)
     {
-        var tokenHandler = new JwtSecurityTokenHandler();
+        // MapInboundClaims off, as for access tokens (see JwtTokenConfig.ConfigureBearer): the claims read from
+        // the refresh token are written to the new tokens, and must keep their names.
+        var tokenHandler = new JwtSecurityTokenHandler { MapInboundClaims = false };
         var validationParameters = _config.GetTokenValidationParameters();
 
         // For refresh tokens, we want to validate even if the access token would be expired

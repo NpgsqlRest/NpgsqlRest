@@ -462,7 +462,10 @@ public partial class NpgsqlRestEndpoint(
         // always wins (see the parameter loops). Anonymous callers must not be able to supply them either -
         // otherwise ?userId=1 would impersonate user 1 on an endpoint that allows anonymous access. Their
         // request values are dropped, so the routine sees "not provided" (its default, else NULL).
-        if (endpoint.UseUserParameters && context.User?.Identity?.IsAuthenticated is not true)
+        // Login endpoints are the exception: their callers are anonymous by definition and their parameters
+        // are the credentials being checked (a login routine typically has a _username or _user_name
+        // parameter, which collides with the claim mapping). Dropping those would make every login fail.
+        if (endpoint.UseUserParameters && endpoint.Login is false && context.User?.Identity?.IsAuthenticated is not true)
         {
             RemoveClientSuppliedUserParameters(routine, ref queryCollection, bodyDict);
         }
@@ -3117,7 +3120,7 @@ public partial class NpgsqlRestEndpoint(
                         else if (parameter.DefaultValue is not null)
                         {
                             // Explicit default value (SQL file annotation) — bind it
-                            parameter.Value = parameter.DefaultValue;
+                            BindDefaultValue(parameter);
                             parameter.ParamType = ParamType.QueryString;
                         }
                         else
@@ -3147,7 +3150,7 @@ public partial class NpgsqlRestEndpoint(
                 }
                 else if (parameter.DefaultValue is not null)
                 {
-                    parameter.Value = parameter.DefaultValue;
+                    BindDefaultValue(parameter);
                     parameter.ParamType = ParamType.QueryString;
                 }
                 else
@@ -3626,7 +3629,7 @@ public partial class NpgsqlRestEndpoint(
                         else if (parameter.DefaultValue is not null)
                         {
                             // Explicit default value (SQL file annotation) — bind it
-                            parameter.Value = parameter.DefaultValue;
+                            BindDefaultValue(parameter);
                             parameter.ParamType = ParamType.BodyJson;
                         }
                         else
@@ -3656,7 +3659,7 @@ public partial class NpgsqlRestEndpoint(
                 }
                 else if (parameter.DefaultValue is not null)
                 {
-                    parameter.Value = parameter.DefaultValue;
+                    BindDefaultValue(parameter);
                     parameter.ParamType = ParamType.BodyJson;
                 }
                 else

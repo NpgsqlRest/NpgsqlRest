@@ -17,6 +17,16 @@ public static partial class SqlFiles
             do $$ begin perform 1; end; $$;
             """);
 
+        // Multi command with the void annotation — the endpoint answers 204, no body
+        File.WriteAllText(Path.Combine(Dir, "ts_multi_void.sql"), """
+            -- HTTP POST
+            -- tsclient_module=ts_multi_void
+            -- @void
+            -- @param $1 id
+            select set_config('ts_multi_void.id', $1::text, true);
+            select name from sql_describe_test where id = $1;
+            """);
+
         // Multi command — two SELECTs
         File.WriteAllText(Path.Combine(Dir, "ts_multi_select.sql"), """
             -- tsclient_module=ts_multi_select

@@ -189,7 +189,7 @@ public static class ProxyRequestHandler
             {
                 StatusCode = 504, // Gateway Timeout
                 IsSuccess = false,
-                ErrorMessage = $"Proxy request timed out after {timeoutSeconds} seconds"
+                ErrorMessage = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Proxy request timed out after {timeoutSeconds} seconds")
             };
         }
         catch (HttpRequestException ex)
@@ -758,7 +758,7 @@ public static class ProxyRequestHandler
             {
                 StatusCode = 504,
                 IsSuccess = false,
-                ErrorMessage = $"ProxyOut request timed out after {timeoutSeconds} seconds"
+                ErrorMessage = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"ProxyOut request timed out after {timeoutSeconds} seconds")
             };
         }
         catch (HttpRequestException ex)

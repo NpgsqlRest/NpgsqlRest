@@ -54,6 +54,17 @@ public static partial class Database
         HTTP GET
         login
         ';
+
+        -- logout that names a JWT scheme (stateless: nothing to sign out of) together with a cookie scheme
+        create function ast_logout_jwt_and_cookie()
+        returns table (scheme text)
+        language sql as $$
+        values ('Bearer'), ('Cookies');
+        $$;
+        comment on function ast_logout_jwt_and_cookie() is '
+        HTTP POST
+        logout
+        ';
 """);
     }
 }
@@ -182,5 +193,24 @@ public class AuthSchemeLoginTests(AuthSchemeTestFixture test)
         // 5 minutes = 300 seconds. Allow generous slack on either side.
         expiresIn.Should().BeInRange(240, 360,
             because: "admin scheme uses Expire=5 minutes, distinct from the main scheme's 60 minutes");
+    }
+
+    /// <summary>
+    /// Regression: a logout that names a JWT bearer scheme answered 500 ("...'JwtBearerHandler' which cannot be
+    /// used for SignOutAsync"). A JWT scheme has no server session to end, so it is skipped; the cookie scheme
+    /// named with it is still signed out.
+    /// </summary>
+    [Fact]
+    public async Task Logout_naming_a_jwt_scheme_succeeds_and_still_signs_out_the_cookie_scheme()
+    {
+        using var client = test.CreateClient();
+        using var login = await client.GetAsync("/api/ast-login-main-cookie");
+        login.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var response = await client.PostAsync("/api/ast-logout-jwt-and-cookie", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TryGetValues("Set-Cookie", out var cookies).Should().BeTrue();
+        cookies!.Should().Contain(c => c.StartsWith(".main-cookie=;"), "the cookie scheme is signed out");
     }
 }

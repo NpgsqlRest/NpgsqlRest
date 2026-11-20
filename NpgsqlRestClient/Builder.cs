@@ -765,12 +765,7 @@ public class Builder
                 RefreshPath = _config.GetConfigStr("JwtRefreshPath", authCfg)
             };
 
-            auth.AddJwtBearer(jwtScheme, options =>
-            {
-                options.TokenValidationParameters = JwtTokenConfig.GetTokenValidationParameters();
-                options.SaveToken = true;
-                options.Events = JwtTokenConfig.CreateBearerEvents();
-            });
+            auth.AddJwtBearer(jwtScheme, JwtTokenConfig.ConfigureBearer);
 
             ClientLogger?.LogDebug(
                 "Using JWT Authentication with scheme {jwtScheme}. Access token expires in {jwtExpire}. Refresh token expires in {jwtRefreshExpire}. Refresh path is {RefreshPath}",
@@ -1287,12 +1282,7 @@ public class Builder
             RefreshPath = refreshPath
         };
 
-        auth.AddJwtBearer(schemeName, options =>
-        {
-            options.TokenValidationParameters = jwtConfig.GetTokenValidationParameters();
-            options.SaveToken = true;
-            options.Events = JwtTokenConfig.CreateBearerEvents();
-        });
+        auth.AddJwtBearer(schemeName, jwtConfig.ConfigureBearer);
 
         AdditionalJwtTokenConfigs.Add(jwtConfig);
 

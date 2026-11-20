@@ -139,6 +139,22 @@ public static partial class SqlFiles
             select $1 as result;
             """);
 
+        // Typed parameters with a default: the default text must be converted to the declared type
+        File.WriteAllText(Path.Combine(Dir, "default_typed_int_param.sql"), """
+            -- @param $1 _limit int default 10
+            select $1 as result;
+            """);
+
+        File.WriteAllText(Path.Combine(Dir, "default_typed_mixed_params.sql"), """
+            -- HTTP POST
+            -- @param $1 productId int
+            -- @param $2 quantity int default 1
+            -- @param $3 price numeric = 9.5
+            -- @param $4 express boolean default true
+            -- @param $5 day date default '2026-01-31'
+            select $1 as product_id, $2 as quantity, $3 as price, $4 as express, $5 as day;
+            """);
+
         // @param type hint enables Describe for set_config (PostgreSQL can't infer $1 type without hint)
         File.WriteAllText(Path.Combine(Dir, "param_type_hint_set_config.sql"), """
             -- @param $1 my_key text
@@ -525,5 +541,46 @@ public class ParamDefaultValueTests(SqlFileSourceTestFixture test)
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Be("""["hello"]""");
+    }
+
+    // --- Typed parameters with a default (regression: 500 "Writing values of 'System.String' is not supported") ---
+
+    [Fact]
+    public async Task DefaultTypedInt_NotProvided_UsesDefault()
+    {
+        using var response = await test.Client.GetAsync("/api/default-typed-int-param");
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Be("[10]");
+    }
+
+    [Fact]
+    public async Task DefaultTypedInt_Provided_UsesProvidedValue()
+    {
+        using var response = await test.Client.GetAsync("/api/default-typed-int-param?_limit=3");
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Be("[3]");
+    }
+
+    [Fact]
+    public async Task DefaultTypedMixed_Body_NotProvided_UsesDefaults()
+    {
+        using var body = new StringContent("{\"productId\":7}", Encoding.UTF8, "application/json");
+        using var response = await test.Client.PostAsync("/api/default-typed-mixed-params", body);
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Be("[{\"productId\":7,\"quantity\":1,\"price\":9.5,\"express\":true,\"day\":\"2026-01-31\"}]");
+    }
+
+    [Fact]
+    public async Task DefaultTypedMixed_Body_Provided_UsesProvidedValues()
+    {
+        using var body = new StringContent(
+            "{\"productId\":7,\"quantity\":4,\"price\":1.25,\"express\":false,\"day\":\"2025-12-24\"}", Encoding.UTF8, "application/json");
+        using var response = await test.Client.PostAsync("/api/default-typed-mixed-params", body);
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Be("[{\"productId\":7,\"quantity\":4,\"price\":1.25,\"express\":false,\"day\":\"2025-12-24\"}]");
     }
 }

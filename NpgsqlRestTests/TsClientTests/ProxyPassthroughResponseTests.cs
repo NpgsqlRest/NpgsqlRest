@@ -17,6 +17,19 @@ HTTP GET
 proxy
 tsclient_module=proxy_passthrough_response
 ';
+
+create function tsclient_test.proxy_passthrough_status()
+returns void
+language sql
+as $$
+select null;
+$$;
+comment on function tsclient_test.proxy_passthrough_status() is '
+HTTP GET
+proxy
+tsclient_module=proxy_passthrough_response_status
+tsclient_status_code=true
+';
 """);
         }
     }
@@ -37,6 +50,21 @@ namespace NpgsqlRestTests.TsClientTests
 
             var content = File.ReadAllText(filePath);
             content.Should().Be(Expected);
+        }
+
+        // Regression: with status codes included (the npgsqlrest client default) the function was declared as
+        // Promise<ApiResult<Response>> while it returns the fetch Response itself, which does not type-check.
+        [Fact]
+        public void Test_ProxyPassthroughResponse_WithStatusCode_StillReturnsResponse()
+        {
+            var filePath = Path.Combine(Setup.Program.TsClientOutputPath, "proxy_passthrough_response_status.ts");
+            File.Exists(filePath).Should().BeTrue($"Expected file at {filePath}");
+
+            var content = File.ReadAllText(filePath);
+            content.Should().Contain("export async function tsclientTestProxyPassthroughStatus() : Promise<Response> {");
+            content.Should().Contain("* @returns {Response}");
+            content.Should().Contain("    return response;");
+            content.Should().NotContain("<Response>>");
         }
     }
 }

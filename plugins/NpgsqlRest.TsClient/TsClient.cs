@@ -468,7 +468,9 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             var routineType = routine.Type;
             var paramCount = routine.ParamCount;
             //var paramTypeDescriptors = routine.ParamTypeDescriptor;
-            var isVoid = routine.IsVoid;
+            // endpoint.Void: the void annotation. The endpoint answers 204 with no body whatever the routine
+            // returns, so the client function must not read a JSON body from it.
+            var isVoid = routine.IsVoid || endpoint.Void;
             var returnsSet = routine.ReturnsSet;
             var columnCount = routine.ColumnCount;
             var returnsRecordType = routine.ReturnsRecordType;
@@ -618,12 +620,14 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             // proxy_out: always returns raw upstream response (function runs first, then proxies to upstream).
             // proxy pass-through: when the routine is void, returns raw upstream response.
             // Transform proxies (non-void @proxy routines) return processed data — fall through to normal handling.
+            var rawResponse = false;
             if ((endpoint.IsProxyOut || (endpoint.IsProxy && routine.IsVoid)) && !urlOnly)
             {
                 responseName = "Response";
                 returnExp = "return response;";
+                rawResponse = true;
             }
-            else if (routine.IsMultiCommand && routine.MultiCommandInfo is not null && !urlOnly)
+            else if (routine.IsMultiCommand && routine.MultiCommandInfo is not null && !urlOnly && !endpoint.Void)
             {
                 // Multi-command SQL file: generate response interface with one property per command result
                 responseName = $"I{pascal}Response";
@@ -1218,7 +1222,13 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             }
 
             string resultType;
-            if (string.Equals(responseName, "void", StringComparison.OrdinalIgnoreCase))
+            if (rawResponse)
+            {
+                // The function returns the fetch Response itself (return response;), never the
+                // {status, response, error} object - also when status codes are included.
+                resultType = responseName;
+            }
+            else if (string.Equals(responseName, "void", StringComparison.OrdinalIgnoreCase))
             {
                 if (includeStatusCode)
                 {

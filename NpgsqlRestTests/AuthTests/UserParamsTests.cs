@@ -112,6 +112,26 @@ public static partial class Database
             null::text[] as role
         $$;
         comment on function user_params_login_with_nulls() is 'login';
+
+        -- A login routine whose credential parameter has a claim-mapped name (_user_name),
+        -- on an endpoint that also uses user_params.
+        create function user_params_login_by_name(
+            _user_name text,
+            _secret text
+        )
+        returns table (
+            name_identifier int,
+            name text,
+            role text[]
+        )
+        language sql as $$
+        select 789, _user_name, array['user']
+        where _user_name = 'loginname' and _secret = 'loginsecret'
+        $$;
+        comment on function user_params_login_by_name(text, text) is '
+        login
+        user_params
+        ';
         """);
     }
 }
@@ -189,6 +209,30 @@ public class UserParamsTests(TestFixture test)
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Be("[{\"nameIdentifier\":456,\"name\":\"notmyname\",\"claims\":null}]");
+    }
+
+    // Regression (4.0.0): a login endpoint is anonymous by definition, so its credential parameters must
+    // reach the routine even when their names are claim-mapped and the endpoint uses user_params.
+    [Fact]
+    public async Task Test_login_keeps_claim_mapped_credential_parameters()
+    {
+        using var client = test.Application.CreateClient();
+        client.Timeout = TimeSpan.FromHours(1);
+
+        using var wrongBody = new StringContent(
+            "{\"userName\":\"loginname\",\"secret\":\"wrong\"}", Encoding.UTF8, "application/json");
+        using var wrong = await client.PostAsync("/api/user-params-login-by-name/", wrongBody);
+        wrong.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        using var body = new StringContent(
+            "{\"userName\":\"loginname\",\"secret\":\"loginsecret\"}", Encoding.UTF8, "application/json");
+        using var login = await client.PostAsync("/api/user-params-login-by-name/", body);
+        login.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var response = await client.GetAsync("/api/get-user-params/");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Be("[{\"nameIdentifier\":789,\"name\":\"loginname\",\"role\":[\"user\"]}]");
     }
 
     [Fact]

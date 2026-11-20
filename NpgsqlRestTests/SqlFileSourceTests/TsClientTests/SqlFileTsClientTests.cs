@@ -33,6 +33,19 @@ public class SqlFileTsClientTests(SqlFileSourceTestFixture test)
         content.Should().Contain("export async function doBlock() : Promise<void>");
     }
 
+    // Regression: a multi-command file with the void annotation answers 204 with no body, but its client
+    // function was typed as returning the command results and read them with response.json(), which throws
+    // "Unexpected end of JSON input" in the browser.
+    [Fact]
+    public void TsClient_MultiCommand_VoidAnnotation_ReturnsVoid()
+    {
+        var file = Directory.GetFiles(test.TsClientDir, "*.ts").Single(f => File.ReadAllText(f).Contains("function tsMultiVoid("));
+        var content = File.ReadAllText(file);
+        content.Should().Contain("Promise<void>");
+        content.Should().NotContain("ITsMultiVoidResponse");
+        content.Should().NotContain("response.json()");
+    }
+
     [Fact]
     public void TsClient_SingleCommand_NoParams()
     {

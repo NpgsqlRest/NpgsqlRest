@@ -8,6 +8,28 @@ namespace NpgsqlRest;
 
 internal static class ParameterParser
 {
+    /// <summary>
+    /// Binds the default declared in a parameter annotation (<c>param ... default value</c>) to a parameter the
+    /// request did not supply. The annotation gives the value as text, so for a typed parameter
+    /// (<c>@param $1 _limit int default 10</c>) it is parsed to that type exactly as a query string value would be;
+    /// binding the text itself fails in Npgsql ("Writing values of 'System.String' is not supported for parameters
+    /// having NpgsqlDbType 'Integer'"). Text that does not parse is bound unchanged, and so is an array default.
+    /// </summary>
+    internal static void BindDefaultValue(NpgsqlRestParameter parameter)
+    {
+        if (parameter.DefaultValue is string text
+            && parameter.TypeDescriptor.IsArray is false
+            && parameter.TypeDescriptor.IsText is false)
+        {
+            StringValues values = text;
+            if (TryParseParameter(parameter, ref values, QueryStringNullHandling.Ignore))
+            {
+                return;
+            }
+        }
+        parameter.Value = parameter.DefaultValue;
+    }
+
     internal static bool TryParseParameter(
         NpgsqlRestParameter parameter,
         ref StringValues values,

@@ -306,6 +306,14 @@ public class App
     /// config-to-options wiring (filename / paths / filters / servers / security schemes) is
     /// independently testable from the WebApplication setup.
     /// </summary>
+    /// <summary>
+    /// The TypeScript type of JSON values when ClientCodeGen:DefaultJsonType is not set: the default that
+    /// appsettings.json, the configuration reference and <see cref="TsClientOptions.DefaultJsonType"/> state.
+    /// (The fallback used to be "string", so a configuration without the key generated <c>string</c> for json and
+    /// jsonb values wherever the type is taken from this setting.)
+    /// </summary>
+    public const string TsClientDefaultJsonType = "any";
+
     public OpenApiOptions? BuildOpenApiOptions(string? connectionString)
     {
         var openApiCfg = _config.NpgsqlRestCfg.GetSection("OpenApiOptions");
@@ -551,7 +559,7 @@ public class App
                 IncludeParseUrlParam = _config.GetConfigBool("IncludeParseUrlParam", tsClientCfg),
                 IncludeParseRequestParam = _config.GetConfigBool("IncludeParseRequestParam", tsClientCfg),
                 UseRoutineNameInsteadOfEndpoint = _config.GetConfigBool("UseRoutineNameInsteadOfEndpoint", tsClientCfg),
-                DefaultJsonType = _config.GetConfigStr("DefaultJsonType", tsClientCfg) ?? "string",
+                DefaultJsonType = _config.GetConfigStr("DefaultJsonType", tsClientCfg) ?? TsClientDefaultJsonType,
                 ExportUrls = _config.GetConfigBool("ExportUrls", tsClientCfg),
                 SkipTypes = _config.GetConfigBool("SkipTypes", tsClientCfg),
                 UniqueModels = _config.GetConfigBool("UniqueModels", tsClientCfg),
