@@ -40,7 +40,7 @@ The complete release procedure. Written so that someone who has never cut a rele
 
 | Secret | Used by |
 |---|---|
-| `NUGET_API_KEY` | NuGet publish |
+| (NuGet: trusted publishing — no key; a policy on nuget.org for owner `vbilopav` trusts repository `NpgsqlRest/NpgsqlRest`, workflow file `build-test-publish.yml`) | NuGet publish |
 | `DOCKER_HUB_USERNAME` / `DOCKER_HUB_TOKEN` | Docker Hub push |
 | (npm: OIDC trusted publishing — no token; configured on npmjs.com for the `npgsqlrest` package) | npm publish |
 

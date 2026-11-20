@@ -13,6 +13,9 @@ permissions:
 jobs:
   build-test-publish:
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      id-token: write  # NuGet trusted publishing: GitHub issues the token that NuGet/login exchanges for a key
     services:
       postgres:
         image: postgres:17
@@ -44,8 +47,15 @@ jobs:
     - name: Test on .NET 10
       # The library and plugins also target net10.0 (LTS): run the whole suite against that build too.
       run: dotnet test NpgsqlRestTests/NpgsqlRestTests.csproj -c Release -p:NpgsqlRestTestFramework=net10.0 --verbosity m
+    # NuGet trusted publishing: no stored API key that expires. nuget.org has a policy that trusts this
+    # repository and this workflow file; the login step exchanges GitHub's token for a key valid for one hour.
+    - name: NuGet login (trusted publishing)
+      uses: NuGet/login@v1
+      id: nuget_login
+      with:
+        user: vbilopav  # the nuget.org profile name that owns the packages
     - name: Publish
-      run: dotnet nuget push **\*.nupkg --source https://api.nuget.org/v3/index.json --api-key ${{secrets.NUGET_API_KEY}} --skip-duplicate
+      run: dotnet nuget push **\*.nupkg --source https://api.nuget.org/v3/index.json --api-key ${{ steps.nuget_login.outputs.NUGET_API_KEY }} --skip-duplicate
 
   create-release:
     needs: build-test-publish
