@@ -68,3 +68,62 @@ jobs:
       run: dotnet publish ./NpgsqlRestClient/NpgsqlRestClient.csproj -r linux-x64 -c Release
     - name: AOT smoke test (real requests)
       run: ./.github/scripts/aot-smoke-test.sh ./NpgsqlRestClient/bin/Release/net11.0/linux-x64/publish/NpgsqlRestClient
+
+  release-builds:
+    # A rehearsal of what the release workflow builds and nothing here runs before a release: the native AOT
+    # executable for the other platforms. The release publishes to NuGet before it builds these, so a build
+    # that fails there leaves a release without some of its binaries.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            rid: win-x64
+            exe: NpgsqlRestClient.exe
+          - os: ubuntu-22.04-arm
+            rid: linux-arm64
+            exe: NpgsqlRestClient
+          - os: macos-latest
+            rid: osx-arm64
+            exe: NpgsqlRestClient
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup .NET11
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 11.0.x
+    - name: Build AOT (${{ matrix.rid }})
+      run: dotnet publish ./NpgsqlRestClient/NpgsqlRestClient.csproj -r ${{ matrix.rid }} -c Release
+    - name: The executable starts and reports the version in version.txt
+      shell: bash
+      run: |
+        OUT=$(./NpgsqlRestClient/bin/Release/net11.0/${{ matrix.rid }}/publish/${{ matrix.exe }} --version)
+        echo "$OUT"
+        echo "$OUT" | grep -E "^NpgsqlRestClient[[:space:]]+$(cat version.txt)\.0"
+
+  release-images:
+    # The same for the Docker images: built as the release builds them, not pushed.
+    runs-on: ubuntu-22.04
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup .NET11
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 11.0.x
+    - name: Build Linux AOT
+      run: dotnet publish ./NpgsqlRestClient/NpgsqlRestClient.csproj -r linux-x64 -c Release
+    - name: AOT image (docker/Dockerfile) runs the executable
+      run: |
+        cp ./NpgsqlRestClient/bin/Release/net11.0/linux-x64/publish/NpgsqlRestClient ./docker/NpgsqlRestClient
+        chmod +x ./docker/NpgsqlRestClient
+        docker build -f docker/Dockerfile -t npgsqlrest-check:aot ./docker
+        docker run --rm npgsqlrest-check:aot --version | grep -E "^NpgsqlRestClient[[:space:]]+$(cat version.txt)\.0"
+    - name: Bun image (docker/Dockerfile.bun) runs the executable
+      run: |
+        docker build -f docker/Dockerfile.bun -t npgsqlrest-check:bun ./docker
+        docker run --rm npgsqlrest-check:bun --version | grep -E "^NpgsqlRestClient[[:space:]]+$(cat version.txt)\.0"
+    - name: JIT image (docker/Dockerfile.jit) builds and reports the version in version.txt
+      run: |
+        docker build -f docker/Dockerfile.jit -t npgsqlrest-check:jit .
+        docker run --rm npgsqlrest-check:jit --version | grep -E "^NpgsqlRestClient[[:space:]]+$(cat version.txt)\.0"
