@@ -7,7 +7,7 @@ using NpgsqlRestTests.Setup;
 
 namespace NpgsqlRestTests;
 
-/// <summary>Fixes in the plugins and handlers (3.22.0): OpenAPI tags, client generator files, upload handler names, test file includes.</summary>
+/// <summary>Fixes in the plugins and handlers (4.0.0): OpenAPI tags, client generator files, upload handler names, test file includes.</summary>
 [Collection("UnhandledCommentLinesFixture")]
 public class PluginAndHandlerFixesTests(UnhandledCommentLinesTestFixture test)
 {

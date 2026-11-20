@@ -372,7 +372,7 @@ public class NpgsqlRestOptions
     /// end. A response smaller than this is therefore sent in one piece - one network write instead of one per
     /// <see cref="BufferRows"/> rows - and, if the query fails part-way, the client gets an error response instead of
     /// a truncated one. Set to 0 to send after every <see cref="BufferRows"/> rows regardless of size (the behavior
-    /// before 3.22.0). Not used when BufferRows is 0 (every row is sent) or 1 (all rows are buffered).
+    /// before 4.0.0). Not used when BufferRows is 0 (every row is sent) or 1 (all rows are buffered).
     /// </summary>
     public int ResponseBufferBytes { get; set; } = 16 * 1024;
 

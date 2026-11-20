@@ -1,4 +1,4 @@
-# EndpointBenchmarks: .NET 10 (3.21.0) vs .NET 11 (3.22.0 upgrades)
+# EndpointBenchmarks: .NET 10 (3.21.0) vs .NET 11 (4.0.0 upgrades)
 
 Recorded 2026-11-11, on the same machine and PostgreSQL container as the baseline (`EndpointBenchmarks-3.21.0.md`): Apple M4 Pro, PostgreSQL 17.10 in `npgsqlrest-benchmark-pg`.
 
@@ -10,7 +10,7 @@ Changing the measurement tool changes the numbers by itself. For example, the .N
 
 | | .NET 10 control | .NET 11 |
 |---|---|---|
-| Code | `6cc6f55` (3.21.0), net10.0, LangVersion 14 | branch `3.22.0` (all projects net11.0, packages upgraded) |
+| Code | `6cc6f55` (3.21.0), net10.0, LangVersion 14 | branch `4.0.0` (all projects net11.0, packages upgraded) |
 | Runtime | .NET 10.0.0 (10.0.25.52411) | .NET 11.0.0 (11.0.26.53018) |
 | ASP.NET Core / Microsoft.Extensions | 10.0.x | 11.0.0 |
 | Npgsql | 10.0.3 | 10.0.3 (no 11.x exists) |

@@ -1,6 +1,6 @@
 # NpgsqlRest — Full Annotation Reference
 
-Every comment annotation and custom parameter, generated from `npgsqlrest --annotations` (NpgsqlRest v3.22.0): what core reads and what every plugin and handler of the client reads. Regenerate with `npgsqlrest --annotations`.
+Every comment annotation and custom parameter, generated from `npgsqlrest --annotations` (NpgsqlRest v4.0.0): what core reads and what every plugin and handler of the client reads. Regenerate with `npgsqlrest --annotations`.
 
 Each entry says who reads it (**Owner**), how it is written (**Form**) and where it is read (**Where**). The `@` prefix is optional on endpoint annotations. In an endpoint comment, a line starting with `@` that nothing reads is not published as the description, and an unknown `@key = value` logs a warning at startup; `npgsqlrest --endpoints` lists both per endpoint (`unknownAnnotations`, `unknownCustomParameters`, `diagnostics`).
 

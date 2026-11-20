@@ -51,7 +51,7 @@ GET /api/fix-slow-endpoint';
     }
 }
 
-/// <summary>Fixes in HTTP Custom Types (3.22.0).</summary>
+/// <summary>Fixes in HTTP Custom Types (4.0.0).</summary>
 [Collection("TestFixture")]
 public class HttpClientTypeFixesTests : IClassFixture<WireMockFixture>
 {

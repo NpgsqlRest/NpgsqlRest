@@ -80,7 +80,7 @@ public static partial class Database
 }
 
 /// <summary>
-/// Fixes in how a comment's "key = value" lines are read (3.22.0): keys in any case, values that are not valid
+/// Fixes in how a comment's "key = value" lines are read (4.0.0): keys in any case, values that are not valid
 /// escapes, switch values, values that are not valid, basic_auth, the @ on a resolved parameter, and plugin lines
 /// under a tag.
 /// </summary>

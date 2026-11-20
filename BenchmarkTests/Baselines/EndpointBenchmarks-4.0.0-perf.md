@@ -1,4 +1,4 @@
-# EndpointBenchmarks: 3.22.0 performance work
+# EndpointBenchmarks: 4.0.0 performance work
 
 Recorded 2026-11-19 on the same machine and PostgreSQL container as the earlier baselines: Apple M4 Pro, PostgreSQL 17.10 in `npgsqlrest-benchmark-pg` (port 55432), .NET 11.0.0, BenchmarkDotNet 0.16.0-preview.2 DefaultJob. Run with:
 
@@ -7,9 +7,9 @@ NPGSQLREST_BENCHMARK_CONNECTION="Host=localhost;Port=55432;Database=postgres;Use
   dotnet run -c Release -- --endpoints
 ```
 
-The starting point is branch `3.22.0` with the security fixes applied, before any performance change. Each row adds one change to the previous row and is a single full run.
+The starting point is branch `4.0.0` with the security fixes applied, before any performance change. Each row adds one change to the previous row and is a single full run.
 
-This document has four parts; the numbers quoted in the changelog are those of **round 3** (3.22.0 against the released 3.21.0 on .NET 10) and, for endpoints with a request context, **round 4** at the end. **Round 1** (the sections up to "How the JIT verdict was checked") is the first set of changes, committed as `9d63171`. **Round 2** continues from there to the final request pipeline and compares it with the start of the performance work (`5befe76`, on .NET 11). **Round 3** compares the release with 3.21.0 on .NET 10, which also uncovered what resetting connections costs. Two statements in round 1 turned out to be wrong and are corrected in round 2: that methods with a pooling async builder stay classic when Runtime Async is on, and the ApacheBench numbers for the native AOT build.
+This document has four parts; the numbers quoted in the changelog are those of **round 3** (4.0.0 against the released 3.21.0 on .NET 10) and, for endpoints with a request context, **round 4** at the end. **Round 1** (the sections up to "How the JIT verdict was checked") is the first set of changes, committed as `9d63171`. **Round 2** continues from there to the final request pipeline and compares it with the start of the performance work (`5befe76`, on .NET 11). **Round 3** compares the release with 3.21.0 on .NET 10, which also uncovered what resetting connections costs. Two statements in round 1 turned out to be wrong and are corrected in round 2: that methods with a pooling async builder stay classic when Runtime Async is on, and the ApacheBench numbers for the native AOT build.
 
 ## Results
 
@@ -75,7 +75,7 @@ Run the JIT build of the client with `DOTNET_JitStdOutFile=jit.txt DOTNET_JitDis
 
 # Round 2: UTF-8 rendering, request state, Runtime Async
 
-Recorded 2026-11-19, same machine and container. "Before" is `5befe76` (security fixes, no performance work), as in round 1. "After" is the final 3.22.0 working tree. Every comparison was interleaved (before, after, before, after ...).
+Recorded 2026-11-19, same machine and container. "Before" is `5befe76` (security fixes, no performance work), as in round 1. "After" is the final 4.0.0 working tree. Every comparison was interleaved (before, after, before, after ...).
 
 ## What changed after round 1
 
@@ -158,9 +158,9 @@ Verification of the Runtime Async build: the full test suite (2,998 tests) passe
 
 ---
 
-# Round 3: 3.22.0 against 3.21.0 on .NET 10, Runtime Async, and connection resets
+# Round 3: 4.0.0 against 3.21.0 on .NET 10, Runtime Async, and connection resets
 
-Recorded 2026-11-19, same machine and container. Rounds 1 and 2 compared commits of the 3.22.0 branch with each other. This round compares what ships with the previous release: **3.21.0** built from `master` (`6cc6f55`) with the .NET 10 SDK (10.0.100, runtime 10.0.0), **3.22.0** on .NET 11, and 3.22.0 on .NET 11 compiled with Runtime Async (`-p:NpgsqlRestRuntimeAsync=true`), each as a JIT build (`dotnet NpgsqlRestClient.dll`) and as a native AOT executable (osx-arm64). Published the standard way, default settings.
+Recorded 2026-11-19, same machine and container. Rounds 1 and 2 compared commits of the 4.0.0 branch with each other. This round compares what ships with the previous release: **3.21.0** built from `master` (`6cc6f55`) with the .NET 10 SDK (10.0.100, runtime 10.0.0), **4.0.0** on .NET 11, and 4.0.0 on .NET 11 compiled with Runtime Async (`-p:NpgsqlRestRuntimeAsync=true`), each as a JIT build (`dotnet NpgsqlRestClient.dll`) and as a native AOT executable (osx-arm64). Published the standard way, default settings.
 
 Load method as in round 2 (HTTP/1.1 keep-alive client, sequential latency at 1 connection, throughput at 32, server CPU per request at 8), with one more endpoint: `benchmark_plpgsql(_id int)`, a PL/pgSQL function that runs five small queries against a 1,000-row table. Three rounds per table, each in a different order of the variants; values are round 1 / 2 / 3.
 
@@ -179,22 +179,22 @@ Requests per second at 32 connections and mean response time at 1 connection (µ
 | | Text req/s | PL/pgSQL req/s | 100 rows req/s | Text µs | PL/pgSQL µs | 100 rows µs | 119 KB json µs |
 |---|---|---|---|---|---|---|---|
 | JIT 3.21.0 (.NET 10) | 38,977 / 39,693 / 39,056 | 32,698 / 32,767 / 32,445 | 16,948 / 16,377 / 16,126 | 181.9 / 183.9 / 182.0 | 250.7 / 258.4 / 255.3 | 453.4 / 459.5 / 448.1 | 2444.5 / 2369.6 / 2398.0 |
-| JIT 3.22.0 | 39,120 / 38,347 / 40,018 | 32,083 / 32,885 / 31,255 | 20,185 / 20,550 / 20,679 | 190.0 / 191.3 / 190.2 | 262.4 / 259.6 / 259.5 | 429.1 / 412.3 / 419.5 | 2226.2 / 2288.5 / 2256.1 |
-| JIT 3.22.0 Runtime Async | 38,706 / 40,617 / 39,720 | 32,632 / 32,037 / 31,829 | 20,671 / 19,535 / 20,376 | 191.9 / 188.3 / 188.5 | 259.7 / 264.7 / 261.2 | 420.2 / 423.0 / 427.1 | 2195.8 / 2214.0 / 2249.2 |
+| JIT 4.0.0 | 39,120 / 38,347 / 40,018 | 32,083 / 32,885 / 31,255 | 20,185 / 20,550 / 20,679 | 190.0 / 191.3 / 190.2 | 262.4 / 259.6 / 259.5 | 429.1 / 412.3 / 419.5 | 2226.2 / 2288.5 / 2256.1 |
+| JIT 4.0.0 Runtime Async | 38,706 / 40,617 / 39,720 | 32,632 / 32,037 / 31,829 | 20,671 / 19,535 / 20,376 | 191.9 / 188.3 / 188.5 | 259.7 / 264.7 / 261.2 | 420.2 / 423.0 / 427.1 | 2195.8 / 2214.0 / 2249.2 |
 | AOT 3.21.0 (.NET 10) | 39,744 / 39,283 / 38,186 | 31,402 / 31,894 / 32,246 | 15,220 / 15,694 / 15,479 | 183.2 / 181.3 / 183.7 | 251.9 / 250.9 / 249.5 | 470.5 / 483.9 / 488.6 | 2381.9 / 2383.0 / 2346.8 |
-| AOT 3.22.0 | 37,238 / 38,385 / 38,786 | 31,493 / 29,976 / 31,053 | 18,413 / 18,705 / 19,003 | 191.7 / 192.8 / 190.1 | 258.7 / 261.0 / 260.9 | 470.0 / 466.2 / 481.2 | 2114.5 / 2134.3 / 2113.2 |
-| AOT 3.22.0 Runtime Async | 37,919 / 37,431 / 38,158 | 29,876 / 32,320 / 30,892 | 18,656 / 19,110 / 19,075 | 191.6 / 191.7 / 188.3 | 261.0 / 257.4 / 263.2 | 470.3 / 477.2 / 477.9 | 2179.8 / 2093.8 / 2115.2 |
+| AOT 4.0.0 | 37,238 / 38,385 / 38,786 | 31,493 / 29,976 / 31,053 | 18,413 / 18,705 / 19,003 | 191.7 / 192.8 / 190.1 | 258.7 / 261.0 / 260.9 | 470.0 / 466.2 / 481.2 | 2114.5 / 2134.3 / 2113.2 |
+| AOT 4.0.0 Runtime Async | 37,919 / 37,431 / 38,158 | 29,876 / 32,320 / 30,892 | 18,656 / 19,110 / 19,075 | 191.6 / 191.7 / 188.3 | 261.0 / 257.4 / 263.2 | 470.3 / 477.2 / 477.9 | 2179.8 / 2093.8 / 2115.2 |
 
 Server CPU per request at 8 connections (µs) and RSS after the load (MB):
 
 | | Text | 100 rows | 119 KB json | RSS |
 |---|---|---|---|---|
 | JIT 3.21.0 (.NET 10) | 198.1 / 203.5 / 202.4 | 421.2 / 403.0 / 451.2 | 835.0 / 910.0 / 901.7 | 327 / 333 / 338 |
-| JIT 3.22.0 | 145.8 / 146.6 / 143.6 | 271.8 / 274.1 / 272.8 | 479.2 / 488.3 / 484.2 | 149 / 149 / 144 |
-| JIT 3.22.0 Runtime Async | 146.5 / 143.0 / 134.6 | 277.5 / 272.9 / 267.9 | 492.5 / 473.3 / 462.5 | 149 / 145 / 148 |
+| JIT 4.0.0 | 145.8 / 146.6 / 143.6 | 271.8 / 274.1 / 272.8 | 479.2 / 488.3 / 484.2 | 149 / 149 / 144 |
+| JIT 4.0.0 Runtime Async | 146.5 / 143.0 / 134.6 | 277.5 / 272.9 / 267.9 | 492.5 / 473.3 / 462.5 | 149 / 145 / 148 |
 | AOT 3.21.0 (.NET 10) | 158.5 / 158.8 / 157.2 | 461.8 / 447.5 / 460.2 | 782.5 / 780.0 / 777.5 | 246 / 250 / 247 |
-| AOT 3.22.0 | 151.4 / 150.2 / 152.4 | 328.9 / 324.1 / 328.0 | 505.0 / 481.7 / 493.3 | 65 / 62 / 65 |
-| AOT 3.22.0 Runtime Async | 151.5 / 147.4 / 150.5 | 329.5 / 323.9 / 316.6 | 483.3 / 497.5 / 485.0 | 67 / 65 / 66 |
+| AOT 4.0.0 | 151.4 / 150.2 / 152.4 | 328.9 / 324.1 / 328.0 | 505.0 / 481.7 / 493.3 | 65 / 62 / 65 |
+| AOT 4.0.0 Runtime Async | 151.5 / 147.4 / 150.5 | 329.5 / 323.9 / 316.6 | 483.3 / 497.5 / 485.0 | 67 / 65 / 66 |
 
 ### With the connection reset (the lighter one that keeps plans), as an application with user_context gets it
 
@@ -203,59 +203,59 @@ Requests per second at 32 connections and mean response time at 1 connection (µ
 | | Text req/s | PL/pgSQL req/s | 100 rows req/s | Text µs | PL/pgSQL µs | 100 rows µs | 119 KB json µs |
 |---|---|---|---|---|---|---|---|
 | JIT 3.21.0 (.NET 10) | 38,736 / 38,985 / 39,614 | 32,606 / 32,273 / 32,351 | 16,826 / 16,352 / 16,695 | 182.0 / 185.8 / 182.7 | 257.8 / 252.9 / 257.4 | 454.8 / 445.9 / 456.4 | 2399.3 / 2519.6 / 2409.3 |
-| JIT 3.22.0 | 35,068 / 34,839 / 34,518 | 27,736 / 27,394 / 26,542 | 18,050 / 18,247 / 18,429 | 197.4 / 199.2 / 199.0 | 277.1 / 277.0 / 275.5 | 418.0 / 414.7 / 417.0 | 2317.4 / 2287.2 / 2273.4 |
-| JIT 3.22.0 Runtime Async | 35,456 / 35,047 / 34,766 | 27,321 / 27,450 / 27,162 | 18,308 / 18,058 / 17,904 | 197.3 / 196.3 / 197.6 | 278.1 / 279.8 / 276.8 | 415.0 / 417.2 / 413.5 | 2281.4 / 2334.4 / 2246.8 |
+| JIT 4.0.0 | 35,068 / 34,839 / 34,518 | 27,736 / 27,394 / 26,542 | 18,050 / 18,247 / 18,429 | 197.4 / 199.2 / 199.0 | 277.1 / 277.0 / 275.5 | 418.0 / 414.7 / 417.0 | 2317.4 / 2287.2 / 2273.4 |
+| JIT 4.0.0 Runtime Async | 35,456 / 35,047 / 34,766 | 27,321 / 27,450 / 27,162 | 18,308 / 18,058 / 17,904 | 197.3 / 196.3 / 197.6 | 278.1 / 279.8 / 276.8 | 415.0 / 417.2 / 413.5 | 2281.4 / 2334.4 / 2246.8 |
 | AOT 3.21.0 (.NET 10) | 39,760 / 39,294 / 41,203 | 31,725 / 32,617 / 32,104 | 15,558 / 15,808 / 15,366 | 183.5 / 180.8 / 180.4 | 253.1 / 253.8 / 259.0 | 479.3 / 490.1 / 477.3 | 2407.7 / 2453.7 / 2464.2 |
-| AOT 3.22.0 | 33,464 / 31,848 / 34,579 | 26,515 / 26,675 / 27,715 | 17,141 / 17,580 / 17,272 | 202.6 / 200.6 / 199.3 | 279.2 / 274.1 / 279.3 | 436.1 / 440.2 / 437.0 | 2188.6 / 2156.0 / 2142.5 |
-| AOT 3.22.0 Runtime Async | 34,096 / 33,211 / 31,372 | 27,142 / 26,297 / 25,657 | 16,919 / 16,807 / 17,167 | 202.0 / 203.0 / 202.7 | 282.8 / 277.0 / 275.7 | 435.3 / 434.1 / 432.8 | 2151.9 / 2114.4 / 2167.4 |
+| AOT 4.0.0 | 33,464 / 31,848 / 34,579 | 26,515 / 26,675 / 27,715 | 17,141 / 17,580 / 17,272 | 202.6 / 200.6 / 199.3 | 279.2 / 274.1 / 279.3 | 436.1 / 440.2 / 437.0 | 2188.6 / 2156.0 / 2142.5 |
+| AOT 4.0.0 Runtime Async | 34,096 / 33,211 / 31,372 | 27,142 / 26,297 / 25,657 | 16,919 / 16,807 / 17,167 | 202.0 / 203.0 / 202.7 | 282.8 / 277.0 / 275.7 | 435.3 / 434.1 / 432.8 | 2151.9 / 2114.4 / 2167.4 |
 
 Server CPU per request at 8 connections (µs) and RSS after the load (MB):
 
 | | Text | 100 rows | 119 KB json | RSS |
 |---|---|---|---|---|
 | JIT 3.21.0 (.NET 10) | 195.1 / 193.4 / 192.0 | 431.0 / 438.4 / 434.0 | 910.0 / 884.2 / 891.7 | 330 / 327 / 334 |
-| JIT 3.22.0 | 153.1 / 153.8 / 148.8 | 301.9 / 294.8 / 287.8 | 566.7 / 566.7 / 560.8 | 143 / 142 / 148 |
-| JIT 3.22.0 Runtime Async | 154.6 / 154.6 / 153.1 | 300.6 / 297.2 / 294.1 | 560.0 / 570.8 / 551.7 | 145 / 148 / 144 |
+| JIT 4.0.0 | 153.1 / 153.8 / 148.8 | 301.9 / 294.8 / 287.8 | 566.7 / 566.7 / 560.8 | 143 / 142 / 148 |
+| JIT 4.0.0 Runtime Async | 154.6 / 154.6 / 153.1 | 300.6 / 297.2 / 294.1 | 560.0 / 570.8 / 551.7 | 145 / 148 / 144 |
 | AOT 3.21.0 (.NET 10) | 156.9 / 159.6 / 158.2 | 458.0 / 456.9 / 366.6 | 755.8 / 762.5 / 752.5 | 239 / 242 / 248 |
-| AOT 3.22.0 | 166.8 / 157.5 / 159.8 | 366.5 / 344.4 / 353.9 | 595.0 / 557.5 / 570.0 | 61 / 65 / 60 |
-| AOT 3.22.0 Runtime Async | 163.4 / 162.6 / 165.0 | 355.2 / 346.5 / 356.1 | 582.5 / 578.3 / 588.3 | 60 / 60 / 64 |
+| AOT 4.0.0 | 166.8 / 157.5 / 159.8 | 366.5 / 344.4 / 353.9 | 595.0 / 557.5 / 570.0 | 61 / 65 / 60 |
+| AOT 4.0.0 Runtime Async | 163.4 / 162.6 / 165.0 | 355.2 / 346.5 / 356.1 | 582.5 / 578.3 / 588.3 | 60 / 60 / 64 |
 
-### .NET 10 against .NET 11 with the same 3.22.0 code (both with `DISCARD ALL`, before the reset rule)
+### .NET 10 against .NET 11 with the same 4.0.0 code (both with `DISCARD ALL`, before the reset rule)
 
 Requests per second at 32 connections and mean response time at 1 connection (µs):
 
 | | Text req/s | 100 rows req/s | Text µs | 100 rows µs | 119 KB json µs |
 |---|---|---|---|---|---|
 | JIT 3.21.0 (.NET 10) | 39,908 / 39,701 / 39,338 | 16,597 / 16,504 / 16,956 | 188.7 / 181.1 / 183.7 | 441.7 / 446.7 / 446.1 | 2408.0 / 2433.7 / 2514.1 |
-| JIT 3.22.0 code on .NET 10 | 34,767 / 34,084 / 34,264 | 18,557 / 18,437 / 18,535 | 189.7 / 189.9 / 187.2 | 392.8 / 390.7 / 391.5 | 2092.7 / 2114.1 / 2059.3 |
-| JIT 3.22.0 (.NET 11) | 34,474 / 35,043 / 35,315 | 18,645 / 18,489 / 18,258 | 194.4 / 193.6 / 194.8 | 398.9 / 396.5 / 398.1 | 2323.7 / 2283.2 / 2320.2 |
-| JIT 3.22.0 Runtime Async | 35,813 / 34,988 / 35,444 | 18,311 / 18,270 / 18,883 | 192.0 / 196.2 / 192.4 | 402.8 / 404.5 / 400.6 | 2289.6 / 2269.2 / 2213.2 |
+| JIT 4.0.0 code on .NET 10 | 34,767 / 34,084 / 34,264 | 18,557 / 18,437 / 18,535 | 189.7 / 189.9 / 187.2 | 392.8 / 390.7 / 391.5 | 2092.7 / 2114.1 / 2059.3 |
+| JIT 4.0.0 (.NET 11) | 34,474 / 35,043 / 35,315 | 18,645 / 18,489 / 18,258 | 194.4 / 193.6 / 194.8 | 398.9 / 396.5 / 398.1 | 2323.7 / 2283.2 / 2320.2 |
+| JIT 4.0.0 Runtime Async | 35,813 / 34,988 / 35,444 | 18,311 / 18,270 / 18,883 | 192.0 / 196.2 / 192.4 | 402.8 / 404.5 / 400.6 | 2289.6 / 2269.2 / 2213.2 |
 | AOT 3.21.0 (.NET 10) | 41,238 / 39,076 / 38,328 | 14,805 / 15,352 / 15,363 | 182.0 / 181.8 / 180.9 | 458.9 / 466.8 / 464.6 | 2445.8 / 2605.1 / 2365.3 |
-| AOT 3.22.0 code on .NET 10 | 35,966 / 36,284 / 33,788 | 17,088 / 17,403 / 17,433 | 192.0 / 193.1 / 193.1 | 424.7 / 418.9 / 422.5 | 2078.1 / 2062.4 / 2068.2 |
-| AOT 3.22.0 (.NET 11) | 33,472 / 33,692 / 34,813 | 16,675 / 16,297 / 16,993 | 194.8 / 190.6 / 195.8 | 422.0 / 427.5 / 428.4 | 2150.9 / 2177.4 / 2172.9 |
-| AOT 3.22.0 Runtime Async | 33,589 / 32,967 / 33,690 | 16,590 / 16,612 / 16,919 | 194.0 / 196.9 / 197.8 | 426.2 / 426.7 / 429.3 | 2194.1 / 2183.4 / 2150.3 |
+| AOT 4.0.0 code on .NET 10 | 35,966 / 36,284 / 33,788 | 17,088 / 17,403 / 17,433 | 192.0 / 193.1 / 193.1 | 424.7 / 418.9 / 422.5 | 2078.1 / 2062.4 / 2068.2 |
+| AOT 4.0.0 (.NET 11) | 33,472 / 33,692 / 34,813 | 16,675 / 16,297 / 16,993 | 194.8 / 190.6 / 195.8 | 422.0 / 427.5 / 428.4 | 2150.9 / 2177.4 / 2172.9 |
+| AOT 4.0.0 Runtime Async | 33,589 / 32,967 / 33,690 | 16,590 / 16,612 / 16,919 | 194.0 / 196.9 / 197.8 | 426.2 / 426.7 / 429.3 | 2194.1 / 2183.4 / 2150.3 |
 
 Server CPU per request at 8 connections (µs) and RSS after the load (MB):
 
 | | Text | 100 rows | 119 KB json | RSS |
 |---|---|---|---|---|
 | JIT 3.21.0 (.NET 10) | 192.4 / 194.5 / 202.2 | 417.6 / 428.2 / 384.2 | 807.5 / 871.7 / 880.0 | 335 / 341 / 345 |
-| JIT 3.22.0 code on .NET 10 | 211.6 / 208.9 / 212.8 | 360.6 / 357.8 / 362.6 | 600.0 / 593.3 / 577.5 | 282 / 280 / 283 |
-| JIT 3.22.0 (.NET 11) | 152.1 / 153.1 / 150.8 | 290.5 / 290.1 / 285.9 | 531.7 / 550.0 / 529.2 | 141 / 140 / 141 |
-| JIT 3.22.0 Runtime Async | 153.4 / 155.0 / 150.6 | 292.1 / 292.2 / 285.0 | 556.7 / 551.7 / 530.0 | 144 / 143 / 148 |
+| JIT 4.0.0 code on .NET 10 | 211.6 / 208.9 / 212.8 | 360.6 / 357.8 / 362.6 | 600.0 / 593.3 / 577.5 | 282 / 280 / 283 |
+| JIT 4.0.0 (.NET 11) | 152.1 / 153.1 / 150.8 | 290.5 / 290.1 / 285.9 | 531.7 / 550.0 / 529.2 | 141 / 140 / 141 |
+| JIT 4.0.0 Runtime Async | 153.4 / 155.0 / 150.6 | 292.1 / 292.2 / 285.0 | 556.7 / 551.7 / 530.0 | 144 / 143 / 148 |
 | AOT 3.21.0 (.NET 10) | 156.5 / 158.5 / 158.6 | 442.9 / 435.8 / 405.1 | 769.2 / 745.0 / 764.2 | 245 / 244 / 248 |
-| AOT 3.22.0 code on .NET 10 | 205.9 / 212.1 / 205.8 | 363.2 / 392.8 / 389.9 | 622.5 / 625.8 / 613.3 | 203 / 203 / 204 |
-| AOT 3.22.0 (.NET 11) | 162.5 / 161.9 / 164.2 | 361.1 / 355.0 / 357.8 | 579.2 / 565.8 / 569.2 | 61 / 60 / 65 |
-| AOT 3.22.0 Runtime Async | 159.6 / 160.0 / 163.4 | 355.4 / 354.8 / 355.5 | 569.2 / 563.3 / 564.2 | 60 / 61 / 66 |
+| AOT 4.0.0 code on .NET 10 | 205.9 / 212.1 / 205.8 | 363.2 / 392.8 / 389.9 | 622.5 / 625.8 / 613.3 | 203 / 203 / 204 |
+| AOT 4.0.0 (.NET 11) | 162.5 / 161.9 / 164.2 | 361.1 / 355.0 / 357.8 | 579.2 / 565.8 / 569.2 | 61 / 60 / 65 |
+| AOT 4.0.0 Runtime Async | 159.6 / 160.0 / 163.4 | 355.4 / 354.8 / 355.5 | 569.2 / 563.3 / 564.2 | 60 / 61 / 66 |
 
 
-The third table is where "what .NET 11 itself changes" in the changelog comes from. It was measured before the reset rule existed, so both 3.22.0 builds in it reset with `DISCARD ALL`, and 3.21.0 (which never reset) is listed only for orientation.
+The third table is where "what .NET 11 itself changes" in the changelog comes from. It was measured before the reset rule existed, so both 4.0.0 builds in it reset with `DISCARD ALL`, and 3.21.0 (which never reset) is listed only for orientation.
 
 Runtime Async against standard async, final builds: every figure is within the spread between rounds. The 2-3% lower row throughput noted in round 2 was an order effect (Runtime Async always ran last there); with the order varied it is gone.
 
 ## What resetting connections costs
 
-The same 3.22.0 binaries with the three reset behaviors. "No reset" is the final build with default settings (three rounds), "lighter reset" the build that always reset (three rounds), `DISCARD ALL` the builds before the client change (JIT: six runs for text, three for PL/pgSQL; AOT: five and two). Averages:
+The same 4.0.0 binaries with the three reset behaviors. "No reset" is the final build with default settings (three rounds), "lighter reset" the build that always reset (three rounds), `DISCARD ALL` the builds before the client change (JIT: six runs for text, three for PL/pgSQL; AOT: five and two). Averages:
 
 | | No reset | Lighter reset | `DISCARD ALL` | 3.21.0 (no reset) |
 |---|---:|---:|---:|---:|
@@ -279,15 +279,15 @@ The endpoint benchmark was copied into a worktree of `master` (it did not exist 
 | | GetText | GetRows100 | HttpOnly | NpgsqlOnly |
 |---|---|---|---|---|
 | 3.21.0, .NET 10, run 1 | 177.19 µs, 7.13 KB | 425.20 µs, 190.68 KB | 30.47 µs, 2.99 KB | 125.16 µs, 1.55 KB |
-| 3.22.0, .NET 11, run 1 | 180.18 µs, 4.91 KB | 394.10 µs, 51.02 KB | 38.88 µs, 3.03 KB | 131.70 µs, 1.57 KB |
+| 4.0.0, .NET 11, run 1 | 180.18 µs, 4.91 KB | 394.10 µs, 51.02 KB | 38.88 µs, 3.03 KB | 131.70 µs, 1.57 KB |
 | 3.21.0, .NET 10, run 2 | 176.77 µs, 7.13 KB | 425.02 µs, 190.68 KB | 30.22 µs, 2.99 KB | 129.12 µs, 1.55 KB |
-| 3.22.0, .NET 11, run 2 | 180.98 µs, 4.90 KB | 400.76 µs, 50.97 KB | 39.36 µs, 3.03 KB | 131.76 µs, 1.57 KB |
+| 4.0.0, .NET 11, run 2 | 180.98 µs, 4.90 KB | 400.76 µs, 50.97 KB | 39.36 µs, 3.03 KB | 131.76 µs, 1.57 KB |
 
 GetRows100 collections per 1,000 requests: gen 0 23.44 -> 6.35, gen 1 3.42 -> 0.49. The Runtime Async figures are those of round 2 (the library did not change afterwards).
 
 The two controls are the interesting part for .NET 11: the same plain HTTP round trip takes 30.3 µs on .NET 10 and 39.1 µs on .NET 11, the same Npgsql query 127.1 µs and 131.7 µs. Together that is 13.4 µs more on .NET 11 for work NpgsqlRest is not involved in, which is why GetText is 3.6 µs slower although NpgsqlRest's own part (GetText minus the two controls) went from 19.6 µs to 9.8 µs. The benchmark uses the library with a plain connection string, so both versions reset their connections with `DISCARD ALL`; the reset rule lives in the `npgsqlrest` client and plays no part here.
 
-Native AOT binary (osx-arm64): 35,343,856 bytes for 3.21.0, 36,255,760 for 3.22.0, 35,972,768 with Runtime Async.
+Native AOT binary (osx-arm64): 35,343,856 bytes for 3.21.0, 36,255,760 for 4.0.0, 35,972,768 with Runtime Async.
 
 Verification of the final state: 3,013 tests pass on .NET 11 and on .NET 10 (`-p:NpgsqlRestTestFramework=net10.0`); both final AOT executables pass `.github/scripts/aot-smoke-test.sh`.
 
@@ -316,10 +316,10 @@ Statement log (`log_statement = 'all'`) for one request of a signed-in user to `
 | Build | Statements |
 |---|---|
 | 3.21.0 | 4 x `select set_config($1,$2,false)` (one batch), then `select public.who_am_i(_greeting=>$1)`; no reset |
-| 3.22.0 before this round | the reset (`SET SESSION AUTHORIZATION DEFAULT;RESET ALL;CLOSE ALL;UNLISTEN *;SELECT pg_advisory_unlock_all();DISCARD SEQUENCES;DISCARD TEMP`), 4 x `select set_config($1,$2,false)`, then the routine |
-| 3.22.0 | `select set_config($1,$2,true) is null,set_config($3,$4,true) is null,set_config($5,$6,true) is null,set_config($7,$8,true) is null` and the routine, in one batch; no reset |
+| 4.0.0 before this round | the reset (`SET SESSION AUTHORIZATION DEFAULT;RESET ALL;CLOSE ALL;UNLISTEN *;SELECT pg_advisory_unlock_all();DISCARD SEQUENCES;DISCARD TEMP`), 4 x `select set_config($1,$2,false)`, then the routine |
+| 4.0.0 | `select set_config($1,$2,true) is null,set_config($3,$4,true) is null,set_config($5,$6,true) is null,set_config($7,$8,true) is null` and the routine, in one batch; no reset |
 
-A cache hit on an endpoint with `user_context` and `cached` (client started with `CacheOptions:Enabled=true`): 3.21.0 sent the four `set_config` statements for every hit, 3.22.0 before this round the reset and the four statements, 3.22.0 sends nothing.
+A cache hit on an endpoint with `user_context` and `cached` (client started with `CacheOptions:Enabled=true`): 3.21.0 sent the four `set_config` statements for every hit, 4.0.0 before this round the reset and the four statements, 4.0.0 sends nothing.
 
 ## Load test
 
@@ -328,13 +328,13 @@ Method as in round 3 (HTTP/1.1 keep-alive client; sequential response time at 1 
 - The client is started with `--Auth:CookieAuth=true`; the load generator logs in once through a `login` function and sends the cookie with every request. Every request to a context endpoint therefore carries four settings (IP address, user id, user name, roles).
 - Endpoints: `ctx_text()` (short text value built from `request.user_name`), `ctx_plpgsql(_id int)` (the five-query PL/pgSQL function of round 3, reading `request.user_id`), `ctx_rows(_count int)` with 100 rows (the rows of round 3, with the user id in the jsonb column), all with `user_context`; and `benchmark_get_text()` without context, in the same application.
 - PostgreSQL CPU per request is the container's cgroup `cpu.stat` `usage_usec` delta divided by the number of requests.
-- Six builds, three rounds, the order rotating by one with every round. "3.22.0 before" is commit `3810e6e` (round 3's final build): the reset that keeps plans, and two round trips.
+- Six builds, three rounds, the order rotating by one with every round. "4.0.0 before" is commit `3810e6e` (round 3's final build): the reset that keeps plans, and two round trips.
 
 Averages, with the three rounds in brackets. Response times and CPU are in µs.
 
 **JIT**
 
-| | 3.21.0 (.NET 10) | 3.22.0 before (reset, two round trips) | 3.22.0 (one round trip, no reset) |
+| | 3.21.0 (.NET 10) | 4.0.0 before (reset, two round trips) | 4.0.0 (one round trip, no reset) |
 |---|---:|---:|---:|
 | **Requests per second** (32 connections) | | | |
 | Text value, `user_context` | 21,070 (21,022 / 21,168 / 21,020) | 19,018 (19,025 / 18,960 / 19,070) | 35,704 (34,379 / 36,389 / 36,345) |
@@ -357,7 +357,7 @@ Averages, with the three rounds in brackets. Response times and CPU are in µs.
 
 **Native AOT**
 
-| | 3.21.0 (.NET 10) | 3.22.0 before (reset, two round trips) | 3.22.0 (one round trip, no reset) |
+| | 3.21.0 (.NET 10) | 4.0.0 before (reset, two round trips) | 4.0.0 (one round trip, no reset) |
 |---|---:|---:|---:|
 | **Requests per second** (32 connections) | | | |
 | Text value, `user_context` | 21,209 (21,218 / 21,092 / 21,317) | 18,125 (18,254 / 17,982 / 18,139) | 35,570 (35,484 / 35,846 / 35,379) |
@@ -385,7 +385,7 @@ Reading:
 - An endpoint without context in the same application: 3.21.0 39,429 / 38,108 requests per second (JIT / AOT), before this round 33,812 / 32,759 (the reset applies to every endpoint of an application that has a context endpoint), now 38,048 / 37,094.
 - PostgreSQL's own CPU for the small request: 97 µs in 3.21.0, 120-121 µs with the reset, 60 µs now.
 
-The login cookie itself, on the endpoint without context (AOT, two rounds, µs at one connection, without / with the cookie): 3.21.0 182.6 / 190.3 and 182.2 / 191.4; 3.22.0 code on .NET 10 186.5 / 193.1 and 185.0 / 199.4; 3.22.0 on .NET 11 191.9 / 202.7 and 196.6 / 201.9. The cookie costs about 8 µs in every build; what differs between the builds is the small-request cost of .NET 11 measured in round 3.
+The login cookie itself, on the endpoint without context (AOT, two rounds, µs at one connection, without / with the cookie): 3.21.0 182.6 / 190.3 and 182.2 / 191.4; 4.0.0 code on .NET 10 186.5 / 193.1 and 185.0 / 199.4; 4.0.0 on .NET 11 191.9 / 202.7 and 196.6 / 201.9. The cookie costs about 8 µs in every build; what differs between the builds is the small-request cost of .NET 11 measured in round 3.
 
 ## JIT: BenchmarkDotNet, before and after
 
@@ -393,8 +393,8 @@ The login cookie itself, on the endpoint without context (AOT, two rounds, µs a
 
 | | GetText | GetRows100 | GetTextUserContext | HttpOnly | NpgsqlOnly |
 |---|---|---|---|---|---|
-| 3.22.0 before this round (`3810e6e`) | 182.61 µs, 4.91 KB | 396.37 µs, 50.92 KB | 333.81 µs, 10.17 KB | 39.90 µs, 3.03 KB | 131.64 µs, 1.58 KB |
-| 3.22.0 | 179.22 µs, 4.90 KB | 398.37 µs, 50.91 KB | 207.11 µs, 8.76 KB | 39.31 µs, 3.03 KB | 131.59 µs, 1.56 KB |
+| 4.0.0 before this round (`3810e6e`) | 182.61 µs, 4.91 KB | 396.37 µs, 50.92 KB | 333.81 µs, 10.17 KB | 39.90 µs, 3.03 KB | 131.64 µs, 1.58 KB |
+| 4.0.0 | 179.22 µs, 4.90 KB | 398.37 µs, 50.91 KB | 207.11 µs, 8.76 KB | 39.31 µs, 3.03 KB | 131.59 µs, 1.56 KB |
 
 The context request is 127 µs faster, one `NpgsqlOnly` round trip, and allocates 1.4 KB less. It still costs 28 µs and 3.9 KB more than `GetText`: the batch, its two batch commands and the eight text parameters of four settings. Nothing else moved, as expected: endpoints without context run the same code as before.
 

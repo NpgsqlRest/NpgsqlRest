@@ -1,5 +1,5 @@
 // NpgsqlRest — FULL configuration reference (every option, with inline comments).
-// Generated verbatim from: npgsqlrest --config   (NpgsqlRest v3.22.0)
+// Generated verbatim from: npgsqlrest --config   (NpgsqlRest v4.0.0)
 // This is the source of truth for configuration. Regenerate with: npgsqlrest --config
 
 {

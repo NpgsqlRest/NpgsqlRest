@@ -1,8 +1,8 @@
-# EndpointBenchmarks baseline: 3.21.0 (before the 3.22.0 upgrades)
+# EndpointBenchmarks baseline: 3.21.0 (before the 4.0.0 upgrades)
 
-> **Superseded for the .NET 11 comparison:** these numbers were measured with BenchmarkDotNet 0.15.8, which cannot run on .NET 11. The before/after comparison, with the .NET 10 side measured again under BenchmarkDotNet 0.16.0-preview.2, is in `EndpointBenchmarks-3.22.0-net11.md`.
+> **Superseded for the .NET 11 comparison:** these numbers were measured with BenchmarkDotNet 0.15.8, which cannot run on .NET 11. The before/after comparison, with the .NET 10 side measured again under BenchmarkDotNet 0.16.0-preview.2, is in `EndpointBenchmarks-4.0.0-net11.md`.
 
-Recorded 2026-11-11 on branch `3.22.0` at `6cc6f55`, which has the same code as the 3.21.0 release. Taken **before** any 3.22.0 dependency or runtime upgrades, for a before/after comparison.
+Recorded 2026-11-11 on branch `4.0.0` at `6cc6f55`, which has the same code as the 3.21.0 release. Taken **before** any 4.0.0 dependency or runtime upgrades, for a before/after comparison.
 
 ## What was measured
 

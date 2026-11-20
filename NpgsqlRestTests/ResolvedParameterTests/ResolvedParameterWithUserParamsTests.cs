@@ -82,7 +82,7 @@ public class ResolvedParameterWithUserParamsTests : IClassFixture<WireMockFixtur
     [Fact]
     public async Task Test_resolved_param_with_user_params_unauthorized()
     {
-        // Without login → 401. Authorization is decided before parameter processing (3.22.0), so an anonymous
+        // Without login → 401. Authorization is decided before parameter processing (4.0.0), so an anonymous
         // caller no longer gets the 404 that revealed the missing _user_name parameter.
         using var response = await _test.Client.GetAsync("/api/get-http-resolved-with-user-params/");
 

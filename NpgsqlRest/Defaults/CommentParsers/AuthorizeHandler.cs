@@ -26,7 +26,7 @@ internal static partial class DefaultCommentParser
         {
             endpoint.AuthorizeRoles = [.. wordsLower[1..]];
             CommentLogger?.CommentSetAuthRoles(description, endpoint.AuthorizeRoles);
-            // Since 3.22.0 plain values are roles only; user names and ids need the user: / id: prefix.
+            // Since 4.0.0 plain values are roles only; user names and ids need the user: / id: prefix.
             // A plain number or GUID was almost certainly meant as a user id - point that out.
             foreach (var value in endpoint.AuthorizeRoles)
             {
