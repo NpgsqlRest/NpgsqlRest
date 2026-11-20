@@ -14,7 +14,7 @@ The complete release procedure. Written so that someone who has never cut a rele
 
 ## Release checklist
 
-1. **Finish the changelog**: `changelog/v<X.Y.Z>.md` must exist — the release notes are extracted from it verbatim (title line is skipped). Cover: headline, new features, breaking changes (⚠️), fixes, tests.
+1. **Finish the changelog**: `changelog/v<X.Y.Z>.md` must exist. The GitHub release description is built from it: its opening paragraphs (everything before the first `### ` section), followed by links to the full changelog and the install commands. The whole changelog is not copied into the release (GitHub limits a description to 125,000 characters, and the text would be there twice). So the paragraphs at the top should say what the release is. Cover in the file: headline, new features, breaking changes (⚠️), fixes, tests.
 2. **Bump the version**: edit `version.txt` (e.g. `3.18.0`). Nothing else needs editing. Sanity check locally:
    ```sh
    dotnet pack NpgsqlRest/NpgsqlRest.csproj -c Release -o /tmp/packcheck   # expect NpgsqlRest.<X.Y.Z>.nupkg
@@ -24,7 +24,7 @@ The complete release procedure. Written so that someone who has never cut a rele
 5. **Merge/push to `master`.** That's the trigger. The workflow then automatically:
    - builds + runs the full test suite (PostgreSQL 17 service container),
    - publishes all `.nupkg` to NuGet (`--skip-duplicate`),
-   - creates the GitHub release `v<X.Y.Z>` with notes from `changelog/v<X.Y.Z>.md`,
+   - creates the GitHub release `v<X.Y.Z>` with a short description (the changelog's opening paragraphs, links, install commands),
    - builds AOT binaries: win-x64, linux-x64 (+ **smoke test**: `--version` + `--validate` against a live PostgreSQL), linux-arm64, osx-arm64 — and uploads them as release assets together with `appsettings.json`,
    - builds + pushes Docker images: `vbilopav/npgsqlrest:{v,latest}{,-aot,-jit,-arm,-bun}`,
    - publishes the npm package (version synced from `version.txt`, OIDC trusted publishing).
@@ -47,7 +47,7 @@ The complete release procedure. Written so that someone who has never cut a rele
 ## CI overview
 
 - **`test.yml`** — runs on every push/PR to non-master branches: build + full suite on a **PostgreSQL 15/16/17 matrix**.
-- **`build-test-publish.yml`** — runs on push/PR to `master`: the full release pipeline above. ⚠️ Note: it runs on `pull_request` to master too — the NuGet publish step is effectively a no-op there (secrets are not exposed to fork PRs), but be aware when reviewing runs.
+- **`build-test-publish.yml`** — runs on push to `master` (and when started by hand with `workflow_dispatch`): the full release pipeline above. It publishes: do not start it by hand from a branch that is not ready to release.
 
 ## Hotfix procedure
 

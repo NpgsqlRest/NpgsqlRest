@@ -60,22 +60,35 @@ jobs:
       uses: actions/checkout@v4
     - name: Set release version from version.txt
       run: echo "RELEASE_VERSION=v$(cat version.txt)" >> "$GITHUB_ENV"
-    - name: Extract changelog for this version
+    - name: Write the release description
       id: changelog
       run: |
-        # Per-version changelog files live under changelog/v<X.Y.Z>.md.
-        # Strip the "v" prefix from RELEASE_VERSION (e.g. "v3.15.1" -> "3.15.1") and read that file.
+        # The release description is short: the changelog's opening paragraphs (everything before its first
+        # "### " section), then links to the full changelog and a list of what is attached. The whole
+        # changelog is not copied here; it lives in changelog/v<X.Y.Z>.md and on the documentation site.
         VERSION_NUM="${RELEASE_VERSION#v}"
         VERSION_FILE="changelog/v${VERSION_NUM}.md"
-
-        if [ -f "$VERSION_FILE" ]; then
-          # Skip the leading "# Changelog vX.Y.Z (date)" title line
-          CHANGELOG=$(tail -n +2 "$VERSION_FILE")
-        else
-          CHANGELOG="See [full changelog](https://github.com/NpgsqlRest/NpgsqlRest/blob/master/changelog/) for details."
-        fi
-
-        echo "$CHANGELOG" > release_notes.md
+        {
+          if [ -f "$VERSION_FILE" ]; then
+            # skip the "# Changelog vX.Y.Z" title, the "## Version ..." heading and the "[Full Changelog]" line
+            awk '/^### /{exit} NR>1 && !/^## Version / && !/^\[Full Changelog\]/' "$VERSION_FILE" \
+              | sed -e '/^---[[:space:]]*$/d' -e "s|](#|](https://npgsqlrest.github.io/guide/changelog/${RELEASE_VERSION}#|g" | cat -s
+            echo
+          fi
+          echo "## Changelog"
+          echo
+          echo "- [Changelog for ${RELEASE_VERSION}](https://npgsqlrest.github.io/guide/changelog/${RELEASE_VERSION}) on the documentation site"
+          echo "- [changelog/${RELEASE_VERSION}.md](https://github.com/NpgsqlRest/NpgsqlRest/blob/${RELEASE_VERSION}/changelog/${RELEASE_VERSION}.md) in this repository"
+          echo
+          echo "## Install"
+          echo
+          echo "- **Binaries** (below): \`npgsqlrest-linux64\`, \`npgsqlrest-linux-arm64\`, \`npgsqlrest-osx-arm64\`, \`npgsqlrest-win64.exe\`, and the default \`appsettings.json\`"
+          echo "- **npm**: \`npm install npgsqlrest@${VERSION_NUM}\`"
+          echo "- **Docker**: \`docker pull vbilopav/npgsqlrest:${RELEASE_VERSION}\` (also \`-aot\`, \`-jit\`, \`-arm\`, \`-bun\`)"
+          echo "- **NuGet**: \`dotnet add package NpgsqlRest --version ${VERSION_NUM}\`"
+          echo "- [Installation guide](https://npgsqlrest.github.io/guide/installation)"
+        } > release_notes.md
+        cat release_notes.md
       env:
         RELEASE_VERSION: ${{ env.RELEASE_VERSION }}
     - name: Create Release

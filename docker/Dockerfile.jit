@@ -6,6 +6,10 @@ EXPOSE 5000
 FROM mcr.microsoft.com/dotnet/sdk:11.0 AS build
 WORKDIR /src
 
+# Build files shared by every project. version.txt is the product version (Directory.Build.props reads it):
+# without these the image is built as version 1.0.0.0, and --install-skill looks for a branch of that name.
+COPY version.txt global.json Directory.Build.props Directory.Build.targets ./
+
 # Copy project files
 COPY NpgsqlRest/*.csproj NpgsqlRest/
 COPY NpgsqlRestClient/*.csproj NpgsqlRestClient/
