@@ -79,7 +79,7 @@ internal static class DefaultEndpoint
             return;
         }
 
-        endpoint.CustomParameters ??= new();
+        endpoint.CustomParameters ??= new(StringComparer.OrdinalIgnoreCase);
         endpoint.CustomParameters["tsclient_module"] = ToCamelCase(moduleName);
     }
 

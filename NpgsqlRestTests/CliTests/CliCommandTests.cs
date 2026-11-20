@@ -164,9 +164,16 @@ public class CliCommandTests
         // Core annotations
         names.Should().Contain(["http", "single", "void"]);
         // SQL-file statement annotations
-        names.Should().Contain(["skip", "returns", "resultN", "define_param"]);
-        // Plugin annotations
-        names.Should().Contain(["mcp", "openapi"]);
+        names.Should().Contain(["skip", "returns", "result", "define_param"]);
+        // Plugin annotations and custom parameters, each with its owner
+        names.Should().Contain(["mcp", "mcp_name", "openapi", "tsclient_module", "dartclient", "excel_sheet", "row_command"]);
+        // Test files and HTTP Custom Types
+        names.Should().Contain(["setup", "claim", "retry_delay"]);
+        var tsclient = json.AsArray().Single(n => n?["name"]?.GetValue<string>() == "tsclient_module")!;
+        tsclient["owner"]!.GetValue<string>().Should().Be("tsclient");
+        tsclient["form"]!.GetValue<string>().Should().Be("key_value");
+        tsclient["contexts"]!.AsArray().Select(c => c!.GetValue<string>()).Should().Equal("routine", "sql_file");
+        tsclient["example"]!.GetValue<string>().Should().Be("tsclient_module = users");
         stderr.Should().BeEmpty();
     }
 
@@ -447,6 +454,40 @@ public class CliCommandTests
         exitCode.Should().Be(0);
         stdout.Should().Contain("No results for");
         stdout.Should().Contain("xyz_absolutely_no_match_here");
+    }
+
+    [Fact]
+    public async Task Test_mode_refuses_an_endpoint_whose_http_type_calls_another_server()
+    {
+        // The test runner calls endpoints in-process and must not reach out. Proxy endpoints were refused; an
+        // endpoint with an HTTP Custom Type that calls another server was not, although the message said so.
+        var dir = Path.Combine(Path.GetTempPath(), "npgsqlrest_cli_httptype_" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "outbound.test.sql"), "/* GET /api/trt/outbound */\nselect status = 200, 'outbound answers' from _response;\n");
+            File.WriteAllText(Path.Combine(dir, "own.test.sql"), "/* GET /api/trt/own */\nselect status = 200, 'own endpoint answers' from _response;\nselect body = 'pong', 'own endpoint body' from _response;\n");
+
+            var (stdout, stderr, exitCode) = await RunCliAsync(
+                "--test",
+                "--ConnectionStrings:Default=" + Database.Create(),
+                "--TestRunner:FilePattern=" + dir.Replace('\\', '/') + "/*.test.sql",
+                "--NpgsqlRest:IncludeSchemas:0=trt",
+                "--NpgsqlRest:RequiresAuthorization=false",
+                "--NpgsqlRest:HttpClientOptions:Enabled=true");
+
+            var output = stdout + stderr;
+            exitCode.Should().NotBe(0, output);
+            output.Should().Contain("outbound proxy/HTTP-type endpoints are disallowed in test mode: GET /api/trt/outbound (type trt.outbound_call calls GET http://127.0.0.1:9/never)");
+            // a type that calls this application is not an outbound call
+            output.Should().NotContain("GET /api/trt/own (type");
+            output.Should().Contain("2 passed, 0 failed, 1 error(s)");
+            output.Should().Contain("own.test.sql  (2 assertions");
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
     }
 
     private static JsonNode? ParseJsonc(string jsonc)

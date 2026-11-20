@@ -748,7 +748,7 @@ public partial class NpgsqlRestEndpoint(
         {
             if (endpoint.CustomParamsNeedParsing && endpoint.CustomParameters is not null)
             {
-                customParameters = new Dictionary<string, string>(endpoint.CustomParameters.Count);
+                customParameters = new Dictionary<string, string>(endpoint.CustomParameters.Count, StringComparer.OrdinalIgnoreCase);
                 foreach (var (key, value) in endpoint.CustomParameters)
                 {
                     // SQL-valued parameters (row_command) are never formatted: request values in SQL text = SQL injection.

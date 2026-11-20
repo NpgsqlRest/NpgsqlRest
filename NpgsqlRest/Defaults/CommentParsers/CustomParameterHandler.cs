@@ -48,7 +48,8 @@ internal static partial class DefaultCommentParser
         if (customParamValue.Contains(Consts.OpenBrace) && customParamValue.Contains(Consts.CloseBrace))
         {
             endpoint.CustomParamsNeedParsing = true;
-            if (IsSqlCustomParameter(customParamName) && HasPlaceholderToken(customParamValue))
+            // the name as it is stored: without the optional @
+            if (IsSqlCustomParameter(customParamName.TrimStart('@')) && HasPlaceholderToken(customParamValue))
             {
                 Logger?.LogWarning(
                     "{Description}: custom parameter {Name} is SQL - {{placeholders}} in it are not substituted (request values in SQL text would be SQL injection). Pass values through the command's $N parameters instead.",

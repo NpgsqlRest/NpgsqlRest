@@ -145,4 +145,24 @@ public class ParamTypeHintTests
         var td = new NpgsqlRest.TypeDescriptor("json");
         td.IsJson.Should().BeTrue();
     }
+
+    [Theory]
+    [InlineData("@param $1 type is integer", "integer")]
+    [InlineData("param $1 TYPE IS uuid;", "uuid")]
+    [InlineData("@param $1 type is integer default 5", "integer")]
+    public void Positional_retype_without_rename_gives_a_hint(string comment, string type)
+    {
+        var hints = SqlFileParser.ExtractParamTypeHints(comment);
+        hints.Should().NotBeNull();
+        hints![0].Should().Be(type);
+    }
+
+    [Theory]
+    [InlineData("@param $1 type is")]
+    [InlineData("@param $1 type is not_a_type")]
+    [InlineData("@param $0 type is integer")]
+    public void Positional_retype_without_a_usable_type_gives_no_hint(string comment)
+    {
+        SqlFileParser.ExtractParamTypeHints(comment).Should().BeNull();
+    }
 }

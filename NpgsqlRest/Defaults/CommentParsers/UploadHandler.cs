@@ -45,11 +45,17 @@ internal static partial class DefaultCommentParser
                     .Select(w =>
                     {
                         var handler = w.TrimEnd(',');
-                        bool exists = true;
-                        if (existingHandlers.Contains(handler) is false)
+                        // The words are lower case; a configured handler key may not be. Matched whatever the
+                        // case, and the key as configured is what the endpoint keeps.
+                        var configured = existingHandlers.FirstOrDefault(k => string.Equals(k, handler, StringComparison.OrdinalIgnoreCase));
+                        bool exists = configured is not null;
+                        if (exists)
+                        {
+                            handler = configured!;
+                        }
+                        else
                         {
                             CommentLogger?.CommentUploadHandlerNotExists(description, handler, existingHandlers);
-                            exists = false;
                         }
                         return new { exists, handler };
                     })
@@ -60,8 +66,8 @@ internal static partial class DefaultCommentParser
                 endpoint.UploadHandlers = handlers;
                 if (handlers.Length == 0)
                 {
-                    var first = Options.UploadOptions.UploadHandlers?.Keys.FirstOrDefault();
-                    CommentLogger?.CommentUploadFirstAvaialbleHandler(description, first);
+                    // none of the named handlers exists: the default handler is used (UploadExtensions)
+                    CommentLogger?.CommentUploadFirstAvaialbleHandler(description, Options.UploadOptions.DefaultUploadHandler);
                 }
                 if (handlers.Length == 1)
                 {

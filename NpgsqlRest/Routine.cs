@@ -112,6 +112,15 @@ public class Routine
     /// </summary>
     public required string SimpleDefinition { get; init; }
 
+    /// <summary>The file this routine was read from, for sources that read files (SQL file endpoints). Null otherwise.</summary>
+    public string? SourceFile { get; init; }
+
+    /// <summary>
+    /// Comment lines that the routine's source read as annotations of its own and left out of
+    /// <see cref="Comment"/> (the SQL file source: skip, returns, result, define_param). Null for none.
+    /// </summary>
+    public string[]? SourceAnnotationLines { get; init; }
+
     /// <summary>
     /// The format URL pattern for the routine. If used (not null), placeholder {0} is used to replace the default URL.
     /// </summary>

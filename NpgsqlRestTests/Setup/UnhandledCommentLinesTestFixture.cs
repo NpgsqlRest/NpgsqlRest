@@ -37,6 +37,13 @@ public class UnhandledCommentLinesTestFixture : IDisposable
         {
             IncludeSchemas = ["cmt"],
             CommentsMode = CommentsMode.ParseAll,
+            EndpointCreateHandlers = [new CmtPluginHandler()],
+            // upload handlers under names with capitals: an annotation's words are lower case
+            UploadOptions = new()
+            {
+                Enabled = true,
+                DefaultUploadHandlerOptions = new() { CsvUploadKey = "Csv", LargeObjectKey = "LO" }
+            },
             EndpointsCreated = endpoints =>
             {
                 foreach (var endpoint in endpoints)
@@ -61,4 +68,24 @@ public class UnhandledCommentLinesTestFixture : IDisposable
         _app.StopAsync().GetAwaiter().GetResult();
         _app.DisposeAsync().GetAwaiter().GetResult();
     }
+}
+
+/// <summary>A plugin that claims the comment line "cmtplugin" and remembers that it did.</summary>
+public class CmtPluginHandler : IEndpointCreateHandler
+{
+    public CommentLineResult? HandleCommentLine(RoutineEndpoint endpoint, string line, string[] words, string[] wordsLower)
+    {
+        if (wordsLower.Length == 0 || wordsLower[0].TrimStart('@') != "cmtplugin")
+        {
+            return null;
+        }
+        endpoint.Items["cmtplugin"] = true;
+        return new CommentLineResult("cmtplugin");
+    }
+
+    public CommentAnnotation[] Annotations =>
+    [
+        new() { Name = "cmtplugin", Aliases = ["cmtplugin"], Syntax = "cmtplugin", Description = "Test plugin annotation.", Owner = "cmtplugin", ValueKind = AnnotationValueKind.None, Example = "cmtplugin" },
+        new() { Name = "cmt_key", Aliases = ["cmt_key"], Syntax = "cmt_key = <value>", Description = "Test plugin key.", Owner = "cmtplugin", Form = AnnotationForm.KeyValue, Example = "cmt_key = x" },
+    ];
 }

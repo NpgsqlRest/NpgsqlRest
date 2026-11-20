@@ -1160,4 +1160,48 @@ public class ParseHttpTypeDefinitionTests
         result!.CacheEnabled.Should().BeFalse();
         result.Headers.Should().ContainKey("Cache-Control");
     }
+
+    // A header whose name merely begins with "timeout" or "retry_delay" is a header. Both used to be taken for
+    // the directive: the value failed to parse (30 seconds), and the header was lost.
+    [Theory]
+    [InlineData("Timeout-Ms: 100", "Timeout-Ms", "100")]
+    [InlineData("Timeouts: none", "Timeouts", "none")]
+    [InlineData("Retry_Delay_Hint: 5", "Retry_Delay_Hint", "5")]
+    [InlineData("retry_delays: 1s", "retry_delays", "1s")]
+    public void Header_that_begins_with_a_directive_keyword_is_a_header(string headerLine, string name, string value)
+    {
+        var result = _parser.ParseHttpTypeDefinition("GET https://api.example.com/data\n" + headerLine);
+
+        result.Should().NotBeNull();
+        result!.Timeout.Should().BeNull();
+        result.RetryDelays.Should().BeNull();
+        result.Headers.Should().ContainKey(name).WhoseValue.Should().Be(value);
+    }
+
+    [Theory]
+    [InlineData("timeout 5", 5)]
+    [InlineData("timeout: 5", 5)]
+    [InlineData("timeout=5", 5)]
+    [InlineData("@timeout\t5s", 5)]
+    [InlineData("# @TIMEOUT = 00:00:05", 5)]
+    public void Timeout_directive_is_still_read_in_every_form(string directive, int seconds)
+    {
+        var result = _parser.ParseHttpTypeDefinition("GET https://api.example.com/data\n" + directive);
+
+        result.Should().NotBeNull();
+        result!.Timeout.Should().Be(TimeSpan.FromSeconds(seconds));
+        result.Headers.Should().BeNullOrEmpty();
+    }
+
+    [Theory]
+    [InlineData("retry_delay 1s, 2s")]
+    [InlineData("retry_delay: 1s, 2s")]
+    [InlineData("@retry_delay=1s, 2s")]
+    public void Retry_delay_directive_is_still_read_in_every_form(string directive)
+    {
+        var result = _parser.ParseHttpTypeDefinition(directive + "\nGET https://api.example.com/data");
+
+        result.Should().NotBeNull();
+        result!.RetryDelays.Should().Equal(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2));
+    }
 }

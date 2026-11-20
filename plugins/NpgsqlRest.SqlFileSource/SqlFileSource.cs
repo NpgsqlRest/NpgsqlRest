@@ -209,6 +209,18 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
                     continue;
                 }
 
+                if (parseResult.ImplicitReturns.Contains(stmtIndex))
+                {
+                    // Written without the @: most likely a sentence ("Returns users"), not the annotation.
+                    // Said, taken as a comment, and the statement is described as usual.
+                    NpgsqlRestOptions.Logger?.LogWarning(
+                        "SqlFileSource: {FilePath}: the comment line \"returns {Type}\" looks like the @returns annotation, but '{Type}' is not a PostgreSQL type or composite type. It is taken as a comment. Write @returns to make it an annotation.",
+                        filePath, returnsTypeName, returnsTypeName);
+                    parseResult.ConsumedCommentLines.RemoveWhere(l => SqlFileParser.TryKeyword(l, "returns", out var t) && string.Equals(t.TrimEnd(';').Trim(), returnsTypeName, StringComparison.Ordinal));
+                    parseResult.ReturnsTypeOverrides.Remove(stmtIndex);
+                    goto describe;
+                }
+
                 var error = $"@returns type '{returnsTypeName}' is not a recognized PostgreSQL type or composite type.";
                 NpgsqlRestOptions.Logger?.LogError("SqlFileSource: {FilePath}: {Error}", filePath, error);
                 if (options.ErrorMode == ParseErrorMode.Exit)
@@ -219,6 +231,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
                 return null;
             }
 
+            describe:
             var describeResult = SqlFileDescriber.Describe(connection, stmt, stmtParamCount, paramTypeHints);
             if (describeResult.HasError)
             {
@@ -459,7 +472,10 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
             Type = RoutineType.SqlFile,
             Schema = "public",
             Name = fileName,
-            Comment = string.IsNullOrEmpty(parseResult.Comment) ? null : parseResult.Comment,
+            // Without the lines this source read itself (skip, returns, result, define_param): core would take
+            // them for prose, and prose is published as the endpoint's description.
+            Comment = string.IsNullOrEmpty(parseResult.Comment) ? null : WithoutConsumedLines(parseResult.Comment, parseResult.ConsumedCommentLines),
+            SourceAnnotationLines = parseResult.ConsumedCommentLines.Count > 0 ? [.. parseResult.ConsumedCommentLines] : null,
             IsStrict = false,
             CrudType = parseResult.AutoHttpMethod switch
             {
@@ -485,6 +501,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
             Expression = parseResult.Statements[0], // first statement for display/logging; batch uses individual statements
             FullDefinition = $"-- SQL file: {filePath}",
             SimpleDefinition = $"SQL file: {filePath}",
+            SourceFile = filePath,
             FormatUrlPattern = null,
             Tags = null,
             EndpointHandler = null,
@@ -763,6 +780,25 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
         return Path.GetFullPath(lastSlash >= 0 ? filePattern[..lastSlash] : ".");
     }
 
+    private static string? WithoutConsumedLines(string comment, HashSet<string> consumed)
+    {
+        if (consumed.Count == 0)
+        {
+            return comment;
+        }
+        var sb = new System.Text.StringBuilder(comment.Length);
+        foreach (var line in comment.Split('\n'))
+        {
+            if (consumed.Contains(line.Trim()))
+            {
+                continue;
+            }
+            sb.Append(line).Append('\n');
+        }
+        var result = sb.ToString();
+        return string.IsNullOrWhiteSpace(result) ? null : result;
+    }
+
     /// <summary>
     /// Check whether the parsed comment contains an HTTP tag (a line starting with "http").
     /// Mirrors the detection logic in DefaultCommentParser.
@@ -775,7 +811,8 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
         }
         foreach (var line in comment.Split('\n'))
         {
-            var trimmed = line.Trim();
+            // the @ is optional, as everywhere: "@http GET" is an HTTP tag too
+            var trimmed = line.Trim().TrimStart('@');
             if (trimmed.Length >= 4 &&
                 trimmed.StartsWith("http", StringComparison.OrdinalIgnoreCase) &&
                 (trimmed.Length == 4 || trimmed[4] == ' ' || trimmed[4] == '\t'))

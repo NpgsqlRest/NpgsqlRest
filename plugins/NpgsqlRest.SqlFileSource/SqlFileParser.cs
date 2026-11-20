@@ -64,6 +64,19 @@ public class SqlFileParseResult
     public Dictionary<int, string> ReturnsTypeOverrides { get; } = [];
 
     /// <summary>
+    /// The statements whose @returns was written WITHOUT the @ prefix. Such a line may be a sentence that happens
+    /// to look like the annotation ("Returns users"), so a type that does not exist is not an error for these:
+    /// the line is taken as a comment and the statement is described as usual.
+    /// </summary>
+    public HashSet<int> ImplicitReturns { get; } = [];
+
+    /// <summary>
+    /// The comment lines (trimmed, as written) that this parser read as annotations of its own:
+    /// skip, returns, result, define_param. They are not part of the endpoint's description.
+    /// </summary>
+    public HashSet<string> ConsumedCommentLines { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>
     /// Errors encountered during parsing.
     /// </summary>
     public List<string> Errors { get; } = [];
@@ -439,6 +452,11 @@ public static class SqlFileParser
                     ExtractPerCommandAnnotations(interStmtCommentBuilder.ToString(), nextIndex, result);
                     interStmtCommentBuilder.Clear();
                 }
+                if (!firstStatementSeen)
+                {
+                    // one statement with no semicolon: everything collected so far is its header
+                    headerCommentLength = commentBuilder.Length;
+                }
                 result.Statements.Add(lastStmt);
             }
 
@@ -473,7 +491,12 @@ public static class SqlFileParser
 
     /// <summary>
     /// Extract positional per-command annotations from comments between statements.
-    /// Supports: @single, @skip, @result name, @result is name
+    /// Supports: @single, @skip, @returns type, @result name, @result is name.
+    ///
+    /// A line is an annotation when its first WORD is the keyword (so "resulting rows" and "returns_x" are not).
+    /// The @ prefix says the line is meant as an annotation. Without it, a comment may simply be a sentence that
+    /// starts with one of these words ("Returns all active users", "result of the join"), so such a line is taken
+    /// as an annotation only when the rest of it has the shape of one: a single name, or a type name.
     /// </summary>
     private static void ExtractPerCommandAnnotations(string comment, int statementIndex, SqlFileParseResult result)
     {
@@ -482,7 +505,8 @@ public static class SqlFileParser
         foreach (var line in lines)
         {
             var trimmed = line.Trim();
-            var s = trimmed.StartsWith('@') ? trimmed[1..] : trimmed;
+            var explicitAnnotation = trimmed.StartsWith('@');
+            var s = explicitAnnotation ? trimmed[1..] : trimmed;
 
             // @single / @single_record / @single_result
             if (CommentPrimitives.StrEqualsToArray(s, "single", "single_record", "single_result"))
@@ -495,46 +519,132 @@ public static class SqlFileParser
             if (CommentPrimitives.StrEqualsToArray(s, "skip", "skip_result", "no_result"))
             {
                 result.SkipCommands.Add(statementIndex);
+                result.ConsumedCommentLines.Add(trimmed);
                 continue;
             }
 
             // @returns type_name (positional — skip Describe, use composite type columns)
-            if (s.StartsWith("returns", StringComparison.OrdinalIgnoreCase) && s.Length > 7)
+            if (TryKeyword(s, "returns", out var typeName))
             {
-                var typeName = s[7..].TrimStart().TrimEnd(';');
-                if (typeName.Length > 0)
+                typeName = typeName.TrimEnd(';').Trim();
+                if (typeName.Length == 0)
                 {
-                    result.ReturnsTypeOverrides[statementIndex] = typeName;
+                    continue;
                 }
+                if (explicitAnnotation is false && LooksLikeTypeName(typeName) is false)
+                {
+                    continue; // a sentence, not an annotation
+                }
+                result.ReturnsTypeOverrides[statementIndex] = typeName;
+                if (explicitAnnotation is false)
+                {
+                    result.ImplicitReturns.Add(statementIndex);
+                }
+                result.ConsumedCommentLines.Add(trimmed);
                 continue;
             }
 
             // @result name / @result is name (positional)
-            if (s.StartsWith("result", StringComparison.OrdinalIgnoreCase) && s.Length > 6)
+            if (TryKeyword(s, "result", out var afterResult))
             {
-                var afterResult = s[6..].TrimStart();
-                if (afterResult.Length == 0) continue;
-
-                var rest = afterResult;
-
-                var parts = rest.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+                var parts = afterResult.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
                 string? name = null;
 
                 if (parts.Length >= 2 && string.Equals(parts[0], "is", StringComparison.OrdinalIgnoreCase))
                 {
                     name = parts[1];
+                    if (explicitAnnotation is false && parts.Length > 2)
+                    {
+                        continue; // "result is not what ..." - a sentence
+                    }
                 }
                 else if (parts.Length >= 1)
                 {
                     name = parts[0];
+                    if (explicitAnnotation is false && parts.Length > 1)
+                    {
+                        continue; // "result of the join" - a sentence
+                    }
                 }
 
-                if (name is not null)
+                if (name is not null && (explicitAnnotation || IsSimpleName(name)))
                 {
                     result.PositionalResultNames[statementIndex] = name;
+                    result.ConsumedCommentLines.Add(trimmed);
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// True when <paramref name="line"/> starts with the word <paramref name="keyword"/> (case-insensitive) followed
+    /// by whitespace; <paramref name="rest"/> is what follows, trimmed. "returns" alone, "returns_x" and
+    /// "resulting" do not match.
+    /// </summary>
+    internal static bool TryKeyword(string line, string keyword, out string rest)
+    {
+        rest = "";
+        if (line.Length <= keyword.Length ||
+            line.StartsWith(keyword, StringComparison.OrdinalIgnoreCase) is false ||
+            char.IsWhiteSpace(line[keyword.Length]) is false)
+        {
+            return false;
+        }
+        rest = line[(keyword.Length + 1)..].Trim();
+        return true;
+    }
+
+    private static bool IsSimpleName(string value)
+    {
+        foreach (var c in value)
+        {
+            if (char.IsLetterOrDigit(c) is false && c != '_')
+            {
+                return false;
+            }
+        }
+        return value.Length > 0;
+    }
+
+    private static readonly string[] MultiWordTypes =
+    [
+        "double precision", "character varying", "bit varying",
+        "timestamp with time zone", "timestamp without time zone",
+        "time with time zone", "time without time zone"
+    ];
+
+    /// <summary>
+    /// True when the text has the shape of a type name: one token (my_schema.my_type, int[], numeric(10,2),
+    /// "Quoted Name"), or one of PostgreSQL's type names of several words (double precision,
+    /// timestamp with time zone ...), with an optional length and array suffix.
+    /// </summary>
+    internal static bool LooksLikeTypeName(string value)
+    {
+        value = value.Trim();
+        if (value.Length == 0)
+        {
+            return false;
+        }
+        foreach (var multi in MultiWordTypes)
+        {
+            if (value.StartsWith(multi, StringComparison.OrdinalIgnoreCase))
+            {
+                var tail = value[multi.Length..];
+                return tail.Length == 0 || tail[0] is '(' or '[' || string.IsNullOrWhiteSpace(tail);
+            }
+        }
+        // a quoted identifier may contain spaces; nothing else may
+        var inQuotes = false;
+        var depth = 0;
+        foreach (var c in value)
+        {
+            if (c == '"') inQuotes = !inQuotes;
+            else if (inQuotes) continue;
+            else if (c == '(') depth++;
+            else if (c == ')') depth--;
+            else if (char.IsWhiteSpace(c) && depth == 0) return false;
+        }
+        return inQuotes is false;
     }
 
     /// <summary>
@@ -552,20 +662,21 @@ public static class SqlFileParser
             var trimmed = line.Trim();
             var s = trimmed.StartsWith('@') ? trimmed[1..] : trimmed;
 
-            if (!s.StartsWith("define_param", StringComparison.OrdinalIgnoreCase))
+            if (TryKeyword(s, "define_param", out var rest) is false)
+            {
+                continue; // not the keyword (define_params, define_parameter ...), or no name provided
+            }
+
+            var parts = rest.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 1)
             {
                 continue;
             }
 
-            var parts = s.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length < 2)
-            {
-                continue; // no name provided
-            }
-
-            var name = parts[1];
-            var type = parts.Length >= 3 ? parts[2] : null;
+            var name = parts[0];
+            var type = parts.Length >= 2 ? parts[1] : null;
             result.VirtualParams.Add((name, type));
+            result.ConsumedCommentLines.Add(trimmed);
         }
     }
 
@@ -613,7 +724,15 @@ public static class SqlFileParser
 
                 // @param $1 name type ... → parts[3] is type candidate
                 // @param $1 is name type ... → parts[4] is type candidate
-                if (parts.Length >= 4 && parts[2].Equals("is", StringComparison.OrdinalIgnoreCase))
+                // @param $1 type is type ... → parts[4] is type candidate (retype without renaming; this form was
+                //                              read later by the comment parser, but gave no hint to Describe)
+                if (parts.Length >= 5 &&
+                    parts[2].Equals("type", StringComparison.OrdinalIgnoreCase) &&
+                    parts[3].Equals("is", StringComparison.OrdinalIgnoreCase))
+                {
+                    typeName = TypeCandidate(parts[4]);
+                }
+                else if (parts.Length >= 4 && parts[2].Equals("is", StringComparison.OrdinalIgnoreCase))
                 {
                     if (parts.Length >= 5)
                     {

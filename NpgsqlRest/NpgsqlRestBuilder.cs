@@ -42,7 +42,18 @@ public static class NpgsqlRestBuilder
         Options = options;
         ParameterParsers.JsonTimestampsAreUtc = options.JsonTimestampsAreUtc;
         var factory = builder.Services.GetRequiredService<ILoggerFactory>();
-        Logger = factory.CreateLogger(options.LoggerName ?? typeof(NpgsqlRestBuilder).Namespace ?? "NpgsqlRest");
+        // Wrapped so that the warnings about an endpoint's comment can be kept with the endpoint (RoutineEndpoint.Diagnostics).
+        Logger = new EndpointDiagnosticsLogger(factory.CreateLogger(options.LoggerName ?? typeof(NpgsqlRestBuilder).Namespace ?? "NpgsqlRest"));
+        // What the plugins in use read from comments: part of the annotation reference, and known to the parser.
+        foreach (var handler in options.EndpointCreateHandlers)
+        {
+            CommentAnnotations.Register(handler.Annotations);
+        }
+        // Upload handlers whose key is not the default one: their parameters under the configured prefix.
+        var uploadKeys = options.UploadOptions.DefaultUploadHandlerOptions;
+        CommentAnnotations.Register(UploadHandlers.UploadAnnotations.WithHandlerKey(UploadHandlers.UploadAnnotations.Core, "large_object", uploadKeys.LargeObjectKey));
+        CommentAnnotations.Register(UploadHandlers.UploadAnnotations.WithHandlerKey(UploadHandlers.UploadAnnotations.Core, "file_system", uploadKeys.FileSystemKey));
+        CommentAnnotations.Register(UploadHandlers.UploadAnnotations.WithHandlerKey(UploadHandlers.UploadAnnotations.Core, "csv", uploadKeys.CsvUploadKey));
 
         RetryStrategy? defaultStrategy = null;
         if (Options.CommandRetryOptions.Enabled is true && string.IsNullOrEmpty(Options.CommandRetryOptions.DefaultStrategy) is false)

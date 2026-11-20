@@ -20,7 +20,8 @@ public static class UploadExtensions
         {
             return null;
         }
-        var result = new Dictionary<string, Func<RetryStrategy?, IUploadHandler>>();
+        // found whatever the case: annotations are read in lower case, a configured key may have capitals
+        var result = new Dictionary<string, Func<RetryStrategy?, IUploadHandler>>(StringComparer.OrdinalIgnoreCase);
         if (options.DefaultUploadHandlerOptions.LargeObjectEnabled)
         {
             result.Add(options.DefaultUploadHandlerOptions.LargeObjectKey, (strategy) => new LargeObjectUploadHandler(strategy));

@@ -156,6 +156,26 @@ public class RoutineEndpoint(
     /// </summary>
     public string[]? UnhandledCommentLines { get; set; } = null;
 
+    /// <summary>
+    /// The comment lines that were read as annotations (built-in, a plugin's, a custom parameter, a response
+    /// header), in order, as written. Null when there were none.
+    /// </summary>
+    public string[]? AnnotationLines { get; set; } = null;
+
+    /// <summary>
+    /// The comment lines that begin with <c>@</c> and are not an annotation or a custom parameter anything reads:
+    /// most likely a misspelt name, or another tool's annotation. They are not part of
+    /// <see cref="UnhandledCommentLines"/>, so they are never published as the endpoint's description. Null when
+    /// there were none.
+    /// </summary>
+    public string[]? UnknownAnnotationLines { get; set; } = null;
+
+    /// <summary>
+    /// The warnings and errors logged about this endpoint while its comment was parsed, as logged. Null when
+    /// there were none.
+    /// </summary>
+    public string[]? Diagnostics { get; set; } = null;
+
     private Dictionary<string, object?>? _items;
 
     /// <summary>

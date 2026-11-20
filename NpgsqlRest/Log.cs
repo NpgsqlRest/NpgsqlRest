@@ -201,7 +201,7 @@ public static partial class Log
     [LoggerMessage(Level = LogLevel.Warning, Message = "{description} upload handler are not defined.")]
     public static partial void CommentUploadNoHandlers(this ILogger logger, string description);
 
-    [LoggerMessage(Level = LogLevel.Trace, Message = "{description} has set to use the first available UPLOAD HANDLER {handler} by the comment annotation.")]
+    [LoggerMessage(Level = LogLevel.Trace, Message = "{description}: none of the upload handlers named in the comment annotation exists, the default UPLOAD HANDLER {handler} is used.")]
     public static partial void CommentUploadFirstAvaialbleHandler(this ILogger logger, string description, string? handler);
 
     [LoggerMessage(Level = LogLevel.Trace, Message = "{description} has set to use UPLOAD HANDLER {handler} by the comment annotation.")]

@@ -978,9 +978,11 @@ public class App
             ExcelUploadOptions.Instance.ExcelRowDataAsJson = _config.GetConfigBool("ExcelRowDataAsJson", uploadHandlersCfg, false);
             ExcelUploadOptions.Instance.ExcelUploadRowCommand = _config.GetConfigStr("ExcelUploadRowCommand", uploadHandlersCfg) ?? "call process_excel_row($1,$2,$3,$4)";
 
-            result?.UploadHandlers?.Add(
-                _config.GetConfigStr("ExcelKey", uploadHandlersCfg) ?? "excel", 
-                strategy => new ExcelUploadHandler(result, strategy));
+            var excelUploadKey = _config.GetConfigStr("ExcelKey", uploadHandlersCfg) ?? "excel";
+            result?.UploadHandlers?.Add(excelUploadKey, strategy => new ExcelUploadHandler(result, strategy));
+            // under another name, its parameters are prefixed with that name (annotation reference)
+            NpgsqlRest.CommentAnnotations.Register(NpgsqlRest.UploadHandlers.UploadAnnotations.WithHandlerKey(
+                NpgsqlRest.UploadHandlers.UploadAnnotations.Excel, "excel", excelUploadKey));
         }
 
         if (result?.UploadHandlers is not null && result.UploadHandlers.Count > 1)
@@ -1007,7 +1009,8 @@ public class App
             return null;
         }
 
-        var result = new Dictionary<string, NpgsqlRest.TableFormatHandlers.ITableFormatHandler>();
+        // found whatever the case: "table_format = HTML" is the html handler
+        var result = new Dictionary<string, NpgsqlRest.TableFormatHandlers.ITableFormatHandler>(StringComparer.OrdinalIgnoreCase);
 
         if (_config.GetConfigBool("HtmlEnabled", cfg, true))
         {

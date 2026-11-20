@@ -491,6 +491,11 @@ group by n.nspname, t.typname, des.description";
         }
 
         var afterKeyword = trimmed[7..]; // Skip "timeout"
+        // The keyword is a whole word: "Timeout-Ms: 100" is a request header, not this directive.
+        if (!afterKeyword.IsEmpty && afterKeyword[0] is not (' ' or '\t' or '=' or ':'))
+        {
+            return false;
+        }
 
         // Handle separator: space, '=', or ':'
         afterKeyword = TrimSpan(afterKeyword);
@@ -543,6 +548,11 @@ group by n.nspname, t.typname, des.description";
         }
 
         var afterKeyword = trimmed[11..]; // Skip "retry_delay"
+        // The keyword is a whole word: "Retry_Delay_Hint: 5" is a request header, not this directive.
+        if (!afterKeyword.IsEmpty && afterKeyword[0] is not (' ' or '\t' or '=' or ':'))
+        {
+            return false;
+        }
 
         // Handle separator: space, '=', or ':'
         afterKeyword = TrimSpan(afterKeyword);

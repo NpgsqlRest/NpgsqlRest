@@ -23,6 +23,9 @@ public static class OpenApiSpecVersions
 
 public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
 {
+    /// <summary>What this plugin reads from comments (the annotation reference).</summary>
+    public CommentAnnotation[] Annotations => OpenApiAnnotations.All;
+
     public OpenApi() : this(new OpenApiOptions()) { }
 
     // Resolved in the constructor so an invalid SpecVersion fails fast at startup,
@@ -560,13 +563,36 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
             {
                 return new CommentLineResult("openapi tag (ignored: no tag value)");
             }
-            var tags = words[2..]; // original casing for tag values
+            // Tags are separated by commas, so a tag may be several words: "openapi tag Partner API" is one
+            // tag, "openapi tags Partner API, Billing" two. (They used to be split on spaces as well, which made
+            // a tag of several words impossible.) Original casing is kept.
+            var tags = TagsOf(line);
+            if (tags.Length == 0)
+            {
+                return new CommentLineResult("openapi tag (ignored: no tag value)");
+            }
             endpoint.Items[ItemTags] = tags;
             return new CommentLineResult("openapi tags: " + string.Join(", ", tags));
         }
 
         // Recognized `openapi` keyword but unknown sub-command — claim it so it isn't treated as prose.
         return new CommentLineResult($"openapi (ignored: unknown sub-command '{sub}')");
+    }
+
+    /// <summary>The tags of an "openapi tag ..." line: the text after the second word, split on commas.</summary>
+    internal static string[] TagsOf(string line)
+    {
+        var rest = line.AsSpan().Trim();
+        for (var word = 0; word < 2; word++)
+        {
+            var end = rest.IndexOfAny(' ', '\t', ',');
+            if (end < 0)
+            {
+                return [];
+            }
+            rest = rest[end..].TrimStart([' ', '\t', ',']);
+        }
+        return [.. rest.ToString().Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
     }
 
     public void Cleanup()

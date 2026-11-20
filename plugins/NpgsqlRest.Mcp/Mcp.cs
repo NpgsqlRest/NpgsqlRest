@@ -32,6 +32,9 @@ namespace NpgsqlRest.Mcp;
 /// </summary>
 public partial class Mcp(McpOptions options) : IEndpointCreateHandler
 {
+    /// <summary>What this plugin reads from comments (the annotation reference).</summary>
+    public CommentAnnotation[] Annotations => McpAnnotations.All;
+
     /// <summary>Key under which <see cref="McpToolInfo"/> is stored in <see cref="RoutineEndpoint.Items"/>.</summary>
     public const string ItemsKey = "mcp";
 

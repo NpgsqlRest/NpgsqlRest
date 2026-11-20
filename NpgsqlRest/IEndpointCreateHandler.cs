@@ -47,6 +47,14 @@ namespace NpgsqlRest
         string[] EndpointRequestingAnnotations => [];
 
         /// <summary>
+        /// The comment annotations and custom parameters (<c>key = value</c>) this handler reads, described as
+        /// data. They become part of the annotation reference (<see cref="CommentAnnotations"/>,
+        /// <c>npgsqlrest --annotations</c>), and the comment parser uses them to tell a line it does not know from
+        /// one that is this handler's. Default: none.
+        /// </summary>
+        CommentAnnotation[] Annotations => [];
+
+        /// <summary>
         /// After successful endpoint creation.
         /// </summary>
         void Handle(RoutineEndpoint endpoint) { }

@@ -496,34 +496,47 @@ public static class Ext
         return string.Equals(notice.Severity, Warning, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Reads a switch value as annotations write it: true, on, enabled, enable, 1 and false, off, disabled,
+    /// disable, 0 (any case). Returns false when the value is none of these.
+    /// </summary>
+    public static bool TryParseSwitch(string? value, out bool result)
+    {
+        result = false;
+        if (value is null)
+        {
+            return false;
+        }
+        value = value.Trim();
+        if (string.Equals(value, "false", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(value, "off", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(value, "disabled", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(value, "disable", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(value, "0", StringComparison.Ordinal))
+        {
+            return true;
+        }
+        if (string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(value, "on", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(value, "enabled", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(value, "enable", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(value, "1", StringComparison.Ordinal))
+        {
+            result = true;
+            return true;
+        }
+        return false;
+    }
+
     public static bool? ParameterEnabled(this Dictionary<string, string>? parameters, string key)
     {
         if (parameters is null || parameters.Count == 0)
         {
             return null;
         }
-        if (parameters.TryGetValue(key, out var value))
+        if (parameters.TryGetValue(key, out var value) && TryParseSwitch(value, out var enabled))
         {
-            // Check for "off" values
-            if (string.Equals(value, "false", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(value, "off", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(value, "disabled", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(value, "disable", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(value, "0", StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
-
-            // Check for "on" values
-            if (string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(value, "on", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(value, "enabled", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(value, "enable", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(value, "1", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-            return null;
+            return enabled;
         }
         return null;
     }

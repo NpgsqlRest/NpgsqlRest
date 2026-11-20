@@ -78,15 +78,27 @@ public class HttpClientTypeHandler(
                 {
                     var url = ResolveUrl();
 
+                    // The same request an outbound call makes: placeholders are resolved in the header values and
+                    // the content type too (they used to be passed as written, {name} and all), and the timeout
+                    // applies (a call to an endpoint of this application could wait forever).
+                    Dictionary<string, string>? headers = definition.Headers;
+                    if (headers is { Count: > 0 } && definition.NeedsParsing && replacements is not null)
+                    {
+                        headers = new Dictionary<string, string>(headers.Count, StringComparer.OrdinalIgnoreCase);
+                        foreach (var header in definition.Headers!)
+                        {
+                            headers[header.Key] = ResolveValue(header.Value);
+                        }
+                    }
+                    using var internalTimeout = CreateTimeoutCancellationTokenSource(cancellationToken);
+
                     var internalResponse = await InternalRequestHandler.ExecuteAsync(
                         definition.Method,
                         url,
-                        definition.Headers,
-                        definition.NeedsParsing && definition.Body is not null && replacements is not null
-                            ? Formatter.FormatString(definition.Body.AsSpan(), replacements.Value).ToString()
-                            : definition.Body,
-                        definition.ContentType,
-                        cancellationToken);
+                        headers,
+                        definition.Body is not null ? ResolveValue(definition.Body) : null,
+                        definition.ContentType is not null ? ResolveValue(definition.ContentType) : null,
+                        internalTimeout?.Token ?? cancellationToken);
 
                     StatusCode = internalResponse.StatusCode;
                     Body = internalResponse.Body;
@@ -317,6 +329,8 @@ public class HttpClientTypeHandler(
     {
         StatusCode = (int)response.StatusCode;
         IsSuccess = response.IsSuccessStatusCode;
+        // A response was received: whatever an earlier attempt left here (a timeout, a network error) is over.
+        ErrorMessage = null;
         ContentType = response.Content.Headers.ContentType?.ToString();
         Body = await response.Content.ReadAsStringAsync();
 

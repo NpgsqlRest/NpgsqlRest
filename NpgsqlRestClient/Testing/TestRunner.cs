@@ -873,6 +873,20 @@ public sealed class TestRunner
                 if (host is not null && !host.StartsWith('/'))
                     return new StepResult(true, Outcome.Error, $"outbound proxy/HTTP-type endpoints are disallowed in test mode: {httpName}", httpName);
             }
+            // An HTTP Custom Type that calls another server is an outbound call as well. (The message above always
+            // said so; nothing checked it.) A type that calls this application (a URL starting with /) is fine.
+            if (_rest.HttpClientOptions.Enabled)
+            {
+                foreach (var parameter in ep.Routine.Parameters)
+                {
+                    if (parameter.TypeDescriptor.CustomType is { } customType
+                        && NpgsqlRest.HttpClientType.HttpClientTypes.Definitions.TryGetValue(customType, out var httpType)
+                        && !httpType.Url.StartsWith('/'))
+                    {
+                        return new StepResult(true, Outcome.Error, $"outbound proxy/HTTP-type endpoints are disallowed in test mode: {httpName} (type {customType} calls {httpType.Method} {httpType.Url})", httpName);
+                    }
+                }
+            }
         }
         else
         {

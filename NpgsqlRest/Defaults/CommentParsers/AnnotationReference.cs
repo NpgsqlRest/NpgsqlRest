@@ -1,474 +1,574 @@
-using System.Text.Json.Nodes;
-
 namespace NpgsqlRest.Defaults;
 
 internal static partial class DefaultCommentParser
 {
     /// <summary>
-    /// Returns a machine-readable JSON array describing all supported comment annotations.
-    /// Used by pgdev and other tools for autocomplete/IntelliSense.
+    /// The annotations core reads from endpoint comments, described as data. Part of the reference
+    /// (<see cref="CommentAnnotations"/>, <c>npgsqlrest --annotations</c>); plugins and handlers add their own.
     /// </summary>
-    public static JsonArray GetAnnotationReference()
-    {
-        var annotations = new JsonArray();
-
-        static JsonArray ToJsonArray(string[] values)
-        {
-            var arr = new JsonArray();
-            foreach (var v in values) arr.Add((JsonNode)v);
-            return arr;
-        }
-
-        static JsonArray ToJsonArray1(string value) => new() { (JsonNode)value };
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "http",
-            ["aliases"] = ToJsonArray1(HttpKey),
-            ["syntax"] = "http [GET|POST|PUT|DELETE|QUERY] [path]",
-            ["description"] = "Enable endpoint and configure HTTP method and/or path. Required (for HTTP exposure) when CommentsMode is OnlyAnnotated (or its alias OnlyWithHttpTag)."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "path",
-            ["aliases"] = ToJsonArray1(PathKey),
-            ["syntax"] = "path <url_path>",
-            ["description"] = "Override the endpoint URL path."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "param_type",
-            ["aliases"] = ToJsonArray(ParamTypeKey),
-            ["syntax"] = "param_type [query_string|query|body_json|body]",
-            ["description"] = "Set request parameter type to query string or JSON body."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "authorize",
-            ["aliases"] = ToJsonArray(AuthorizeKey),
-            ["syntax"] = "authorize [role1, role2, user:name, id:user_id, ...]",
-            ["description"] = "Require authorization, optionally restricting access. Plain values are role names (role claim); user:name matches the user name claim and id:value the user id claim."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "allow_anonymous",
-            ["aliases"] = ToJsonArray(AllowAnonymousKey),
-            ["syntax"] = "allow_anonymous",
-            ["description"] = "Allow unauthenticated access to this endpoint."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "login",
-            ["aliases"] = ToJsonArray(LoginKey),
-            ["syntax"] = "login",
-            ["description"] = "Mark endpoint as a login/authentication endpoint."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "logout",
-            ["aliases"] = ToJsonArray(LogoutKey),
-            ["syntax"] = "logout",
-            ["description"] = "Mark endpoint as a logout endpoint."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "raw",
-            ["aliases"] = ToJsonArray(RawKey),
-            ["syntax"] = "raw",
-            ["description"] = "Return raw results without JSON formatting."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "separator",
-            ["aliases"] = ToJsonArray(SeparatorKey),
-            ["syntax"] = "separator <value>",
-            ["description"] = "Set the value separator for raw mode output."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "new_line",
-            ["aliases"] = ToJsonArray(NewLineKey),
-            ["syntax"] = "new_line <value>",
-            ["description"] = "Set the line separator for raw mode output."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "columns",
-            ["aliases"] = ToJsonArray(ColumnNamesKey),
-            ["syntax"] = "columns",
-            ["description"] = "Include column names as the first row in raw output."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "buffer_rows",
-            ["aliases"] = ToJsonArray(BufferRowsKey),
-            ["syntax"] = "buffer_rows <number>",
-            ["description"] = "Set the number of rows to buffer before sending response."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "cached",
-            ["aliases"] = ToJsonArray1(CacheKey),
-            ["syntax"] = "cached [param1, param2, ...]",
-            ["description"] = "Enable response caching, optionally specifying cache key parameters."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "cache_expires",
-            ["aliases"] = ToJsonArray(CacheExpiresInKey),
-            ["syntax"] = "cache_expires <interval>",
-            ["description"] = "Set cache expiration time (PostgreSQL interval format)."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "cache_profile",
-            ["aliases"] = ToJsonArray1(CacheProfileKey),
-            ["syntax"] = "cache_profile <name>",
-            ["description"] = "Select a named cache profile defined in CacheOptions.Profiles. The profile supplies the cache backend, default expiration, default key parameters, and per-parameter skip conditions. Implies caching even without @cached. Existing @cached and @cache_expires annotations override the profile's defaults. Unknown profile names cause startup to fail."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "connection_name",
-            ["aliases"] = ToJsonArray(ConnectionNameKey),
-            ["syntax"] = "connection_name <name>",
-            ["description"] = "Use a specific named connection string for this endpoint."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "timeout",
-            ["aliases"] = ToJsonArray(TimeoutKey),
-            ["syntax"] = "timeout <interval>",
-            ["description"] = "Set command execution timeout (PostgreSQL interval format)."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "request_headers_mode",
-            ["aliases"] = ToJsonArray(RequestHeadersModeKey),
-            ["syntax"] = "request_headers [ignore|context|parameter]",
-            ["description"] = "Control how HTTP request headers are passed to the routine."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "request_headers_parameter_name",
-            ["aliases"] = ToJsonArray(RequestHeadersParameterNameKey),
-            ["syntax"] = "request_headers_parameter_name <name>",
-            ["description"] = "Set the parameter name for request headers when mode is parameter."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "body_parameter_name",
-            ["aliases"] = ToJsonArray(BodyParameterNameKey),
-            ["syntax"] = "body_parameter_name <name>",
-            ["description"] = "Set the parameter name for the JSON body content."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "response_null_handling",
-            ["aliases"] = ToJsonArray(TextResponseNullHandlingKey),
-            ["syntax"] = "response_null [empty_string|null_literal|no_content|204]",
-            ["description"] = "Control how NULL return values are rendered in responses."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "query_string_null_handling",
-            ["aliases"] = ToJsonArray(QueryStringNullHandlingKey),
-            ["syntax"] = "query_null [empty_string|null_literal|ignore]",
-            ["description"] = "Control how NULL query string parameters are handled."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "security_sensitive",
-            ["aliases"] = ToJsonArray(SecuritySensitiveKey),
-            ["syntax"] = "security_sensitive",
-            ["description"] = "Mark endpoint as security-sensitive (suppresses logging of parameters)."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "user_context",
-            ["aliases"] = ToJsonArray(UserContextKey),
-            ["syntax"] = "user_context",
-            ["description"] = "Pass authenticated user context to the routine via connection settings."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "user_parameters",
-            ["aliases"] = ToJsonArray(UserParemetersKey),
-            ["syntax"] = "user_parameters",
-            ["description"] = "Map user claims to routine parameters."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "upload",
-            ["aliases"] = ToJsonArray1(UploadKey),
-            ["syntax"] = "upload [for handler1, handler2, ...]",
-            ["description"] = "Enable file upload for this endpoint, optionally specifying upload handlers."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "param",
-            ["aliases"] = ToJsonArray(ParameterKey),
-            ["syntax"] = "param <name> is hash of <other_name> | param <name> is upload metadata | param <original> <new_name> [type] | param <original> is <new_name> [type] | param <name> type is <type> | param <name> default <value>",
-            ["description"] = "Configure parameter behavior: hash computation, upload metadata binding, rename/retype, retype WITHOUT rename ('param user_id type is integer'), or default value ('param user_id default null'). Rename forms: 'param $1 user_id', 'param $1 user_id integer', 'param $1 is user_id', 'param _old_name better_name'. In SQL files with named (:name) placeholders the parameter is addressed by the placeholder's own name (a leading ':' is tolerated). Works on all endpoint types."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "sse_path",
-            ["aliases"] = ToJsonArray(SseEventsStreamingPathKey),
-            ["syntax"] = "sse_path [path] [on info|notice|warning]",
-            ["description"] = "Enable Server-Sent Events streaming with optional path and notice level."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "sse_level",
-            ["aliases"] = ToJsonArray(SseEventsLevelKey),
-            ["syntax"] = "sse_level [info|notice|warning]",
-            ["description"] = "Set the PostgreSQL notice level for SSE events."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "sse_scope",
-            ["aliases"] = ToJsonArray(SseEventsStreamingScopeKey),
-            ["syntax"] = "sse_scope [all|authorize|matching] [role1, role2, user:name, id:user_id, ...]",
-            ["description"] = "Set the broadcast scope for SSE events. Authorize values: plain = role, user:name = user name claim, id:value = user id claim."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "basic_auth",
-            ["aliases"] = ToJsonArray(BasicAuthKey),
-            ["syntax"] = "basic_auth [username] [password]",
-            ["description"] = "Enable HTTP Basic Authentication for this endpoint."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "basic_auth_realm",
-            ["aliases"] = ToJsonArray(BasicAuthRealmKey),
-            ["syntax"] = "basic_auth_realm <realm>",
-            ["description"] = "Set the authentication realm for Basic Auth challenges."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "basic_auth_command",
-            ["aliases"] = ToJsonArray(BasicAuthCommandKey),
-            ["syntax"] = "basic_auth_command <sql_command>",
-            ["description"] = "Set a custom SQL command for Basic Auth credential validation."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "retry_strategy",
-            ["aliases"] = ToJsonArray(RetryStrategyKey),
-            ["syntax"] = "retry_strategy <name>",
-            ["description"] = "Apply a named retry strategy for transient database errors."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "rate_limiter",
-            ["aliases"] = ToJsonArray(RateLimiterPolicyKey),
-            ["syntax"] = "rate_limiter <policy_name>",
-            ["description"] = "Apply a named rate limiting policy to this endpoint."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "error_code_policy",
-            ["aliases"] = ToJsonArray(ErrorCodePolicyKey),
-            ["syntax"] = "error_code_policy <name>",
-            ["description"] = "Apply a named error code mapping policy for PostgreSQL error codes."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "validate",
-            ["aliases"] = ToJsonArray(ValidateKey),
-            ["syntax"] = "validate <param_name> using <rule_name>",
-            ["description"] = "Add parameter validation using a named validation rule."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "proxy",
-            ["aliases"] = ToJsonArray(ProxyKey),
-            ["syntax"] = "proxy [GET|POST|PUT|DELETE|QUERY] [host_url]",
-            ["description"] = "Configure endpoint as a reverse proxy."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "proxy_out",
-            ["aliases"] = ToJsonArray(ProxyOutKey),
-            ["syntax"] = "proxy_out [GET|POST|PUT|DELETE|QUERY] [host_url]",
-            ["description"] = "Execute function first, then forward result body to upstream proxy service."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "nested_json",
-            ["aliases"] = ToJsonArray(NestedJsonKey),
-            ["syntax"] = "nested_json",
-            ["description"] = "Serialize composite type columns as nested JSON objects."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "tags",
-            ["aliases"] = ToJsonArray(TagsKey),
-            ["syntax"] = "for tag1, tag2, ...",
-            ["description"] = "Filter endpoint availability by tags."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "disabled",
-            ["aliases"] = ToJsonArray1(DisabledKey),
-            ["syntax"] = "disabled [tag1, tag2, ...]",
-            ["description"] = "Disable this endpoint, optionally only for specific tags."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "enabled",
-            ["aliases"] = ToJsonArray1(EnabledKey),
-            ["syntax"] = "enabled [tag1, tag2, ...]",
-            ["description"] = "Enable this endpoint, optionally only for specific tags."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "internal",
-            ["aliases"] = ToJsonArray(InternalKey),
-            ["syntax"] = "internal",
-            ["description"] = "Mark endpoint as internal-only. Not exposed as an HTTP route, only accessible via self-referencing calls (proxy, HTTP client types)."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "encrypt",
-            ["aliases"] = ToJsonArray(EncryptKey),
-            ["syntax"] = "encrypt [param1, param2, ...]",
-            ["description"] = "Encrypt parameter values using the default data protector before sending to PostgreSQL. Without arguments, encrypts all text parameters."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "decrypt",
-            ["aliases"] = ToJsonArray(DecryptKey),
-            ["syntax"] = "decrypt [column1, column2, ...]",
-            ["description"] = "Decrypt result column values using the default data protector before returning to the client. Without arguments, decrypts all text columns."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "custom_parameter",
-            ["aliases"] = new JsonArray(),
-            ["syntax"] = "key = value",
-            ["description"] = "Define a custom parameter as key-value pair (separated by =)."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "header",
-            ["aliases"] = new JsonArray(),
-            ["syntax"] = "Header-Name: header-value",
-            ["description"] = "Add a response header (separated by :)."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "resultN",
-            ["aliases"] = new JsonArray("result1", "result2", "result3"),
-            ["syntax"] = "resultN <name> | resultN is <name>",
-            ["description"] = "Rename a result key in multi-command SQL file responses. N is the 1-based command index. Example: '@result1 validate' renames the first result from 'result1' to 'validate'. SQL file source only."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "define_param",
-            ["aliases"] = new JsonArray("define_param"),
-            ["syntax"] = "define_param <name> [type]",
-            ["description"] = "Define a virtual parameter that exists for HTTP matching and claim mapping but is NOT bound to the PostgreSQL command. Useful for SQL file endpoints where you need parameters for comment placeholders or claim mapping without referencing them in SQL. Default type is text. SQL file source only."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "single",
-            ["aliases"] = ToJsonArray(SingleKey),
-            ["syntax"] = "single",
-            ["description"] = "Return only the first row as a JSON object instead of a JSON array. In multi-command SQL files the annotation is positional: it applies to the next statement (or, inline after the semicolon, to the statement on that line)."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "void",
-            ["aliases"] = ToJsonArray(VoidKey),
-            ["syntax"] = "void",
-            ["description"] = "Return no content (204 No Content); results are discarded. In multi-command SQL files all statements still execute for side effects."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "skip",
-            ["aliases"] = new JsonArray("skip", "skip_result", "no_result"),
-            ["syntax"] = "skip",
-            ["description"] = "Execute the statement but exclude its result from the response. Positional: applies to the next statement (or, inline after the semicolon, to the statement on that line). SQL file source only."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "returns",
-            ["aliases"] = new JsonArray("returns"),
-            ["syntax"] = "returns <composite_type> | returns <scalar_type> | returns void",
-            ["description"] = "Skip the startup Describe for a statement and resolve result columns from the given type instead: a composite type name (schema-qualified or not), a built-in scalar type (single-column result), or void. Needed when a statement references objects that do not exist at startup (e.g. a temp table created in a DO block). SQL file source only."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "mcp",
-            ["aliases"] = new JsonArray("mcp", "mcp_name", "mcp_description", "mcp_desc"),
-            ["syntax"] = "mcp [description] | mcp_name <name> | mcp_description <text>",
-            ["description"] = "Expose the routine as an MCP tool (Model Context Protocol). A bare mcp with no HTTP tag creates an MCP-only tool with no public HTTP route. Description precedence: mcp_description, then inline mcp text, then the comment prose fallback. No-op when the MCP plugin (NpgsqlRest.Mcp) is not loaded."
-        });
-
-        annotations.Add((JsonNode)new JsonObject
-        {
-            ["name"] = "openapi",
-            ["aliases"] = new JsonArray("openapi"),
-            ["syntax"] = "openapi [hide|hidden|ignore] | openapi tag <name> | openapi tags <a>, <b>, ...",
-            ["description"] = "Per-routine OpenAPI document control: hide the endpoint from the document (default action; the endpoint itself is unaffected), or replace its default schema-name tag with one or more custom tags (original casing preserved). No-op when the OpenAPI plugin (NpgsqlRest.OpenApi) is not loaded."
-        });
-
-        return annotations;
-    }
+    internal static CommentAnnotation[] CoreAnnotations() =>
+        [
+            new CommentAnnotation
+            {
+                Name = "http",
+                Aliases = [HttpKey],
+                Syntax = "http [GET|POST|PUT|DELETE|QUERY] [path]",
+                Description = "Enable endpoint and configure HTTP method and/or path. Required (for HTTP exposure) when CommentsMode is OnlyAnnotated (or its alias OnlyWithHttpTag).",
+                ValueKind = AnnotationValueKind.Text,
+                Example = "HTTP GET /users/{id}",
+            },
+            new CommentAnnotation
+            {
+                Name = "path",
+                Aliases = [PathKey],
+                Syntax = "path <url_path>",
+                Description = "Override the endpoint URL path.",
+                ValueKind = AnnotationValueKind.Path,
+                Example = "path /users/{id}",
+            },
+            new CommentAnnotation
+            {
+                Name = "param_type",
+                Aliases = ParamTypeKey,
+                Syntax = "param_type [query_string|query|body_json|body]",
+                Description = "Set request parameter type to query string or JSON body.",
+                ValueKind = AnnotationValueKind.Enum,
+                Values = ["query_string", "query", "body_json", "body"],
+                Example = "param_type body_json",
+            },
+            new CommentAnnotation
+            {
+                Name = "authorize",
+                Aliases = AuthorizeKey,
+                Syntax = "authorize [role1, role2, user:name, id:user_id, ...]",
+                Description = "Require authorization, optionally restricting access. Plain values are role names (role claim); user:name matches the user name claim and id:value the user id claim.",
+                ValueKind = AnnotationValueKind.List,
+                Example = "authorize admin, user:alice",
+            },
+            new CommentAnnotation
+            {
+                Name = "allow_anonymous",
+                Aliases = AllowAnonymousKey,
+                Syntax = "allow_anonymous",
+                Description = "Allow unauthenticated access to this endpoint.",
+                ValueKind = AnnotationValueKind.None,
+                Example = "allow_anonymous",
+            },
+            new CommentAnnotation
+            {
+                Name = "login",
+                Aliases = LoginKey,
+                Syntax = "login",
+                Description = "Mark endpoint as a login/authentication endpoint.",
+                ValueKind = AnnotationValueKind.None,
+                Example = "login",
+            },
+            new CommentAnnotation
+            {
+                Name = "logout",
+                Aliases = LogoutKey,
+                Syntax = "logout",
+                Description = "Mark endpoint as a logout endpoint.",
+                ValueKind = AnnotationValueKind.None,
+                Example = "logout",
+            },
+            new CommentAnnotation
+            {
+                Name = "raw",
+                Aliases = RawKey,
+                Syntax = "raw",
+                Description = "Return raw results without JSON formatting.",
+                Form = AnnotationForm.KeywordOrKeyValue,
+                ValueKind = AnnotationValueKind.Boolean,
+                Default = "false",
+                Example = "raw",
+            },
+            new CommentAnnotation
+            {
+                Name = "separator",
+                Aliases = SeparatorKey,
+                Syntax = "separator <value>",
+                Description = "Set the value separator for raw mode output.",
+                Form = AnnotationForm.KeywordOrKeyValue,
+                ValueKind = AnnotationValueKind.Text,
+                Example = "separator ,",
+            },
+            new CommentAnnotation
+            {
+                Name = "new_line",
+                Aliases = NewLineKey,
+                Syntax = "new_line <value>",
+                Description = "Set the line separator for raw mode output.",
+                Form = AnnotationForm.KeywordOrKeyValue,
+                ValueKind = AnnotationValueKind.Text,
+                Example = "new_line \\n",
+            },
+            new CommentAnnotation
+            {
+                Name = "columns",
+                Aliases = ColumnNamesKey,
+                Syntax = "columns",
+                Description = "Include column names as the first row in raw output.",
+                Form = AnnotationForm.KeywordOrKeyValue,
+                ValueKind = AnnotationValueKind.Boolean,
+                Default = "false",
+                Example = "columns",
+            },
+            new CommentAnnotation
+            {
+                Name = "buffer_rows",
+                Aliases = BufferRowsKey,
+                Syntax = "buffer_rows <number>",
+                Description = "Set the number of rows to buffer before sending response.",
+                Form = AnnotationForm.KeywordOrKeyValue,
+                ValueKind = AnnotationValueKind.Integer,
+                Default = "25",
+                Example = "buffer_rows 100",
+            },
+            new CommentAnnotation
+            {
+                Name = "cached",
+                Aliases = [CacheKey],
+                Syntax = "cached [param1, param2, ...]",
+                Description = "Enable response caching, optionally specifying cache key parameters.",
+                ValueKind = AnnotationValueKind.List,
+                Example = "cached _user_id",
+            },
+            new CommentAnnotation
+            {
+                Name = "cache_expires",
+                Aliases = CacheExpiresInKey,
+                Syntax = "cache_expires <interval>",
+                Description = "Set cache expiration time (PostgreSQL interval format).",
+                ValueKind = AnnotationValueKind.Interval,
+                Example = "cache_expires 5 minutes",
+            },
+            new CommentAnnotation
+            {
+                Name = "cache_profile",
+                Aliases = [CacheProfileKey],
+                Syntax = "cache_profile <name>",
+                Description = "Select a named cache profile defined in CacheOptions.Profiles. The profile supplies the cache backend, default expiration, default key parameters, and per-parameter skip conditions. Implies caching even without @cached. Existing @cached and @cache_expires annotations override the profile's defaults. Unknown profile names cause startup to fail.",
+                ValueKind = AnnotationValueKind.Name,
+                Example = "cache_profile fast_memory",
+            },
+            new CommentAnnotation
+            {
+                Name = "connection_name",
+                Aliases = ConnectionNameKey,
+                Syntax = "connection_name <name>",
+                Description = "Use a specific named connection string for this endpoint.",
+                Form = AnnotationForm.KeywordOrKeyValue,
+                ValueKind = AnnotationValueKind.Name,
+                Example = "connection read_replica",
+            },
+            new CommentAnnotation
+            {
+                Name = "timeout",
+                Aliases = TimeoutKey,
+                Syntax = "timeout <interval>",
+                Description = "Set command execution timeout (PostgreSQL interval format).",
+                Form = AnnotationForm.KeywordOrKeyValue,
+                ValueKind = AnnotationValueKind.Interval,
+                Example = "timeout 30s",
+            },
+            new CommentAnnotation
+            {
+                Name = "request_headers_mode",
+                Aliases = RequestHeadersModeKey,
+                Syntax = "request_headers [ignore|context|parameter]",
+                Description = "Control how HTTP request headers are passed to the routine.",
+                ValueKind = AnnotationValueKind.Enum,
+                Values = ["ignore", "context", "parameter"],
+                Example = "request_headers context",
+            },
+            new CommentAnnotation
+            {
+                Name = "request_headers_parameter_name",
+                Aliases = RequestHeadersParameterNameKey,
+                Syntax = "request_headers_parameter_name <name>",
+                Description = "Set the parameter name for request headers when mode is parameter.",
+                ValueKind = AnnotationValueKind.Name,
+                Example = "request_headers_parameter_name _headers",
+            },
+            new CommentAnnotation
+            {
+                Name = "body_parameter_name",
+                Aliases = BodyParameterNameKey,
+                Syntax = "body_parameter_name <name>",
+                Description = "Set the parameter name for the JSON body content.",
+                ValueKind = AnnotationValueKind.Name,
+                Example = "body_parameter_name _body",
+            },
+            new CommentAnnotation
+            {
+                Name = "response_null_handling",
+                Aliases = TextResponseNullHandlingKey,
+                Syntax = "response_null [empty_string|null_literal|no_content|204]",
+                Description = "Control how NULL return values are rendered in responses.",
+                ValueKind = AnnotationValueKind.Enum,
+                Values = ["empty_string", "null_literal", "no_content", "204"],
+                Default = "empty_string",
+                Example = "response_null no_content",
+            },
+            new CommentAnnotation
+            {
+                Name = "query_string_null_handling",
+                Aliases = QueryStringNullHandlingKey,
+                Syntax = "query_null [empty_string|null_literal|ignore]",
+                Description = "Control how NULL query string parameters are handled.",
+                ValueKind = AnnotationValueKind.Enum,
+                Values = ["empty_string", "null_literal", "ignore"],
+                Default = "ignore",
+                Example = "query_null empty_string",
+            },
+            new CommentAnnotation
+            {
+                Name = "security_sensitive",
+                Aliases = SecuritySensitiveKey,
+                Syntax = "security_sensitive",
+                Description = "Mark endpoint as security-sensitive (suppresses logging of parameters).",
+                ValueKind = AnnotationValueKind.None,
+                Example = "security_sensitive",
+            },
+            new CommentAnnotation
+            {
+                Name = "user_context",
+                Aliases = UserContextKey,
+                Syntax = "user_context",
+                Description = "Pass authenticated user context to the routine via connection settings.",
+                Form = AnnotationForm.KeywordOrKeyValue,
+                ValueKind = AnnotationValueKind.Boolean,
+                Default = "false",
+                Example = "user_context",
+            },
+            new CommentAnnotation
+            {
+                Name = "user_parameters",
+                Aliases = UserParemetersKey,
+                Syntax = "user_parameters",
+                Description = "Map user claims to routine parameters.",
+                Form = AnnotationForm.KeywordOrKeyValue,
+                ValueKind = AnnotationValueKind.Boolean,
+                Default = "false",
+                Example = "user_parameters",
+            },
+            new CommentAnnotation
+            {
+                Name = "upload",
+                Aliases = [UploadKey],
+                Syntax = "upload [for handler1, handler2, ...]",
+                Description = "Enable file upload for this endpoint, optionally specifying upload handlers.",
+                ValueKind = AnnotationValueKind.List,
+                Example = "upload for file_system",
+            },
+            new CommentAnnotation
+            {
+                Name = "param",
+                Aliases = ParameterKey,
+                Syntax = "param <name> is hash of <other_name> | param <name> is upload metadata | param <original> <new_name> [type] | param <original> is <new_name> [type] | param <name> type is <type> | param <name> default <value>",
+                Description = "Configure parameter behavior: hash computation, upload metadata binding, rename/retype, retype WITHOUT rename ('param user_id type is integer'), or default value ('param user_id default null'). Rename forms: 'param $1 user_id', 'param $1 user_id integer', 'param $1 is user_id', 'param _old_name better_name'. In SQL files with named (:name) placeholders the parameter is addressed by the placeholder's own name (a leading ':' is tolerated). Works on all endpoint types.",
+                ValueKind = AnnotationValueKind.Text,
+                Example = "param $1 user_id integer",
+            },
+            new CommentAnnotation
+            {
+                Name = "sse_path",
+                Aliases = SseEventsStreamingPathKey,
+                Syntax = "sse_path [path] [on info|notice|warning]",
+                Description = "Enable Server-Sent Events streaming with optional path and notice level.",
+                Form = AnnotationForm.KeywordOrKeyValue,
+                ValueKind = AnnotationValueKind.Path,
+                Example = "sse /events on notice",
+            },
+            new CommentAnnotation
+            {
+                Name = "sse_level",
+                Aliases = SseEventsLevelKey,
+                Syntax = "sse_level [info|notice|warning]",
+                Description = "Set the PostgreSQL notice level for SSE events.",
+                Form = AnnotationForm.KeywordOrKeyValue,
+                ValueKind = AnnotationValueKind.Enum,
+                Values = ["info", "notice", "warning"],
+                Example = "sse_level notice",
+            },
+            new CommentAnnotation
+            {
+                Name = "sse_scope",
+                Aliases = SseEventsStreamingScopeKey,
+                Syntax = "sse_scope [all|authorize|matching] [role1, role2, user:name, id:user_id, ...]",
+                Description = "Set the broadcast scope for SSE events. Authorize values: plain = role, user:name = user name claim, id:value = user id claim.",
+                Form = AnnotationForm.KeywordOrKeyValue,
+                ValueKind = AnnotationValueKind.Text,
+                Example = "sse_scope authorize admin",
+            },
+            new CommentAnnotation
+            {
+                Name = "basic_auth",
+                Aliases = BasicAuthKey,
+                Syntax = "basic_auth [username] [password]",
+                Description = "Enable HTTP Basic Authentication for this endpoint.",
+                Form = AnnotationForm.KeywordOrKeyValue,
+                ValueKind = AnnotationValueKind.Text,
+                Example = "basic_auth",
+            },
+            new CommentAnnotation
+            {
+                Name = "basic_auth_realm",
+                Aliases = BasicAuthRealmKey,
+                Syntax = "basic_auth_realm <realm>",
+                Description = "Set the authentication realm for Basic Auth challenges.",
+                Form = AnnotationForm.KeywordOrKeyValue,
+                ValueKind = AnnotationValueKind.Text,
+                Example = "basic_auth_realm Reports",
+            },
+            new CommentAnnotation
+            {
+                Name = "basic_auth_command",
+                Aliases = BasicAuthCommandKey,
+                Syntax = "basic_auth_command <sql_command>",
+                Description = "Set a custom SQL command for Basic Auth credential validation.",
+                Form = AnnotationForm.KeywordOrKeyValue,
+                ValueKind = AnnotationValueKind.Sql,
+                Example = "basic_auth_command = select * from check_basic_auth($1, $2)",
+            },
+            new CommentAnnotation
+            {
+                Name = "retry_strategy",
+                Aliases = RetryStrategyKey,
+                Syntax = "retry_strategy <name>",
+                Description = "Apply a named retry strategy for transient database errors.",
+                Form = AnnotationForm.KeywordOrKeyValue,
+                ValueKind = AnnotationValueKind.Name,
+                Example = "retry_strategy default",
+            },
+            new CommentAnnotation
+            {
+                Name = "rate_limiter",
+                Aliases = RateLimiterPolicyKey,
+                Syntax = "rate_limiter <policy_name>",
+                Description = "Apply a named rate limiting policy to this endpoint.",
+                Form = AnnotationForm.KeywordOrKeyValue,
+                ValueKind = AnnotationValueKind.Name,
+                Example = "rate_limiter fixed",
+            },
+            new CommentAnnotation
+            {
+                Name = "error_code_policy",
+                Aliases = ErrorCodePolicyKey,
+                Syntax = "error_code_policy <name>",
+                Description = "Apply a named error code mapping policy for PostgreSQL error codes.",
+                Form = AnnotationForm.KeywordOrKeyValue,
+                ValueKind = AnnotationValueKind.Name,
+                Example = "error_code_policy default",
+            },
+            new CommentAnnotation
+            {
+                Name = "validate",
+                Aliases = ValidateKey,
+                Syntax = "validate <param_name> using <rule_name>",
+                Description = "Add parameter validation using a named validation rule.",
+                ValueKind = AnnotationValueKind.Text,
+                Example = "validate _email using email",
+            },
+            new CommentAnnotation
+            {
+                Name = "proxy",
+                Aliases = ProxyKey,
+                Syntax = "proxy [GET|POST|PUT|DELETE|QUERY] [host_url]",
+                Description = "Configure endpoint as a reverse proxy.",
+                ValueKind = AnnotationValueKind.Text,
+                Example = "proxy GET https://api.example.com/users",
+            },
+            new CommentAnnotation
+            {
+                Name = "proxy_out",
+                Aliases = ProxyOutKey,
+                Syntax = "proxy_out [GET|POST|PUT|DELETE|QUERY] [host_url]",
+                Description = "Execute function first, then forward result body to upstream proxy service.",
+                ValueKind = AnnotationValueKind.Text,
+                Example = "proxy_out POST https://api.example.com/render",
+            },
+            new CommentAnnotation
+            {
+                Name = "nested_json",
+                Aliases = NestedJsonKey,
+                Syntax = "nested_json",
+                Description = "Serialize composite type columns as nested JSON objects.",
+                ValueKind = AnnotationValueKind.None,
+                Example = "nested_json",
+            },
+            new CommentAnnotation
+            {
+                Name = "tags",
+                Aliases = TagsKey,
+                Syntax = "for tag1, tag2, ...",
+                Description = "Filter endpoint availability by tags.",
+                Contexts = AnnotationContext.Routine,
+                ValueKind = AnnotationValueKind.List,
+                Example = "for function, stable",
+            },
+            new CommentAnnotation
+            {
+                Name = "disabled",
+                Aliases = [DisabledKey],
+                Syntax = "disabled [tag1, tag2, ...]",
+                Description = "Disable this endpoint, optionally only for specific tags.",
+                ValueKind = AnnotationValueKind.List,
+                Example = "disabled",
+            },
+            new CommentAnnotation
+            {
+                Name = "enabled",
+                Aliases = [EnabledKey],
+                Syntax = "enabled [tag1, tag2, ...]",
+                Description = "Enable this endpoint, optionally only for specific tags.",
+                ValueKind = AnnotationValueKind.List,
+                Example = "enabled",
+            },
+            new CommentAnnotation
+            {
+                Name = "internal",
+                Aliases = InternalKey,
+                Syntax = "internal",
+                Description = "Mark endpoint as internal-only. Not exposed as an HTTP route, only accessible via self-referencing calls (proxy, HTTP client types).",
+                ValueKind = AnnotationValueKind.None,
+                Example = "internal",
+            },
+            new CommentAnnotation
+            {
+                Name = "encrypt",
+                Aliases = EncryptKey,
+                Syntax = "encrypt [param1, param2, ...]",
+                Description = "Encrypt parameter values using the default data protector before sending to PostgreSQL. Without arguments, encrypts all text parameters.",
+                Form = AnnotationForm.KeywordOrKeyValue,
+                ValueKind = AnnotationValueKind.List,
+                Example = "encrypt _card_number",
+            },
+            new CommentAnnotation
+            {
+                Name = "decrypt",
+                Aliases = DecryptKey,
+                Syntax = "decrypt [column1, column2, ...]",
+                Description = "Decrypt result column values using the default data protector before returning to the client. Without arguments, decrypts all text columns.",
+                Form = AnnotationForm.KeywordOrKeyValue,
+                ValueKind = AnnotationValueKind.List,
+                Example = "decrypt card_number",
+            },
+            new CommentAnnotation
+            {
+                Name = "custom_parameter",
+                Aliases = [],
+                Syntax = "key = value",
+                Description = "Define a custom parameter as key-value pair (separated by =).",
+                Form = AnnotationForm.KeyValue,
+                ValueKind = AnnotationValueKind.Text,
+                Example = "my_key = my value",
+            },
+            new CommentAnnotation
+            {
+                Name = "header",
+                Aliases = [],
+                Syntax = "Header-Name: header-value",
+                Description = "Add a response header (separated by :).",
+                Form = AnnotationForm.Line,
+                ValueKind = AnnotationValueKind.Text,
+                Example = "Content-Type: text/csv",
+            },
+            new CommentAnnotation
+            {
+                Name = "result",
+                Aliases = ["result"],
+                Syntax = "result <name> | result is <name>",
+                Description = "Name a statement's result in the response of a SQL file with several statements (the default names are result1, result2 ...). Positional: applies to the next statement, or, written after the semicolon on the same line, to the statement that line ends.",
+                Contexts = AnnotationContext.SqlFileStatement,
+                ValueKind = AnnotationValueKind.Name,
+                Example = "result users",
+            },
+            new CommentAnnotation
+            {
+                Name = "define_param",
+                Aliases = ["define_param"],
+                Syntax = "define_param <name> [type]",
+                Description = "Define a virtual parameter that exists for HTTP matching and claim mapping but is NOT bound to the PostgreSQL command. Useful for SQL file endpoints where you need parameters for comment placeholders or claim mapping without referencing them in SQL. Default type is text. SQL file source only.",
+                Contexts = AnnotationContext.SqlFile,
+                ValueKind = AnnotationValueKind.Text,
+                Example = "define_param tenant_id integer",
+            },
+            new CommentAnnotation
+            {
+                Name = "single",
+                Aliases = SingleKey,
+                Syntax = "single",
+                Description = "Return only the first row as a JSON object instead of a JSON array. In multi-command SQL files the annotation is positional: it applies to the next statement (or, inline after the semicolon, to the statement on that line).",
+                Form = AnnotationForm.KeywordOrKeyValue,
+                Contexts = AnnotationContext.Endpoint | AnnotationContext.SqlFileStatement,
+                ValueKind = AnnotationValueKind.Boolean,
+                Default = "false",
+                Example = "single",
+            },
+            new CommentAnnotation
+            {
+                Name = "void",
+                Aliases = VoidKey,
+                Syntax = "void",
+                Description = "Return no content (204 No Content); results are discarded. In multi-command SQL files all statements still execute for side effects.",
+                Form = AnnotationForm.KeywordOrKeyValue,
+                ValueKind = AnnotationValueKind.Boolean,
+                Default = "false",
+                Example = "void",
+            },
+            new CommentAnnotation
+            {
+                Name = "skip",
+                Aliases = ["skip", "skip_result", "no_result"],
+                Syntax = "skip",
+                Description = "Execute the statement but exclude its result from the response. Positional: applies to the next statement (or, inline after the semicolon, to the statement on that line). SQL file source only.",
+                Contexts = AnnotationContext.SqlFileStatement,
+                ValueKind = AnnotationValueKind.None,
+                Example = "skip",
+            },
+            new CommentAnnotation
+            {
+                Name = "returns",
+                Aliases = ["returns"],
+                Syntax = "returns <composite_type> | returns <scalar_type> | returns void",
+                Description = "Skip the startup Describe for a statement and resolve result columns from the given type instead: a composite type name (schema-qualified or not), a built-in scalar type (single-column result), or void. Needed when a statement references objects that do not exist at startup (e.g. a temp table created in a DO block). SQL file source only.",
+                Contexts = AnnotationContext.SqlFileStatement,
+                ValueKind = AnnotationValueKind.Name,
+                Example = "returns my_schema.user_row",
+            },
+            new CommentAnnotation
+            {
+                Name = "sse_publish",
+                Aliases = SseEventsPublishKey,
+                Syntax = "sse_publish [on info|notice|warning]",
+                Description = "Publish this routine's RAISE messages of the given level (default: the configured level) as Server-Sent Events, without giving the endpoint an event stream of its own. Subscribers are endpoints with sse or sse_subscribe.",
+                Form = AnnotationForm.KeywordOrKeyValue,
+                ValueKind = AnnotationValueKind.Text,
+                Example = "sse_publish on notice",
+            },
+            new CommentAnnotation
+            {
+                Name = "sse_subscribe",
+                Aliases = SseEventsSubscribeKey,
+                Syntax = "sse_subscribe [path] [on info|notice|warning]",
+                Description = "Give this endpoint a Server-Sent Events stream that clients subscribe to, without publishing this routine's own RAISE messages. Without a path, the path is the level's name.",
+                Form = AnnotationForm.KeywordOrKeyValue,
+                ValueKind = AnnotationValueKind.Path,
+                Example = "sse_subscribe /events",
+            },
+            new CommentAnnotation
+            {
+                Name = "table_format",
+                Aliases = ["table_format"],
+                Syntax = "table_format = <format>",
+                Description = "Return the rows in a table format instead of JSON: a key of the configured table format handlers (the npgsqlrest client has html and excel when TableFormatOptions is enabled).",
+                Form = AnnotationForm.KeyValue,
+                ValueKind = AnnotationValueKind.Name,
+                Example = "table_format = html",
+            },
+            .. UploadHandlers.UploadAnnotations.Core,
+            .. HttpClientType.HttpTypeAnnotations.All,
+        ];
 }

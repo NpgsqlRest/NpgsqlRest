@@ -10,7 +10,8 @@ internal static partial class DefaultCommentParser
     ///         param [original] [new_name]              — rename only (simplest form)
     ///         param [original] [new_name] [type]        — rename + retype (simplest form)
     ///         param [original] is [new_name]            — rename only ("is" style)
-    ///         param [original] is [new_name] type is [type] — rename + retype ("is" style)
+    ///         param [original] is [new_name] [type]     — rename + retype ("is" style)
+    ///         param [name] type is [type]               — retype without renaming
     ///
     /// Description: Configure parameter behavior, such as marking one parameter as a hash of another,
     /// as upload metadata, setting default values, or renaming/retyping parameters.

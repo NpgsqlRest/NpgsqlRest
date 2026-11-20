@@ -135,7 +135,7 @@ if (args.Length >= 1 && string.Equals(args[0], "--config-schema", StringComparis
 
 if (args.Length >= 1 && string.Equals(args[0], "--annotations", StringComparison.CurrentCultureIgnoreCase))
 {
-    var annotations = NpgsqlRest.Defaults.DefaultCommentParser.GetAnnotationReference();
+    var annotations = AnnotationReference.All();
     new Out().JsonHighlight(annotations.ToJsonString(CliJson.JsonOptions));
     return;
 }
@@ -166,6 +166,9 @@ if (args.Length >= 1 && string.Equals(args[0], "--install-skill", StringComparis
 
 var config = new Config();
 var builder = new Builder(config);
+// Everything the client's plugins and handlers read from comments, enabled or not: the comment parser then knows
+// a disabled plugin's annotation from a misspelt one.
+AnnotationReference.Register();
 var appInstance = new App(config, builder);
 
 try

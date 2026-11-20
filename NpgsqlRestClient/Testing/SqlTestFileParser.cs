@@ -19,7 +19,7 @@ public static class SqlTestFileParser
     /// including file). The path may be single-quoted; a trailing ';' is forgiven. Returns false for any
     /// other line (including other backslash commands).
     /// </summary>
-    internal static bool TryParseIncludeLine(string line, out string path, out bool relativeToFile)
+    public static bool TryParseIncludeLine(string line, out string path, out bool relativeToFile)
     {
         path = "";
         relativeToFile = false;
@@ -31,10 +31,19 @@ public static class SqlTestFileParser
         if (!relative && !plain) return false;
 
         var p = t[(relative ? 3 : 2)..].Trim();
-        if (p.EndsWith(';')) p = p[..^1].TrimEnd();          // forgive a trailing ;
-        if (p.Length > 1 && p[0] == '\'' && p[^1] == '\'')
+        if (p.Length > 0 && p[0] == '\'')
         {
-            p = p[1..^1];                                     // psql-style quoted path
+            // psql-style quoted path: everything up to the closing quote; what follows (a ; or a comment) is not it
+            var close = p.IndexOf('\'', 1);
+            p = close > 0 ? p[1..close] : p;
+        }
+        else
+        {
+            // a comment after the path is not part of it: \ir fixtures/users.sql  -- the test users
+            var comment = p.StartsWith("--", StringComparison.Ordinal) ? 0 : p.IndexOf(" --", StringComparison.Ordinal);
+            if (comment < 0) comment = p.IndexOf("\t--", StringComparison.Ordinal);
+            if (comment >= 0) p = p[..comment].TrimEnd();
+            if (p.EndsWith(';')) p = p[..^1].TrimEnd();      // forgive a trailing ;
         }
         if (p.Length == 0) return false;
 

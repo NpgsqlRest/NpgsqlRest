@@ -122,14 +122,23 @@ internal static class InternalRequestHandler
         context.Response.Body = responseBody;
 
         // Invoke handler
+        // The call is cancelled with its caller: the endpoint reads this token as its request's own. (It was not
+        // passed on, so a timeout or a disconnected client left the called endpoint running to its end.)
+        context.RequestAborted = cancellationToken;
         try
         {
             await handler(context);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
             return new InternalResponse { StatusCode = 500, Body = ex.Message, IsSuccess = false };
         }
+        // An endpoint answers a cancelled request itself (it does not throw): for the caller it is still cancelled.
+        cancellationToken.ThrowIfCancellationRequested();
 
         // Flush any remaining data
         await context.Response.Body.FlushAsync(cancellationToken);

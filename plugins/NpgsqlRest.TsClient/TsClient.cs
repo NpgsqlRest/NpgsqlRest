@@ -6,6 +6,9 @@ namespace NpgsqlRest.TsClient;
 
 public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
 {
+    /// <summary>What this plugin reads from comments (the annotation reference).</summary>
+    public CommentAnnotation[] Annotations => TsClientAnnotations.All;
+
     private IApplicationBuilder _builder = default!;
     private NpgsqlRestOptions? _npgsqlRestoptions;
 
@@ -68,7 +71,11 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
         }
 
         var containsModuleParam = endpoints.Any(e => e.CustomParameters?.ContainsKey(Module) is true);
-        if (!options.BySchema && containsModuleParam)
+        // One file, unless files are split: by schema (BySchema), or by module when endpoints name one and the
+        // path has a {0} to put the module in. (The test used to be "not BySchema AND some endpoint has a module",
+        // so without any module a single-file configuration fell into the multi-file branch: an error about a
+        // missing {0}, or files per schema although BySchema was off.)
+        if (!options.BySchema && (!containsModuleParam || !options.FilePath.Contains("{0}")))
         {
             Run(endpoints, options.FilePath, hooksEnabled ? _reactQuery.FilePath : null);
         }

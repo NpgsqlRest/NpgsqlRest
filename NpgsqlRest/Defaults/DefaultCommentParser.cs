@@ -38,6 +38,8 @@ internal static partial class DefaultCommentParser
             var description = string.Concat(routineDescription, " mapped to ", urlDescription);
 
             _annotationLabels = new List<string>();
+            EndpointDiagnosticsLogger.Begin();
+            List<string>? unknownAnnotationLines = null;
 
             string[] lines = comment.Split(NewlineSeparator, StringSplitOptions.RemoveEmptyEntries);
             routineEndpoint.CommentWordLines = new string[lines.Length][];
@@ -75,14 +77,25 @@ internal static partial class DefaultCommentParser
                 // Otherwise → custom parameter
                 else if (haveTag is true && SplitBySeparatorChar(line, Consts.Equal, out var customParamName, out var customParamValue))
                 {
-                    if (routine.OriginalParamsHash.Contains(customParamName))
+                    // the @ is optional here as everywhere: "@_token = select ..." resolves the parameter _token
+                    if (routine.OriginalParamsHash.Contains(customParamName) || (customParamName[0] == '@' && routine.OriginalParamsHash.Contains(customParamName[1..])))
                     {
-                        HandleResolvedParameter(routineEndpoint, customParamName, customParamValue, description);
+                        HandleResolvedParameter(routineEndpoint, customParamName.TrimStart('@'), customParamValue, description);
                     }
                     else
                     {
                         HandleCustomParameter(routineEndpoint, customParamName, customParamValue, description);
                         WarnUnknownPlaceholders(routine, customParamValue, description);
+                        // "@key = value" is written as an annotation. A key that nothing reads is most likely a
+                        // misspelt one: it is stored like any custom parameter, and said. Without the @ a line of
+                        // this shape may be anything, and is left alone.
+                        if (customParamName[0] == '@' && CommentAnnotations.IsKnownCustomParameter(customParamName) is false)
+                        {
+                            (unknownAnnotationLines ??= []).Add(line);
+                            Logger?.LogWarning(
+                                "{Description}: \"{Line}\" - nothing reads a custom parameter named {Name}. Check the spelling (npgsqlrest --annotations lists what is read).",
+                                description, line, customParamName[1..]);
+                        }
                     }
                     TrackAnnotation(line);
                 }
@@ -356,7 +369,7 @@ internal static partial class DefaultCommentParser
                 // param param_name1 is hash of param_name2
                 // param param_name is upload metadata
                 // param [original] [new_name] [type]
-                // param [original] is [new_name] [type is [type]]
+                // param [original] is [new_name] [type]
                 else if (haveTag is true && StrEqualsToArray(wordsLower[0], ParameterKey))
                 {
                     HandleParameter(routine, routineEndpoint, wordsLower, words, len, description);
@@ -516,7 +529,8 @@ internal static partial class DefaultCommentParser
                     // built-in annotation logging. If no handler claims it, it's prose → surfaced
                     // via RoutineEndpoint.UnhandledCommentLines.
                     CommentLineResult? handled = null;
-                    foreach (var handler in Options.EndpointCreateHandlers)
+                    // Like every built-in annotation, a plugin's applies only under a matching tag ("for ...").
+                    foreach (var handler in haveTag ? Options.EndpointCreateHandlers : [])
                     {
                         handled = handler.HandleCommentLine(routineEndpoint, line, words, wordsLower);
                         if (handled is not null)
@@ -535,6 +549,17 @@ internal static partial class DefaultCommentParser
                             anyHandlerRequestedEndpoint = true;
                         }
                     }
+                    else if (line[0] == '@')
+                    {
+                        // A line written as an annotation that nothing claimed. It is not prose, so it never
+                        // becomes the endpoint's published description (OpenAPI, MCP). One that a plugin would
+                        // read, had it been enabled, is simply not in effect; anything else is unknown.
+                        if (CommentAnnotations.IsKnown(wordsLower[0]) is false)
+                        {
+                            (unknownAnnotationLines ??= []).Add(line);
+                            CommentLogger?.LogDebug("{Description}: \"{Line}\" is not an annotation NpgsqlRest or its plugins read; ignored.", description, line);
+                        }
+                    }
                     else
                     {
                         (unhandledCommentLines ??= []).Add(line);
@@ -543,6 +568,13 @@ internal static partial class DefaultCommentParser
             }
 
             routineEndpoint.UnhandledCommentLines = unhandledCommentLines?.ToArray();
+            routineEndpoint.UnknownAnnotationLines = unknownAnnotationLines?.ToArray();
+            if (routine.SourceAnnotationLines is not null)
+            {
+                _annotationLabels?.AddRange(routine.SourceAnnotationLines);
+            }
+            routineEndpoint.AnnotationLines = _annotationLabels is { Count: > 0 } ? _annotationLabels.ToArray() : null;
+            routineEndpoint.Diagnostics = EndpointDiagnosticsLogger.End();
 
             if (disabled)
             {
@@ -596,7 +628,16 @@ internal static partial class DefaultCommentParser
 
     public static void SetCustomParameter(RoutineEndpoint endpoint, string name, string value, string? description = null)
     {
-        value = Regex.Unescape(value);
+        // \t, \n and the like are written as escapes. A value that is not a valid escape sequence (a Windows path
+        // such as C:\uploads, where \u is an incomplete escape) is taken as written.
+        try
+        {
+            value = Regex.Unescape(value);
+        }
+        catch (ArgumentException)
+        {
+        }
+        var where = description ?? string.Concat(endpoint.Method.ToString(), " ", endpoint.Path);
 
         if (StrEqualsToArray(name, BufferRowsKey))
         {
@@ -604,26 +645,42 @@ internal static partial class DefaultCommentParser
             {
                 endpoint.BufferRows = parsedBuffer;
             }
+            else
+            {
+                WarnInvalidValue(where, name, value, "a whole number, 0 or more");
+            }
         }
         else if (StrEqualsToArray(name, RawKey))
         {
-            if (bool.TryParse(value, out var parsedRaw))
+            if (Ext.TryParseSwitch(value, out var parsedRaw))
             {
                 endpoint.Raw = parsedRaw;
+            }
+            else
+            {
+                WarnInvalidValue(where, name, value, "true or false");
             }
         }
         else if (StrEqualsToArray(name, SingleKey))
         {
-            if (bool.TryParse(value, out var parsedSingle))
+            if (Ext.TryParseSwitch(value, out var parsedSingle))
             {
                 endpoint.ReturnSingleRecord = parsedSingle;
+            }
+            else
+            {
+                WarnInvalidValue(where, name, value, "true or false");
             }
         }
         else if (StrEqualsToArray(name, VoidKey))
         {
-            if (bool.TryParse(value, out var parsedVoid))
+            if (Ext.TryParseSwitch(value, out var parsedVoid))
             {
                 endpoint.Void = parsedVoid;
+            }
+            else
+            {
+                WarnInvalidValue(where, name, value, "true or false");
             }
         }
         else if (StrEqualsToArray(name, SeparatorKey))
@@ -636,9 +693,13 @@ internal static partial class DefaultCommentParser
         }
         else if (StrEqualsToArray(name, ColumnNamesKey))
         {
-            if (bool.TryParse(value, out var parsedRawColumnNames))
+            if (Ext.TryParseSwitch(value, out var parsedRawColumnNames))
             {
                 endpoint.RawColumnNames = parsedRawColumnNames;
+            }
+            else
+            {
+                WarnInvalidValue(where, name, value, "true or false");
             }
         }
         else if (StrEqualsToArray(name, ConnectionNameKey))
@@ -648,23 +709,31 @@ internal static partial class DefaultCommentParser
         }
         else if (StrEqualsToArray(name, UserContextKey))
         {
-            if (bool.TryParse(value, out var parserUserContext))
+            if (Ext.TryParseSwitch(value, out var parserUserContext))
             {
                 endpoint.UserContext = parserUserContext;
+            }
+            else
+            {
+                WarnInvalidValue(where, name, value, "true or false");
             }
         }
         else if (StrEqualsToArray(name, UserParemetersKey))
         {
-            if (bool.TryParse(value, out var parserUserParameters))
+            if (Ext.TryParseSwitch(value, out var parserUserParameters))
             {
                 endpoint.UseUserParameters = parserUserParameters;
+            }
+            else
+            {
+                WarnInvalidValue(where, name, value, "true or false");
             }
         }
 
         else if (StrEqualsToArray(name, SseEventsStreamingPathKey))
         {
             // Tag-value form of @sse: same shorthand semantics — publish + subscribe on the same path.
-            if (bool.TryParse(value, out var parseredStreamingPath))
+            if (Ext.TryParseSwitch(value, out var parseredStreamingPath))
             {
                 endpoint.SseEventsPath = parseredStreamingPath is true ?
                     (endpoint.SseEventNoticeLevel ?? Options.DefaultSseEventNoticeLevel).ToString().ToLowerInvariant() :
@@ -680,7 +749,7 @@ internal static partial class DefaultCommentParser
 
         else if (StrEqualsToArray(name, SseEventsPublishKey))
         {
-            if (bool.TryParse(value, out var parsedPublish))
+            if (Ext.TryParseSwitch(value, out var parsedPublish))
             {
                 endpoint.SsePublishEnabled = parsedPublish;
             }
@@ -692,7 +761,7 @@ internal static partial class DefaultCommentParser
 
         else if (StrEqualsToArray(name, SseEventsSubscribeKey))
         {
-            if (bool.TryParse(value, out var parsedSubscribe))
+            if (Ext.TryParseSwitch(value, out var parsedSubscribe))
             {
                 endpoint.SseEventsPath = parsedSubscribe is true ?
                     (endpoint.SseEventNoticeLevel ?? Options.DefaultSseEventNoticeLevel).ToString().ToLowerInvariant() :
@@ -706,9 +775,13 @@ internal static partial class DefaultCommentParser
 
         else if (StrEqualsToArray(name, SseEventsLevelKey))
         {
-            if (Enum.TryParse<PostgresNoticeLevels>(value, true, out var parsedLevel))
+            if (Enum.TryParse<PostgresNoticeLevels>(value, true, out var parsedLevel) && Enum.IsDefined(parsedLevel))
             {
                 endpoint.SseEventNoticeLevel = parsedLevel;
+            }
+            else
+            {
+                WarnInvalidValue(where, name, value, string.Join(", ", Enum.GetNames<PostgresNoticeLevels>()));
             }
         }
 
@@ -744,11 +817,14 @@ internal static partial class DefaultCommentParser
             {
                 endpoint.BasicAuth = new() { Enabled = true };
             }
+            // basic_auth = <username> <password>. (The words were read from the positions of the keyword form,
+            // "basic_auth <username> <password>", one too far, so this form never added a user.)
+            // basic_auth = true only turns it on.
             var words = value.SplitWords();
-            if (words.Length >= 3)
+            if (words.Length >= 2)
             {
-                var username = words[1];
-                var password = words[2];
+                var username = words[0];
+                var password = words[1];
                 if (string.IsNullOrEmpty(username) is false && string.IsNullOrEmpty(password) is false)
                 {
                     endpoint.BasicAuth.Users[username] = password;
@@ -780,6 +856,10 @@ internal static partial class DefaultCommentParser
             {
                 endpoint.RetryStrategy = strategy;
             }
+            else
+            {
+                Logger?.RetryStrategyNotFound(where, value);
+            }
         }
         
         else if (StrEqualsToArray(name, RateLimiterPolicyKey))
@@ -794,17 +874,25 @@ internal static partial class DefaultCommentParser
 
         else if (StrEqualsToArray(name, EncryptKey))
         {
-            if (bool.TryParse(value, out var parsedEncrypt))
+            if (Ext.TryParseSwitch(value, out var parsedEncrypt))
             {
                 endpoint.EncryptAllParameters = parsedEncrypt;
+            }
+            else
+            {
+                WarnInvalidValue(where, name, value, "true or false");
             }
         }
 
         else if (StrEqualsToArray(name, DecryptKey))
         {
-            if (bool.TryParse(value, out var parsedDecrypt))
+            if (Ext.TryParseSwitch(value, out var parsedDecrypt))
             {
                 endpoint.DecryptAllColumns = parsedDecrypt;
+            }
+            else
+            {
+                WarnInvalidValue(where, name, value, "true or false");
             }
         }
 
@@ -815,6 +903,10 @@ internal static partial class DefaultCommentParser
             {
                 endpoint.CommandTimeout = parsedInterval;
             }
+            else
+            {
+                WarnInvalidValue(where, name, value, "an interval, such as 30s or 5 minutes");
+            }
         }
         
         else
@@ -823,7 +915,9 @@ internal static partial class DefaultCommentParser
             var paramName = name.Length > 0 && name[0] == '@' ? name[1..] : name;
             if (endpoint.CustomParameters is null)
             {
-                endpoint.CustomParameters = new()
+                // Keys are found whatever their case: what reads them (the client generators, the upload
+                // handlers) asks for lower case names, and "TsClient_Module = x" used to be stored and never found.
+                endpoint.CustomParameters = new(StringComparer.OrdinalIgnoreCase)
                 {
                     [paramName] = value
                 };
@@ -833,6 +927,12 @@ internal static partial class DefaultCommentParser
                 endpoint.CustomParameters[paramName] = value;
             }
         }
+    }
+
+    private static void WarnInvalidValue(string where, string name, string value, string expected)
+    {
+        Logger?.LogWarning("{Description}: {Name} = {Value} - the value is not valid and is ignored. Expected: {Expected}.",
+            where, name.TrimStart('@'), value, expected);
     }
 
     // Utility methods moved to DefaultCommentParser.Utilities.cs

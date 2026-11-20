@@ -7,6 +7,9 @@ namespace NpgsqlRest.DartClient;
 
 public partial class DartClient(DartClientOptions options) : IEndpointCreateHandler
 {
+    /// <summary>What this plugin reads from comments (the annotation reference).</summary>
+    public CommentAnnotation[] Annotations => DartClientAnnotations.All;
+
     private IApplicationBuilder _builder = default!;
     private NpgsqlRestOptions? _npgsqlRestoptions;
 
@@ -42,7 +45,9 @@ public partial class DartClient(DartClientOptions options) : IEndpointCreateHand
         _filesCreated = 0;
 
         var containsModuleParam = endpoints.Any(e => GetModule(e) is not null);
-        if (!options.BySchema && containsModuleParam)
+        // One file, unless files are split: by schema (BySchema), or by module when endpoints name one and the
+        // path has a {0} to put the module in (see TsClient for what this condition used to be).
+        if (!options.BySchema && (!containsModuleParam || !options.FilePath.Contains("{0}")))
         {
             Run(endpoints, options.FilePath);
         }
