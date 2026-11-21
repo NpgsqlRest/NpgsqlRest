@@ -10,6 +10,8 @@ public class HttpFile(HttpFileOptions httpFileOptions) : IEndpointCreateHandler
 
     private readonly HashSet<string> _initializedFiles = [];
     private readonly Dictionary<string, StringBuilder> _fileContent = [];
+    // For tools (EndpointReport): the file each endpoint's request was written to.
+    private readonly List<(RoutineEndpoint Endpoint, string FileName)> _generated = [];
 
     private bool _endpoint = false;
     private bool _file = false;
@@ -203,6 +205,7 @@ public class HttpFile(HttpFileOptions httpFileOptions) : IEndpointCreateHandler
         sb.AppendLine();
 
         _fileContent[fileName].Append(sb);
+        _generated.Add((endpoint, fileName));
         return;
 
         string FormatFileName()
@@ -260,6 +263,12 @@ public class HttpFile(HttpFileOptions httpFileOptions) : IEndpointCreateHandler
                     Directory.CreateDirectory(dir);
                 }
                 File.WriteAllText(fullFileName, content.ToString());
+                EndpointReport.AddGenerated("httpfiles", fullFileName, "requests", content.ToString(),
+                    _generated.Where(g => g.FileName == fileName).Select(g =>
+                    {
+                        var requestLine = string.Concat(g.Endpoint.Method, " {{host}}", g.Endpoint.Path);
+                        return (g.Endpoint, requestLine, new[] { requestLine });
+                    }));
                 filesCreated++;
                 Logger?.LogTrace("Created HTTP file: {fileName}", fileName);
             }

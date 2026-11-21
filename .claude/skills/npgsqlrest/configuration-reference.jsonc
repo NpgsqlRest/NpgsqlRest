@@ -1,5 +1,5 @@
 // NpgsqlRest — FULL configuration reference (every option, with inline comments).
-// Generated verbatim from: npgsqlrest --config   (NpgsqlRest v4.0.1)
+// Generated verbatim from: npgsqlrest --config   (NpgsqlRest v4.1.0)
 // This is the source of truth for configuration. Regenerate with: npgsqlrest --config
 
 {
@@ -2086,6 +2086,14 @@
     // Configure how comment annotations behave and which routines become endpoints. `Ignore` creates all endpoints and ignores annotations. `ParseAll` creates all endpoints and parses annotations. `OnlyAnnotated` (default) creates only routines whose comment has a recognized exposure tag — an `HTTP` tag, or a plugin annotation that requests an endpoint (e.g. `mcp`); modifier-only comments (e.g. just `authorize`) create nothing. `OnlyWithHttpTag` is a backward-compatible alias of `OnlyAnnotated` (identical behavior; existing configs keep working).
     //
     "CommentsMode": "OnlyAnnotated",
+    //
+    // Require the @ prefix on annotations. When false (default), the prefix is optional: `HTTP GET` and `@http get` are both read.
+    // When true, a comment line is an annotation only if it begins with @ (`@http get`, `@authorize admin`, `@timeout = 30s`, `@Content-Type: text/plain`); every other line is text, the endpoint's description, whatever word it begins with.
+    // That makes a comment unambiguous for people and for tools: a sentence such as "Disabled until Friday" or "Note: see the docs" can never be taken for an annotation.
+    // It applies to routine comments, to the comments of SQL files (also `@returns`, `@result`, `@single`, `@skip`, `@param`, `@define_param`) and to the directives in HTTP Custom Type comments (`@timeout`, `@retry_delay`, `@cache`).
+    // Lines without the prefix that look like an access restriction (`authorize`, `disabled`, `login` ...) are logged as a warning when this is on.
+    //
+    "RequireAtPrefix": false,
     //
     // The URL prefix string for every URL created by the default URL builder or `null` to ignore the URL prefix.
     //

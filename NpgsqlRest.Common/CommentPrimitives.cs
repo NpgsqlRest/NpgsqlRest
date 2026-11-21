@@ -9,8 +9,9 @@ namespace NpgsqlRest.Common;
 /// </summary>
 internal static class CommentPrimitives
 {
-    // Canonical comment-annotation word separators (space, comma).
-    private static readonly char[] WordSeparators = [' ', ','];
+    // Canonical comment-annotation word separators (space, tab, comma). The tab was missing before 4.1.0:
+    // "@authorize<TAB>admin" was one word, an annotation nothing knew, and the endpoint had no authorization.
+    private static readonly char[] WordSeparators = [' ', '\t', ','];
 
     /// <summary>
     /// Case-insensitive compare with an optional leading '@' stripped from <paramref name="str1"/>

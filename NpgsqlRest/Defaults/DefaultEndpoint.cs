@@ -4,6 +4,23 @@ internal static class DefaultEndpoint
 {
     internal static RoutineEndpoint? Create(Routine routine)
     {
+        var routineEndpoint = CreateUnparsed(routine);
+
+        if (routine.EndpointHandler is not null)
+        {
+            var parsed = DefaultCommentParser.Parse(routine, routineEndpoint);
+            ApplyTsClientModule(routine, parsed);
+            return routine.EndpointHandler(parsed);
+        }
+
+        var result = DefaultCommentParser.Parse(routine, routineEndpoint);
+        ApplyTsClientModule(routine, result);
+        return result;
+    }
+
+    /// <summary>The endpoint of a routine as the options alone make it, before its comment is read.</summary>
+    internal static RoutineEndpoint CreateUnparsed(Routine routine)
+    {
         var url = Options.UrlPathBuilder(routine, Options);
         if (routine.FormatUrlPattern is not null)
         {
@@ -49,17 +66,7 @@ internal static class DefaultEndpoint
         {
             routineEndpoint.LogCallback = null;
         }
-
-        if (routine.EndpointHandler is not null)
-        {
-            var parsed = DefaultCommentParser.Parse(routine, routineEndpoint);
-            ApplyTsClientModule(routine, parsed);
-            return routine.EndpointHandler(parsed);
-        }
-
-        var result = DefaultCommentParser.Parse(routine, routineEndpoint);
-        ApplyTsClientModule(routine, result);
-        return result;
+        return routineEndpoint;
     }
 
     /// <summary>

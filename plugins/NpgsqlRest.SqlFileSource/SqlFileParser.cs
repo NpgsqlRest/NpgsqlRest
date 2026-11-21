@@ -138,8 +138,12 @@ public static class SqlFileParser
     /// </summary>
     /// <param name="content">The SQL file content.</param>
     /// <param name="commentScope">Which comments to extract as annotations.</param>
-    public static SqlFileParseResult Parse(ReadOnlySpan<char> content, CommentScope commentScope = CommentScope.All)
+    // RequireAtPrefix for the Parse that is running on this thread: a comment line is an annotation only with the @.
+    [ThreadStatic] private static bool _requireAt;
+
+    public static SqlFileParseResult Parse(ReadOnlySpan<char> content, CommentScope commentScope = CommentScope.All, bool requireAtPrefix = false)
     {
+        _requireAt = requireAtPrefix;
         var result = new SqlFileParseResult();
         if (content.IsEmpty) return result;
 
@@ -148,6 +152,8 @@ public static class SqlFileParser
         var stmtBuilder = new ValueStringBuilder(stackalloc char[Math.Min(content.Length, 4096)]);
         var dollarTag = new ValueStringBuilder(stackalloc char[64]);
         int blockCommentDepth = 0;
+        // the string being read is E'...': a backslash escapes the next character
+        bool escapeString = false;
         bool firstStatementSeen = false;
         // Track the token before a dollar-quote for DO block detection
         var lastToken = new ValueStringBuilder(stackalloc char[16]);
@@ -231,9 +237,38 @@ public static class SqlFileParser
                             continue;
                         }
 
+                        // A quoted identifier: "..." (a doubled "" inside it is a quote). Nothing in it is a comment,
+                        // a string or the end of a statement: select 1 as "a--b; c".
+                        if (c == '"')
+                        {
+                            int identifierStart = i;
+                            i++;
+                            while (i < len)
+                            {
+                                if (content[i] == '"')
+                                {
+                                    if (i + 1 < len && content[i + 1] == '"')
+                                    {
+                                        i += 2;
+                                        continue;
+                                    }
+                                    i++;
+                                    break;
+                                }
+                                i++;
+                            }
+                            stmtBuilder.Append(content[identifierStart..i]);
+                            lastTokenIsWord = false;
+                            lastToken.Clear();
+                            continue;
+                        }
+
                         // Check for single quote: '
                         if (c == '\'')
                         {
+                            // E'...' (an escape string): a backslash escapes the next character, also a quote
+                            escapeString = i > 0 && (content[i - 1] is 'E' or 'e')
+                                && (i == 1 || !(char.IsLetterOrDigit(content[i - 2]) || content[i - 2] == '_'));
                             state = State.SingleQuote;
                             stmtBuilder.Append(c);
                             lastTokenIsWord = false;
@@ -250,7 +285,9 @@ public static class SqlFileParser
                             // Collect tag name (alphanumeric + underscore)
                             while (i < len && (char.IsLetterOrDigit(content[i]) || content[i] == '_'))
                                 i++;
-                            if (i < len && content[i] == '$')
+                            // A tag is an identifier and cannot begin with a digit: in "$1$2" the first dollar is the
+                            // parameter $1, not the opening of a string tagged "1".
+                            if (i < len && content[i] == '$' && !(i > tagStart + 1 && char.IsDigit(content[tagStart + 1])))
                             {
                                 // Valid dollar quote opening
                                 dollarTag.Clear();
@@ -399,6 +436,12 @@ public static class SqlFileParser
 
                     case State.SingleQuote:
                         stmtBuilder.Append(c);
+                        if (escapeString && c == '\\' && i + 1 < len)
+                        {
+                            stmtBuilder.Append(content[i + 1]);
+                            i += 2;
+                            continue;
+                        }
                         if (c == '\'')
                         {
                             // Check for escaped quote ''
@@ -506,6 +549,10 @@ public static class SqlFileParser
         {
             var trimmed = line.Trim();
             var explicitAnnotation = trimmed.StartsWith('@');
+            if (_requireAt && explicitAnnotation is false)
+            {
+                continue; // RequireAtPrefix: text
+            }
             var s = explicitAnnotation ? trimmed[1..] : trimmed;
 
             // @single / @single_record / @single_result
@@ -660,6 +707,10 @@ public static class SqlFileParser
         foreach (var line in lines)
         {
             var trimmed = line.Trim();
+            if (_requireAt && trimmed.StartsWith('@') is false)
+            {
+                continue; // RequireAtPrefix: text
+            }
             var s = trimmed.StartsWith('@') ? trimmed[1..] : trimmed;
 
             if (TryKeyword(s, "define_param", out var rest) is false)
@@ -687,7 +738,7 @@ public static class SqlFileParser
     /// @param :name type, @param name type is type.
     /// Only extracts when an explicit type is present. Returns null if no type hints found.
     /// </summary>
-    public static Dictionary<int, string>? ExtractParamTypeHints(string? comment, IReadOnlyList<string>? namedParams = null)
+    public static Dictionary<int, string>? ExtractParamTypeHints(string? comment, IReadOnlyList<string>? namedParams = null, bool requireAtPrefix = false)
     {
         if (string.IsNullOrEmpty(comment)) return null;
 
@@ -697,6 +748,10 @@ public static class SqlFileParser
         foreach (var line in lines)
         {
             var trimmed = line.Trim();
+            if (requireAtPrefix && trimmed.StartsWith('@') is false)
+            {
+                continue; // RequireAtPrefix: text
+            }
             var s = trimmed.StartsWith('@') ? trimmed[1..] : trimmed;
 
             if (!s.StartsWith("param ", StringComparison.OrdinalIgnoreCase) &&

@@ -156,6 +156,8 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
         // TanStack Query hooks entries collected while handling this module's endpoints:
         // (generated function name, PascalCase name, GET = useQuery vs useMutation, takes a request object)
         List<(string Camel, string Pascal, bool IsGet, bool HasRequest)> hookEntries = [];
+        // For tools (EndpointReport): the function generated for each endpoint in this file.
+        List<(RoutineEndpoint Endpoint, string Camel, string Pascal)> generated = [];
 
         Dictionary<string, string> modelsDict = [];
         Dictionary<string, int> names = [];
@@ -331,6 +333,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 }
                 AddHeader(interfaces);
                 File.WriteAllText(fileName, interfaces.ToString());
+                ReportGenerated(fileName, interfaces.ToString(), generated);
                 _filesCreated++;
                 Logger?.LogTrace("Created Typescript file: {fileName}", fileName);
             }
@@ -342,6 +345,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 }
                 AddHeader(content);
                 File.WriteAllText(fileName, content.ToString());
+                ReportGenerated(fileName, content.ToString(), generated);
                 _filesCreated++;
                 Logger?.LogTrace("Created Javascript file: {fileName}", fileName);
             }
@@ -364,6 +368,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 }
                 AddHeader(interfaces);
                 File.WriteAllText(typeFile, interfaces.ToString());
+                EndpointReport.AddGenerated("tsclient", typeFile, "types", "", []);
                 Logger?.LogTrace("Created Typescript type file: {typeFile}", typeFile);
             }
 
@@ -373,6 +378,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             }
             AddHeader(content);
             File.WriteAllText(fileName, content.ToString());
+            ReportGenerated(fileName, content.ToString(), generated);
             if (!options.SkipTypes)
             {
                 _filesCreated++;
@@ -384,7 +390,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
                 Logger?.LogTrace("Created Javascript file: {fileName}", fileName);
             }
         }
-        WriteHooks(hooksFileName, fileName, hookEntries);
+        WriteHooks(hooksFileName, fileName, hookEntries, generated);
         return;
 
         void AddHeader(StringBuilder sb)
@@ -513,6 +519,7 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
             {
                 return false;
             }
+            generated.Add((endpoint, camel, pascal));
 
             content.AppendLine();
 
@@ -1657,7 +1664,14 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
     /// (Parameters / Awaited-ReturnType), so the hooks file never references request/response
     /// type names directly (they are not reliably exported).
     /// </summary>
-    private void WriteHooks(string? hooksFileName, string clientFileName, List<(string Camel, string Pascal, bool IsGet, bool HasRequest)> hookEntries)
+    private static void ReportGenerated(string fileName, string text, List<(RoutineEndpoint Endpoint, string Camel, string Pascal)> generated)
+    {
+        EndpointReport.AddGenerated("tsclient", fileName, "client", text,
+            generated.Select(g => (g.Endpoint, g.Camel, new[] { $"function {g.Camel}(", $"const {g.Camel}Url " })));
+    }
+
+    private void WriteHooks(string? hooksFileName, string clientFileName, List<(string Camel, string Pascal, bool IsGet, bool HasRequest)> hookEntries,
+        List<(RoutineEndpoint Endpoint, string Camel, string Pascal)> generated)
     {
         // No eligible routines in this module - don't write an empty hooks file.
         if (hooksFileName is null || hookEntries.Count == 0)
@@ -1771,6 +1785,9 @@ public partial class TsClient(TsClientOptions options) : IEndpointCreateHandler
         }
 
         File.WriteAllText(hooksFileName, sb.ToString());
+        var hooked = hookEntries.Select(h => h.Camel).ToHashSet();
+        EndpointReport.AddGenerated("tsclient", hooksFileName, "hooks", sb.ToString(),
+            generated.Where(g => hooked.Contains(g.Camel)).Select(g => (g.Endpoint, $"use{g.Pascal}", new[] { $"function use{g.Pascal}(", $"function use{g.Pascal}Mutation(" })));
         _filesCreated++;
         Logger?.LogTrace("Created TanStack Query hooks file: {hooksFileName}", hooksFileName);
     }

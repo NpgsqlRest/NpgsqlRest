@@ -157,6 +157,7 @@ public partial class Mcp
                         Directory.CreateDirectory(dir);
                     }
                     File.WriteAllText(fullFileName, content);
+                    EndpointReport.AddGenerated("mcp", fullFileName, "tool_schemas", content, []);
                     Logger?.LogDebug("Created MCP ToolSchemas file: {fileName}", fullFileName);
                 }
             }

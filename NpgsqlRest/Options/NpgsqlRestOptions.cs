@@ -250,6 +250,18 @@ public class NpgsqlRestOptions
     public CommentsMode CommentsMode { get; set; } = CommentsMode.OnlyWithHttpTag;
 
     /// <summary>
+    /// When true, a comment line is an annotation only if it begins with <c>@</c>: <c>@http get</c>,
+    /// <c>@authorize admin</c>, <c>@timeout = 30s</c>, <c>@Content-Type: text/plain</c>. Every other line is text
+    /// (the endpoint's description), whatever word it begins with, so a sentence such as "Disabled until Friday"
+    /// or "Note: see the docs" can never be taken for an annotation. This also applies to the lines a SQL file
+    /// source reads (<c>@returns</c>, <c>@result</c>, <c>@single</c>, <c>@skip</c>, <c>@param</c>,
+    /// <c>@define_param</c>) and to the directives in the comment of an HTTP Custom Type (<c>@timeout</c>,
+    /// <c>@retry_delay</c>, <c>@cache</c>; its request line and headers are HTTP syntax and take no prefix).
+    /// Default is false: the prefix is optional, and a line is read with or without it.
+    /// </summary>
+    public bool RequireAtPrefix { get; set; } = false;
+
+    /// <summary>
     /// Configure how to send request headers to PostgreSQL routines execution:
     /// - `Ignore` (default) don't send any request headers to routines.
     /// - `Context` passes the request headers to the routine as a JSON string in the PostgreSQL setting named by `RequestHeadersContextKey` (`request.headers` by default), set with `set_config` just before the routine runs. Read it with `current_setting('request.headers', true)`.

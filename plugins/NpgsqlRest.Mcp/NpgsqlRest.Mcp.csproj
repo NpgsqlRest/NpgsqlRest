@@ -18,11 +18,18 @@
         <PackageReleaseNotes>https://github.com/NpgsqlRest/NpgsqlRest/blob/master/changelog.md</PackageReleaseNotes>
         <PackageId>NpgsqlRest.Mcp</PackageId>
         <PackageLicenseFile>LICENSE</PackageLicenseFile>
+        <!-- Without this the build produces no .nupkg, and the release pushes "**/*.nupkg": the package was
+             never published to NuGet before 1.2.1. -->
+        <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
         <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
-        <Version>1.2.0</Version>
-        <AssemblyVersion>1.2.0</AssemblyVersion>
-        <FileVersion>1.2.0</FileVersion>
-        <PackageVersion>1.2.0</PackageVersion>
+        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+        <IncludeSymbols>true</IncludeSymbols>
+        <PublishRepositoryUrl>true</PublishRepositoryUrl>
+        <EmbedUntrackedSources>true</EmbedUntrackedSources>
+        <Version>1.2.1</Version>
+        <AssemblyVersion>1.2.1</AssemblyVersion>
+        <FileVersion>1.2.1</FileVersion>
+        <PackageVersion>1.2.1</PackageVersion>
         <LangVersion>15</LangVersion>
     </PropertyGroup>
 

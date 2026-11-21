@@ -31,7 +31,7 @@ internal static class RequestContextBatch
 
     // Rendering reads every value in PostgreSQL's text format. A command asks for that with AllResultTypesAreUnknown.
     // A batch has the same switch, and sends the same request for text results, but Npgsql does not expose the batch's
-    // switch in its public API: it is internal as of Npgsql 10.0.3, and making it public is on Npgsql's backlog
+    // switch in its public API: it is still internal in Npgsql 11.0.0, and making it public is on Npgsql's backlog
     // (https://github.com/npgsql/npgsql/issues/3922). This reaches it without reflection, so it also works in trimmed
     // and Native AOT builds. Whether it is there is checked once (IsSupported): with an Npgsql that does not have it,
     // the request context is set the way it always was, by a separate batch. Once Npgsql has a public property, use

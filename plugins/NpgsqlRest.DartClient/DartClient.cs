@@ -112,6 +112,8 @@ public partial class DartClient(DartClientOptions options) : IEndpointCreateHand
         {
             return;
         }
+        // For tools (EndpointReport): the function generated for each endpoint in this file.
+        List<(RoutineEndpoint Endpoint, string Camel)> generated = [];
 
         // Internal-only endpoints have no public HTTP route (404), so a generated client function for one
         // would be dead — e.g. a bare-`@mcp` MCP-only routine. Exclude them from the REST client.
@@ -296,7 +298,10 @@ public partial class DartClient(DartClientOptions options) : IEndpointCreateHand
         }
         blocks.AddRange(functions);
 
-        File.WriteAllText(fileName, string.Concat(string.Join(string.Concat(Environment.NewLine, Environment.NewLine), blocks), Environment.NewLine));
+        var fileText = string.Concat(string.Join(string.Concat(Environment.NewLine, Environment.NewLine), blocks), Environment.NewLine);
+        File.WriteAllText(fileName, fileText);
+        EndpointReport.AddGenerated("dartclient", fileName, "client", fileText,
+            generated.Select(g => (g.Endpoint, g.Camel, new[] { $"> {g.Camel}(", $" {g.Camel}(" })));
         _filesCreated++;
         Logger?.LogTrace("Created Dart file: {fileName}", fileName);
 
@@ -310,6 +315,7 @@ public partial class DartClient(DartClientOptions options) : IEndpointCreateHand
             }
             modelFileBlocks.AddRange(modelBlocks);
             File.WriteAllText(modelsFileName, string.Concat(string.Join(string.Concat(Environment.NewLine, Environment.NewLine), modelFileBlocks), Environment.NewLine));
+            EndpointReport.AddGenerated("dartclient", modelsFileName, "types", "", []);
             _filesCreated++;
             Logger?.LogTrace("Created Dart models file: {modelsFileName}", modelsFileName);
         }
@@ -438,6 +444,7 @@ public partial class DartClient(DartClientOptions options) : IEndpointCreateHand
             {
                 return false;
             }
+            generated.Add((endpoint, camel));
 
             // Request fields
             string? requestName = null;

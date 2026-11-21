@@ -54,6 +54,8 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
             foreach (var filePath in files)
             {
                 (Routine, IRoutineSourceParameterFormatter)? result = null;
+                _notExposed = null;
+                EndpointReport.BeginCapture();
                 try
                 {
                     result = ProcessFile(filePath, baseDir, connection, nameConverter, options);
@@ -67,10 +69,28 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
                         Environment.Exit(1);
                     }
                 }
+                var diagnostics = EndpointReport.EndCapture();
 
                 if (result is not null)
                 {
                     yield return result.Value;
+                }
+                else
+                {
+                    // Said for tools (npgsqlrest --inspect): the file was read and is not an endpoint, and why.
+                    var (reason, message) = _notExposed ?? ("sql_error",
+                        diagnostics is { Length: > 0 }
+                            ? "The file could not be made into an endpoint: " + diagnostics[^1]
+                            : "The file could not be made into an endpoint.");
+                    EndpointReport.AddNotExposed(new NotExposedEntry
+                    {
+                        Kind = "sql_file",
+                        Name = Path.GetFileNameWithoutExtension(filePath),
+                        SourceFile = filePath,
+                        Reason = reason,
+                        Message = message,
+                        Diagnostics = diagnostics
+                    });
                 }
             }
         }
@@ -83,6 +103,9 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
         }
     }
 
+    // Why ProcessFile returned nothing for the file it was given, when that is not an error.
+    [ThreadStatic] private static (string Reason, string Message)? _notExposed;
+
     private static (Routine, IRoutineSourceParameterFormatter)? ProcessFile(
         string filePath,
         string baseDir,
@@ -91,7 +114,8 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
         SqlFileSourceOptions options)
     {
         var content = File.ReadAllText(filePath);
-        var parseResult = SqlFileParser.Parse(content, options.CommentScope);
+        var requireAt = NpgsqlRestOptions.Options.RequireAtPrefix;
+        var parseResult = SqlFileParser.Parse(content, options.CommentScope, requireAt);
 
 
         // When CommentsMode gates endpoint creation (OnlyAnnotated, or its back-compat alias
@@ -101,9 +125,23 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
         // endpoint candidate too, so it passes the gate; the check stays textual and cheap, so scripts
         // with neither are never described.
         if (options.CommentsMode is NpgsqlRest.CommentsMode.OnlyWithHttpTag or NpgsqlRest.CommentsMode.OnlyAnnotated
-            && !HasHttpTag(parseResult.Comment)
-            && !HasEndpointRequestingAnnotation(parseResult.Comment))
+            && !HasHttpTag(parseResult.Comment, requireAt)
+            && !HasEndpointRequestingAnnotation(parseResult.Comment, requireAt))
         {
+            if (requireAt && HasHttpTag(parseResult.Comment, false))
+            {
+                // a file in the old form after the switch: worth a warning at every start
+                NpgsqlRestOptions.Logger?.LogWarning(
+                    "SqlFileSource: {FilePath}: no endpoint is created, because its HTTP line is written without the @ prefix and RequireAtPrefix is on. Write its annotations with @ (@http ...), or set RequireAtPrefix to false.",
+                    filePath);
+                _notExposed = ("unprefixed_annotations", "Its HTTP line is written without the @ prefix, and RequireAtPrefix is on, so the line is text. Write the annotations with @ (@http ...), or set RequireAtPrefix to false.");
+            }
+            else
+            {
+                _notExposed = ("no_http_annotation", requireAt
+                    ? "The file has no @http annotation in a comment. Under this CommentsMode only a file that has one becomes an endpoint."
+                    : "The file has no HTTP annotation in a comment. Under this CommentsMode only a file that has one becomes an endpoint.");
+            }
             return null;
         }
 
@@ -124,6 +162,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
 
         if (parseResult.Statements.Count == 0)
         {
+            _notExposed = ("empty_file", "The file has no SQL statement.");
             return null;
         }
 
@@ -162,7 +201,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
         int mergedMaxParam = 0;
         var paramTypesByIndex = new Dictionary<int, string>(); // $N index → type name
         var commandDescribes = new List<DescribeResult>();
-        var paramTypeHints = SqlFileParser.ExtractParamTypeHints(parseResult.Comment, namedList);
+        var paramTypeHints = SqlFileParser.ExtractParamTypeHints(parseResult.Comment, namedList, requireAt);
 
         for (int stmtIndex = 0; stmtIndex < parseResult.Statements.Count; stmtIndex++)
         {
@@ -803,7 +842,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
     /// Check whether the parsed comment contains an HTTP tag (a line starting with "http").
     /// Mirrors the detection logic in DefaultCommentParser.
     /// </summary>
-    private static bool HasHttpTag(string comment)
+    private static bool HasHttpTag(string comment, bool requireAtPrefix)
     {
         if (string.IsNullOrEmpty(comment))
         {
@@ -811,8 +850,13 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
         }
         foreach (var line in comment.Split('\n'))
         {
-            // the @ is optional, as everywhere: "@http GET" is an HTTP tag too
-            var trimmed = line.Trim().TrimStart('@');
+            // the @ is optional ("@http GET" and "HTTP GET"), unless RequireAtPrefix is on
+            var trimmed = line.Trim();
+            if (requireAtPrefix && trimmed.StartsWith('@') is false)
+            {
+                continue;
+            }
+            trimmed = trimmed.TrimStart('@');
             if (trimmed.Length >= 4 &&
                 trimmed.StartsWith("http", StringComparison.OrdinalIgnoreCase) &&
                 (trimmed.Length == 4 || trimmed[4] == ' ' || trimmed[4] == '\t'))
@@ -830,7 +874,7 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
     /// <see cref="IEndpointCreateHandler.EndpointRequestingAnnotations"/> (e.g. a bare <c>mcp</c>).
     /// Such a file is an endpoint candidate (an MCP-only tool) even without an HTTP tag.
     /// </summary>
-    private static bool HasEndpointRequestingAnnotation(string comment)
+    private static bool HasEndpointRequestingAnnotation(string comment, bool requireAtPrefix)
     {
         if (string.IsNullOrEmpty(comment))
         {
@@ -852,6 +896,10 @@ public class SqlFileSource(SqlFileSourceOptions options) : IEndpointSource
             if (span[0] == '@')
             {
                 span = span[1..];
+            }
+            else if (requireAtPrefix)
+            {
+                continue;
             }
             var wordEnd = span.IndexOfAny(' ', '\t');
             var word = wordEnd < 0 ? span : span[..wordEnd];

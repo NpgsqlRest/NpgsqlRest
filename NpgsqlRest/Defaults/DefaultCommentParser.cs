@@ -6,6 +6,16 @@ internal static partial class DefaultCommentParser
 {
     private static readonly char[] NewlineSeparator = ['\r', '\n'];
 
+    // Why the last Parse on this thread returned no endpoint (EndpointReport), and what was logged about it.
+    [ThreadStatic] internal static (string Code, string Message)? NotExposedReason;
+    [ThreadStatic] internal static string[]? NotExposedDiagnostics;
+
+    // Annotations that restrict who can call an endpoint or whether it exists. With RequireAtPrefix on, a line
+    // that begins with one of them and has no @ is text, and that is said as a warning: in a comment written
+    // partly in the old form, the endpoint would otherwise be created without the restriction, in silence.
+    private static readonly string[] AccessRestrictingAnnotations =
+        ["authorize", "authorized", "requires_authorization", "disabled", "internal", "internal_only", "login", "signin", "logout", "signout", "basic_auth", "security_sensitive", "sensitive"];
+
     // All annotation keys moved to their respective handler files in CommentParsers directory
 
     public static RoutineEndpoint? Parse(
@@ -22,10 +32,22 @@ internal static partial class DefaultCommentParser
         var comment = routine.Comment;
         var disabled = false;
         bool haveTag = true;
+        NotExposedReason = null;
+        NotExposedDiagnostics = null;
+        var requireAt = Options.RequireAtPrefix;
+        // with RequireAtPrefix: the comment has a line "http ..." without the @
+        var unprefixedHttp = false;
+        // a "for <tags>" line that does not name this routine's kind turned the lines after it off
+        var tagMismatch = false;
+        // with RequireAtPrefix: lines without the @ that begin with an annotation that restricts access
+        List<(string Line, string Name)>? unprefixedRestrictions = null;
         if (string.IsNullOrEmpty(comment))
         {
             if (Options.CommentsMode is CommentsMode.OnlyWithHttpTag or CommentsMode.OnlyAnnotated)
             {
+                NotExposedReason = ("no_comment", requireAt
+                    ? "It has no comment. Under this CommentsMode an endpoint is created only for a comment with the @http annotation."
+                    : "It has no comment. Under this CommentsMode an endpoint is created only for a comment with the HTTP annotation.");
                 return null;
             }
         }
@@ -64,12 +86,33 @@ internal static partial class DefaultCommentParser
                     continue;
                 }
 
+                // RequireAtPrefix: a line without the @ is text. Nothing looks at it: not the built-in annotations,
+                // not key = value, not headers, not the plugins.
+                if (requireAt && line[0] != '@')
+                {
+                    if (StrEquals(wordsLower[0], "http"))
+                    {
+                        unprefixedHttp = true;
+                    }
+                    else if (StrEqualsToArray(wordsLower[0], AccessRestrictingAnnotations))
+                    {
+                        // said once it is known that there is an endpoint to speak of (see after the loop)
+                        (unprefixedRestrictions ??= []).Add((line, wordsLower[0]));
+                    }
+                    (unhandledCommentLines ??= []).Add(line);
+                    continue;
+                }
+
                 // for tag1, tag2, tag3 [, ...]
                 // tag tag1, tag2, tag3 [, ...]
                 // tags tag1, tag2, tag3 [, ...]
                 if (routine.Tags is not null && routine.Tags.Length > 0 && StrEqualsToArray(wordsLower[0], TagsKey))
                 {
                     HandleTags(routine, wordsLower, ref haveTag);
+                    if (haveTag is false)
+                    {
+                        tagMismatch = true;
+                    }
                 }
 
                 // key = value
@@ -104,7 +147,8 @@ internal static partial class DefaultCommentParser
                 // Content-Type: application/json
                 else if (haveTag is true && SplitBySeparatorChar(line, Consts.Colon, out var headerName, out var headerValue))
                 {
-                    HandleHeader(routineEndpoint, headerName, headerValue, description);
+                    // "@Content-Type: text/plain": the @ marks the line as an annotation and is not part of the name
+                    HandleHeader(routineEndpoint, headerName.TrimStart('@'), headerValue, description);
                     WarnUnknownPlaceholders(routine, headerValue, description);
                     TrackAnnotation(line);
                 }
@@ -574,16 +618,45 @@ internal static partial class DefaultCommentParser
                 _annotationLabels?.AddRange(routine.SourceAnnotationLines);
             }
             routineEndpoint.AnnotationLines = _annotationLabels is { Count: > 0 } ? _annotationLabels.ToArray() : null;
+            var gated = Options.CommentsMode is CommentsMode.OnlyWithHttpTag or CommentsMode.OnlyAnnotated
+                && !hasHttpTag && !anyHandlerRequestedEndpoint;
+            if (unprefixedRestrictions is not null && gated is false)
+            {
+                // There is an endpoint, and it does not have the restriction its comment seems to ask for.
+                foreach (var (restrictionLine, name) in unprefixedRestrictions)
+                {
+                    Logger?.LogWarning(
+                        "{Description}: \"{Line}\" is read as text, not as the annotation {Name}, because annotations need the @ prefix (RequireAtPrefix is on). Write @{Name}, or reword the line if it is a sentence.",
+                        description, restrictionLine, name, name);
+                }
+            }
+            if (requireAt && unprefixedHttp && gated)
+            {
+                // the one case that is worth a warning at every start: a comment in the old form after the switch
+                Logger?.LogWarning(
+                    "{RoutineDescription}: no endpoint is created, because its comment has an HTTP line without the @ prefix and RequireAtPrefix is on. Write its annotations with @ (@http ...), or set RequireAtPrefix to false.",
+                    routineDescription);
+            }
             routineEndpoint.Diagnostics = EndpointDiagnosticsLogger.End();
 
             if (disabled)
             {
                 Logger?.CommentDisabled(description);
+                NotExposedReason = ("disabled", "Its comment has the disabled annotation.");
+                NotExposedDiagnostics = routineEndpoint.Diagnostics;
                 return null;
             }
             if (Options.CommentsMode is CommentsMode.OnlyWithHttpTag or CommentsMode.OnlyAnnotated
                 && !hasHttpTag && !anyHandlerRequestedEndpoint)
             {
+                NotExposedReason = requireAt && unprefixedHttp
+                    ? ("unprefixed_annotations", "Its comment has an HTTP line without the @ prefix, and RequireAtPrefix is on, so the line is text. Write the annotations with @ (@http ...), or set RequireAtPrefix to false.")
+                    : tagMismatch
+                        ? ("tag_mismatch", "Its HTTP annotation comes after a \"for\" line that does not name this routine's tags, so it does not apply.")
+                        : ("no_http_annotation", requireAt
+                            ? "Its comment has no @http annotation. Under this CommentsMode an endpoint is created only for a comment that has one."
+                            : "Its comment has no HTTP annotation. Under this CommentsMode an endpoint is created only for a comment that has one.");
+                NotExposedDiagnostics = routineEndpoint.Diagnostics;
                 return null;
             }
             // An endpoint that exists ONLY because a plugin requested it (no HTTP tag under a gating

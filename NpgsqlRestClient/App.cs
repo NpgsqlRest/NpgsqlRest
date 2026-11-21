@@ -499,7 +499,7 @@ public class App
             _builder.TestLogger?.LogDebug("code generation handlers skipped in test mode");
             return handlers;
         }
-        if (args.Any(a => string.Equals(a, "--endpoints", StringComparison.OrdinalIgnoreCase)))
+        if (args.Any(a => string.Equals(a, "--endpoints", StringComparison.OrdinalIgnoreCase) || string.Equals(a, "--inspect", StringComparison.OrdinalIgnoreCase)))
         {
             handlers.Add(new EndpointCapture());
         }

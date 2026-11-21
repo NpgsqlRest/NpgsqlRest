@@ -1,0 +1,92 @@
+// HTTP/1.1 keep-alive load generator. Usage: loadgen <baseUrl> <serverPid> <pgContainer> <label>
+// Per endpoint: warm-up, response time at 1 connection, requests per second at 32, CPU per request at 8
+// (server process CPU from ps, PostgreSQL CPU from the container's cgroup).
+using System.Diagnostics;
+using System.Globalization;
+using System.Net;
+using System.Text;
+
+var baseUrl = args[0]; var pid = args[1]; var pg = args[2]; var label = args[3];
+var seconds = args.Length > 4 ? double.Parse(args[4], CultureInfo.InvariantCulture) : 5.0;
+(string name, string method, string path, string? body)[] endpoints =
+[
+    ("text", "GET", "/api/benchmark-get-text", null),
+    ("plpgsql", "GET", "/api/benchmark-plpgsql?id=500", null),
+    ("post4", "POST", "/api/benchmark-post", """{"a":42,"b":"some text value","c":true,"d":12345.678}"""),
+    ("rows100", "GET", "/api/benchmark-get-rows?count=100", null),
+    ("json119k", "GET", "/api/benchmark-get-json?count=1500", null),
+    ("ctx_text", "GET", "/api/ctx-text", null),
+    ("ctx_rows100", "GET", "/api/ctx-rows?count=100", null),
+];
+
+static string Run(string file, string arguments)
+{
+    using var p = Process.Start(new ProcessStartInfo(file, arguments) { RedirectStandardOutput = true, RedirectStandardError = true })!;
+    var o = p.StandardOutput.ReadToEnd(); p.WaitForExit(); return o;
+}
+double ServerCpuSeconds()
+{
+    // ps cputime: [dd-]hh:mm:ss.xx or mm:ss.xx
+    var t = Run("/bin/ps", $"-o cputime= -p {pid}").Trim();
+    double days = 0; var i = t.IndexOf('-'); if (i > 0) { days = double.Parse(t[..i]); t = t[(i + 1)..]; }
+    var parts = t.Split(':'); double s = 0; foreach (var part in parts) s = s * 60 + double.Parse(part, CultureInfo.InvariantCulture);
+    return days * 86400 + s;
+}
+double PgCpuMicros()
+{
+    var o = Run("docker", $"exec {pg} cat /sys/fs/cgroup/cpu.stat");
+    foreach (var line in o.Split('\n')) if (line.StartsWith("usage_usec ")) return double.Parse(line[11..], CultureInfo.InvariantCulture);
+    return double.NaN;
+}
+
+async Task<(long requests, long bytes, double meanMicros, double elapsed)> Load(HttpClient client, (string name, string method, string path, string? body) e, int connections, double secs)
+{
+    long requests = 0, bytes = 0, ticks = 0; var failed = 0;
+    var stopAt = Stopwatch.GetTimestamp() + (long)(secs * Stopwatch.Frequency);
+    var sw = Stopwatch.StartNew();
+    var workers = Enumerable.Range(0, connections).Select(_ => Task.Run(async () =>
+    {
+        var buffer = new byte[65536];
+        while (Stopwatch.GetTimestamp() < stopAt)
+        {
+            var t0 = Stopwatch.GetTimestamp();
+            using var request = new HttpRequestMessage(new HttpMethod(e.method), e.path);
+            if (e.body is not null) request.Content = new StringContent(e.body, Encoding.UTF8, "application/json");
+            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+            if (response.StatusCode != HttpStatusCode.OK) { Interlocked.Increment(ref failed); }
+            await using var stream = await response.Content.ReadAsStreamAsync();
+            long n = 0; int read;
+            while ((read = await stream.ReadAsync(buffer)) > 0) n += read;
+            Interlocked.Add(ref ticks, Stopwatch.GetTimestamp() - t0);
+            Interlocked.Add(ref bytes, n);
+            Interlocked.Increment(ref requests);
+        }
+    })).ToArray();
+    await Task.WhenAll(workers);
+    sw.Stop();
+    if (failed > 0) throw new Exception($"{e.name}: {failed} responses were not 200");
+    return (requests, bytes, ticks * 1_000_000.0 / Stopwatch.Frequency / requests, sw.Elapsed.TotalSeconds);
+}
+
+HttpClient Client(int connections) => new(new SocketsHttpHandler { MaxConnectionsPerServer = connections, AutomaticDecompression = DecompressionMethods.None, UseProxy = false })
+{ BaseAddress = new Uri(baseUrl), DefaultRequestVersion = HttpVersion.Version11, Timeout = TimeSpan.FromSeconds(60) };
+
+foreach (var e in endpoints)
+{
+    using (var warm = Client(8)) { await Load(warm, e, 8, 1.5); }
+    double seq; long size;
+    using (var c1 = Client(1)) { var r = await Load(c1, e, 1, seconds * 0.6); seq = r.meanMicros; size = r.bytes / r.requests; }
+    double rps;
+    using (var c32 = Client(32)) { var r = await Load(c32, e, 32, seconds); rps = r.requests / r.elapsed; }
+    double cpu, pgCpu;
+    using (var c8 = Client(8))
+    {
+        var s0 = ServerCpuSeconds(); var p0 = PgCpuMicros();
+        var r = await Load(c8, e, 8, seconds);
+        var s1 = ServerCpuSeconds(); var p1 = PgCpuMicros();
+        cpu = (s1 - s0) * 1_000_000 / r.requests; pgCpu = (p1 - p0) / r.requests;
+    }
+    Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{label}\t{e.name}\t{size}\t{seq:F1}\t{rps:F0}\t{cpu:F1}\t{pgCpu:F1}"));
+}
+var rss = Run("/bin/ps", $"-o rss= -p {pid}").Trim();
+Console.WriteLine($"{label}\tRSS_MB\t{double.Parse(rss) / 1024:F0}");

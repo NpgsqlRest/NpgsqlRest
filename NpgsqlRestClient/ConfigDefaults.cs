@@ -777,6 +777,7 @@ public static class ConfigDefaults
             ["IncludeNames"] = null,
             ["ExcludeNames"] = null,
             ["CommentsMode"] = "OnlyAnnotated",
+            ["RequireAtPrefix"] = false,
             ["UrlPathPrefix"] = "/api",
             ["KebabCaseUrls"] = true,
             ["CamelCaseNames"] = true,

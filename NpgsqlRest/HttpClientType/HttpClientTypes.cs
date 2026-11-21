@@ -483,6 +483,11 @@ group by n.nspname, t.typname, des.description";
         {
             trimmed = TrimSpan(trimmed[1..]);
         }
+        else if (NpgsqlRestOptions.Options?.RequireAtPrefix is true)
+        {
+            // RequireAtPrefix: a directive needs the @ (the request line and the headers are HTTP syntax and do not)
+            return false;
+        }
 
         // Check for "timeout" keyword (case-insensitive)
         if (!trimmed.StartsWith("timeout", StringComparison.OrdinalIgnoreCase))
@@ -539,6 +544,11 @@ group by n.nspname, t.typname, des.description";
         if (!trimmed.IsEmpty && trimmed[0] == '@')
         {
             trimmed = TrimSpan(trimmed[1..]);
+        }
+        else if (NpgsqlRestOptions.Options?.RequireAtPrefix is true)
+        {
+            // RequireAtPrefix: a directive needs the @ (the request line and the headers are HTTP syntax and do not)
+            return false;
         }
 
         // Check for "retry_delay" keyword (case-insensitive)
@@ -643,6 +653,11 @@ group by n.nspname, t.typname, des.description";
         if (!trimmed.IsEmpty && trimmed[0] == '@')
         {
             trimmed = TrimSpan(trimmed[1..]);
+        }
+        else if (NpgsqlRestOptions.Options?.RequireAtPrefix is true)
+        {
+            // RequireAtPrefix: a directive needs the @ (the request line and the headers are HTTP syntax and do not)
+            return false;
         }
 
         // Check for "cache" keyword (case-insensitive). Must be the whole token, so "cache_profile"

@@ -3327,7 +3327,7 @@ public class Builder
         {
             settings.NoResetOnClose = true;
         }
-        if (settings.NoResetOnClose is false && settings.Pooling && settings.Multiplexing is false)
+        if (settings.NoResetOnClose is false && settings.Pooling)
         {
             builder.UsePhysicalConnectionInitializer(
                 static connection =>

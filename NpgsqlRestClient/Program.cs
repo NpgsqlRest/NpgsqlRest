@@ -39,6 +39,9 @@ if (args.Length >= 1 && (string.Equals(args[0], "-h", StringComparison.CurrentCu
         ("npgsqlrest --config-schema", "Output JSON Schema for appsettings.json. Syntax highlighted in terminal, plain JSON when piped."),
         ("npgsqlrest --annotations", "Output all supported comment annotations as JSON. Syntax highlighted in terminal, plain JSON when piped."),
         ("npgsqlrest [files...] --endpoints", "Connect to database, discover endpoints, output as JSON, then exit. Syntax highlighted in terminal, plain JSON when piped."),
+        ("npgsqlrest [files...] --inspect", "As --endpoints, plus everything that did NOT become an endpoint with the reason (no HTTP annotation, disabled, left out by a filter, a SQL error ...) and the files generated for each endpoint. JSON object: endpoints, notExposed, generatedFiles."),
+        ("npgsqlrest [files...] --parse=<file.sql|->", "Without a database: how the comments of a SQL file are read, line by line (annotation, text, unknown annotation), as JSON. '-' reads the file from standard input."),
+        ("npgsqlrest [files...] --parse-comment=<file|->", "The same for the comment of a routine (the text of COMMENT ON ... IS)."),
         ("npgsqlrest [files...] --test", "Run SQL test files (TestRunner config), then exit. Exit codes: 0 pass, 1 failures, 2 errors, 3 config error, 4 no tests."),
         ("npgsqlrest [files...] --test --watch", "Watch mode: run the tests, then re-run on file changes until Ctrl+C (interactive/dev-only; teardown runs on exit)."),
         ("npgsqlrest [files...] --watch", "Server watch mode (dev): run the server and restart it on SQL file source or configuration file changes until Ctrl+C. Requires an enabled SqlFileSource."),
@@ -187,6 +190,46 @@ catch (ArgumentException ex)
     return;
 }
 
+// --parse=<file.sql|-> and --parse-comment=<file|->: how a SQL file's comments, or a routine's comment, are read.
+// No database, no server: the parsers alone, with RequireAtPrefix and CommentsMode from the configuration.
+if (args.FirstOrDefault(a => a.StartsWith("--parse=", StringComparison.OrdinalIgnoreCase) || a.StartsWith("--parse-comment=", StringComparison.OrdinalIgnoreCase)) is { } parseArg)
+{
+    var isComment = parseArg.StartsWith("--parse-comment=", StringComparison.OrdinalIgnoreCase);
+    var target = parseArg[(parseArg.IndexOf('=') + 1)..];
+    string text;
+    string? file = null;
+    if (target == "-")
+    {
+        text = Console.In.ReadToEnd();
+    }
+    else
+    {
+        file = Path.GetFullPath(target);
+        if (File.Exists(file) is false)
+        {
+            Console.Error.WriteLine($"File not found: {file}");
+            Environment.ExitCode = 1;
+            return;
+        }
+        text = File.ReadAllText(file);
+    }
+    var sqlFileCfg = config.NpgsqlRestCfg.GetSection("SqlFileSource");
+    var requireAt = config.GetConfigBool("RequireAtPrefix", config.NpgsqlRestCfg);
+    var mode = (isComment ? null : config.GetConfigEnum<CommentsMode?>("CommentsMode", sqlFileCfg))
+        ?? config.GetConfigEnum<CommentsMode?>("CommentsMode", config.NpgsqlRestCfg) ?? CommentsMode.OnlyAnnotated;
+    var parseResult = isComment
+        ? CommentInspector.ParseComment(text, requireAt, mode)
+        : CommentInspector.ParseSqlFile(text, file, requireAt, mode,
+            config.GetConfigEnum<NpgsqlRest.SqlFileSource.CommentScope?>("CommentScope", sqlFileCfg) ?? NpgsqlRest.SqlFileSource.CommentScope.All);
+    using var parseStream = new MemoryStream();
+    using (var writer = new System.Text.Json.Utf8JsonWriter(parseStream, new System.Text.Json.JsonWriterOptions { Indented = true }))
+    {
+        CommentInspector.WriteJson(writer, parseResult);
+    }
+    new Out().JsonHighlight(System.Text.Encoding.UTF8.GetString(parseStream.ToArray()));
+    return;
+}
+
 if (args.Any(a => string.Equals(a, "--config", StringComparison.CurrentCultureIgnoreCase) || a.StartsWith("--config=", StringComparison.CurrentCultureIgnoreCase)))
 {
     var (valMode, valWarnings) = config.ValidateConfigKeys();
@@ -313,7 +356,13 @@ if (cmdRetryOpts.Enabled && string.IsNullOrEmpty(cmdRetryOpts.DefaultStrategy))
     cmdRetryOpts.Strategies.TryGetValue(cmdRetryOpts.DefaultStrategy, out cmdRetryStrategy);
 }
 
-bool endpointsMode = args.Any(a => string.Equals(a, "--endpoints", StringComparison.OrdinalIgnoreCase));
+// --inspect: --endpoints, plus what did not become an endpoint and why, and the generated files.
+bool inspectMode = args.Any(a => string.Equals(a, "--inspect", StringComparison.OrdinalIgnoreCase));
+bool endpointsMode = inspectMode || args.Any(a => string.Equals(a, "--endpoints", StringComparison.OrdinalIgnoreCase));
+if (inspectMode)
+{
+    EndpointReport.IncludeFilteredOut = true;
+}
 bool testMode = args.Any(a => string.Equals(a, "--test", StringComparison.OrdinalIgnoreCase));
 // Watch mode — one feature, two flavors chosen by --test. The --watch flag is shorthand for
 // Watch:Enabled. Needed this early because it relaxes SqlFileSource error handling (a broken endpoint
@@ -567,6 +616,7 @@ NpgsqlRestOptions options = new()
     QueryStringNullHandling = config.GetConfigEnum<QueryStringNullHandling?>("QueryStringNullHandling", config.NpgsqlRestCfg) ?? QueryStringNullHandling.Ignore,
     TextResponseNullHandling = config.GetConfigEnum<TextResponseNullHandling?>("TextResponseNullHandling", config.NpgsqlRestCfg) ?? TextResponseNullHandling.EmptyString,
     CommentsMode = config.GetConfigEnum<CommentsMode?>("CommentsMode", config.NpgsqlRestCfg) ?? CommentsMode.OnlyAnnotated,
+    RequireAtPrefix = config.GetConfigBool("RequireAtPrefix", config.NpgsqlRestCfg),
     RequestHeadersMode = config.GetConfigEnum<RequestHeadersMode?>("RequestHeadersMode", config.NpgsqlRestCfg) ?? RequestHeadersMode.Parameter,
     RequestHeadersContextKey = config.GetConfigStr("RequestHeadersContextKey", config.NpgsqlRestCfg) ?? "request.headers",
     RequestHeadersParameterName = config.GetConfigStr("RequestHeadersParameterName", config.NpgsqlRestCfg) ?? "_headers",
@@ -592,7 +642,8 @@ NpgsqlRestOptions options = new()
 
     // Both watch flavors must survive a broken SQL file: the test runner's in-process watch and the
     // server watch child (supervisor restarts it on the next save either way).
-    EndpointSources = appInstance.CreateEndpointSources(relaxSqlFileErrors: watchMode || WatchSupervisor.IsChild),
+    // --inspect reports a SQL file that fails; it must not end the process at the first one
+    EndpointSources = appInstance.CreateEndpointSources(relaxSqlFileErrors: watchMode || WatchSupervisor.IsChild || inspectMode),
     UploadOptions = appInstance.CreateUploadOptions(),
     
     CacheOptions = builder.BuildCacheOptions(app, cacheType),
@@ -683,7 +734,14 @@ if (endpointsMode)
     using var ms = new MemoryStream();
     using (var writer = new System.Text.Json.Utf8JsonWriter(ms, new System.Text.Json.JsonWriterOptions { Indented = true }))
     {
-        EndpointCapture.WriteEndpointsJson(writer);
+        if (inspectMode)
+        {
+            EndpointCapture.WriteInspectJson(writer);
+        }
+        else
+        {
+            EndpointCapture.WriteEndpointsJson(writer);
+        }
     }
     new Out().JsonHighlight(System.Text.Encoding.UTF8.GetString(ms.ToArray()));
     return;

@@ -79,6 +79,12 @@ public static class LogoutHandler
             if (handlers is not null)
             {
                 var authenticatedScheme = (await context.AuthenticateAsync()).Ticket?.AuthenticationScheme;
+                // A request that is not signed in (no token, or an expired one) has no scheme of its own: what
+                // would be asked to sign out is the default sign-out scheme. In an application whose only scheme
+                // is JWT that is the bearer handler again, and the logout answered 500.
+                authenticatedScheme ??= context.RequestServices.GetService<IAuthenticationSchemeProvider>() is { } provider
+                    ? (await provider.GetDefaultSignOutSchemeAsync())?.Name
+                    : null;
                 if (authenticatedScheme is not null && await CanSignOutAsync(handlers, context, authenticatedScheme) is false)
                 {
                     return;

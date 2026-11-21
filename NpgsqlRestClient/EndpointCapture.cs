@@ -156,9 +156,71 @@ public class EndpointCapture : IEndpointCreateHandler
                 }
             }
 
+            // The files generated for this endpoint (client modules, HTTP files, the OpenAPI document), with the
+            // name it has there and the line where it begins in the file as written.
+            var generated = EndpointReport.GeneratedFor(ep);
+            if (generated.Length > 0)
+            {
+                writer.WriteStartArray("generated");
+                foreach (var entry in generated)
+                {
+                    WriteGenerated(writer, entry);
+                }
+                writer.WriteEndArray();
+            }
+
             writer.WriteEndObject();
         }
 
         writer.WriteEndArray();
+    }
+
+    private static void WriteGenerated(Utf8JsonWriter writer, GeneratedFileEntry entry)
+    {
+        writer.WriteStartObject();
+        writer.WriteString("generator", entry.Generator);
+        writer.WriteString("file", entry.File);
+        if (entry.Role is not null) writer.WriteString("role", entry.Role);
+        if (entry.Symbol is not null) writer.WriteString("symbol", entry.Symbol);
+        if (entry.Line is not null) writer.WriteNumber("line", entry.Line.Value);
+        writer.WriteEndObject();
+    }
+
+    /// <summary>
+    /// npgsqlrest --inspect: the endpoints (as --endpoints prints them), everything that was looked at and did
+    /// not become an endpoint with the reason, and every generated file.
+    /// </summary>
+    public static void WriteInspectJson(Utf8JsonWriter writer)
+    {
+        writer.WriteStartObject();
+        writer.WriteBoolean("requireAtPrefix", NpgsqlRestOptions.Options.RequireAtPrefix);
+
+        writer.WritePropertyName("endpoints");
+        WriteEndpointsJson(writer);
+
+        writer.WriteStartArray("notExposed");
+        foreach (var entry in EndpointReport.NotExposed)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("kind", entry.Kind);
+            if (entry.Schema is not null) writer.WriteString("schema", entry.Schema);
+            if (entry.Name is not null) writer.WriteString("name", entry.Name);
+            if (entry.Definition is not null) writer.WriteString("definition", entry.Definition);
+            if (entry.SourceFile is not null) writer.WriteString("sourceFile", entry.SourceFile);
+            writer.WriteString("reason", entry.Reason);
+            writer.WriteString("message", entry.Message);
+            WriteLines(writer, "diagnostics", entry.Diagnostics);
+            writer.WriteEndObject();
+        }
+        writer.WriteEndArray();
+
+        writer.WriteStartArray("generatedFiles");
+        foreach (var entry in EndpointReport.GeneratedFiles)
+        {
+            WriteGenerated(writer, entry);
+        }
+        writer.WriteEndArray();
+
+        writer.WriteEndObject();
     }
 }

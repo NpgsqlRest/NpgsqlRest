@@ -365,6 +365,7 @@ public static class NpgsqlRestBuilder
         }
 
         Options.EndpointSourcesCreated(Options.EndpointSources);
+        EndpointReport.Reset();
         var hasCachedRoutine = false;
         CommentsMode optionsCommentsMode = Options.CommentsMode;
         bool hasStreamingEvents = false;
@@ -385,6 +386,19 @@ public static class NpgsqlRestBuilder
 
                 if (endpoint is null)
                 {
+                    var (code, message) = DefaultCommentParser.NotExposedReason
+                        ?? ("rejected_by_callback", "The source's endpoint handler returned no endpoint for it.");
+                    EndpointReport.AddNotExposed(new NotExposedEntry
+                    {
+                        Kind = EndpointReport.KindOf(routine),
+                        Schema = routine.Schema,
+                        Name = routine.Name,
+                        Definition = routine.SimpleDefinition,
+                        SourceFile = routine.SourceFile,
+                        Reason = code,
+                        Message = message,
+                        Diagnostics = DefaultCommentParser.NotExposedDiagnostics
+                    });
                     continue;
                 }
 

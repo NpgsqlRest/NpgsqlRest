@@ -2092,6 +2092,14 @@ public static partial class ConfigSchemaGenerator
         //
         "CommentsMode": "OnlyAnnotated",
         //
+        // Require the @ prefix on annotations. When false (default), the prefix is optional: `HTTP GET` and `@http get` are both read.
+        // When true, a comment line is an annotation only if it begins with @ (`@http get`, `@authorize admin`, `@timeout = 30s`, `@Content-Type: text/plain`); every other line is text, the endpoint's description, whatever word it begins with.
+        // That makes a comment unambiguous for people and for tools: a sentence such as "Disabled until Friday" or "Note: see the docs" can never be taken for an annotation.
+        // It applies to routine comments, to the comments of SQL files (also `@returns`, `@result`, `@single`, `@skip`, `@param`, `@define_param`) and to the directives in HTTP Custom Type comments (`@timeout`, `@retry_delay`, `@cache`).
+        // Lines without the prefix that look like an access restriction (`authorize`, `disabled`, `login` ...) are logged as a warning when this is on.
+        //
+        "RequireAtPrefix": false,
+        //
         // The URL prefix string for every URL created by the default URL builder or `null` to ignore the URL prefix.
         //
         "UrlPathPrefix": "/api",

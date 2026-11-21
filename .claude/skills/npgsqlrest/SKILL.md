@@ -27,6 +27,8 @@ The annotation/config surface is large and version-dependent. In order of prefer
    npgsqlrest --annotations    # every supported annotation, as JSON
    npgsqlrest --config         # full default appsettings.json (every option, commented)
    npgsqlrest --validate       # test DB connectivity + that endpoints build (incl. .sql Describe)
+   npgsqlrest --inspect        # 4.1.0+: endpoints + everything that did NOT become an endpoint, with the reason + generated files
+   npgsqlrest --parse=x.sql    # 4.1.0+: no database: how a SQL file's comments are read, line by line (--parse-comment=file for a routine comment)
    npgsqlrest --version
    ```
 3. **Online:** docs at <https://npgsqlrest.github.io> (e.g. `/guide/annotations`, `/guide/sql-files`, `/annotations/<name>`, `/config/<section>`); source & issues at <https://github.com/NpgsqlRest/NpgsqlRest>.
@@ -101,6 +103,10 @@ Everything below (annotations, HTTP types, proxy, caching, auth, SSE, MCP) works
 ## Annotation cheat-sheet (grouped)
 
 Same annotations apply to functions and `.sql` files. Confirm exact syntax/aliases with `npgsqlrest --annotations`.
+
+**The `@` prefix.** By default it is optional: `HTTP GET` and `@http get` are the same line. With `"NpgsqlRest": { "RequireAtPrefix": true }` (4.1.0+) only a line that begins with `@` is an annotation, and everything else is description text, whatever word it begins with. Prefer writing the `@` always: it is read in both settings and can never be mistaken for a sentence. In strict mode this includes `@http`, `key = value` lines (`@timeout = 30s`), response headers (`@Content-Type: text/plain`), the SQL-file lines (`@returns`, `@result`, `@single`, `@skip`, `@param`, `@define_param`) and HTTP Custom Type directives (`@timeout`); the request line and headers of an HTTP Custom Type take no prefix.
+
+**"Why is there no endpoint?"** Run `npgsqlrest --inspect` and look at `notExposed`: each routine or `.sql` file that was looked at and is not an endpoint is listed with a `reason` (`no_comment`, `no_http_annotation`, `unprefixed_annotations`, `disabled`, `tag_mismatch`, `excluded_by_filter`, `sql_error`, `empty_file`) and a `message` that says what to change. A `.sql` file that is not in the list at all is not matched by `SqlFileSource.FilePattern`.
 
 **Routing / exposure**
 - `HTTP [GET|POST|PUT|DELETE|QUERY] [/path]` — expose (`QUERY` = the standardized safe method with a body; its params default to the JSON body). `@path /x` — override path. `@disabled`/`@enabled`. `@internal` — exists but no public route (reachable via proxy / HTTP-type self-call). `@tags a,b`, `@openapi …`.

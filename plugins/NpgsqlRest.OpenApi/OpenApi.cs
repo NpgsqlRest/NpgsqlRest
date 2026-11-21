@@ -57,6 +57,8 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
     private IApplicationBuilder _builder = default!;
     private JsonObject _document = default!;
     private JsonObject _paths = default!;
+    // For tools (EndpointReport): the operation id written for each endpoint.
+    private readonly List<(RoutineEndpoint Endpoint, string OperationId)> _generated = [];
     private JsonObject _schemas = default!;
     private JsonObject? _securitySchemes = null;
     private HashSet<string>? _includeSchemas = null;
@@ -259,6 +261,7 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
 
         // Add operation ID
         operation["operationId"] = $"{endpoint.Routine.Schema}_{endpoint.Routine.Name}_{method}";
+        _generated.Add((endpoint, $"{endpoint.Routine.Schema}_{endpoint.Routine.Name}_{method}"));
 
         // Add parameters
         var parameters = new JsonArray();
@@ -627,6 +630,8 @@ public class OpenApi(OpenApiOptions openApiOptions) : IEndpointCreateHandler
                     Directory.CreateDirectory(dir);
                 }
                 File.WriteAllText(fullFileName, json);
+                EndpointReport.AddGenerated("openapi", fullFileName, "document", json,
+                    _generated.Select(g => (g.Endpoint, g.OperationId, new[] { $"\"{g.OperationId}\"" })));
                 Logger?.LogDebug("Created OpenAPI file: {fileName}", fullFileName);
             }
         }

@@ -490,6 +490,149 @@ public class CliCommandTests
         }
     }
 
+    [Fact]
+    public async Task Parse_reads_a_sql_file_without_a_database()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "npgsqlrest_cli_parse_" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "orders.sql");
+            File.WriteAllText(file, "-- HTTP GET\n-- Orders of a customer.\n-- @authorize\n-- @nothing_reads_this\nselect 1; -- @single\n");
+
+            // a connection string that cannot connect: this command must not need one
+            var (stdout, stderr, exitCode) = await RunCliAsync("--parse=" + file, "--ConnectionStrings:Default=Host=127.0.0.1;Port=9;Database=none;Username=none;Password=none");
+            exitCode.Should().Be(0, stdout + stderr);
+            var json = JsonNode.Parse(stdout)!;
+            json["source"]!.GetValue<string>().Should().Be("sql_file");
+            json["file"]!.GetValue<string>().Should().Be(Path.GetFullPath(file));
+            json["requireAtPrefix"]!.GetValue<bool>().Should().BeFalse();
+            json["commentsMode"]!.GetValue<string>().Should().Be("OnlyAnnotated");
+            json["endpoint"]!.GetValue<bool>().Should().BeTrue();
+            json["statements"]!.GetValue<int>().Should().Be(1);
+            json["lines"]!.ToJsonString().Should().Be(
+                """[{"line":1,"text":"HTTP GET","kind":"annotation","name":"http","owner":"core","form":"keyword"},{"line":2,"text":"Orders of a customer.","kind":"text"},{"line":3,"text":"@authorize","kind":"annotation","name":"authorize","owner":"core","form":"keyword"},{"line":4,"text":"@nothing_reads_this","kind":"unknown_annotation","name":"nothing_reads_this"},{"line":5,"text":"@single","kind":"annotation","name":"single","owner":"core","form":"keyword"}]""");
+
+            // the same file, with the prefix required: the HTTP line is text and there is no endpoint
+            var (strictOut, strictErr, strictExit) = await RunCliAsync("--parse=" + file, "--NpgsqlRest:RequireAtPrefix=true");
+            strictExit.Should().Be(0, strictOut + strictErr);
+            var strict = JsonNode.Parse(strictOut)!;
+            strict["requireAtPrefix"]!.GetValue<bool>().Should().BeTrue();
+            strict["endpoint"]!.GetValue<bool>().Should().BeFalse();
+            strict["reason"]!.GetValue<string>().Should().Be("unprefixed_annotations");
+            strict["lines"]![0]!.ToJsonString().Should().Be("""{"line":1,"text":"HTTP GET","kind":"text"}""");
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public async Task Parse_comment_reads_the_comment_of_a_routine()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "npgsqlrest_cli_parsec_" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "comment.txt");
+            File.WriteAllText(file, "@http post /api/things\nCreates a thing.\n@timeout = 5s\n");
+            var (stdout, stderr, exitCode) = await RunCliAsync("--parse-comment=" + file);
+            exitCode.Should().Be(0, stdout + stderr);
+            var json = JsonNode.Parse(stdout)!;
+            json["source"]!.GetValue<string>().Should().Be("comment");
+            json["endpoint"]!.GetValue<bool>().Should().BeTrue();
+            json["lines"]!.ToJsonString().Should().Be(
+                """[{"line":1,"text":"@http post /api/things","kind":"annotation","name":"http","owner":"core","form":"keyword"},{"line":2,"text":"Creates a thing.","kind":"text"},{"line":3,"text":"@timeout = 5s","kind":"annotation","name":"timeout","owner":"core","form":"key_value"}]""");
+
+            var (_, missingErr, missingExit) = await RunCliAsync("--parse=" + Path.Combine(dir, "nope.sql"));
+            missingExit.Should().Be(1);
+            missingErr.Should().Contain("File not found: " + Path.GetFullPath(Path.Combine(dir, "nope.sql")));
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public async Task Inspect_lists_endpoints_what_is_not_exposed_and_generated_files()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "npgsqlrest_cli_inspect_" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(Path.Combine(dir, "sql"));
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "sql", "good.sql"), "-- HTTP GET\nselect 1 as one;\n");
+            File.WriteAllText(Path.Combine(dir, "sql", "migration.sql"), "-- creates nothing over HTTP\nselect 2;\n");
+            File.WriteAllText(Path.Combine(dir, "sql", "broken.sql"), "-- HTTP GET\nselect * from this_table_does_not_exist_anywhere;\n");
+            File.WriteAllText(Path.Combine(dir, "sql", "empty.sql"), "-- HTTP GET\n");
+            var sqlDir = Path.Combine(dir, "sql").Replace('\\', '/');
+
+            var (stdout, stderr, exitCode) = await RunCliAsync(
+                "--inspect",
+                "--ConnectionStrings:Default=" + Database.Create(),
+                "--NpgsqlRest:IncludeSchemas:0=rpt",
+                "--NpgsqlRest:NameNotSimilarTo=rpt[_]left%",
+                "--NpgsqlRest:RequiresAuthorization=false",
+                "--NpgsqlRest:SqlFileSource:Enabled=true",
+                "--NpgsqlRest:SqlFileSource:FilePattern=" + sqlDir + "/*.sql",
+                "--NpgsqlRest:ClientCodeGen:Enabled=true",
+                "--NpgsqlRest:ClientCodeGen:FilePath=" + dir.Replace('\\', '/') + "/client.ts",
+                "--NpgsqlRest:ClientCodeGen:BySchema=false");
+            exitCode.Should().Be(0, stdout + stderr);
+            var json = JsonNode.Parse(stdout)!;
+            json["requireAtPrefix"]!.GetValue<bool>().Should().BeFalse();
+
+            var endpoints = json["endpoints"]!.AsArray();
+            endpoints.Select(e => e!["path"]!.GetValue<string>()).Order(StringComparer.Ordinal).Should().Equal(
+                "/api/good", "/api/rpt/header-at", "/api/rpt/show", "/api/rpt/shown", "/api/rpt/shown-too", "/api/rpt/tabbed");
+            var good = endpoints.Single(e => e!["path"]!.GetValue<string>() == "/api/good")!;
+            good["routine"]!["sourceFile"]!.GetValue<string>().Should().Be(Path.Combine(dir, "sql", "good.sql"));
+            // (a local appsettings.Development.json next to the client may turn other generators on as well)
+            var generated = good["generated"]!.AsArray().Single(g => g!["generator"]!.GetValue<string>() == "tsclient")!;
+            generated["generator"]!.GetValue<string>().Should().Be("tsclient");
+            generated["file"]!.GetValue<string>().Should().Be(Path.Combine(dir, "client.ts"));
+            generated["role"]!.GetValue<string>().Should().Be("client");
+            // "publicGood" or "good": whether the schema is part of the name is a setting
+            var symbol = generated["symbol"]!.GetValue<string>();
+            symbol.Should().BeOneOf("publicGood", "good");
+            File.ReadAllLines(Path.Combine(dir, "client.ts"))[generated["line"]!.GetValue<int>() - 1].Should().StartWith($"export async function {symbol}(");
+
+            var notExposed = json["notExposed"]!.AsArray().Where(e => e!["kind"]!.GetValue<string>() == "sql_file" || e["schema"]?.GetValue<string>() is "rpt" or "rpt_hidden").ToList();
+            notExposed.Select(e => $"{e!["name"]!.GetValue<string>()}: {e["reason"]!.GetValue<string>()}").Should().BeEquivalentTo(
+            [
+                "no_http: no_http_annotation", "no_comment: no_comment", "switched_off: disabled", "for_other: tag_mismatch",
+                "rpt_left_out: excluded_by_filter", "wanted: excluded_by_filter",
+                "migration: no_http_annotation", "broken: sql_error", "empty: empty_file"
+            ]);
+            var broken = notExposed.Single(e => e!["name"]!.GetValue<string>() == "broken")!;
+            broken["sourceFile"]!.GetValue<string>().Should().Be(Path.Combine(dir, "sql", "broken.sql"));
+            broken["message"]!.GetValue<string>().Should().StartWith("The file could not be made into an endpoint: SqlFileSource: ").And.Contain("this_table_does_not_exist_anywhere");
+            broken["diagnostics"]!.AsArray().Should().HaveCount(1);
+            var migration = notExposed.Single(e => e!["name"]!.GetValue<string>() == "migration")!;
+            migration["message"]!.GetValue<string>().Should().Be("The file has no HTTP annotation in a comment. Under this CommentsMode only a file that has one becomes an endpoint.");
+
+            json["generatedFiles"]!.AsArray().Where(f => f!["generator"]!.GetValue<string>() == "tsclient").Select(f => $"{f!["generator"]!.GetValue<string>()}/{f["role"]!.GetValue<string>()}: {f["file"]!.GetValue<string>()}").Should().Contain("tsclient/client: " + Path.Combine(dir, "client.ts"));
+
+            // --endpoints stays an array, and has the generated files of each endpoint too
+            var (endpointsOut, _, _) = await RunCliAsync(
+                "--endpoints",
+                "--ConnectionStrings:Default=" + Database.Create(),
+                "--NpgsqlRest:IncludeSchemas:0=rpt",
+                "--NpgsqlRest:RequiresAuthorization=false",
+                "--NpgsqlRest:ClientCodeGen:Enabled=true",
+                "--NpgsqlRest:ClientCodeGen:FilePath=" + dir.Replace('\\', '/') + "/client2.ts",
+                "--NpgsqlRest:ClientCodeGen:BySchema=false");
+            var array = JsonNode.Parse(endpointsOut)!.AsArray();
+            array.Should().HaveCount(6);
+            array.Should().OnlyContain(e => e!["generated"]!.AsArray().Count(g => g!["generator"]!.GetValue<string>() == "tsclient") == 1);
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
     private static JsonNode? ParseJsonc(string jsonc)
     {
         return JsonNode.Parse(jsonc, documentOptions: new JsonDocumentOptions

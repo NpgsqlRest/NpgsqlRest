@@ -82,6 +82,101 @@ public class RoutineSource(
         return command;
     }
 
+    // Routines whose comment asks for an endpoint (an HTTP line) and that the filters of this source leave out,
+    // each with the first filter that leaves it out. Same ten parameters as the discovery query.
+    private const string FilteredOutQuery = """
+    select
+        lower(r.routine_type),
+        quote_ident(r.specific_schema),
+        quote_ident(r.routine_name),
+        pg_get_function_identity_arguments(p.oid),
+        case
+            when has_schema_privilege(current_user, n.nspname, 'USAGE') is false then 'privilege'
+            when $1 is not null and n.nspname not similar to $1 then 'SchemaSimilarTo'
+            when $2 is not null and n.nspname similar to $2 then 'SchemaNotSimilarTo'
+            when $3 is not null and not n.nspname = any($3) then 'IncludeSchemas'
+            when $4 is not null and n.nspname = any($4) then 'ExcludeSchemas'
+            when $5 is not null and r.routine_name not similar to $5 then 'NameSimilarTo'
+            when $6 is not null and r.routine_name similar to $6 then 'NameNotSimilarTo'
+            when $7 is not null and not r.routine_name = any($7) then 'IncludeNames'
+            when $8 is not null and r.routine_name = any($8) then 'ExcludeNames'
+            when $9 is not null and not lower(r.external_language) = any($9) then 'IncludeLanguages'
+            when $10 is not null and lower(r.external_language) = any($10) then 'ExcludeLanguages'
+        end,
+        lower(r.external_language)
+    from information_schema.routines r
+    join pg_catalog.pg_proc p on r.specific_name = p.proname || '_' || p.oid
+    join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+    join pg_catalog.pg_description d on d.objoid = p.oid and d.classoid = 'pg_catalog.pg_proc'::regclass and d.objsubid = 0
+    where
+        n.nspname not like 'pg_%'
+        and n.nspname <> 'information_schema'
+        and r.routine_type in ('FUNCTION', 'PROCEDURE')
+        and coalesce(r.type_udt_name, '') <> 'trigger'
+        and d.description ~* '(^|\n)[ \t]*@?http([ \t\r]|$|\n)'
+        and (
+            has_schema_privilege(current_user, n.nspname, 'USAGE') is false
+            or ($1 is not null and n.nspname not similar to $1)
+            or ($2 is not null and n.nspname similar to $2)
+            or ($3 is not null and not n.nspname = any($3))
+            or ($4 is not null and n.nspname = any($4))
+            or ($5 is not null and r.routine_name not similar to $5)
+            or ($6 is not null and r.routine_name similar to $6)
+            or ($7 is not null and not r.routine_name = any($7))
+            or ($8 is not null and r.routine_name = any($8))
+            or ($9 is not null and not lower(r.external_language) = any($9))
+            or ($10 is not null and lower(r.external_language) = any($10))
+        )
+    order by 2, 3
+    """;
+
+    /// <summary>
+    /// For tools (EndpointReport.IncludeFilteredOut): the routines that have an HTTP annotation and are not read
+    /// at all, because a schema, name or language filter of this source leaves them out. Not done for a custom
+    /// discovery query, whose filters are its own.
+    /// </summary>
+    private void ReportFilteredOut(NpgsqlConnection connection)
+    {
+        if (EndpointReport.IncludeFilteredOut is false || (Query is not null && ReferenceEquals(Query, RoutineSourceQuery.Query) is false))
+        {
+            return;
+        }
+        try
+        {
+            using var command = CreateSourceCommand(connection, fingerprint: false);
+            command.CommandText = FilteredOutQuery;
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                var filter = reader.IsDBNull(4) ? "a filter" : reader.GetString(4);
+                var schema = reader.GetString(1);
+                var name = reader.GetString(2);
+                var language = reader.IsDBNull(5) ? "" : reader.GetString(5);
+                EndpointReport.AddNotExposed(new NotExposedEntry
+                {
+                    Kind = reader.GetString(0),
+                    Schema = schema,
+                    Name = name,
+                    Definition = string.Concat(reader.GetString(0), " ", schema, ".", name, "(", reader.IsDBNull(3) ? "" : reader.GetString(3), ")"),
+                    Reason = "excluded_by_filter",
+                    Message = filter switch
+                    {
+                        "privilege" => $"The connection's user has no USAGE privilege on the schema {schema}.",
+                        "SchemaSimilarTo" or "SchemaNotSimilarTo" or "IncludeSchemas" or "ExcludeSchemas"
+                            => $"Its schema, {schema}, is left out by the {filter} setting.",
+                        "IncludeLanguages" or "ExcludeLanguages"
+                            => $"Its language, {language}, is left out by the {filter} setting.",
+                        _ => $"Its name is left out by the {filter} setting."
+                    }
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger?.LogDebug("RoutineSource: the routines left out by filters could not be listed: {Error}", ex.Message);
+        }
+    }
+
     /// <summary>
     /// A command returning one text value: a hash of this source's ENTIRE discovery result (same query,
     /// same configured filters). Watch mode polls it to detect any change to the discovered endpoints —
@@ -555,6 +650,8 @@ public class RoutineSource(
                     },
                     formatter);
             }
+            reader.Close();
+            ReportFilteredOut(connection);
         }
         finally
         {

@@ -42,7 +42,7 @@
 
     <ItemGroup>
         <PackageReference Include="Microsoft.SourceLink.GitHub" Version="11.0.100" PrivateAssets="All" />
-        <PackageReference Include="Npgsql" Version="10.0.3" />
+        <PackageReference Include="Npgsql" Version="11.0.0" />
         <PackageReferenceFiles Include="bin\$(Configuration)\$(AssemblyName).xml" />
     </ItemGroup>
 
