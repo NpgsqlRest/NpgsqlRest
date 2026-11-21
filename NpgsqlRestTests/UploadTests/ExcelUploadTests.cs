@@ -643,6 +643,34 @@ public class ExcelUploadTests(TestFixture test)
     }
 
     [Fact]
+    public async Task Test_excel_and_csv_in_one_request_with_a_fallback_answers()
+    {
+        // "upload for excel" with "fallback_handler = csv", and a request that carries an Excel file and a CSV
+        // file. The Excel handler hands the request to the CSV handler because of the CSV file; the CSV handler
+        // has the same fallback_handler and handed the request to itself because of the Excel file, without end:
+        // the stack overflowed and the server process ended.
+        using var formData = new MultipartFormDataContent();
+        using var excel = LoadTestFile("test-excel-simple.xlsx");
+        formData.Add(excel, "file", "test-excel-simple.xlsx");
+        using var csv = new ByteArrayContent(System.Text.Encoding.UTF8.GetBytes("20,Item 20,1\n21,Item 21,2\n"));
+        csv.Headers.ContentType = new MediaTypeHeaderValue("text/csv");
+        formData.Add(csv, "file2", "more.csv");
+
+        using var result = await test.Client.PostAsync("/api/excel-fallback-excel-ok-upload/", formData);
+        var response = await result.Content.ReadAsStringAsync();
+        result.StatusCode.Should().Be(HttpStatusCode.OK, response);
+
+        // the request was handed over once, to the CSV handler: it takes the CSV file and refuses the Excel file
+        var files = JsonDocument.Parse(response).RootElement.EnumerateArray().ToList();
+        files.Select(f => $"{f.GetProperty("type").GetString()} {f.GetProperty("fileName").GetString()} {f.GetProperty("success").GetBoolean()} {f.GetProperty("status").GetString()}")
+            .Should().Equal("csv test-excel-simple.xlsx False ProbablyBinary", "csv more.csv True Ok");
+
+        // and the server is still there
+        using var again = await test.Client.PostAsync("/api/excel-fallback-excel-ok-upload/", new MultipartFormDataContent { { LoadTestFile("test-excel-simple.xlsx"), "file", "test-excel-simple.xlsx" } });
+        again.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
     public async Task Test_excel_fallback_endpoint_still_handles_excel()
     {
         // Upload a valid Excel file to a fallback endpoint - should process as Excel normally

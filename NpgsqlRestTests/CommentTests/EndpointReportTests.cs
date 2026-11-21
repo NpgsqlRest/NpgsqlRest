@@ -26,6 +26,11 @@ comment on function rpt.shown_too() is '@http post';
 create function rpt.show() returns text language sql as $$ select 'show' $$;
 comment on function rpt.show() is 'HTTP GET';
 
+-- an endpoint without an HTTP route: generators leave it out, the report says what it is
+create function rpt.kept_inside() returns text language sql as $$ select 'inside' $$;
+comment on function rpt.kept_inside() is 'HTTP GET
+internal';
+
 create function rpt.tabbed() returns text language sql as $$ select 'tabbed' $$;
 comment on function rpt.tabbed() is E'@http\tget\n@authorize\tadmin,\tmanager\n@timeout\t30s';
 
@@ -174,7 +179,7 @@ namespace NpgsqlRestTests
         [Fact]
         public void Every_routine_with_a_reason_to_be_looked_at_is_an_endpoint_or_reported()
         {
-            test.Endpoints.Keys.Order().Should().Equal("header_at", "show", "shown", "shown_too", "tabbed");
+            test.Endpoints.Keys.Order().Should().Equal("header_at", "kept_inside", "show", "shown", "shown_too", "tabbed");
             // (the database of the test run has other schemas; their routines with an HTTP line are left out by
             // this application's IncludeSchemas too, and reported the same way)
             test.NotExposed.Where(e => e.Schema is "rpt" or "rpt_hidden").Select(e => $"{e.Schema}.{e.Name}: {e.Reason}").Should().BeEquivalentTo(
@@ -312,7 +317,10 @@ namespace NpgsqlRestTests
         [Fact]
         public void Every_endpoint_has_its_files_and_every_file_is_listed_once()
         {
-            foreach (var name in test.Endpoints.Keys)
+            // an internal-only endpoint has no route, so no client function and no request; OpenAPI describes it
+            test.Endpoints["kept_inside"].InternalOnly.Should().BeTrue();
+            test.Generated["kept_inside"].Select(g => $"{g.Generator}/{g.Role}").Should().NotContain(["tsclient/client", "tsclient/hooks", "httpfiles/requests"]);
+            foreach (var name in test.Endpoints.Keys.Where(n => n != "kept_inside"))
             {
                 test.Generated[name].Select(g => $"{g.Generator}/{g.Role}").Order().Should().Equal(
                     "httpfiles/requests", "openapi/document", "tsclient/client", "tsclient/hooks");

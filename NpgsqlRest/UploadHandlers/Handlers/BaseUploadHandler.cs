@@ -8,6 +8,12 @@ public abstract class BaseUploadHandler
 
     protected string? Type = null;
     protected string? FallbackHandler = null;
+    // The handlers that already handed this request over, when this handler is itself a fallback. A fallback
+    // handles the whole request again and reads the same parameters, so it has the same fallback_handler: with
+    // "upload for excel" and "fallback_handler = csv", a request with an Excel file and a CSV file went
+    // excel -> csv (for the CSV file) -> csv (for the Excel file) -> csv ... until the stack overflowed and the
+    // process ended. A handler is never handed a request twice.
+    private HashSet<string>? _handedOverBy = null;
 
     protected bool CheckMimeTypes(string contentType)
     {
@@ -135,12 +141,22 @@ public abstract class BaseUploadHandler
             Options.UploadOptions.UploadHandlers is not null &&
             Options.UploadOptions.UploadHandlers.TryGetValue(FallbackHandler, out var fallbackFactory))
         {
+            if (string.Equals(FallbackHandler, Type, StringComparison.OrdinalIgnoreCase) || _handedOverBy?.Contains(FallbackHandler) is true)
+            {
+                // this handler, or one before it, is that handler: there is nobody left to hand the file to
+                return null;
+            }
             Logger?.LogDebug("Upload format invalid, falling back to {fallbackHandler} handler", FallbackHandler);
             var handler = fallbackFactory(retryStrategy);
             handler.SetType(FallbackHandler);
             if (handler is BaseUploadHandler baseHandler)
             {
                 baseHandler.ParseSharedParameters(options, parameters);
+                baseHandler._handedOverBy = new HashSet<string>(_handedOverBy ?? [], StringComparer.OrdinalIgnoreCase);
+                if (Type is not null)
+                {
+                    baseHandler._handedOverBy.Add(Type);
+                }
             }
             return await handler.UploadAsync(connection, context, parameters, cancellationToken);
         }

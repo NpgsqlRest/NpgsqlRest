@@ -113,6 +113,8 @@ public class EndpointCapture : IEndpointCreateHandler
                 writer.WriteEndArray();
             }
 
+            // No HTTP route: the endpoint exists for a plugin (an MCP tool) or for internal calls only.
+            if (ep.InternalOnly) writer.WriteBoolean("internalOnly", true);
             if (ep.Login) writer.WriteBoolean("login", true);
             if (ep.Logout) writer.WriteBoolean("logout", true);
             if (ep.SecuritySensitive) writer.WriteBoolean("securitySensitive", true);

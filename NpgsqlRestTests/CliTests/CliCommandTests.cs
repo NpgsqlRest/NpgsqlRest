@@ -585,7 +585,9 @@ public class CliCommandTests
 
             var endpoints = json["endpoints"]!.AsArray();
             endpoints.Select(e => e!["path"]!.GetValue<string>()).Order(StringComparer.Ordinal).Should().Equal(
-                "/api/good", "/api/rpt/header-at", "/api/rpt/show", "/api/rpt/shown", "/api/rpt/shown-too", "/api/rpt/tabbed");
+                "/api/good", "/api/rpt/header-at", "/api/rpt/kept-inside", "/api/rpt/show", "/api/rpt/shown", "/api/rpt/shown-too", "/api/rpt/tabbed");
+            // an endpoint without an HTTP route is marked, and only that one
+            endpoints.Where(e => e!["internalOnly"]?.GetValue<bool>() is true).Select(e => e!["path"]!.GetValue<string>()).Should().Equal("/api/rpt/kept-inside");
             var good = endpoints.Single(e => e!["path"]!.GetValue<string>() == "/api/good")!;
             good["routine"]!["sourceFile"]!.GetValue<string>().Should().Be(Path.Combine(dir, "sql", "good.sql"));
             // (a local appsettings.Development.json next to the client may turn other generators on as well)
@@ -624,8 +626,8 @@ public class CliCommandTests
                 "--NpgsqlRest:ClientCodeGen:FilePath=" + dir.Replace('\\', '/') + "/client2.ts",
                 "--NpgsqlRest:ClientCodeGen:BySchema=false");
             var array = JsonNode.Parse(endpointsOut)!.AsArray();
-            array.Should().HaveCount(6);
-            array.Should().OnlyContain(e => e!["generated"]!.AsArray().Count(g => g!["generator"]!.GetValue<string>() == "tsclient") == 1);
+            array.Should().HaveCount(7);
+            array.Where(e => e!["internalOnly"]?.GetValue<bool>() is not true).Should().OnlyContain(e => e!["generated"]!.AsArray().Count(g => g!["generator"]!.GetValue<string>() == "tsclient") == 1);
         }
         finally
         {
